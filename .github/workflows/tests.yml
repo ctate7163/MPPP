@@ -24,10 +24,10 @@ jobs:
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[all]"
       - name: Static check
-        run: python -m flake8 --select F src/mppp scripts        # pyflakes rules; flake8 honours the re-exports' noqa
+        run: python -m flake8 --select F src/rpp scripts        # pyflakes rules; flake8 honours the re-exports' noqa
       - name: Unit and pipeline tests (two PDS products, no model downloads)
         env:
-          MPPP_CACHE: ${{ runner.temp }}/mppp_cache
+          RPP_CACHE: ${{ runner.temp }}/rpp_cache
         run: pytest -q -m "not slow" --deselect tests/test_mask_train.py
       - name: Slow tests (error-model physics)
         if: github.event_name == 'push'
@@ -38,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check the paper (citations, figures)
-        run: python -m mppp_studies.paper.build_paper --check-only || true
+        run: python -m rpp_studies.paper.build_paper --check-only || true
       - name: Build the JOSS draft
         uses: openjournals/openjournals-draft-action@master
         with:

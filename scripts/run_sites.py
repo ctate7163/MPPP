@@ -1,11 +1,11 @@
 """
 Process and align many sites into their own WORK folders, one after the other.
 
-The sites and their sol ranges come from the site definitions ``src/mppp/data/sites.json`` (or ``--sites-file``).
+The sites and their sol ranges come from the site definitions ``src/rpp/data/sites.json`` (or ``--sites-file``).
 Each site goes to ``<root>/mars2020_sol_<first sol>_<site>`` (Navcam) or ``..._zcam`` (``--zcam``, with the
 Mastcam-Z frames of the zooms in the site's ``"zcam"`` list): the pipeline selects the products from the PDS
 archive, processes them (reusing images already processed) and aligns them.  Each site is a separate
-``scripts/align_scape.py`` process (``mppp run`` / ``mppp align``), with its own log in ``<WORK>/runs/`` and status
+``scripts/align_scape.py`` process (``rpp run`` / ``rpp align``), with its own log in ``<WORK>/runs/`` and status
 in ``<WORK>/mppp_status.json``; this script's own log is ``<root>/run_sites_log.txt``.
 
 Examples::
@@ -18,15 +18,15 @@ Examples::
 
 A site whose ``<project>/run_done.json`` records the same settings (run key) is skipped; ``--force`` runs it
 again.  Reruns are cheap until the alignment itself: processed images, features and matches are reused.
-Two sites are aligned at a time by default (0.94.3; ``--jobs 1`` one after the other, ``MPPP_JOBS`` sets the
+Two sites are aligned at a time by default (0.94.3; ``--jobs 1`` one after the other, ``RPP_JOBS`` sets the
 default): each has its own WORK folder, the shared files (camera models, site definitions, lists) are only read,
 the shared downloads (waypoints, mask model, LightGlue weights) are fetched once before the sites start, and the
-GPU steps take turns (:class:`mppp.sfm.gpu.gpu_lock`).  With more than one job each site's console output goes
+GPU steps take turns (:class:`rpp.sfm.gpu.gpu_lock`).  With more than one job each site's console output goes
 to ``<WORK>/runs/console_<time>.txt``.
 """
 from __future__ import annotations
 import os as _os
-_os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")   # 27 Oct: as mppp_env.bat - two OpenMP runtimes (torch, pycolmap) abort a plain "python" start
+_os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")   # 27 Oct: as rpp_env.bat - two OpenMP runtimes (torch, pycolmap) abort a plain "python" start
 
 import argparse
 import os
@@ -34,18 +34,19 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from rpp import env as rpp_env
 
 HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))                      # sibling modules (_batch)
 
-from mppp.batch import filter_zcam, status_table  # noqa: E402,F401  (used by process_sites.py and the tests)
+from rpp.batch import filter_zcam, status_table  # noqa: E402,F401  (used by process_sites.py and the tests)
 
 
 def default_jobs() -> int:
-    """0.94.3: two sites at a time unless ``MPPP_JOBS`` says otherwise."""
+    """0.94.3: two sites at a time unless ``RPP_JOBS`` says otherwise."""
     try:
-        return max(1, int(os.environ.get("MPPP_JOBS", "2")))
+        return max(1, int(rpp_env.get("RPP_JOBS", "2")))
     except ValueError:
         return 2
 
@@ -68,21 +69,21 @@ def prefetch(log, sets) -> None:
     """Before sites start together: the downloads they would otherwise all start at the same moment (0.94.3) -
     the waypoint table (refreshed daily), the mask model, the LightGlue weights.  Failures are only logged."""
     try:
-        from mppp.waypoints.table import load_waypoints
-        src = load_waypoints(refresh="auto").get("_mppp_source", {})
+        from rpp.waypoints.table import load_waypoints
+        src = load_waypoints(refresh="auto").get("_rpp_source", {})
         log(f"  waypoints: {src.get('n_features')} ({src.get('file_time')})")
     except Exception as e:                                    # noqa: BLE001
         log(f"  waypoints not refreshed ({type(e).__name__}: {e})")
     try:
         low = {str(k).lower(): v for k, v in sets.items()}
         if str(low.get("infer_mask", True)).lower() not in ("false", "0", "no"):
-            from mppp.mask.hub import resolve_checkpoint
+            from rpp.mask.hub import resolve_checkpoint
             log(f"  mask model: {resolve_checkpoint(low.get('mask_checkpoint'))}")
     except Exception as e:                                    # noqa: BLE001
         log(f"  mask model not fetched ({type(e).__name__}: {e})")
     if str({str(k).lower(): v for k, v in sets.items()}.get("match_mode", "lightglue")).lower() == "lightglue":
         try:
-            from mppp.sfm.lightglue import load_model
+            from rpp.sfm.lightglue import load_model
             load_model("cpu")
             log("  LightGlue weights: ready")
         except Exception as e:                                # noqa: BLE001
@@ -92,15 +93,15 @@ def prefetch(log, sets) -> None:
 def child_env(jobs: int = 1):
     """The environment of an alignment: OpenBLAS limited to 8 threads unless set (0.94.4: on a PC with more cores
     than OpenBLAS was built for, calls from many threads at once may crash it - "precompiled NUM_THREADS exceeded").
-    0.95.0 (Christian, 28 Oct: with --jobs 3 three Ceres solvers competed for every core): ``MPPP_THREADS`` = the
+    0.95.0 (Christian, 28 Oct: with --jobs 3 three Ceres solvers competed for every core): ``RPP_THREADS`` = the
     cores divided among the ``jobs`` running at once - the bundle adjustments, the matcher and the extractor read it
-    (``mppp.sfm.threads``)."""
+    (``rpp.sfm.threads``)."""
     env = dict(os.environ)
     for k in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS"):
         env.setdefault(k, "8")
-    if "MPPP_THREADS" not in env:
+    if not rpp_env.is_set("RPP_THREADS", env):          # 0.99.0: an old MPPP_THREADS counts too
         cores = os.cpu_count() or 1
-        env["MPPP_THREADS"] = str(max(1, cores // max(1, int(jobs))))
+        env["RPP_THREADS"] = str(max(1, cores // max(1, int(jobs))))
     return env
 
 
@@ -116,7 +117,7 @@ def main(argv=None) -> int:
     g.add_argument("--all", action="store_true", help="every site in the site definitions")
     g.add_argument("--group", help="a site group of the site definitions (e.g. ecam_consensus)")
     g.add_argument("--sites", nargs="+", help="site names")
-    ap.add_argument("--root", default=os.environ.get("MPPP_SCAPES"), help="the scapes root: the WORK folders go below it (default: MPPP_SCAPES)")
+    ap.add_argument("--root", default=rpp_env.get("RPP_SCAPES"), help="the scapes root: the WORK folders go below it (default: RPP_SCAPES)")
     ap.add_argument("--zcam", action="store_true", help="the Navcam + Mastcam-Z blocks (..._zcam) of the sites with a \"zcam\" list")
     ap.add_argument("--source", choices=("pds", "processed"), default="pds",
                     help="pds (default): select and process, then align; processed: align what is processed")
@@ -125,12 +126,12 @@ def main(argv=None) -> int:
                     help="the Hazcam frames: front, rear, both (the default since 0.93.1) or none")
     ap.add_argument("--settings", default=None, help="a JSON file of settings for every site")
     ap.add_argument("--set", action="append", default=[], metavar="NAME=VALUE", help="a pipeline setting")
-    ap.add_argument("--sites-file", default=None, help="site definitions (default mppp/data/sites.json)")
+    ap.add_argument("--sites-file", default=None, help="site definitions (default rpp/data/sites.json)")
     ap.add_argument("--force", action="store_true", help="run sites that are already finished again")
     ap.add_argument("--force-start", action="store_true",
                     help="start even if the batch file says another batch is running on --root")
     ap.add_argument("--jobs", type=int, default=default_jobs(),
-                    help="sites aligned at the same time (default 2, or MPPP_JOBS; 0.94.3)")
+                    help="sites aligned at the same time (default 2, or RPP_JOBS; 0.94.3)")
     ap.add_argument("--retries", type=int, default=1,
                     help="a site that failed runs again once the others are done, on its own (default 1 time; 0.94.4)")
     ap.add_argument("--dry-run", action="store_true", help="list what would run")
@@ -138,14 +139,14 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
 
     if not a.root:
-        ap.error("--root (or the MPPP_SCAPES environment variable) is required")
+        ap.error("--root (or the RPP_SCAPES environment variable) is required")
     root = Path(a.root)
     if a.status:
         return status_table(root)
-    from mppp.batch import BatchRunning, batch_lock, choose_sites, finished, site_settings
-    from mppp.pipeline import run_key
-    from mppp.runner import STATUS_FILE, Log, parse_set, read_status
-    from mppp.waypoints.sites import load_site_table
+    from rpp.batch import BatchRunning, batch_lock, choose_sites, finished, site_settings
+    from rpp.pipeline import run_key
+    from rpp.runner import STATUS_FILE, Log, parse_set, read_status
+    from rpp.waypoints.sites import load_site_table
     table = load_site_table(a.sites_file)
     sites = choose_sites(table, a, ap)
     unknown = [s for s in sites if s not in table["sites"]]
@@ -164,7 +165,7 @@ def main(argv=None) -> int:
     log(f"run_sites: {len(sites)} sites, root {root}, Mastcam-Z {a.zcam}, source {a.source}, "
         f"variant {a.variant or '(default)'}, jobs {a.jobs}, settings {sets or '-'}")
     # which camera models the alignments will start from, and whether they follow the frozen forms
-    from mppp.calib import check_form, describe, models_fingerprint
+    from rpp.calib import check_form, describe, models_fingerprint
     for line in describe():
         log("  " + line)
     form = check_form()
@@ -175,7 +176,7 @@ def main(argv=None) -> int:
     for e in form["errors"]:
         log(f"    ERROR: {e}")
     if not form["ok"] and not a.dry_run:
-        log("not started: the camera models in use do not follow the frozen forms (mppp cmods list)")
+        log("not started: the camera models in use do not follow the frozen forms (rpp cmods list)")
         return 4
 
     todo = []
@@ -200,9 +201,9 @@ def main(argv=None) -> int:
         batch = batch_lock(root, "run_sites", force=a.force_start, sites=[t[0] for t in todo])
     except BatchRunning as e:
         log(f"not started: {e}")
-        print(f"\nMPPP: {e}", file=sys.stderr)
+        print(f"\nRPP: {e}", file=sys.stderr)
         return 3
-    from mppp.batch import STOP_MARKER
+    from rpp.batch import STOP_MARKER
     (root / STOP_MARKER).unlink(missing_ok=True)          # 31 Oct: a new batch clears an earlier stop_runs marker
 
     jobs = max(1, int(a.jobs))

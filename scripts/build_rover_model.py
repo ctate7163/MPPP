@@ -1,5 +1,5 @@
 """
-Build ``src/mppp/data/rover/perseverance_rmech.npz`` - the simplified Perseverance model of mppp.ibr.rover_model -
+Build ``src/rpp/data/rover/perseverance_rmech.npz`` - the simplified Perseverance model of rpp.ibr.rover_model -
 from NASA's glTF model (https://science.nasa.gov/resource/mars-perseverance-rover-3d-model/, 25042_Perseverance.glb,
 credit NASA/JPL-Caltech; Christian, 10 Nov 2026: "take this model of perseverance's, simplify it, add it to the mesh,
 and project the images onto it. The arm is stowed, so you would need to rotate the arm joints").
@@ -21,7 +21,7 @@ The changes to NASA's model are described for users in docs/rover-model.md; the 
 * Pieces of the body moved to where the images show them (BODY_COMPONENT_SHIFTS).
 * The front Hazcams' own lenses and housings taken out of their view (HAZCAM_VIEWS, clear_camera_views).
 * Not simplified since 0.97.7: NASA's triangles as they are (TARGET_FACES; 0.96.1-0.97.6 decimated every part).
-* scripts/export_rover_glb.py writes the result as docs/rover/perseverance_rmech.glb for use outside MPPP.
+* scripts/export_rover_glb.py writes the result as docs/rover/perseverance_rmech.glb for use outside RPP.
 """
 import argparse
 import json
@@ -115,7 +115,7 @@ TARGET_FACES = {"body": None, "arm": None, "arm_base": None, "suspension": None,
 PARTS = ("body", "arm", "arm_base", "suspension", "wheels", "mast", "antenna", "head")
 MAST_PARTS = ("bottom", "bottom.002", "bottom.003", "probe.001", "top", "probe")   # turn with the head's azimuth: the
 # mast tube and the wind-sensor booms on it; kept as the part "mast" (not for the mesh: for masking them in the
-# frames, mppp.ibr.rover_model.mast_mask), in the model's own azimuth - the head looking forward (0 deg)
+# frames, rpp.ibr.rover_model.mast_mask), in the model's own azimuth - the head looking forward (0 deg)
 HEAD = ("head", "lens", "Mastcam_Z_cams", "microphones.001", "NavCams")
 MAST = ("bottom", "bottom.002", "bottom.003", "probe.001", "top", "probe", "head", "lens", "Mastcam_Z_cams",
         "microphones.001", "NavCams")
@@ -447,7 +447,7 @@ def build(glb: Path, out: Path) -> dict:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("glb")
-    ap.add_argument("--out", default=str(Path(__file__).resolve().parents[1] / "src" / "mppp" / "data" / "rover" / "perseverance_rmech.npz"))
+    ap.add_argument("--out", default=str(Path(__file__).resolve().parents[1] / "src" / "rpp" / "data" / "rover" / "perseverance_rmech.npz"))
     a = ap.parse_args()
     m = build(Path(a.glb), Path(a.out))
     print(json.dumps(m["report"], indent=1))

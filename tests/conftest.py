@@ -8,23 +8,24 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from mppp.paths import checkpoints_dir  # noqa: E402
+from rpp import env as rpp_env  # noqa: E402
+from rpp.paths import checkpoints_dir  # noqa: E402
 
 DATA = ROOT / "tests" / "data" / "m20"                                     # two public PDS products (0.91: Rockytop)
 # 0.91: Rockytop, the waypoint of sols 461-464 (site 26 drive 630) - a quarter-resolution frame of the sol-461 Navcam
 # 360 and a full 34 mm Mastcam-Z frame of ZCAM03381 (sol 464); the example data set of the same place is a release
-# asset (mppp fetch example)
+# asset (rpp fetch example)
 NLF = DATA / "NLF_0461_0707870987_044RAD_N0260630NCAM03461_0A0195J02.IMG"
 ZL0 = DATA / "ZL0_0464_0708130229_159RAD_N0260630ZCAM03381_0340LMA01.IMG"
 
 
 def _find_ckpt():
-    """A mask model for the tests: MPPP_TEST_CHECKPOINT, the released model if cached, or a local best."""
-    env = os.environ.get("MPPP_TEST_CHECKPOINT")
+    """A mask model for the tests: RPP_TEST_CHECKPOINT, the released model if cached, or a local best."""
+    env = rpp_env.get("RPP_TEST_CHECKPOINT")
     if env:
         return Path(env)
     try:
-        from mppp.mask.hub import default_model_name, model_path
+        from rpp.mask.hub import default_model_name, model_path
         p = model_path(default_model_name())
         if p.is_file():
             return p
@@ -68,13 +69,13 @@ def synthetic_waypoints():
 
 @pytest.fixture(scope="session")
 def waypoints():
-    from mppp.waypoints import load_waypoints, snapshot_path
+    from rpp.waypoints import load_waypoints, snapshot_path
     return load_waypoints(snapshot_path())                                     # the packaged snapshot
 
 
 def config_selection_off(over=None):
-    """``mppp.load_config`` with the three selection rules off (the test products), plus ``over``."""
-    from mppp import load_config
+    """``rpp.load_config`` with the three selection rules off (the test products), plus ``over``."""
+    from rpp import load_config
     cfg = {"selection": dict(SELECTION_OFF["selection"])}
     for k, v in (over or {}).items():
         cfg[k] = {**cfg.get(k, {}), **v} if isinstance(v, dict) else v
@@ -84,3 +85,11 @@ def config_selection_off(over=None):
 @pytest.fixture(scope="session")
 def cfg_nomask():
     return config_selection_off({"masking": {"infer_mask": False}})
+
+
+@pytest.fixture(autouse=True)
+def _no_old_rpp_variables(monkeypatch):
+    """0.99.0: an MPPP_* variable set on the machine (setx MPPP_SCAPES ...) would stand in for the RPP_* one a test
+    leaves unset (rpp.env falls back to it); the tests that check the fallback set it themselves."""
+    for k in [k for k in os.environ if k.startswith("MPPP_")]:
+        monkeypatch.delenv(k, raising=False)

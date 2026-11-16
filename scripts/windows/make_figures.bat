@@ -1,6 +1,6 @@
 @echo off
 REM ======================================================================================================
-REM MPPP - make_figures.bat (0.91, 20 Oct 2026): the standard figure set, like make_maps.bat
+REM RPP - make_figures.bat (0.91, 20 Oct 2026): the standard figure set, like make_maps.bat
 REM
 REM Double-click it. Writes into "Claude outputs\figures_<yyyymmdd>" (200 dpi):
 REM   navcam_rig_trends_<tag>.png                 rig pitch / yaw / roll against sol, stereo cx against temperature
@@ -17,19 +17,19 @@ REM   site_map_<tag>.png                          figure 2 of make_maps (crater 
 REM   zcam<zoom>_efl_vs_focus_<joint>.png         0.95.2: efl vs focus of the newest 34, 48 and 63 mm joints
 REM   hazcam_rig_trends_<F|R>_<fit>.png           0.95.2: the newest Hazcam fit: rig trends of each pair
 REM   hazcam_efl_vs_temperature_<fit>.png         0.95.2: and the four eyes' focal length against temperature
-REM Other joints or a Hazcam fit: set MPPP_FIG_ARGS=--zcam-joints FOLDER ... --hazcam FOLDER (or - for none)
+REM Other joints or a Hazcam fit: set RPP_FIG_ARGS=--zcam-joints FOLDER ... --hazcam FOLDER (or - for none)
 REM
 REM   make_figures.bat [NAVCAM_JOINT_FOLDER] [ZCAM_CALIBRATION_FOLDER] [DPI]
-REM Defaults: the newest %MPPP_SCAPES%\camera_analysis\navcal_tied_* and zcam34_calibration_* folders; 200 dpi.
+REM Defaults: the newest %RPP_SCAPES%\camera_analysis\navcal_tied_* and zcam34_calibration_* folders; 200 dpi.
 REM Pass - to skip one (make_figures.bat - D:\scapes\camera_analysis\zcam34_calibration_20261021).
-REM Set MPPP_NOPAUSE=1 to run it from another script.
+REM Set RPP_NOPAUSE=1 to run it from another script.
 REM ======================================================================================================
 setlocal EnableExtensions EnableDelayedExpansion
-for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
-set "MPPP_WIN=%MPPP_HOME%\scripts\windows"
-if exist "%MPPP_WIN%\mppp_env.bat" ( call "%MPPP_WIN%\mppp_env.bat" || ( pause & exit /b 1 ) )
-if not defined MPPP_SCAPES set "MPPP_SCAPES=D:\rover_blocks"
-set "CA=%MPPP_SCAPES%\camera_analysis"
+for %%I in ("%~dp0..\..") do set "RPP_HOME=%%~fI"
+set "RPP_WIN=%RPP_HOME%\scripts\windows"
+if exist "%RPP_WIN%\rpp_env.bat" ( call "%RPP_WIN%\rpp_env.bat" || ( pause & exit /b 1 ) )
+if not defined RPP_SCAPES set "RPP_SCAPES=D:\rover_blocks"
+set "CA=%RPP_SCAPES%\camera_analysis"
 
 set "STUDY=%~1"
 if "%STUDY%"=="" for /f "delims=" %%D in ('dir /b /ad /o:d "%CA%\navcal_tied_*" 2^>nul') do set "STUDY=%CA%\%%D"
@@ -38,12 +38,12 @@ if "%ZCAM%"=="" for /f "delims=" %%D in ('dir /b /ad /o:d "%CA%\zcam34_calibrati
 set "DPI=%~3"
 if "%DPI%"=="" set "DPI=200"
 
-call "%MPPP_WIN%\m20_dem_env.bat"
+call "%RPP_WIN%\m20_dem_env.bat"
 for /f %%d in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd"') do set "TODAY=%%d"
-set "OUT=%MPPP_HOME%\Claude outputs\figures_%TODAY%"
+set "OUT=%RPP_HOME%\Claude outputs\figures_%TODAY%"
 if not exist "%OUT%" mkdir "%OUT%"
 
-set "ARGS=--root "%MPPP_SCAPES%" --out "%OUT%" --dpi %DPI%"
+set "ARGS=--root "%RPP_SCAPES%" --out "%OUT%" --dpi %DPI%"
 if not "%STUDY%"=="-" if not "%STUDY%"=="" (
   set "ARGS=!ARGS! --study "%STUDY%""
   for %%F in ("%STUDY%") do set "TAG=%%~nxF"
@@ -56,8 +56,8 @@ echo make_figures: Navcam joint  %STUDY%
 echo make_figures: Mastcam-Z     %ZCAM%
 echo make_figures: DTMs          %M20_DEMS%
 echo make_figures: out           %OUT%  (%DPI% dpi)
-python -m mppp_studies.paper.paper_figures !ARGS! %MPPP_FIG_ARGS%
-if errorlevel 1 ( echo make_figures: FAILED ^(see above^) & if not defined MPPP_NOPAUSE pause & exit /b 1 )
+python -m rpp_studies.paper.paper_figures !ARGS! %RPP_FIG_ARGS%
+if errorlevel 1 ( echo make_figures: FAILED ^(see above^) & if not defined RPP_NOPAUSE pause & exit /b 1 )
 echo make_figures: done - %OUT%
-if not defined MPPP_NOPAUSE pause
+if not defined RPP_NOPAUSE pause
 exit /b 0

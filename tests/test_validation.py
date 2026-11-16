@@ -1,4 +1,4 @@
-"""0.97.0: mppp_studies.validation - the pair rotation recovered from synthetic matches, the ledger, the site rules."""
+"""0.97.0: rpp_studies.validation - the pair rotation recovered from synthetic matches, the ledger, the site rules."""
 import json
 
 import numpy as np
@@ -7,7 +7,7 @@ import pytest
 
 def test_relative_rotation_recovers_pitch_and_roll():
     from scipy.spatial.transform import Rotation
-    from mppp_studies.validation import zpairs as Z
+    from rpp_studies.validation import zpairs as Z
     rng = np.random.default_rng(3)
     R0 = Rotation.from_rotvec([0.02, 0.068, -0.01]).as_matrix()
     t = np.array([-0.243, 0.001, 0.003])
@@ -25,7 +25,7 @@ def test_relative_rotation_recovers_pitch_and_roll():
 
 
 def test_ledger_table_and_scores():
-    from mppp_studies.validation import ledger as L
+    from rpp_studies.validation import ledger as L
     e = L.load()
     assert len({q["id"] for q in e}) == len(e) >= 10
     md = L.table_md(e)
@@ -35,8 +35,8 @@ def test_ledger_table_and_scores():
 
 
 def test_workspace_station_warns_and_sites_of_0p97():
-    from mppp.sfm.health import DEFAULT_THRESHOLDS, _status, is_workspace_station, shift_spread_checks
-    from mppp.waypoints.sites import load_site_table
+    from rpp.sfm.health import DEFAULT_THRESHOLDS, _status, is_workspace_station, shift_spread_checks
+    from rpp.waypoints.sites import load_site_table
     assert is_workspace_station("Sol1635-1640 S079D0732") and not is_workspace_station("Sol1606 S078D4826")
     st = {"a": {"label": "Sol1635-1640 S079D0732", "shift_spread_m": 0.65}, "b": {"label": "Sol1606 S078D4826", "shift_spread_m": 0.02}}
     sp = shift_spread_checks(st)
@@ -60,12 +60,12 @@ def test_workspace_station_warns_and_sites_of_0p97():
 
 
 def test_zooms_26_and_100_and_the_zoom_ladder(tmp_path):
-    """0.97.0 (Christian, 12 Nov 2026): 26 and 100 mm are zooms MPPP aligns (no joint, no single state); the official
+    """0.97.0 (Christian, 12 Nov 2026): 26 and 100 mm are zooms RPP aligns (no joint, no single state); the official
     figure of the Seitah zoom ladder - states from the sweep direction, frames missing from the study allowed."""
-    from mppp.calib import forms
-    from mppp.pipeline import ZCAM_ZOOMS_ALL
-    from mppp.waypoints import sites as WS
-    from mppp_studies.calibration import plots as C
+    from rpp.calib import forms
+    from rpp.pipeline import ZCAM_ZOOMS_ALL
+    from rpp.waypoints import sites as WS
+    from rpp_studies.calibration import plots as C
     assert forms.ZCAM_ZOOMS == ZCAM_ZOOMS_ALL == WS.ZCAM_ZOOMS == (26, 34, 48, 63, 79, 100, 110)
     assert forms.ZCAM_SINGLE_STATE_ZOOMS == (110,) and forms.zcam_fixed_terms("ZL100") == forms.zcam_fixed_terms("ZL079")
     assert not forms.is_single_state("ZL026") and forms.ZCAM_ZOOMS_WITH_JOINT == (34, 48, 63, 79, 110)
@@ -91,7 +91,7 @@ def test_deck_frame_figure(tmp_path):
     """0.97.0: the one-frame fiducial figure draws from a result of deck_frame_models, and the resolver angles are
     read by name from the label."""
     import numpy as np
-    from mppp_studies.calibration import fiducials as FD
+    from rpp_studies.calibration import fiducials as FD
     lab = {"RSM_ARTICULATION_STATE": {"ARTICULATION_DEVICE_ANGLE": [0.66, 0.81, 0, 0, 0, 0, 0.67, 0.82],
                                       "ARTICULATION_DEVICE_ANGLE_NAME": ["AZIMUTH FINAL-RESOLVER", "ELEVATION FINAL-RESOLVER",
                                                                          "AZIMUTH INITIAL-RESOLVER", "ELEVATION INITIAL-RESOLVER",
@@ -116,10 +116,10 @@ def test_deck_baseline_figure(tmp_path):
     import json
     import numpy as np
     from pathlib import Path
-    import mppp_studies
-    from mppp_studies.calibration.plots import deck_baseline_rows, fit_deck_baseline
-    from mppp_studies.paper.paper_figures import SHIPPED_MAST_CHAIN, deck_baseline_figure
-    chain = Path(mppp_studies.__file__).parent / "calibration" / "data" / SHIPPED_MAST_CHAIN
+    import rpp_studies
+    from rpp_studies.calibration.plots import deck_baseline_rows, fit_deck_baseline
+    from rpp_studies.paper.paper_figures import SHIPPED_MAST_CHAIN, deck_baseline_figure
+    chain = Path(rpp_studies.__file__).parent / "calibration" / "data" / SHIPPED_MAST_CHAIN
     rng = np.random.default_rng(1)
     nb = {}
     for i in range(40):
@@ -142,7 +142,7 @@ def test_deck_baseline_figure(tmp_path):
 def test_hinge_fit_recovers_the_rates_before_and_after_the_knot():
     """0.97.2: y = a + late sol + (early - late) min(sol, knot); None without two points on each side."""
     import numpy as np
-    from mppp_studies.calibration.plots import hinge_fit, zcam_rig_trend_fit
+    from rpp_studies.calibration.plots import hinge_fit, zcam_rig_trend_fit
     sol = np.array([10., 60, 120, 200, 300, 600, 900, 1400, 1900])
     y = 2.0 + 0.004 * sol + (0.025 - 0.004) * np.minimum(sol, 250.0)
     h = hinge_fit(sol, y, 250.0)
@@ -157,7 +157,7 @@ def test_hinge_fit_recovers_the_rates_before_and_after_the_knot():
 def test_health_table_with_a_warn_only_check():
     """0.97.3: the workspace check has no fail limit; the table printed it with ``:g`` and every block with a
     several-sol station failed at its end (Wildcat Ridge, freeze of 12 Nov 2026)."""
-    from mppp.sfm.health import health_table
+    from rpp.sfm.health import health_table
     rep = {"verdict": "warn", "note": "x", "checks": [
         {"status": "warn", "section": "poses", "check": "workspace_station_shift_spread_m", "value": 0.65, "unit": "m",
          "warn": 0.1, "fail": None, "note": "arm workspace"},
@@ -171,9 +171,9 @@ def test_adjusted_on_disk_only_for_an_unfinished_run_of_the_same_key(tmp_path, m
     """0.97.3: a run that failed after its adjustment and export is finished from disk - only with the same run key,
     no run_done.json, a summary newer than run_settings.json and the same number of images."""
     import os
-    import mppp.pipeline as P
-    import mppp.sfm as S
-    import mppp.sfm.reconstruction as R
+    import rpp.pipeline as P
+    import rpp.sfm as S
+    import rpp.sfm.reconstruction as R
     root = tmp_path
     (root / "error_input").mkdir()
     rs, sm = root / P.RUN_SETTINGS, root / "error_input" / "summary.json"

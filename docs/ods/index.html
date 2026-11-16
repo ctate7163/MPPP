@@ -12,11 +12,11 @@ if (location.hostname === 'ctate7163.github.io' && /^\/(RPP|MPPP)\/ods(\/|$)/i.t
   location.replace('https://ctate7163.github.io/RPV/' + location.search + location.hash);
 </script>
 <!--
-  MPPP stereo 360 viewer (prototype, 0.97.3; 0.97.18: the eye shown on a screen can be chosen).  One static page: three.js (vendor/, r170, MIT) and panos.json.
-  Images: <name>_360_3DTD.jpg from `mppp ods` - square, the left eye on top of the right, each an equirectangular
+  RPP stereo 360 viewer (prototype, 0.97.3; 0.97.18: the eye shown on a screen can be chosen).  One static page: three.js (vendor/, r170, MIT) and panos.json.
+  Images: <name>_360_3DTD.jpg from `rpp ods` - square, the left eye on top of the right, each an equirectangular
   panorama whose left edge looks north with azimuth growing eastward.
   Hosted at https://ctate7163.github.io/RPV/ (the repository ctate7163/RPV; 0.98.29) - a copy of this file that
-  mppp single-sites --upload installs there; this file in the pipeline's docs/ods sends visitors there.
+  rpp single-sites --upload installs there; this file in the pipeline's docs/ods sends visitors there.
   Link to one view:   https://ctate7163.github.io/RPV/#<station>/<variant>/<view>      e.g.  #Sol0052_S003D2046/rover/enhanced
   Another image list: .../RPV/?index=https://<same origin or CORS-enabled host>/panos.json
   Keys: left / right arrows = station, V = variant, E = view, I = info, L = the other eye (on a screen), drag = look, wheel = zoom;
@@ -202,7 +202,7 @@ async function showMark(gm) {
 }
 
 // ---------------------------------------------------------------- the rover as a 3D model (0.98.14)
-// panos.json may give a variant a "rover_surface": {file}: a binary glTF written by mppp.ibr.rover_surface - the
+// panos.json may give a variant a "rover_surface": {file}: a binary glTF written by rpp.ibr.rover_surface - the
 // Perseverance model where it stands at this station, in metres about the eyes' pivot (x east, y up, z south: this
 // page's frame), with two images: the panorama from the pivot (the rows that hold the rover) and its range.
 // A point of the model takes the panorama's colour in its direction when it is the surface the pivot sees there
@@ -573,7 +573,7 @@ async function show() {
     showWelcome(!!p.welcome);
     if (faceAfterLoad) { faceAz(faceAfterLoad); faceAfterLoad = null; }
     if (infoPanel.visible) drawInfo();
-    $('note').textContent = [p.title || p.id, p.note, vr.label, `${bmp.width} x ${bmp.height}`, p.mppp ? `MPPP ${p.mppp}` : '']
+    $('note').textContent = [p.title || p.id, p.note, vr.label, `${bmp.width} x ${bmp.height}`, p.mppp ? `RPP ${p.mppp}` : '']
       .filter(Boolean).join('  |  ');
     msg('');
   } catch (e) { if (id === loadId) msg(`could not load ${url}: ${e.message || e}`); }
@@ -790,8 +790,8 @@ function diagnostics() {
   const fmt = ['astc', 'etc2', 'bc7', 's3tc'].filter(k => d[k]).join(' ') || 'none';
   $('diag').textContent = `max texture ${d.maxTexture} | compressed: ${fmt}` + (d.memoryGB ? ` | memory >= ${d.memoryGB} GB` : '') +
     ` | 16K eye as one texture: ${d.maxTexture >= 16384 ? 'yes' : 'no'}`;
-  console.log('MPPP viewer diagnostics', JSON.stringify(d));
-  window.mpppDiagnostics = d;
+  console.log('RPP viewer diagnostics', JSON.stringify(d));
+  window.rppDiagnostics = d;
   // 0.98.28: what the page shows, for checks (read only): station, variant, view, and the azimuth / elevation looked at on a screen
   window.rpvState = () => ({ id: (panos[cur.s] || {}).id, variant: ((variants(panos[cur.s] || {})[cur.v]) || {}).key, view: cur.w,
     lookAzDeg: (THREE.MathUtils.radToDeg(yaw + world.rotation.y) % 360 + 360) % 360, lookElDeg: THREE.MathUtils.radToDeg(pitch),

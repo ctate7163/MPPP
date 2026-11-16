@@ -1,6 +1,6 @@
 @echo off
 REM ======================================================================================================
-REM MPPP 0.95.1 - make_paper.bat (make_paper.bat until 29 Oct 2026; Christian, 19 Oct 2026): paper\paper.md (the JOSS paper) -> paper\paper.pdf
+REM RPP 0.95.1 - make_paper.bat (make_paper.bat until 29 Oct 2026; Christian, 19 Oct 2026): paper\paper.md (the JOSS paper) -> paper\paper.pdf
 REM
 REM run it (make_paper.bat --quiet) after a sync, so paper.pdf matches the code that
 REM was just synced; nothing else renders it.  Run it by hand to render without syncing.
@@ -11,14 +11,14 @@ REM Needs pandoc (winget install JohnMacFarlane.Pandoc) and a LaTeX (MiKTeX: win
 REM Log: _transfer\make_paper_log.txt.  paper.pdf is not in git (.gitignore).
 REM ======================================================================================================
 setlocal EnableExtensions EnableDelayedExpansion
-for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
-set "PAPER=%MPPP_HOME%\paper"
-set "LOG=%MPPP_HOME%\_transfer\make_paper_log.txt"
+for %%I in ("%~dp0..\..") do set "RPP_HOME=%%~fI"
+set "PAPER=%RPP_HOME%\paper"
+set "LOG=%RPP_HOME%\_transfer\make_paper_log.txt"
 set "QUIET="
 if /i "%~1"=="--quiet" set "QUIET=1"
 
 set "VER="
-for /f "tokens=2 delims==" %%v in ('findstr /b /c:"__version__" "%MPPP_HOME%\src\mppp\__init__.py"') do set "VER=%%~v"
+for /f "tokens=2 delims==" %%v in ('findstr /b /c:"__version__" "%RPP_HOME%\src\rpp\__init__.py"') do set "VER=%%~v"
 set "VER=%VER: =%"
 set "VER=%VER:"=%"
 if not exist "%PAPER%\paper.md" (
@@ -43,8 +43,8 @@ if not defined ENGINE (
 set "BIB="
 if exist "%PAPER%\paper.bib" set BIB=--citeproc --bibliography "%PAPER%\paper.bib"
 
-echo make_paper: MPPP %VER%, %ENGINE% ...
-echo ==== make_paper %DATE% %TIME% MPPP %VER% engine %ENGINE% > "%LOG%"
+echo make_paper: RPP %VER%, %ENGINE% ...
+echo ==== make_paper %DATE% %TIME% RPP %VER% engine %ENGINE% > "%LOG%"
 pushd "%PAPER%"
 "%PANDOC%" "%PAPER%\paper.md" %BIB% --resource-path "%PAPER%" --pdf-engine "%ENGINE%" -o "%PAPER%\paper.pdf" >> "%LOG%" 2>&1
 set "RC=%ERRORLEVEL%"
@@ -54,7 +54,7 @@ if not "%RC%"=="0" (
   type "%LOG%"
   goto :done
 )
-echo make_paper: %PAPER%\paper.pdf (MPPP %VER%)
+echo make_paper: %PAPER%\paper.pdf (RPP %VER%)
 echo done: paper.pdf >> "%LOG%"
 
 :done

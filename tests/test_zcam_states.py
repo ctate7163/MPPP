@@ -1,5 +1,5 @@
 """0.94.4 (Christian, 25 Oct): the found list is always read (with "-" lines taking frames off), a states run gives
-every Mastcam-Z image its own camera, and `mppp zcam-states` tells which frames are in the low backlash state."""
+every Mastcam-Z image its own camera, and `rpp zcam-states` tells which frames are in the low backlash state."""
 import json
 
 import numpy as np
@@ -11,7 +11,7 @@ def _name(eye, sol, clock, seq, zoom=34):
 
 
 def test_found_list_lines_and_exclusions(tmp_path):
-    from mppp.sfm.backlash import default_found_path, is_low_backlash, load_low_backlash
+    from rpp.sfm.backlash import default_found_path, is_low_backlash, load_low_backlash
     found = tmp_path / "zcam_low_backlash_found.csv"
     a, b = _name("L", 121, 677678707, "ZCAM08114"), _name("L", 121, 677678972, "ZCAM08114")
     found.write_text(f"# test\n{a}  # low\nZCAM07114_034\n-0121_0677678972_000\n-{_name('L', 501, 711425107, 'ZCAM07114')}\n",
@@ -47,7 +47,7 @@ def test_found_list_lines_and_exclusions(tmp_path):
 
 
 def test_found_list_on_for_mastcamz_keys_only():
-    from mppp.pipeline import Settings
+    from rpp.pipeline import Settings
     s = Settings()
     assert s.zcam_low_backlash_found == "auto" and s.zcam_bin_by == "sequence"      # 0.95.0: sequence bins
     k = s.key_dict()
@@ -59,7 +59,7 @@ def test_found_list_on_for_mastcamz_keys_only():
 
 
 def test_cameras_per_image_and_per_sequence():
-    from mppp.sfm.project import _split_by_focus
+    from rpp.sfm.project import _split_by_focus
     base = {"model": "FULL_OPENCV", "width": 1648, "height": 1200, "source": "median of label CAHVOR models",
             "params": [5000.0, 5000.0, 824.0, 600.0, 0, 0, 0, 0, 0, 0, 0, 0], "fixed_params": ["k3"]}
     rows = []
@@ -80,7 +80,7 @@ def test_cameras_per_image_and_per_sequence():
     cams = _split_by_focus(rr, {"ZL034": base}, {"ZL034": "Z"}, 30.0, "focal", by="image", hold_f_images=0)
     assert len(cams) == 3 and all("_c07" in k for k in cams) and len({r["instrument"] for r in rr}) == 3
     assert all("fx" not in c["fixed_params"] for c in cams.values())
-    from mppp.calib.forms import zcam_key_zoom, zcam_state
+    from rpp.calib.forms import zcam_key_zoom, zcam_state
     assert {zcam_key_zoom(k) for k in cams} == {34} and {zcam_state(k, {}) for k in cams} == {"backlash"}
 
 
@@ -101,8 +101,8 @@ def _block(tmp_path, name, rows):
 
 
 def test_states_survey_low_high_mixed_and_proposal(tmp_path):
-    from mppp_studies.calibration import zcam_states as ZS
-    from mppp.sfm.backlash import load_low_backlash
+    from rpp_studies.calibration import zcam_states as ZS
+    from rpp.sfm.backlash import load_low_backlash
     rng = np.random.default_rng(1)
     rows = []
     hi = lambda F: 1.0115 - 0.006 * (F - 600) / 1000            # noqa: E731 - the high line
@@ -144,19 +144,19 @@ def test_states_survey_low_high_mixed_and_proposal(tmp_path):
     ap = ZS.apply_proposal(p, found, when="2026-10-25")
     assert ap["added"] == 4 and ap["removed"] == 1 and ap["backup"]
     again = load_low_backlash(tmp_path / "none.csv", found=found)
-    from mppp.sfm.backlash import is_low_backlash
+    from rpp.sfm.backlash import is_low_backlash
     r_new = {"name": new_low[0][0], "camera_group": "ZL034", "sol": 361, "sequence": "ZCAM07105"}
     r_wrong = {"name": wrong[0][0], "camera_group": "ZL034", "sol": 140, "sequence": "ZCAM03018"}
     assert is_low_backlash(r_new, again) and not is_low_backlash(r_wrong, again)
     assert ZS.apply_proposal(p, found)["added"] == 0                    # nothing twice
-    from mppp.cli import main
+    from rpp.cli import main
     assert main(["zcam-states", "--root", str(tmp_path), "--found", str(found), "--out", str(tmp_path / "o2")]) == 0
 
 
 def test_focus_from_below_list_and_motor_moves(tmp_path):
     """0.94.4 (Christian, 26 Oct: two backlash effects superimposed): the focus-approach list is separate from the
     zoom (low / high) list and applies at every zoom; the motor moves come from the previous frame of the eye."""
-    from mppp.sfm.backlash import is_focus_from_below, is_low_backlash, load_focus_below, load_low_backlash, motor_moves
+    from rpp.sfm.backlash import is_focus_from_below, is_low_backlash, load_focus_below, load_low_backlash, motor_moves
     fb = tmp_path / "zcam_focus_from_below.csv"
     fb.write_text("92:ZCAM00033\n0121_0677678900\n-0121_0677678707\n", encoding="utf-8")
     lst = load_focus_below(found=fb)
@@ -185,7 +185,7 @@ def test_focus_from_below_list_and_motor_moves(tmp_path):
 def test_centre_offsets_where_the_centres_are_free():
     """0.95 (Christian, 27 Oct): the right eye's state shows in its principal point - the survey reports each
     image's centre about its eye's high-state median, where the centres vary (ZL holds its centre: nothing)."""
-    from mppp_studies.calibration import zcam_states as Z
+    from rpp_studies.calibration import zcam_states as Z
     zr = [{"block": "b", "group": "ZR034", "sol": 121, "sequence": "S", "clock": f"{i}", "state": "high",
            "listed": False, "cx": 743.0 + 0.1 * (i % 2), "cy": 664.0, "d": 0.0, "gap": 0.01} for i in range(6)]
     zr += [{"block": "b", "group": "ZR034", "sol": 121, "sequence": "T", "clock": f"9{i}", "state": "high",
@@ -199,7 +199,7 @@ def test_centre_offsets_where_the_centres_are_free():
     seq = {(s["sequence"], s["group"]): s for s in Z.sequences(zr + zl)}
     assert abs(seq[("T", "ZR034")]["dcx_median_px"] - 2.45) < 1e-9 and seq[("S", "ZL034")]["dcx_median_px"] is None
     from pathlib import Path
-    rp = (Path(__file__).resolve().parents[1] / "src" / "mppp_studies" / "calibration" / "run_pipeline.py").read_text()
+    rp = (Path(__file__).resolve().parents[1] / "src" / "rpp_studies" / "calibration" / "run_pipeline.py").read_text()
     assert '"ZCAM_BIN_REFINE=focal_pp"' in rp
 
 
@@ -207,7 +207,7 @@ def test_state_threshold_follows_the_focus_slope_and_the_three_skinner_ridge_seq
     """0.97.23 (Christian, 13 Nov 2026: "Do both of those things"): the left 34 mm low state follows the high state's
     focus slope (Three Forks South ZCAM08667: 1.0083 at focus 180, 1.0020 at 1212), so the threshold is half the
     measured gap below the high line; a block with too few high groups for its own line takes the reference slope."""
-    from mppp.sfm import backlash as B
+    from rpp.sfm import backlash as B
     rows = [dict(camera_group="ZL034", focus_count=f, ratio_fit=r, fitted_unlisted=1, state=None)
             for f, r in ((288, 1.0132), (894, 1.0096), (1068, 1.0087), (1002, 1.0070))]
     ln = B.measured_backlash_lines(rows, 1.0, {})["ZL034"]
@@ -228,7 +228,7 @@ def test_state_threshold_follows_the_focus_slope_and_the_three_skinner_ridge_seq
 
 def test_run_key_of_a_site_without_100mm_ignores_100_in_the_zoom_filter(tmp_path):
     """0.97.23: the freeze's filter keeps 100 mm (0.97.22); a site that lists none keeps its run key."""
-    from mppp import pipeline as P
+    from rpp import pipeline as P
 
     def key(site, only):
         _, s = P.resolve_site(site, P.Settings(include_zcam=True, zcam_zooms_only=only, scapes_root=str(tmp_path)))
@@ -243,7 +243,7 @@ def test_run_key_of_a_site_without_100mm_ignores_100_in_the_zoom_filter(tmp_path
 
 def test_vf_points_of_the_101_station_joint_ship_with_the_studies():
     """0.98.10: the deck fiducial figure can show the vicarious fiducials of the 14 Nov deck joint."""
-    from mppp_studies.calibration import fiducials as FD
+    from rpp_studies.calibration import fiducials as FD
     d = FD.load_vf_points()
     assert len(d["points"]) == 24 and not d["weak"]
     assert all(len(v["rnav_mm"]) == 3 and -1700 < v["rnav_mm"][2] < -1000 for v in d["points"].values())
@@ -253,7 +253,7 @@ def test_five_weak_vfs_replaced_by_the_15_nov_red_dots():
     """0.98.11 (Christian, 15 Nov 2026: "remove vf 19, 21, 05, 09 and 03.  Replace them with red dot candidates ...
     replace the removed numbers ... VF01a-d as four distinct vf"): the numbers are kept, the points are new, one at the
     far (aft) end, and the tag corners stay four points."""
-    from mppp_studies.calibration import fiducials as FD
+    from rpp_studies.calibration import fiducials as FD
     d = FD.load_vf_points()
     new = {"VF03", "VF05", "VF09", "VF19", "VF21"}
     assert set(d["new"]) == new and set(d["replaced_20261114"]) == new
@@ -268,7 +268,7 @@ def test_five_weak_vfs_replaced_by_the_15_nov_red_dots():
 def test_pinned_entries_win_over_the_found_lists_removals(tmp_path):
     """0.98.15: Chal Rocks 361:ZCAM07105 (low again on 9 Nov) ran as high in 29 frames because the found list's 29 Oct
     "-" stems won over the shipped entry; "+361:ZCAM07105" pins it.  A "-" still wins over an ordinary entry."""
-    from mppp.sfm.backlash import is_low_backlash, load_low_backlash
+    from rpp.sfm.backlash import is_low_backlash, load_low_backlash
     stem = "ZR0_0361_0698991845_898RAD_N0110000ZCAM07105_0790LMA02"
     g = tmp_path / "found.csv"
     g.write_text(f"-{stem}  # 29 Oct states\n456:ZCAM08474  # drive rule\n", encoding="utf-8")

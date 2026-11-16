@@ -20,7 +20,7 @@ pytestmark = needs_data
 
 @pytest.mark.parametrize("name,img", [("ZL0", ZL0), ("NLF", NLF)], ids=["ZL0", "NLF"])
 def test_matches_legacy(name, img):
-    from mppp import MPPPImage, load_config
+    from rpp import RPPImage, load_config
     f = FIXTURES / f"legacy_expected_{name}.npz"
     if not f.is_file():
         pytest.skip(f"{f.name} not present")
@@ -29,7 +29,7 @@ def test_matches_legacy(name, img):
     cfg = load_config({"masking": {"infer_mask": False}, "color": {"brightness_by_family": {"N": 1.0}},
                        "selection": {"max_boresight_elevation_deg": None, "lmst_window_h": None,
                                      "max_saturated_fraction": None}})
-    new = MPPPImage(img, cfg, synthetic_waypoints())
+    new = RPPImage(img, cfg, synthetic_waypoints())
     shape = tuple(int(s) for s in old["mask_shape"])
     mask_old = np.unpackbits(old["mask_valid"])[: int(np.prod(shape))].reshape(shape).astype(bool)
     assert np.array_equal(mask_old, new.mask_valid > 0)
@@ -40,6 +40,6 @@ def test_matches_legacy(name, img):
     assert np.allclose(ref[3:6], new.reference[4:7], atol=0.02)                   # YPR, degrees
     if name == "NLF":
         # the legacy Navcam K came from the Metashape XML calibration, which 0.90 no longer ships; the Navcam
-        # intrinsics now come from the promoted model (mppp.calib) and are compared in tests/test_calib.py
+        # intrinsics now come from the promoted model (rpp.calib) and are compared in tests/test_calib.py
         return
     assert np.allclose(old["K_cam"], new.intrinsics.K, rtol=2e-5, atol=2e-2)

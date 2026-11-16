@@ -19,18 +19,18 @@ def _great_circle_deg(az1, el1, az2, el2):
 
 @pytest.fixture(scope="module")
 def nlf(cfg_nomask, waypoints):
-    from mppp import MPPPImage
-    return MPPPImage(NLF, cfg_nomask, waypoints)
+    from rpp import RPPImage
+    return RPPImage(NLF, cfg_nomask, waypoints)
 
 
 @pytest.fixture(scope="module")
 def zl0(cfg_nomask, waypoints):
-    from mppp import MPPPImage
-    return MPPPImage(ZL0, cfg_nomask, waypoints)
+    from rpp import RPPImage
+    return RPPImage(ZL0, cfg_nomask, waypoints)
 
 
 def test_label_reading():
-    from mppp.labels import read_pds, label_float, label_get
+    from rpp.labels import read_pds, label_float, label_get
     label, img = read_pds(NLF)
     assert img.shape == (960, 1280, 3)                               # band-sequential -> HWC
     assert label_get(label, "ROVER_MOTION_COUNTER")[:2] == [26, 630]
@@ -52,7 +52,7 @@ def test_navcam_tile_is_padded_to_full_frame(nlf):
     assert lab.cx == pytest.approx(1297.166, abs=1e-2) and "PDS label" in nlf.intrinsics.source
     assert nlf.intrinsics.cx == pytest.approx(lab.cx) and nlf.intrinsics.cy == pytest.approx(lab.cy)
     # the COLMAP prior camera: the promoted NL model at the image's temperature and sol, at the frame's resolution
-    from mppp import calib
+    from rpp import calib
     c = nlf.colmap_camera
     s = nlf.width / 5120.0
     assert c["model"] == "THIN_PRISM_FISHEYE" and (c["width"], c["height"]) == (2560, 1920)
@@ -76,7 +76,7 @@ def test_zcam_is_demosaiced_and_keeps_label_model(zl0):
 
 
 def test_radiometry_matches_hand_calculation(zl0):
-    from mppp.labels import read_pds
+    from rpp.labels import read_pds
     _, dn = read_pds(ZL0)
     tau = zl0.tau_estimated                                          # from the L_s table (sol 464)
     assert 0.3 < tau < 2.0
@@ -101,8 +101,8 @@ def test_boresight_agrees_with_label_pointing(nlf, zl0):
 
 
 def test_camera_height_and_site_frame_position(cfg_nomask):
-    from mppp import MPPPImage
-    im = MPPPImage(ZL0, cfg_nomask, None)                            # no waypoints: own site frame
+    from rpp import RPPImage
+    im = RPPImage(ZL0, cfg_nomask, None)                            # no waypoints: own site frame
     assert im.pose.frame == "site26_enu" and im.geo["lat_deg"] is None
     n, e, d = 71.1481, -9.19205, -11.4931                            # the label's ROVER ORIGIN_OFFSET_VECTOR
     assert np.allclose(im.pose.C[:2], [e, n], atol=1.5)              # camera within the rover footprint
@@ -113,7 +113,7 @@ def test_waypoint_position_and_gps(zl0, waypoints):
     assert zl0.pose.frame == "site3_enu"
     assert zl0.geo["lat_deg"] is not None and 18.3 < zl0.geo["lat_deg"] < 18.6
     assert 77.2 < zl0.geo["lon_east_deg"] < 77.6
-    if "_mppp_source" not in waypoints:                              # synthetic fixture: exact expectation
+    if "_rpp_source" not in waypoints:                              # synthetic fixture: exact expectation
         d_e, d_n = 4351987.44 - 4354494.0 - 9.19205, 1094063.3 - 1093299.0 + 71.1481
         assert np.allclose(zl0.pose.C[:2], [d_e, d_n], atol=1.5)
         assert zl0.pose.C[2] == pytest.approx(-2534.78 + 2569.9 + 11.4931 + 2.0, abs=0.4)
@@ -129,9 +129,9 @@ def test_stereo_free_projection_consistency(zl0):
 
 
 def test_undistort_zeroes_distortion_and_keeps_size(waypoints):
-    from mppp import MPPPImage
+    from rpp import RPPImage
     cfg = config_selection_off({"masking": {"infer_mask": False}, "resize": {"undistort": True}})
-    im = MPPPImage(ZL0, cfg, waypoints)
+    im = RPPImage(ZL0, cfg, waypoints)
     assert im.undistorted and not any(im.intrinsics.dist.values())
     assert im.image_int16.shape == (1200, 1648, 3) and im.intrinsics.skew == 0
     assert set(np.unique(im.mask_valid)) <= {0, 255}
@@ -140,11 +140,11 @@ def test_undistort_zeroes_distortion_and_keeps_size(waypoints):
 
 @needs_ckpt
 def test_mask_inference(waypoints):
-    from mppp import MPPPImage
-    from mppp.mask import get_model, read_card
+    from rpp import RPPImage
+    from rpp.mask import get_model, read_card
     cfg = config_selection_off()
     cfg["masking"]["checkpoint"] = str(CKPT)            # the v0p10 default if present, else the 2025 model
-    im = MPPPImage(ZL0, cfg, waypoints)
+    im = RPPImage(ZL0, cfg, waypoints)
     assert im.mask_card["backbone"] == "convnext_tiny" and im.mask_card["threshold"] == read_card(CKPT)["threshold"]
     assert set(np.unique(im.mask)) <= {0, 255}
     assert not im.mask[im.mask_valid == 0].any()                    # invalid pixels never included
@@ -157,8 +157,8 @@ def test_mask_inference(waypoints):
 
 
 def test_process_images_end_to_end(tmp_path, waypoints):
-    from mppp import process_images, VERSION_TAG
-    from mppp.writers import read_png_chunks
+    from rpp import process_images, VERSION_TAG
+    from rpp.writers import read_png_chunks
     cfg = config_selection_off({"masking": {"infer_mask": False},
                                 "export": {"formats": ["PNG16", "PNG8"], "write_mask_files": True}})
     man = process_images([NLF, ZL0, tmp_path / "missing_0000_0000000000_000RAD_N0000000XXXX00000_0000LLJ01.IMG"],
@@ -189,15 +189,15 @@ def test_two_positioning_routes_agree(cfg_nomask):
     (site 26, drive 0) waypoint + label ORIGIN_OFFSET_VECTOR.  They differ only by
     localisation updates between the two (0.4 m E, 1.1 m N here).
     """
-    from mppp import MPPPImage, load_waypoints
-    from mppp.waypoints import waypoint_for_site_drive
-    from mppp.waypoints import snapshot_path
+    from rpp import RPPImage, load_waypoints
+    from rpp.waypoints import waypoint_for_site_drive
+    from rpp.waypoints import snapshot_path
     wp = load_waypoints(snapshot_path())
-    exact = MPPPImage(ZL0, cfg_nomask, wp)
+    exact = RPPImage(ZL0, cfg_nomask, wp)
     assert exact.pose.position_source.endswith("(exact)")
     trimmed = {"features": [f for f in wp["features"]
                             if (f["properties"]["site"], f["properties"]["drive"]) != (26, 630)]}
-    via_offset = MPPPImage(ZL0, cfg_nomask, trimmed)
+    via_offset = RPPImage(ZL0, cfg_nomask, trimmed)
     assert "drive 0 + label" in via_offset.pose.position_source
     d = exact.pose.C - via_offset.pose.C
     assert np.hypot(d[0], d[1]) < 10.0 and abs(d[2]) < 2.0
@@ -208,7 +208,7 @@ def test_two_positioning_routes_agree(cfg_nomask):
 
 
 def test_zcam_optics_temperature():
-    from mppp.image import zcam_optics_temperature
+    from rpp.image import zcam_optics_temperature
     t = {"DEA": 34.7, "HEAD_FPA": -9.6, "HEAD_HTR_1": -13.8, "HEAD_HTR_2": -13.6}
     assert zcam_optics_temperature(t) == pytest.approx(-13.7)
     assert zcam_optics_temperature({"HEAD_FPA": -9.6}) is None
@@ -216,7 +216,7 @@ def test_zcam_optics_temperature():
 
 @needs_data
 def test_label_instrument_temperatures():
-    from mppp.labels import instrument_temperatures, read_pds
+    from rpp.labels import instrument_temperatures, read_pds
     t = instrument_temperatures(read_pds(ZL0, load_image=False)[0])
     assert set(t) >= {"DEA", "HEAD_FPA", "HEAD_HTR_1", "HEAD_HTR_2"}
     assert t["HEAD_HTR_1"] == pytest.approx(-20.538)

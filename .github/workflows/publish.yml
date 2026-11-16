@@ -1,6 +1,6 @@
-# Publish MPPP to PyPI (https://pypi.org/project/mppp/) when a GitHub release is published (0.94.4 onwards).
+# Publish RPP to PyPI (https://pypi.org/project/rover-photogrammetry-pipeline/) when a GitHub release is published (0.94.4 onwards).
 # Trusted publishing (OpenID Connect): no API token is stored anywhere. One-time setup on pypi.org - a "pending
-# publisher" for the project name mppp, owner ctate7163, repository MPPP, workflow publish.yml, environment pypi
+# publisher" for the project name rover-photogrammetry-pipeline, owner ctate7163, repository RPP, workflow publish.yml, environment pypi
 # (docs/RELEASING.md, section 8). "Run workflow" by hand publishes to TestPyPI instead, as a rehearsal.
 name: publish
 
@@ -25,14 +25,14 @@ jobs:
       - name: The version is the release tag
         if: github.event_name == 'release'
         run: |
-          v=$(python -c "import sys; sys.path.insert(0, 'src'); import mppp; print(mppp.__version__)")
+          v=$(python -c "import sys; sys.path.insert(0, 'src'); import rpp; print(rpp.__version__)")
           test "v$v" = "${{ github.event.release.tag_name }}" || { echo "tag ${{ github.event.release.tag_name }} but __version__ $v"; exit 1; }
       - name: The wheel installs and runs
         run: |
           python -m venv /tmp/w && /tmp/w/bin/pip install dist/*.whl
-          /tmp/w/bin/mppp --version
-          /tmp/w/bin/mppp doctor || true          # reports what is missing (no torch / pycolmap here)
-          /tmp/w/bin/python -c "import mppp.paths as p; assert (p.data_dir() / 'sites.json').is_file()"
+          /tmp/w/bin/rpp --version
+          /tmp/w/bin/rpp doctor || true          # reports what is missing (no torch / pycolmap here)
+          /tmp/w/bin/python -c "import rpp.paths as p; assert (p.data_dir() / 'sites.json').is_file()"
       - uses: actions/upload-artifact@v4
         with:
           name: dist
@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/project/mppp/
+      url: https://pypi.org/project/rover-photogrammetry-pipeline/
     permissions:
       id-token: write
     steps:
@@ -60,7 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: testpypi
-      url: https://test.pypi.org/project/mppp/
+      url: https://test.pypi.org/project/rover-photogrammetry-pipeline/
     permissions:
       id-token: write
     steps:

@@ -1,4 +1,4 @@
-"""Mask model, inference, registry and Hugging Face release (mppp.mask.model, infer, hub). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
+"""Mask model, inference, registry and Hugging Face release (rpp.mask.model, infer, hub). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
 import pytest
 import torch
 from conftest import CKPT, LEGACY_CKPT, needs_ckpt, needs_legacy_ckpt
@@ -12,7 +12,7 @@ from helpers import _tiny_checkpoint
 
 @needs_ckpt
 def test_split_forward_equals_forward():
-    from mppp.mask.model import load_model
+    from rpp.mask.model import load_model
     model, _ = load_model(CKPT, "cpu")
     x = torch.randn(1, 3, 128, 160)
     with torch.no_grad():
@@ -21,7 +21,7 @@ def test_split_forward_equals_forward():
 
 def test_offline_fails_fast_with_instructions(monkeypatch, tmp_path):
     import time
-    import mppp.mask.model as M
+    import rpp.mask.model as M
     monkeypatch.setattr(M, "_hub_reachable", lambda *a, **k: False)
     monkeypatch.setattr(M, "_cached_weights", lambda name: None)
     t = time.time()
@@ -31,7 +31,7 @@ def test_offline_fails_fast_with_instructions(monkeypatch, tmp_path):
 
 
 def test_stride4_decoder_shapes_and_old_cards_load(tmp_path):
-    from mppp.mask.model import ConvNeXtSeg, load_model, write_card
+    from rpp.mask.model import ConvNeXtSeg, load_model, write_card
     m4 = ConvNeXtSeg("convnext_tiny", stride4=True).eval()
     m8 = ConvNeXtSeg("convnext_tiny", stride4=False).eval()
     x = torch.randn(1, 3, 96, 128)
@@ -52,7 +52,7 @@ def test_stride4_decoder_shapes_and_old_cards_load(tmp_path):
 
 @pytest.mark.parametrize("h,w,o", [(1920, 2560, 64), (3840, 5120, 64), (961, 2561, 64), (100, 3000, 500)])
 def test_quad_cores_tile_frame_exactly(h, w, o):
-    from mppp.mask.model import quad_boxes
+    from rpp.mask.model import quad_boxes
     cover = np.zeros((h, w), int)
     for (y0, y1, x0, x1), (cy0, cy1, cx0, cx1) in quad_boxes(h, w, o):
         assert y0 <= cy0 < cy1 <= y1 and x0 <= cx0 < cx1 <= x1                  # core inside crop
@@ -63,7 +63,7 @@ def test_quad_cores_tile_frame_exactly(h, w, o):
 
 def test_quad_inference_stitches_cores(monkeypatch):
     """With a pixel-wise stand-in for the network, the stitched result equals the whole frame."""
-    import mppp.mask.infer as I
+    import rpp.mask.infer as I
     calls = []
     def fake(model, card, img):
         calls.append(img.shape[:2])
@@ -89,8 +89,8 @@ def test_quad_inference_stitches_cores(monkeypatch):
 
 
 def test_pretrained_file_auto(tmp_path, monkeypatch):
-    from mppp_studies.mask_training import train as T
-    monkeypatch.setattr("mppp.paths.checkpoints_dir", lambda: tmp_path)
+    from rpp_studies.mask_training import train as T
+    monkeypatch.setattr("rpp.paths.checkpoints_dir", lambda: tmp_path)
     assert T.resolve_pretrained_file("auto", "convnext_tiny") is None             # -> hub / HF cache
     (tmp_path / "convnext_tiny.fb_in22k.safetensors").write_bytes(b"x")
     assert T.resolve_pretrained_file("auto", "convnext_tiny") == str(tmp_path / "convnext_tiny.fb_in22k.safetensors")
@@ -105,7 +105,7 @@ class NotATensor:                                                              #
 
 def _tiny_checkpoint(tmp_path):
     import torch
-    from mppp.mask.model import ConvNeXtSeg, write_card
+    from rpp.mask.model import ConvNeXtSeg, write_card
     m = ConvNeXtSeg("convnext_tiny", pretrained=False, fpn_width=32, stride4=True)
     ck = tmp_path / "tiny_s4_seg_test.pt"
     torch.save({"model": m.state_dict(), "val_iou": 0.5, "epoch": 1}, ck)
@@ -116,8 +116,8 @@ def _tiny_checkpoint(tmp_path):
 
 def test_safetensors_export_is_deterministic_and_equivalent(tmp_path):
     import torch
-    from mppp.mask.hub import export_safetensors
-    from mppp.mask.model import load_model, read_card
+    from rpp.mask.hub import export_safetensors
+    from rpp.mask.model import load_model, read_card
     ck = _tiny_checkpoint(tmp_path)
     a = export_safetensors(ck, out=tmp_path / "a.safetensors")
     b = export_safetensors(ck, out=tmp_path / "b.safetensors")
@@ -133,7 +133,7 @@ def test_safetensors_export_is_deterministic_and_equivalent(tmp_path):
 
 def test_pt_is_loaded_without_pickle_code(tmp_path):
     import torch
-    from mppp.mask.model import read_state_dict_checkpoint
+    from rpp.mask.model import read_state_dict_checkpoint
 
     bad = tmp_path / "bad.pt"
     torch.save({"model": {}, "x": NotATensor()}, bad)
@@ -142,7 +142,7 @@ def test_pt_is_loaded_without_pickle_code(tmp_path):
 
 
 def test_registry_fetch_install_resolve(tmp_path, monkeypatch):
-    from mppp.mask import hub
+    from rpp.mask import hub
     ck = _tiny_checkpoint(tmp_path)
     st = hub.export_safetensors(ck, out=tmp_path / "remote" / "m.safetensors")
     reg = {"default": "m1", "models": {"m1": {"file": "m1.safetensors", "sha256": st["sha256"],
@@ -150,8 +150,8 @@ def test_registry_fetch_install_resolve(tmp_path, monkeypatch):
                                                         Path(st["path"]).as_uri()]}}}
     (tmp_path / "models.json").write_text(json.dumps(reg))
     monkeypatch.setattr(hub, "registry_path", lambda: tmp_path / "models.json")
-    monkeypatch.setenv("MPPP_CACHE", str(tmp_path / "cache"))
-    monkeypatch.setenv("MPPP_CHECKPOINTS", str(tmp_path))
+    monkeypatch.setenv("RPP_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("RPP_CHECKPOINTS", str(tmp_path))
     with pytest.raises(FileNotFoundError):
         hub.resolve_checkpoint("m1", download=False).stat()
     p = hub.resolve_checkpoint()                                               # default -> download (2nd URL)
@@ -169,13 +169,13 @@ def test_registry_fetch_install_resolve(tmp_path, monkeypatch):
     with pytest.warns(UserWarning, match="differs from the registry"):
         q = hub.install_model(ck, "m1")
     assert q.is_file()
-    from mppp.mask import get_model
+    from rpp.mask import get_model
     model, card = get_model(str(q), "cpu")          # 0.31.2: the registry name would fetch the released file again
     assert card["fpn_width"] == 32
 
 
 def test_export_updates_registry(tmp_path, monkeypatch):
-    from mppp.mask import hub
+    from rpp.mask import hub
     ck = _tiny_checkpoint(tmp_path)
     (tmp_path / "models.json").write_text(json.dumps({"default": "m1", "models": {"m1": {"file": "m1.safetensors",
                                                                                            "urls": ["u"]}}}))
@@ -187,7 +187,7 @@ def test_export_updates_registry(tmp_path, monkeypatch):
 
 
 def test_released_registry_entry():
-    from mppp.mask.hub import load_registry
+    from rpp.mask.hub import load_registry
     reg = load_registry()
     e = reg["models"][reg["default"]]
     assert e["file"].endswith(".safetensors") and len(e.get("sha256", "")) == 64
@@ -196,21 +196,21 @@ def test_released_registry_entry():
 
 def test_export_does_not_depend_on_the_mppp_version(tmp_path, monkeypatch):
     from helpers import _tiny_checkpoint
-    import mppp
-    from mppp.mask.hub import export_safetensors
-    from mppp.mask.model import read_card
+    import rpp
+    from rpp.mask.hub import export_safetensors
+    from rpp.mask.model import read_card
     ck = _tiny_checkpoint(tmp_path)
     a = export_safetensors(ck, out=tmp_path / "a.safetensors")
-    monkeypatch.setattr(mppp, "__version__", "9.9.9")
+    monkeypatch.setattr(rpp, "__version__", "9.9.9")
     b = export_safetensors(ck, out=tmp_path / "b.safetensors")
-    assert a["sha256"] == b["sha256"] and "exported_with_mppp" not in read_card(tmp_path / "a.safetensors")
+    assert a["sha256"] == b["sha256"] and "exported_with_rpp" not in read_card(tmp_path / "a.safetensors")
 
 
 def test_download_failure_falls_back_to_local_checkpoint(tmp_path, monkeypatch):
     """v0p14.1: the model is not published yet (HF 401, GitHub 404) -> use the local best checkpoint."""
     import shutil
     from helpers import _tiny_checkpoint
-    from mppp.mask import hub
+    from rpp.mask import hub
     (tmp_path / "src").mkdir()
     ck = _tiny_checkpoint(tmp_path / "src")
     ckdir = tmp_path / "checkpoints"
@@ -224,12 +224,12 @@ def test_download_failure_falls_back_to_local_checkpoint(tmp_path, monkeypatch):
                                                "urls": [(tmp_path / "missing.safetensors").as_uri()]}}}
     (tmp_path / "models.json").write_text(json.dumps(reg))
     monkeypatch.setattr(hub, "registry_path", lambda: tmp_path / "models.json")
-    monkeypatch.setenv("MPPP_CACHE", str(tmp_path / "cache"))
-    monkeypatch.setenv("MPPP_CHECKPOINTS", str(ckdir))
+    monkeypatch.setenv("RPP_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("RPP_CHECKPOINTS", str(ckdir))
     assert hub.local_candidates("m1") == [ckdir / "convnext_tiny_s4_seg_best.pt"]
-    with pytest.raises(FileNotFoundError, match="MPPP_MASK_LOCAL_FALLBACK"):
+    with pytest.raises(FileNotFoundError, match="RPP_MASK_LOCAL_FALLBACK"):
         hub.resolve_checkpoint("m1")                                      # 0.31.2: no local stand-in by default
-    monkeypatch.setenv("MPPP_MASK_LOCAL_FALLBACK", "1")
+    monkeypatch.setenv("RPP_MASK_LOCAL_FALLBACK", "1")
     p = hub.resolve_checkpoint("m1")                                      # download fails -> local install
     assert p == tmp_path / "cache" / "models" / "m1.safetensors" and hub.sha256_file(p) == ref["sha256"]
     with pytest.raises(FileNotFoundError, match="stands in only with"):
@@ -237,32 +237,32 @@ def test_download_failure_falls_back_to_local_checkpoint(tmp_path, monkeypatch):
 
 
 def test_mask_model_v2_is_registered():
-    import mppp
-    from mppp.mask.hub import load_registry
+    import rpp
+    from rpp.mask.hub import load_registry
     reg = load_registry()
-    assert reg["default"] == "mppp_mask_v3" == mppp.default_config()["masking"]["checkpoint"]   # v0p22.4
-    v2 = reg["models"]["mppp_mask_v2"]
+    assert reg["default"] == "rpp_mask_v3" == rpp.default_config()["masking"]["checkpoint"]   # v0p22.4
+    v2 = reg["models"]["rpp_mask_v2"]
     assert v2["source_checkpoint"] == "convnext_tiny_s4_seg_20260925.pt" and v2["val_iou"] > 0.977
     assert v2["sha256"] == "227e483369e11d6e36ce3517cf9f6d6ac60a9a50c1e301f9e7ae53d0cef569b9"
     assert all(u.endswith(v2["file"]) and "mask-v2" in u or "huggingface" in u for u in v2["urls"])
-    assert "mppp_mask_v1" in reg["models"]                                         # the previous model stays
+    assert "rpp_mask_v1" in reg["models"]                                         # the previous model stays
 
 
 def test_default_mask_model_is_v3():
-    from mppp.mask.hub import load_registry, default_model_name, local_candidates
-    import mppp
+    from rpp.mask.hub import load_registry, default_model_name, local_candidates
+    import rpp
     reg = load_registry()
-    assert default_model_name() == "mppp_mask_v3" and mppp.load_config({})["masking"]["checkpoint"] == "mppp_mask_v3"
-    e = reg["models"]["mppp_mask_v3"]
+    assert default_model_name() == "rpp_mask_v3" and rpp.load_config({})["masking"]["checkpoint"] == "rpp_mask_v3"
+    e = reg["models"]["rpp_mask_v3"]
     assert e["source_checkpoint"] == "convnext_tiny_s4_seg_20260925b.pt" and e["file"].endswith("_v3.safetensors")
     assert len(e["sha256"]) == 64 and e["bytes"] > 10 ** 8 and e["val_iou"] > 0.979
-    assert isinstance(local_candidates("mppp_mask_v3"), list)     # the .pt in checkpoints/ stands in until the release is published
+    assert isinstance(local_candidates("rpp_mask_v3"), list)     # the .pt in checkpoints/ stands in until the release is published
 
 
 def _release():
-    """The maintainers' release script (mppp_studies.mask_training.release_mask_model), loaded as a module."""
+    """The maintainers' release script (rpp_studies.mask_training.release_mask_model), loaded as a module."""
     import importlib.util
-    f = Path(__file__).resolve().parents[1] / "src" / "mppp_studies" / "mask_training" / "release_mask_model.py"
+    f = Path(__file__).resolve().parents[1] / "src" / "rpp_studies" / "mask_training" / "release_mask_model.py"
     spec = importlib.util.spec_from_file_location("release_mask_model", f)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -270,30 +270,30 @@ def _release():
 
 
 def _registry(tmp_path, monkeypatch, sha, urls):
-    from mppp.mask import hub
+    from rpp.mask import hub
     reg = {"default": "m1", "models": {"m1": {"file": "m1.safetensors", "sha256": sha, "urls": urls,
                                                "source_checkpoint": "tiny_s4_seg_test.pt", "hf_repo": "me/mask"}}}
     (tmp_path / "models.json").write_text(json.dumps(reg))
     monkeypatch.setattr(hub, "registry_path", lambda: tmp_path / "models.json")
-    monkeypatch.setenv("MPPP_CACHE", str(tmp_path / "cache"))
-    monkeypatch.setenv("MPPP_CHECKPOINTS", str(tmp_path))
-    monkeypatch.delenv("MPPP_MASK_LOCAL_FALLBACK", raising=False)
+    monkeypatch.setenv("RPP_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("RPP_CHECKPOINTS", str(tmp_path))
+    monkeypatch.delenv("RPP_MASK_LOCAL_FALLBACK", raising=False)
     return hub
 
 
 def test_default_v3_is_on_hugging_face():
-    from mppp.mask.hub import load_registry, hf_repo
+    from rpp.mask.hub import load_registry, hf_repo
     reg = load_registry()
     e = reg["models"][reg["default"]]
-    assert reg["default"] == "mppp_mask_v3" and hf_repo() == "ctate7163/mppp-mask"
-    assert e["urls"] == ["https://huggingface.co/ctate7163/mppp-mask/resolve/main/" + e["file"]]
+    assert reg["default"] == "rpp_mask_v3" and hf_repo() == "ctate7163/rpp-mask"
+    assert e["urls"] == ["https://huggingface.co/ctate7163/rpp-mask/resolve/main/" + e["file"]]
     # the released file carries the real card (stride-4 decoder); 0.31.1's registry hash was a card-less export
     assert e["stride4"] is True and e["sha256"].startswith("46830126") and e["bytes"] == 124826276
 
 
 def test_cached_file_that_is_not_the_release_is_replaced(tmp_path, monkeypatch):
     ck = _tiny_checkpoint(tmp_path)
-    from mppp.mask import hub as h
+    from rpp.mask import hub as h
     rel = h.export_safetensors(ck, out=tmp_path / "remote" / "m1.safetensors")
     hub = _registry(tmp_path, monkeypatch, rel["sha256"], [Path(rel["path"]).as_uri()])
     cached = hub.model_path("m1")
@@ -308,16 +308,16 @@ def test_cached_file_that_is_not_the_release_is_replaced(tmp_path, monkeypatch):
 def test_no_local_stand_in_by_default(tmp_path, monkeypatch):
     ck = _tiny_checkpoint(tmp_path)
     hub = _registry(tmp_path, monkeypatch, "0" * 64, [(tmp_path / "missing.safetensors").as_uri()])
-    with pytest.raises(FileNotFoundError, match="MPPP_MASK_LOCAL_FALLBACK"):
+    with pytest.raises(FileNotFoundError, match="RPP_MASK_LOCAL_FALLBACK"):
         hub.fetch_model("m1")
     assert not hub.model_path("m1").exists()
-    monkeypatch.setenv("MPPP_MASK_LOCAL_FALLBACK", "1")
+    monkeypatch.setenv("RPP_MASK_LOCAL_FALLBACK", "1")
     with pytest.warns(UserWarning, match="differs from the registry"):
         assert hub.fetch_model("m1").is_file()
 
 
 def test_export_refuses_a_checkpoint_without_its_card(tmp_path):
-    from mppp.mask import hub
+    from rpp.mask import hub
     ck = _tiny_checkpoint(tmp_path)
     ck.with_suffix(".json").unlink()
     with pytest.raises(FileNotFoundError, match="no model card"):
@@ -325,7 +325,7 @@ def test_export_refuses_a_checkpoint_without_its_card(tmp_path):
 
 
 def test_hf_token_goes_only_to_hugging_face(monkeypatch):
-    from mppp.mask import hub
+    from rpp.mask import hub
     monkeypatch.setenv("HF_TOKEN", "hf_test")
     assert hub._headers("https://huggingface.co/a/b/resolve/main/f")["Authorization"] == "Bearer hf_test"
     assert "Authorization" not in hub._headers("https://github.com/a/b/releases/download/t/f")
@@ -333,7 +333,7 @@ def test_hf_token_goes_only_to_hugging_face(monkeypatch):
 
 def test_upload_checks_sha_and_uploads_file_and_card(tmp_path, monkeypatch):
     ck = _tiny_checkpoint(tmp_path)
-    from mppp.mask import hub as h
+    from rpp.mask import hub as h
     ref = h.export_safetensors(ck, out=tmp_path / "ref.safetensors", name="m1")      # release_name is in the card
     url = "https://huggingface.co/me/mask/resolve/main/m1.safetensors"
     hub = _registry(tmp_path, monkeypatch, ref["sha256"], [url])
@@ -361,7 +361,7 @@ def test_upload_checks_sha_and_uploads_file_and_card(tmp_path, monkeypatch):
 
 def test_verify_reports_each_url(tmp_path, monkeypatch):
     ck = _tiny_checkpoint(tmp_path)
-    from mppp.mask import hub as h
+    from rpp.mask import hub as h
     rel = h.export_safetensors(ck, out=tmp_path / "remote" / "m1.safetensors")
     hub = _registry(tmp_path, monkeypatch, rel["sha256"],
                     [Path(rel["path"]).as_uri(), (tmp_path / "missing.safetensors").as_uri()])
@@ -370,7 +370,7 @@ def test_verify_reports_each_url(tmp_path, monkeypatch):
 
 
 def test_registry_default_model_and_release():
-    from mppp.mask.hub import default_model_name, hf_repo, load_registry
-    assert default_model_name() == "mppp_mask_v3" and hf_repo() == "ctate7163/mppp-mask"
-    e = load_registry()["models"]["mppp_mask_v3"]
+    from rpp.mask.hub import default_model_name, hf_repo, load_registry
+    assert default_model_name() == "rpp_mask_v3" and hf_repo() == "ctate7163/rpp-mask"
+    e = load_registry()["models"]["rpp_mask_v3"]
     assert e["source_checkpoint"] == "convnext_tiny_s4_seg_20260925b.pt" and e["urls"][0].startswith("https://huggingface.co/ctate7163/")

@@ -1,22 +1,22 @@
 # Downstream exports: dense, Metashape, Nerfstudio
 
 An aligned block (`<WORK>\colmap\`) can go on to three downstream tools. Each export reads the block's
-**native-pixel model**, `gui_native/sparse`: the COLMAP model in each image's own pixels, which MPPP writes at the end
+**native-pixel model**, `gui_native/sparse`: the COLMAP model in each image's own pixels, which RPP writes at the end
 of every run. None of the exports re-aligns anything: the poses, cameras and tie points are the block's.
 
 | export | command | folder | for |
 |---|---|---|---|
-| Dense (COLMAP MVS) | `mppp dense WORK` | `<project>\dense\` | depth and normal maps, a fused point cloud, a mesh |
-| Metashape project | `mppp metashape WORK` | `<project>\metashape\` | Metashape's depth maps, meshes, textures, orthomosaics |
-| Nerfstudio (splatfacto) | `mppp nerfstudio WORK` | `<project>\nerfstudio\` | 3D Gaussian splatting |
+| Dense (COLMAP MVS) | `rpp dense WORK` | `<project>\dense\` | depth and normal maps, a fused point cloud, a mesh |
+| Metashape project | `rpp metashape WORK` | `<project>\metashape\` | Metashape's depth maps, meshes, textures, orthomosaics |
+| Nerfstudio (splatfacto) | `rpp nerfstudio WORK` | `<project>\nerfstudio\` | 3D Gaussian splatting |
 
 The products of one rover station - mesh, depth and photometric maps, the stereo panorama - are on their own page:
 [Station products and the stereo panorama viewer](station-products.md).
 
 On Windows, `scripts\windows\ecam_block.bat SITE` aligns a site's Navcam + Hazcam block and writes the Metashape and
-Nerfstudio exports in one go (`mppp run SITE --metashape --nerfstudio`).
+Nerfstudio exports in one go (`rpp run SITE --metashape --nerfstudio`).
 
-## Dense reconstruction (`mppp dense`)
+## Dense reconstruction (`rpp dense`)
 
 The COLMAP workspace is preloaded from the alignment. It holds:
 
@@ -27,16 +27,16 @@ The COLMAP workspace is preloaded from the alignment. It holds:
 The steps:
 
 ```bat
-python -m mppp dense D:\rover_blocks\<site>\WORK                       & rem the workspace only
-python -m mppp dense D:\rover_blocks\<site>\WORK --stereo --fusion     & rem patch-match stereo (CUDA) and fusion
-python -m mppp dense D:\rover_blocks\<site>\WORK --maps png            & rem depth and normal maps as images
+python -m rpp dense D:\rover_blocks\<site>\WORK                       & rem the workspace only
+python -m rpp dense D:\rover_blocks\<site>\WORK --stereo --fusion     & rem patch-match stereo (CUDA) and fusion
+python -m rpp dense D:\rover_blocks\<site>\WORK --maps png            & rem depth and normal maps as images
 ```
 
 `dense_reconstruct.bat`, next to `open_in_colmap.bat` in every project, runs the same steps with the COLMAP
 executable. COLMAP's GUI (Reconstruction > Dense reconstruction) also accepts the `dense\` folder as its workspace.
-The working resolution is 2000 px on the long side by default (`--max-image-size`). See [mppp dense](cli.md#mppp-dense).
+The working resolution is 2000 px on the long side by default (`--max-image-size`). See [rpp dense](cli.md#rpp-dense).
 
-## Metashape project (`mppp metashape`)
+## Metashape project (`rpp metashape`)
 
 This builds `<block>.psx` with the following:
 
@@ -45,20 +45,20 @@ This builds `<block>.psx` with the following:
 - every camera's COLMAP pose as its position and reference;
 - the tie points, re-triangulated by Metashape from COLMAP's tracks;
 - the masks;
-- a local metric frame: MPPP's world frame (x east, y north, z up), with the block offset in the chunk transform.
+- a local metric frame: RPP's world frame (x east, y north, z up), with the block offset in the chunk transform.
 
 Nothing is aligned or optimised in Metashape. Double-click `open_in_metashape.bat` in the project folder (0.98.18:
 it converts and builds the project the first time, then opens it) or `make_metashape_project.bat` (Metashape
 Professional), and continue with *Build Depth Maps* or *Build Mesh*. `metashape_check.json` compares Metashape's reprojection of
 the tie points with COLMAP's residuals. The calibration mapping (THIN_PRISM_FISHEYE → Fisheye,
-FULL_OPENCV → Frame) is in the table under [mppp metashape](cli.md#mppp-metashape).
+FULL_OPENCV → Frame) is in the table under [rpp metashape](cli.md#rpp-metashape).
 
-## Nerfstudio (`mppp nerfstudio`)
+## Nerfstudio (`rpp nerfstudio`)
 
 Every frame is resampled through COLMAP's exact camera model into one pinhole size, 2048 × 1536. The export holds:
 
 - `images\` and `masks\`, plus the half-size `images_2\` and `masks_2\`;
-- `transforms.json`, with per-frame intrinsics and OpenGL camera-to-world matrices in MPPP's world frame;
+- `transforms.json`, with per-frame intrinsics and OpenGL camera-to-world matrices in RPP's world frame;
 - `sparse_pc.ply`, the tie points, which splatfacto starts from.
 
 Mastcam-Z frames lose 22 columns on the left and 16 on the right, the dark edge columns.
@@ -72,7 +72,7 @@ Mastcam-Z frames lose 22 columns on the left and 16 on the right, the dark edge 
 - 15,000 iterations.
 
 Extra options go to `ns-train` (`train-ns.bat --max-num-iterations 30000`). See
-[mppp nerfstudio](cli.md#mppp-nerfstudio).
+[rpp nerfstudio](cli.md#rpp-nerfstudio).
 
 ## What comes next
 

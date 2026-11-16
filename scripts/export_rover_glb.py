@@ -1,5 +1,5 @@
 """
-Write the rover model of mppp.ibr.rover_model as a binary glTF file, one mesh per part, for use outside MPPP
+Write the rover model of rpp.ibr.rover_model as a binary glTF file, one mesh per part, for use outside RPP
 (0.97.6, Christian 13 Nov 2026: "host the rover 3d model on github for other MPPP users").
 
     python scripts/export_rover_glb.py [--out docs/rover/perseverance_rmech.glb]
@@ -16,7 +16,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-CREDIT = "NASA/JPL-Caltech (Mars Perseverance Rover, 3D Model); modified by MPPP"
+CREDIT = "NASA/JPL-Caltech (Mars Perseverance Rover, 3D Model); modified by RPP"
 
 
 def main() -> int:
@@ -24,7 +24,7 @@ def main() -> int:
     ap.add_argument("--out", default=str(ROOT / "docs" / "rover" / "perseverance_rmech.glb"))
     a = ap.parse_args()
     import trimesh
-    from mppp.ibr import rover_model
+    from rpp.ibr import rover_model
     scene = trimesh.Scene()
     V, _, meta = rover_model.load()
     for part in meta["parts"]:

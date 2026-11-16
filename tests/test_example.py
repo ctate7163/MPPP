@@ -1,4 +1,4 @@
-"""The Mars 2020 example data set (mppp.example): the explicit file list, the zip in the archive layout, the
+"""The Mars 2020 example data set (rpp.example): the explicit file list, the zip in the archive layout, the
 manifest, fetch."""
 import json
 import zipfile
@@ -7,7 +7,7 @@ import pytest
 
 
 def _archive(tmp_path, skip=()):
-    from mppp import example as E
+    from rpp import example as E
     pds, zc = tmp_path / "datadrive", tmp_path / "zcam"
     for n in E.EXAMPLE_FILES:
         if n in skip:
@@ -25,7 +25,7 @@ def _archive(tmp_path, skip=()):
 
 
 def test_the_list():
-    from mppp import example as E
+    from rpp import example as E
     n = E.EXAMPLE_FILES
     assert len(n) == len(set(n)) == 32 + 4 + 8
     assert sum(x[:3] in ("FLF", "FRF") for x in n) == 4 and sum(x[0] == "Z" for x in n) == 8
@@ -33,7 +33,7 @@ def test_the_list():
 
 
 def test_select_and_build(tmp_path):
-    from mppp import example as E
+    from rpp import example as E
     pds, zc = _archive(tmp_path)
     sel = E.select_files(pds, zc)
     assert not sel["missing"] and len(sel["navcam"]) == 32 and len(sel["hazcam"]) == 4 and len(sel["zcam"]) == 8
@@ -52,7 +52,7 @@ def test_select_and_build(tmp_path):
 
 
 def test_missing_files_are_named(tmp_path):
-    from mppp import example as E
+    from rpp import example as E
     gone = E.EXAMPLE_FILES[-1]
     pds, zc = _archive(tmp_path, skip=(gone,))
     with pytest.raises(FileNotFoundError, match=gone[:20]):

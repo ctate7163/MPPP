@@ -1,11 +1,11 @@
-"""COLMAP project set-up, start cameras, focus bins and models (mppp.sfm.project)."""
+"""COLMAP project set-up, start cameras, focus bins and models (rpp.sfm.project)."""
 import numpy as np
 import pytest
 from conftest import config_selection_off
-from mppp.paths import data_dir  # noqa: E402
+from rpp.paths import data_dir  # noqa: E402
 from pathlib import Path
 import json
-from mppp import calib  # noqa: E402
+from rpp import calib  # noqa: E402
 import copy
 
 
@@ -17,20 +17,20 @@ DATA_DIR = data_dir()
 
 @pytest.fixture(scope="module")
 def processed_pair(tmp_path_factory):
-    import mppp
+    import rpp
     from conftest import NLF, ZL0, needs_data
     if not (NLF.is_file() and ZL0.is_file()):
         pytest.skip("example IMGs not present")
     out = tmp_path_factory.mktemp("proc")
     cfg = config_selection_off({"masking": {"infer_mask": False},
                             "export": {"formats": ["PNG8"], "write_colmap": False}})
-    man = mppp.process_images([NLF, ZL0], out, cfg, mppp.load_waypoints(), progress=False)
+    man = rpp.process_images([NLF, ZL0], out, cfg, rpp.load_waypoints(), progress=False)
     assert man["n_processed"] == 2
     return man, out
 
 
 def test_project_with_navcam_and_mastcamz34(processed_pair, tmp_path):
-    from mppp.sfm.project import SfmProject, camera_key
+    from rpp.sfm.project import SfmProject, camera_key
     man, out = processed_pair
     proj = SfmProject.create(man["images"], out, tmp_path / "p", link=False, zcam_focus_bin=None,
                              navcam_distortion_fit="refine")          # the default holds the distortion
@@ -42,7 +42,7 @@ def test_project_with_navcam_and_mastcamz34(processed_pair, tmp_path):
     assert np.isclose(z["params"][0], K[0, 0])
     # ZL's principal point is the focus model's pp0 (the CAHVOR value at the reference focus, one for every block),
     # not the label's (corner origin: K[0, 2] + 0.5)
-    from mppp.sfm.project import zcam_focus_model
+    from rpp.sfm.project import zcam_focus_model
     pp0 = (zcam_focus_model().get("cameras", {}).get("ZL034") or {}).get("pp0_px")
     assert pp0 and np.isclose(z["params"][2], pp0[0]) and np.isclose(z["params"][3], pp0[1])
     assert abs(z["params"][2] - (K[0, 2] + 0.5)) < 10
@@ -69,7 +69,7 @@ def test_project_with_navcam_and_mastcamz34(processed_pair, tmp_path):
 
 
 def test_rig_family_for_mastcamz_pairs_with_shared_clock():
-    from mppp.sfm.project import _rig_from_pairs
+    from rpp.sfm.project import _rig_from_pairs
     R = np.eye(3).tolist()
     imgs = [{"instrument": k, "eye": k[1], "sclk_key": "1", "prior_R_w2c": R, "prior_C": c}
             for k, c in (("ZL034", [0, 0, 0]), ("ZR034", [0.242, 0, 0]), ("NL", [0, 0, 0]))]
@@ -80,7 +80,7 @@ def test_rig_family_for_mastcamz_pairs_with_shared_clock():
 
 def test_project_copy_refreshed_when_the_processed_image_changes(tmp_path):
     import os
-    from mppp.sfm.project import _link_or_copy
+    from rpp.sfm.project import _link_or_copy
     src, dst = tmp_path / "src.png", tmp_path / "dst.png"
     src.write_bytes(b"v1")
     _link_or_copy(src, dst, link=False)                                 # a copy (e.g. another drive)
@@ -98,7 +98,7 @@ def test_project_copy_refreshed_when_the_processed_image_changes(tmp_path):
 
 
 def test_focus_bins_greedy_and_tags():
-    from mppp.sfm.project import _focus_tag, focus_bins
+    from rpp.sfm.project import _focus_tag, focus_bins
     counts = [100, 110, 129, 131, 200, None, 205, 250]
     assert focus_bins(counts, 30) == [0, 0, 0, 1, 2, 4, 2, 3]            # no grid line splits 129 / 131 from 100?
     assert focus_bins([5, 6, 7], 30) == [0, 0, 0] and focus_bins([], 30) == []
@@ -106,7 +106,7 @@ def test_focus_bins_greedy_and_tags():
 
 
 def test_project_bins_mastcamz_by_focus(processed_pair, tmp_path):
-    from mppp.sfm.project import FULL_OPENCV_NAMES, ZCAM_BIN_HELD, SfmProject
+    from rpp.sfm.project import FULL_OPENCV_NAMES, ZCAM_BIN_HELD, SfmProject
     man, out = processed_pair                 # (one Mastcam-Z image: zcam_min_zoom_images=0 keeps its bin refinable, 0.95.0)
     zmeta = [m for m in man["images"] if m["filename"]["family"] == "Z"][0]
     fc = float(zmeta["focus_position_count"])
@@ -149,7 +149,7 @@ def test_project_bins_mastcamz_by_focus(processed_pair, tmp_path):
 
 
 def test_station_labels_start_with_the_sol():
-    from mppp.sfm.project import SfmProject, station_labels
+    from rpp.sfm.project import SfmProject, station_labels
     imgs = [{"station": "S032D1184", "sol": 686}, {"station": "S032D1184", "sol": 686},
             {"station": "S032D1174", "sol": 684}, {"station": "S032D1174", "sol": 685}, {"station": "S001D0000"}]
     lab = station_labels(imgs)
@@ -162,7 +162,7 @@ def test_station_labels_start_with_the_sol():
 def test_prior_rotation_correction_keeps_the_ray_at_the_camera_principal_point():
     import numpy as np
     from scipy.spatial.transform import Rotation
-    from mppp.sfm.project import prior_rotation_correction
+    from rpp.sfm.project import prior_rotation_correction
     rng = np.random.default_rng(4)
     R = Rotation.from_rotvec(rng.normal(0, 0.5, 3)).as_matrix()
     f, cl, cc = 4690.0, np.array([770.0, 650.0]), np.array([824.0, 600.0])
@@ -182,7 +182,7 @@ def test_prior_rotation_correction_keeps_the_ray_at_the_camera_principal_point()
 
 
 def test_project_scope_is_checked_first(processed_pair, tmp_path):  # noqa: F811
-    from mppp.sfm.project import SfmProject
+    from rpp.sfm.project import SfmProject
     man, out = processed_pair
     proj = SfmProject.create(man["images"], out, tmp_path / "p", link=False, zcam_focus_bin=None,
                              navcam_distortion_fit="refine")
@@ -193,14 +193,14 @@ def test_project_scope_is_checked_first(processed_pair, tmp_path):  # noqa: F811
     # out of scope: rejected before any file is linked into the project
     bad = json.loads(json.dumps(man["images"], default=str))
     bad[0]["filename"]["camera_code"] = "CCF"           # Cachecam (the Hazcams are in scope from 0.93)
-    with pytest.raises(ValueError, match="outside MPPP's scope"):
+    with pytest.raises(ValueError, match="outside RPP's scope"):
         SfmProject.create(bad, out, tmp_path / "r", link=False, zcam_focus_bin=None)
     assert not any((tmp_path / "r" / "images").glob("*"))
     z = json.loads(json.dumps(man["images"], default=str))
     for m in z:
         if m["filename"]["family"] == "Z":
             m["filename"]["zoom_mm"] = 55                     # 0.97.0: 26 to 110 mm are in scope (26 and 100 added); 55 is not
-    with pytest.raises(ValueError, match="outside MPPP's scope"):
+    with pytest.raises(ValueError, match="outside RPP's scope"):
         SfmProject.create(z, out, tmp_path / "s", link=False)
     und = json.loads(json.dumps(man["images"], default=str))
     und[0]["undistorted"] = True
@@ -214,7 +214,7 @@ def test_project_scope_is_checked_first(processed_pair, tmp_path):  # noqa: F811
 
 def test_refresh_images_updates_copies(processed_pair, tmp_path):  # noqa: F811
     import os
-    from mppp.sfm.project import SfmProject
+    from rpp.sfm.project import SfmProject
     man, out = processed_pair
     proj = SfmProject.create(man["images"], out, tmp_path / "p", link=False, zcam_focus_bin=None,
                              navcam_distortion_fit="refine")
@@ -230,7 +230,7 @@ def test_refresh_images_updates_copies(processed_pair, tmp_path):  # noqa: F811
 
 
 def test_focus_model_start_and_hold():
-    from mppp.sfm.project import ZCAM_HOLD_F_IMAGES, _split_by_focus, zcam_focus_model
+    from rpp.sfm.project import ZCAM_HOLD_F_IMAGES, _split_by_focus, zcam_focus_model
     m = zcam_focus_model()
     g = m["cameras"]["ZL034"]
     assert ZCAM_HOLD_F_IMAGES == 2 and g["focus_range"][0] <= -400 and g["focus_range"][1] == 1300
@@ -261,8 +261,8 @@ def test_focus_model_start_and_hold():
 
 
 def test_shipped_rig_and_cameras_agree():
-    from mppp.paths import data_dir
-    from mppp.sfm.project import NAVCAM_RIG, NAVCAM_RIG_FILE
+    from rpp.paths import data_dir
+    from rpp.sfm.project import NAVCAM_RIG, NAVCAM_RIG_FILE
     from scipy.spatial.transform import Rotation
     d = data_dir() / "cmods"
     rig = json.loads((d / NAVCAM_RIG_FILE).read_text())
@@ -278,7 +278,7 @@ def test_shipped_rig_and_cameras_agree():
 
 
 def test_project_create_signature_has_no_removed_options():
-    from mppp.sfm import project as P
+    from rpp.sfm import project as P
     import inspect
     sig = inspect.signature(P.SfmProject.create)
     assert "navcam_cameras" in sig.parameters and "xml_dir" not in sig.parameters
@@ -288,7 +288,7 @@ def test_project_create_signature_has_no_removed_options():
 
 def test_start_rig_from_the_promoted_rig():
     from scipy.spatial.transform import Rotation
-    from mppp.sfm.start_cameras import navcam_start_rig
+    from rpp.sfm.start_cameras import navcam_start_rig
     rig = calib.load_rig("N")
     R0 = np.asarray(rig["R_sensor_from_ref"], float)
     images = [{"instrument": "NL", "sol": 1400, "camera_temperature_degC": -9.0},
@@ -306,7 +306,7 @@ def test_start_rig_from_the_promoted_rig():
 
 
 def test_project_camera_fallback_for_fisheye_tangential():
-    from mppp.colmap import project_camera, unproject_camera
+    from rpp.colmap import project_camera, unproject_camera
     p = np.array([2956.3, 2956.4, 2591.8, 1944.2, 0.0451, -0.0100, 2.5e-4, 3.6e-4, 0.0030, -0.0062, 0.0, 0.0])
     X = np.array([[0.3, -0.2, 1.0], [-0.6, 0.45, 1.0], [0.0, 0.0, 1.0]])
     cam = pycolmap.Camera(model="THIN_PRISM_FISHEYE", width=5120, height=3840, params=p)
@@ -321,11 +321,11 @@ def test_project_create_with_start_cameras_from_a_folder(tmp_path):
     from conftest import NLF
     if not NLF.is_file():
         pytest.skip("example IMGs not present")
-    import mppp
-    from mppp.sfm.project import SfmProject
+    import rpp
+    from rpp.sfm.project import SfmProject
     out = tmp_path / "proc"
     cfg = config_selection_off({"masking": {"infer_mask": False}, "export": {"formats": ["PNG8"], "write_colmap": False}})
-    man = mppp.process_images([NLF], out, cfg, mppp.load_waypoints(), progress=False)
+    man = rpp.process_images([NLF], out, cfg, rpp.load_waypoints(), progress=False)
     cand = tmp_path / "joint"
     cand.mkdir()
     src = calib.models._folder(None)
@@ -348,7 +348,7 @@ def test_rig_at_applies_the_hinge():
     rig = calib.load_rig("N")
     m = dict(rig["drift"])
     shipped = {"R_sensor_from_ref": np.eye(3).tolist(), "drift": m}
-    from mppp_studies.calibration.joint import rig_angles
+    from rpp_studies.calibration.joint import rig_angles
     for sol in (63.0, 1084.0, 1970.0):
         R, _, applied = calib.rig_at(shipped, sol)
         ang = rig_angles(R)
@@ -363,7 +363,7 @@ def test_rig_at_applies_the_hinge():
 
 
 def _model():
-    from mppp.sfm.project import zcam_focus_model
+    from rpp.sfm.project import zcam_focus_model
     return zcam_focus_model()
 
 
@@ -386,7 +386,7 @@ def test_shipped_focus_model_layout():
 
 
 def test_model_focal_terms_and_sol_clamp():
-    from mppp.sfm.project import zcam_model_focal
+    from rpp.sfm.project import zcam_model_focal
     g = _model()["cameras"]["ZR034"]
     f, t = zcam_model_focal(g, 600.0, T=-15.0, sol=700.0)
     assert f == pytest.approx(g["f0_px"]) and t["thermal"] == 0.0 and t["trend"] == 0.0
@@ -408,7 +408,7 @@ def test_model_focal_terms_and_sol_clamp():
 
 
 def test_pp_shift_about_the_median_focus():
-    from mppp.sfm.project import zcam_model_pp_shift
+    from rpp.sfm.project import zcam_model_pp_shift
     m = _model()["cameras"]
     assert zcam_model_pp_shift(m["ZL034"], 1200.0, 600.0) == (0.0, 0.0)
     dx, dy = zcam_model_pp_shift(m["ZR034"], 1200.0, 600.0)
@@ -418,7 +418,7 @@ def test_pp_shift_about_the_median_focus():
 
 
 def test_split_by_focus_uses_temperature_sol_and_pp():
-    from mppp.sfm.project import _split_by_focus, zcam_model_focal
+    from rpp.sfm.project import _split_by_focus, zcam_model_focal
     m = copy.deepcopy(_model())
     m["cameras"]["ZR034"]["thermal"]["f_px_per_degC"] = 0.3            # exercise the thermal path
     m["cameras"]["ZR034"]["trend"] = {"sol0": 700.0, "f_px_per_sol": 0.025, "sol_range": [461, 991]}   # a sol trend
@@ -449,8 +449,8 @@ def test_split_by_focus_uses_temperature_sol_and_pp():
 def test_focus_model_fingerprint(tmp_path):
     import hashlib
     import json
-    from mppp.paths import data_dir
-    from mppp.sfm.project import ZCAM_FOCUS_MODEL, zcam_focus_model_fingerprint
+    from rpp.paths import data_dir
+    from rpp.sfm.project import ZCAM_FOCUS_MODEL, zcam_focus_model_fingerprint
     shipped = data_dir() / "cmods" / ZCAM_FOCUS_MODEL
     h = hashlib.sha256()                                   # over every zoom's file (name + content)
     for f in sorted(shipped.parent.glob("M2020_ZCAM*_focus_model.json")):     # 0.94.0: 34 and 63 in use
@@ -464,8 +464,8 @@ def test_focus_model_fingerprint(tmp_path):
     assert zcam_focus_model_fingerprint(alt) != zcam_focus_model_fingerprint()
 
 
-def test_navcam_consensus_shipped_with_mppp():
-    from mppp.sfm.project import NAVCAM_CONSENSUS_DIR, NAVCAM_FISHEYE_PATTERN, NAVCAM_RIG_FILE, camera_from_colmap_json
+def test_navcam_consensus_shipped_with_rpp():
+    from rpp.sfm.project import NAVCAM_CONSENSUS_DIR, NAVCAM_FISHEYE_PATTERN, NAVCAM_RIG_FILE, camera_from_colmap_json
     for eye in ("NL", "NR"):
         f = NAVCAM_CONSENSUS_DIR / NAVCAM_FISHEYE_PATTERN.format(instrument=eye)
         cam = camera_from_colmap_json(f)
@@ -473,7 +473,7 @@ def test_navcam_consensus_shipped_with_mppp():
         j = json.loads(f.read_text())
         th = j["thermal"]
         # 0.95.0 (Christian, 27 Oct): form and provenance, not the values - the models in use are promoted outside
-        # git (MPPP_CMODS) and shipped at a release; a tied joint's per-axis thermal terms are tens of ppm/degC
+        # git (RPP_CMODS) and shipped at a release; a tied joint's per-axis thermal terms are tens of ppm/degC
         assert 10.0 < th["fx_ppm_per_degC"] < 80.0 and 10.0 < th["fy_ppm_per_degC"] < 80.0 and th["T0_degC"] == -20
         assert "ppm_per_degC" not in th                                          # the per-axis terms are the model
         assert "tied" in str(j.get("source", "")).lower() or "joint" in str(j.get("source", "")).lower()
@@ -489,8 +489,8 @@ def test_navcam_consensus_shipped_with_mppp():
 def test_navcam_distortion_hold_and_held_zeros():
     """The Navcam distortion is one set per eye for every sol and temperature (held in every block); the form's
     sx1, sy1 are fixed at 0 in either case; p1 has no setting of its own (TANGENTIAL)."""
-    from mppp.paths import cmods_dir
-    from mppp.sfm.project import camera_from_colmap_json, navcam_distortion_terms
+    from rpp.paths import cmods_dir
+    from rpp.sfm.project import camera_from_colmap_json, navcam_distortion_terms
     cam = camera_from_colmap_json(cmods_dir() / "M2020_NL_fisheye_tangential.json")
     names = ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "sx1", "sy1")
     held = navcam_distortion_terms(cam)                                    # defaults "hold"
@@ -505,14 +505,14 @@ def test_navcam_distortion_hold_and_held_zeros():
     with pytest.raises(ValueError):
         navcam_distortion_terms(cam, "free")
     with pytest.raises(ValueError):
-        from mppp.sfm.project import SfmProject
+        from rpp.sfm.project import SfmProject
         SfmProject.create([], "x", "y", navcam_distortion_fit="free")
 
 
 def test_zero_terms_apply_to_the_fisheye_model(tmp_path):
     """TANGENTIAL = "zero" zeroes p1, p2 of a THIN_PRISM_FISHEYE start camera."""
-    from mppp.paths import cmods_dir
-    from mppp.sfm.project import camera_from_colmap_json
+    from rpp.paths import cmods_dir
+    from rpp.sfm.project import camera_from_colmap_json
     cam = camera_from_colmap_json(cmods_dir() / "M2020_NL_fisheye_tangential.json", ("p1", "p2"))
     assert cam["params"][6] == cam["params"][7] == 0.0
 
@@ -521,8 +521,8 @@ def test_bundle_adjust_holds_the_navcam_distortion(tmp_path):
     """With the distortion held only f and the principal point change in the adjustment."""
     pytest.importorskip("pyceres")
     from helpers import _build_rec, _synthetic
-    from mppp.sfm.project import navcam_distortion_terms
-    from mppp.sfm.reconstruction import bundle_adjust
+    from rpp.sfm.project import navcam_distortion_terms
+    from rpp.sfm.reconstruction import bundle_adjust
     proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
     proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
     for k in ("NL", "NR"):
@@ -537,8 +537,8 @@ def test_bundle_adjust_holds_the_navcam_distortion(tmp_path):
 def test_zcam_focus_models_per_zoom(tmp_path):
     """One focus-model file per zoom, merged; a model with distortion and pp0 sets the eye camera; the
     fingerprint covers every zoom's file."""
-    from mppp.sfm.project import zcam_focus_model, zcam_focus_model_fingerprint, _split_by_focus
-    from mppp.sfm.start_cameras import zcam_eye_camera
+    from rpp.sfm.project import zcam_focus_model, zcam_focus_model_fingerprint, _split_by_focus
+    from rpp.sfm.start_cameras import zcam_eye_camera
     fp0 = zcam_focus_model_fingerprint()
     m48 = {"cameras": {"ZL048": {"f0_px": 6600.0, "reference_focus": 500.0, "slope_px_per_count": 0.1, "aspect": 1.0,
                                  "focus_range": [0, 1000],
@@ -546,7 +546,7 @@ def test_zcam_focus_models_per_zoom(tmp_path):
                                  "pp0_px": [820.0, 610.0], "pp": {"cx_px_per_count": 0.01, "cy_px_per_count": 0.0}}},
            "rig": {"R_sensor_from_ref": np.eye(3).tolist(), "note": "test"}}
     (tmp_path / "M2020_ZCAM048_focus_model.json").write_text(json.dumps(m48))
-    from mppp.calib import zcam_files
+    from rpp.calib import zcam_files
     files = zcam_files(tmp_path)
     assert set(files) >= {34, 48} and Path(files[48]).parent == tmp_path       # (63 in use since 0.94.0)
     m = zcam_focus_model(tmp_path)
@@ -578,7 +578,7 @@ def _zrows(group, counts, regular=()):
 
 
 def test_split_by_focus_regular_state_bins():
-    from mppp.sfm.project import _split_by_focus
+    from rpp.sfm.project import _split_by_focus
     base = {"model": "FULL_OPENCV", "width": 1648, "height": 1200, "source": "median of label CAHVOR models",
             "params": [5000.0, 5000.0, 824.0, 600.0, 0, 0, 0, 0, 0, 0, 0, 0], "fixed_params": ["k3"]}
     rows = _zrows("ZL034", [1000, 1005, 1010, 1012], regular=(2, 3))
@@ -599,8 +599,8 @@ def test_split_by_focus_holds_a_zoom_with_too_few_images():
     """0.95.0 (Christian, 27 Oct; Taylorfjellet's one 48 mm pair: the bin held f but ZR's free principal point went
     +90 px and failed the block): an eye and zoom with fewer than min_zoom_images images at the site keeps every bin
     at the model - all parameters fixed, held_at_model set, the sequence recorded; a zoom with enough is as before."""
-    from mppp.sfm.project import ZCAM_MIN_ZOOM_IMAGES, _split_by_focus
-    from mppp.calib.forms import FULL_OPENCV_PARAMS
+    from rpp.sfm.project import ZCAM_MIN_ZOOM_IMAGES, _split_by_focus
+    from rpp.calib.forms import FULL_OPENCV_PARAMS
     assert ZCAM_MIN_ZOOM_IMAGES == 6
     base = {"model": "FULL_OPENCV", "width": 1648, "height": 1200, "source": "median of label CAHVOR models",
             "params": [5000.0, 5000.0, 824.0, 600.0, 0, 0, 0, 0, 0, 0, 0, 0], "fixed_params": ["k3"]}
@@ -633,13 +633,13 @@ def test_project_applies_the_early_mission_offsets(tmp_path):
     from conftest import NLF
     if not NLF.is_file():
         pytest.skip("example IMGs not present")
-    import mppp
-    from mppp.calib import load_camera
-    from mppp.calib.models import CAMERA_FILE
-    from mppp.sfm.project import SfmProject
+    import rpp
+    from rpp.calib import load_camera
+    from rpp.calib.models import CAMERA_FILE
+    from rpp.sfm.project import SfmProject
     out = tmp_path / "proc"
     cfg = config_selection_off({"masking": {"infer_mask": False}, "export": {"formats": ["PNG8"], "write_colmap": False}})
-    man = mppp.process_images([NLF], out, cfg, mppp.load_waypoints(), progress=False)
+    man = rpp.process_images([NLF], out, cfg, rpp.load_waypoints(), progress=False)
     (tmp_path / "joint").mkdir()
     for eye in "LR":
         js = load_camera("N", eye)
@@ -658,7 +658,7 @@ def test_project_applies_the_early_mission_offsets(tmp_path):
 
 
 def test_focal_pp_bins_free_zr_principal_point():
-    from mppp.sfm.project import ZCAM_BIN_REFINE_SETTINGS, _split_by_focus
+    from rpp.sfm.project import ZCAM_BIN_REFINE_SETTINGS, _split_by_focus
     assert "focal_pp" in ZCAM_BIN_REFINE_SETTINGS
     base = {"model": "OPENCV", "params": [4700, 4700, 824, 600, 0, 0, 0, 0], "source": "label", "fixed_params": []}
     cams = {"ZL034": dict(base), "ZR034": dict(base)}
@@ -672,7 +672,7 @@ def test_focal_pp_bins_free_zr_principal_point():
 
 
 def test_split_by_focus_starts_on_calibrated_lines():
-    from mppp.sfm.project import _split_by_focus
+    from rpp.sfm.project import _split_by_focus
     base = {"model": "FULL_OPENCV", "params": [4700, 4700, 824, 600, -0.47, 0.7, 0, 0, 0, 0, 0, 0], "source": "label",
             "fixed_params": []}
     model = {"cameras": {"ZR034": {"f0_px": 4720.0, "reference_focus": 600.0, "slope_px_per_count": 0.05, "aspect": 1.0,
@@ -704,7 +704,7 @@ def _rig_entry():
 
 def test_navcam_rig_epochs_split_the_visits(tmp_path):
     from scipy.spatial.transform import Rotation
-    from mppp.sfm.project import navcam_rig_epochs
+    from rpp.sfm.project import navcam_rig_epochs
     images = [{"instrument": "NL", "sol": s, "camera_temperature_degC": -20.0} for s in (91, 95, 101, 360, 365, 378)] + \
              [{"instrument": "NR", "sol": s, "camera_temperature_degC": -21.0} for s in (91, 95, 101, 360, 365, 378)] + \
              [{"instrument": "ZL034", "sol": 365}]
@@ -737,7 +737,7 @@ def test_navcam_rig_epochs_split_the_visits(tmp_path):
 
 
 def test_split_by_focus_holds_pinned_params():
-    from mppp.sfm.project import _split_by_focus
+    from rpp.sfm.project import _split_by_focus
     base = {"model": "FULL_OPENCV", "params": [4700, 4700, 743.2, 664.0, -0.47, 0.7, 0, 0, 0, 0, 0, 0], "source": "label",
             "fixed_params": [], "pp_at_focus": 600.0}
     model = {"cameras": {"ZR034": {"f0_px": 4720.0, "reference_focus": 600.0, "slope_px_per_count": 0.064, "aspect": 1.0025,
@@ -760,7 +760,7 @@ def test_split_by_focus_holds_pinned_params():
 
 
 def test_shipped_zcam_focus_model_lines():
-    from mppp.sfm.project import zcam_focus_model
+    from rpp.sfm.project import zcam_focus_model
     m = zcam_focus_model()
     assert m.get("form") in ("zcam-v1", "zcam-v2") and m["rig"]["translation_source"]
     for eye in ("ZL034", "ZR034"):
@@ -773,7 +773,7 @@ def test_shipped_zcam_focus_model_lines():
 
 
 def test_navcam_rig_epochs_with_the_knot(tmp_path):
-    from mppp.sfm.project import navcam_rig_epochs
+    from rpp.sfm.project import navcam_rig_epochs
     images = [{"instrument": e, "sol": s, "camera_temperature_degC": -20.0} for s in (280, 290, 305, 310) for e in ("NL", "NR")]
     rig = {"N": {"ref": "NL", "sensor": "NR", "R_sensor_from_ref": np.eye(3).tolist(), "t_sensor_from_ref": [-0.424, 0, 0]}}
     cams = {"NL": {"params": [1.0] * 12}, "NR": {"params": [2.0] * 12}}
@@ -793,7 +793,7 @@ def _fisheye_cam():
 
 
 def test_navcam_pp_hold_adds_cx_cy_to_fixed():
-    from mppp.sfm.project import NAVCAM_PP, navcam_distortion_terms
+    from rpp.sfm.project import NAVCAM_PP, navcam_distortion_terms
     assert NAVCAM_PP == "hold"
     c = navcam_distortion_terms(_fisheye_cam(), "hold", pp="hold")
     assert {"cx", "cy"} <= set(c["fixed_params"]) and "fx" not in c["fixed_params"] and "fy" not in c["fixed_params"]
@@ -805,7 +805,7 @@ def test_navcam_pp_hold_adds_cx_cy_to_fixed():
 
 
 def test_k4_consensus_keeps_a_fitted_k4():
-    from mppp.sfm.project import navcam_distortion_terms
+    from rpp.sfm.project import navcam_distortion_terms
     cam = _fisheye_cam()
     cam["params"][9] = 0.0021
     c = navcam_distortion_terms(cam, "hold", pp="hold")                          # k3, k4 come as a pair from the model
@@ -815,7 +815,7 @@ def test_k4_consensus_keeps_a_fitted_k4():
 def test_navcam_rig_epochs_small_epoch_joined():
     """0.91: an epoch with too few images or one station gets no rig of its own - it joins the nearest epoch
     (Rochette's sol-341 single station of 20 Oct)."""
-    from mppp.sfm.project import merge_small_epochs, navcam_rig_epochs
+    from rpp.sfm.project import merge_small_epochs, navcam_rig_epochs
     def imgs(sol, station, n):
         return [{"instrument": e, "sol": sol, "station": station, "camera_temperature_degC": -20.0} for _ in range(n) for e in ("NL", "NR")]
     images = imgs(174, "S003D0100", 10) + imgs(176, "S003D0200", 10) + imgs(341, "S009D1914", 3) + imgs(500, "S012D0000", 10) + imgs(505, "S012D0100", 10)
@@ -832,7 +832,7 @@ def test_navcam_rig_epochs_small_epoch_joined():
 def test_zcam_rig_epochs_span_at_most_100_sols():
     """0.97.0 (Christian, 12 Nov 2026: "the sol span of one z34 rig in a block is not longer than 100 sols"): Chal
     Rocks large's two visits get a rig each; the bundle adjustment's key falls back to the zoom's rig in a joint."""
-    from mppp.sfm.project import zcam_epoch_ranges, zcam_rig_epochs, zcam_rig_key
+    from rpp.sfm.project import zcam_epoch_ranges, zcam_rig_epochs, zcam_rig_key
     assert zcam_epoch_ranges([72] * 6 + [100] * 5 + [361] * 8 + [378] * 4) == [(72, 100), (361, 378)]
     assert zcam_epoch_ranges([10] * 5 + [90] * 5) == [(10, 90)]                         # 80 sols: one rig
     assert zcam_epoch_ranges([10] * 5 + [150] * 5 + [300] * 5) == [(10, 10), (150, 150), (300, 300)]
@@ -861,7 +861,7 @@ def test_zcam_rig_epochs_span_at_most_100_sols():
 
 
 def test_run_key_changes_only_for_zcam_sites_over_100_sols(tmp_path, monkeypatch):
-    from mppp.pipeline import Settings, resolve_site, run_key
+    from rpp.pipeline import Settings, resolve_site, run_key
     s = Settings(scapes_root=str(tmp_path), include_zcam=True)
     _, a = resolve_site("chal_rocks_large", s)
     _, b = resolve_site("butler_landing", s)

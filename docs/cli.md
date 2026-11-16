@@ -1,38 +1,38 @@
 # Command line
 
-The `mppp` command is installed with the package (`python -m mppp` is the same). The text below is the
+The `rpp` command is installed with the package (`python -m rpp` is the same). The text below is the
 output of `--help` for the command and each subcommand. Settings of `process`, `align` and `run` are the
-fields of `mppp.pipeline.Settings` (see the [API reference](api.md)); `--set NAME=VALUE` overrides one.
+fields of `rpp.pipeline.Settings` (see the [API reference](api.md)); `--set NAME=VALUE` overrides one.
 
-## mppp
+## rpp
 
 ```text
-usage: mppp [-h] [-v | -q] [--log FILE]
+usage: rpp [-h] [-v | -q] [--log FILE]
             {process,align,run,sites,gui,cmods,mask,example,waypoints,maps,calib,mesh,depthmaps,ods,dense,metashape,nerfstudio,doctor,version} ...
 
-The ``mppp`` command: the pipeline (:mod:`mppp.pipeline`) and its bookkeeping from the shell.
+The ``rpp`` command: the pipeline (:mod:`rpp.pipeline`) and its bookkeeping from the shell.
 
 ::
 
-    mppp process SITE|WORK [--root DIR] [--pds DIR] [--zcam] [--hazcam front|rear|both|none] [--set NAME=VALUE ...]
+    rpp process SITE|WORK [--root DIR] [--pds DIR] [--zcam] [--hazcam front|rear|both|none] [--set NAME=VALUE ...]
                  [--settings FILE] [--dry-run]
-    mppp align WORK [--variant NAME] [--set ...] [--settings FILE] [--gui] [--stop-after STEP] [--force] [--status]
-    mppp run SITE|WORK [...]                  process, then align
-    mppp sites [list | check | folder SITE]   the site definitions (mppp/data/sites.json)
-    mppp cmods [list | promote PATH ... --note TEXT]   the camera models in use
-    mppp mask [list | fetch [NAME] | install FILE]      the terrain mask model
-    mppp example [fetch [--dest DIR] | build --pds DIR --zcam DIR --out DIR]   the Mars 2020 example data (Rockytop)
-    mppp maps [all | zooms | figures 2 3 ...] [--out DIR] [--dpi N] [--background dtm|ortho] [--tag T] [--dems F;F] [--orthos F;F]
-    mppp calib navcam [--root DIR] [--group ecam_consensus | --blocks NAME=WORK ...] [--out DIR] [--promote-if-ok]
-    mppp calib zcam|nz|hazcam [--zoom Z] [--group G1,G2] [--navcam-group G] [--variant V] [--promote-if-ok]
-    mppp mesh WORK --station S003D1234 [--points PLY] [--colmap EXE] [--mesh-radius 75] [--plane-radius 200]   0.96: one clean surface
-    mppp depthmaps WORK --station ... [--cameras N] [--scale 1] [--photometry]   0.96: per-image depth / normal maps, the photometric cube
-    mppp ods WORK --station ... [--width 8192] [--ipd 0.064]                       0.96: the stereoscopic panorama, two eye images
-    mppp doctor                               what is set, what is missing (environment, dependencies, models)
-    mppp version
+    rpp align WORK [--variant NAME] [--set ...] [--settings FILE] [--gui] [--stop-after STEP] [--force] [--status]
+    rpp run SITE|WORK [...]                  process, then align
+    rpp sites [list | check | folder SITE]   the site definitions (rpp/data/sites.json)
+    rpp cmods [list | promote PATH ... --note TEXT]   the camera models in use
+    rpp mask [list | fetch [NAME] | install FILE]      the terrain mask model
+    rpp example [fetch [--dest DIR] | build --pds DIR --zcam DIR --out DIR]   the Mars 2020 example data (Rockytop)
+    rpp maps [all | zooms | figures 2 3 ...] [--out DIR] [--dpi N] [--background dtm|ortho] [--tag T] [--dems F;F] [--orthos F;F]
+    rpp calib navcam [--root DIR] [--group ecam_consensus | --blocks NAME=WORK ...] [--out DIR] [--promote-if-ok]
+    rpp calib zcam|nz|hazcam [--zoom Z] [--group G1,G2] [--navcam-group G] [--variant V] [--promote-if-ok]
+    rpp mesh WORK --station S003D1234 [--points PLY] [--colmap EXE] [--mesh-radius 75] [--plane-radius 200]   0.96: one clean surface
+    rpp depthmaps WORK --station ... [--cameras N] [--scale 1] [--photometry]   0.96: per-image depth / normal maps, the photometric cube
+    rpp ods WORK --station ... [--width 8192] [--ipd 0.064]                       0.96: the stereoscopic panorama, two eye images
+    rpp doctor                               what is set, what is missing (environment, dependencies, models)
+    rpp version
 
 ``-v`` / ``-q`` set the logging level, ``--log FILE`` tees the log to a file.  ``process``, ``align`` and ``run``
-write ``<WORK>/runs/<time>/log.txt`` and ``<WORK>/mppp_status.json`` as well (:func:`mppp.runner.run_logged`).
+write ``<WORK>/runs/<time>/log.txt`` and ``<WORK>/mppp_status.json`` as well (:func:`rpp.runner.run_logged`).
 Every subcommand returns an exit code (0 ok, 1 failed, 2 bad arguments, 3 a run is already going on).
 
 positional arguments:
@@ -47,12 +47,12 @@ positional arguments:
     mask                the terrain mask model
     example             the Mars 2020 example data (Rockytop, sols 461-464): fetch or build
     waypoints           the Mars 2020 waypoint table in use (cached download or packaged snapshot)
-    maps                the M20 site-map figures (mppp_studies.sites) from the official blocks of
+    maps                the M20 site-map figures (rpp_studies.sites) from the official blocks of
                         sites.json
     calib               the camera calibrations (0.91: the Navcam tied joint, the Mastcam-Z joint)
     doctor              what is set, what is missing: environment variables, dependencies, models,
                         waypoints
-    version             the MPPP version
+    version             the RPP version
 
 options:
   -h, --help            show this help message and exit
@@ -61,10 +61,10 @@ options:
   --log FILE            also write the log to this file
 ```
 
-## mppp process
+## rpp process
 
 ```text
-usage: mppp process [-h] [--set NAME=VALUE] [--settings FILE] [--sites-file FILE] [--root DIR]
+usage: rpp process [-h] [--set NAME=VALUE] [--settings FILE] [--sites-file FILE] [--root DIR]
                     [--pds DIR] [--zcam] [--hazcam {front,rear,both,none}] [--force] [--no-echo]
                     [--dry-run]
                     SITE|WORK
@@ -74,12 +74,12 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  --set NAME=VALUE      a pipeline setting (mppp.pipeline.Settings field), VALUE as JSON or
+  --set NAME=VALUE      a pipeline setting (rpp.pipeline.Settings field), VALUE as JSON or
                         Python; repeatable
   --settings FILE       a JSON file of settings {NAME: value}
-  --sites-file FILE     site definitions (default mppp/data/sites.json)
-  --root DIR            the scapes root (default: MPPP_SCAPES)
-  --pds DIR             the PDS archive (default: MPPP_PDS)
+  --sites-file FILE     site definitions (default rpp/data/sites.json)
+  --root DIR            the scapes root (default: RPP_SCAPES)
+  --pds DIR             the PDS archive (default: RPP_PDS)
   --zcam                the Navcam + Mastcam-Z block of the site (..._zcam)
   --hazcam {front,rear,both,none}
                         the Hazcam frames of the block's stations: front, rear, both (the default
@@ -89,10 +89,10 @@ options:
   --dry-run             select only: list what would be processed
 ```
 
-## mppp align
+## rpp align
 
 ```text
-usage: mppp align [-h] [--variant VARIANT] [--set NAME=VALUE] [--settings FILE]
+usage: rpp align [-h] [--variant VARIANT] [--set NAME=VALUE] [--settings FILE]
                   [--sites-file FILE] [--hazcam {front,rear,both,none}] [--force] [--no-echo]
                   [--gui] [--stop-after STEP] [--status]
                   WORK
@@ -103,10 +103,10 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   --variant VARIANT     results in <WORK>/colmap_<variant> instead of colmap/
-  --set NAME=VALUE      a pipeline setting (mppp.pipeline.Settings field), VALUE as JSON or
+  --set NAME=VALUE      a pipeline setting (rpp.pipeline.Settings field), VALUE as JSON or
                         Python; repeatable
   --settings FILE       a JSON file of settings {NAME: value}
-  --sites-file FILE     site definitions (default mppp/data/sites.json)
+  --sites-file FILE     site definitions (default rpp/data/sites.json)
   --hazcam {front,rear,both,none}
                         the Hazcam frames of the block's stations: front, rear, both (the default
                         since 0.93.1) or none
@@ -118,10 +118,10 @@ options:
   --status              print the folder's run status and exit
 ```
 
-## mppp run
+## rpp run
 
 ```text
-usage: mppp run [-h] [--variant VARIANT] [--set NAME=VALUE] [--settings FILE] [--sites-file FILE]
+usage: rpp run [-h] [--variant VARIANT] [--set NAME=VALUE] [--settings FILE] [--sites-file FILE]
                 [--root DIR] [--pds DIR] [--zcam] [--hazcam {front,rear,both,none}] [--force]
                 [--no-echo] [--gui] [--stop-after STEP]
                 SITE|WORK
@@ -132,12 +132,12 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   --variant VARIANT     results in <WORK>/colmap_<variant> instead of colmap/
-  --set NAME=VALUE      a pipeline setting (mppp.pipeline.Settings field), VALUE as JSON or
+  --set NAME=VALUE      a pipeline setting (rpp.pipeline.Settings field), VALUE as JSON or
                         Python; repeatable
   --settings FILE       a JSON file of settings {NAME: value}
-  --sites-file FILE     site definitions (default mppp/data/sites.json)
-  --root DIR            the scapes root (default: MPPP_SCAPES)
-  --pds DIR             the PDS archive (default: MPPP_PDS)
+  --sites-file FILE     site definitions (default rpp/data/sites.json)
+  --root DIR            the scapes root (default: RPP_SCAPES)
+  --pds DIR             the PDS archive (default: RPP_PDS)
   --zcam                the Navcam + Mastcam-Z block of the site (..._zcam)
   --hazcam {front,rear,both,none}
                         the Hazcam frames of the block's stations: front, rear, both (the default
@@ -148,10 +148,10 @@ options:
   --stop-after STEP     stop the alignment after this step
 ```
 
-## mppp sites
+## rpp sites
 
 ```text
-usage: mppp sites [-h] [--sites-file FILE] [--root DIR] [--zcam] [{list,check,folder}] [site]
+usage: rpp sites [-h] [--sites-file FILE] [--root DIR] [--zcam] [{list,check,folder}] [site]
 
 positional arguments:
   {list,check,folder}
@@ -160,14 +160,14 @@ positional arguments:
 options:
   -h, --help           show this help message and exit
   --sites-file FILE
-  --root DIR           folder: the scapes root (default: MPPP_SCAPES)
+  --root DIR           folder: the scapes root (default: RPP_SCAPES)
   --zcam               folder: the Navcam + Mastcam-Z block
 ```
 
-## mppp cmods
+## rpp cmods
 
 ```text
-usage: mppp cmods [-h] [--note NOTE] [--dry-run] [{list,promote}] [paths ...]
+usage: rpp cmods [-h] [--note NOTE] [--dry-run] [{list,promote}] [paths ...]
 
 positional arguments:
   {list,promote}
@@ -179,10 +179,10 @@ options:
   --dry-run       promote: check and show, copy nothing
 ```
 
-## mppp mask
+## rpp mask
 
 ```text
-usage: mppp mask [-h] [--name NAME] [--force] [{list,fetch,install}] [arg]
+usage: rpp mask [-h] [--name NAME] [--force] [{list,fetch,install}] [arg]
 
 positional arguments:
   {list,fetch,install}
@@ -194,10 +194,10 @@ options:
   --force               fetch: download again
 ```
 
-## mppp example
+## rpp example
 
 ```text
-usage: mppp example [-h] [--dest DIR] [--force] [--pds DIR] [--zcam DIR] [--out DIR] {fetch,build}
+usage: rpp example [-h] [--dest DIR] [--force] [--pds DIR] [--zcam DIR] [--out DIR] {fetch,build}
 
 positional arguments:
   {fetch,build}  fetch: download the release asset and unpack it; build: zip it from a local PDS
@@ -205,27 +205,27 @@ positional arguments:
 
 options:
   -h, --help     show this help message and exit
-  --dest DIR     fetch: where to unpack (default ~/mppp_example)
+  --dest DIR     fetch: where to unpack (default ~/rpp_example)
   --force        fetch: download again
-  --pds DIR      build: the PDS archive (default MPPP_PDS)
+  --pds DIR      build: the PDS archive (default RPP_PDS)
   --zcam DIR     build: the Mastcam-Z folder (default <PDS>/../zcam)
   --out DIR      build: where to write the zip
 ```
 
-## mppp waypoints
+## rpp waypoints
 
 ```text
-usage: mppp waypoints [-h] [--refresh]
+usage: rpp waypoints [-h] [--refresh]
 
 options:
   -h, --help  show this help message and exit
   --refresh   download the current table now (every sync should)
 ```
 
-## mppp maps
+## rpp maps
 
 ```text
-usage: mppp maps [-h] [--out DIR] [--dpi DPI] [--background {dtm,ortho,white}] [--tag TAG]
+usage: rpp maps [-h] [--out DIR] [--dpi DPI] [--background {dtm,ortho,white}] [--tag TAG]
                  [--sites-file FILE] [--dems DEMS] [--orthos ORTHOS]
                  [what ...]
 
@@ -243,10 +243,10 @@ options:
   --orthos ORTHOS       orthomosaic GeoTIFFs (M20_ORTHOS)
 ```
 
-## mppp calib
+## rpp calib
 
 ```text
-usage: mppp calib [-h] [--variant VARIANT] [--root DIR] [--group GROUP] [--zoom ZOOM]
+usage: rpp calib [-h] [--variant VARIANT] [--root DIR] [--group GROUP] [--zoom ZOOM]
                   [--navcam-group NAVCAM_GROUP] [--blocks [NAME=WORK ...]] [--sites-file FILE]
                   [--out DIR] [--points POINTS] [--zpoints ZPOINTS] [--hold [HOLD ...]]
                   [--knot KNOT] [--aniso-f] [--no-diagnostics] [--include-failed] [--no-k-tests]
@@ -265,7 +265,7 @@ options:
   -h, --help            show this help message and exit
   --variant VARIANT     the blocks' project colmap_<variant> (default colmap; the Hazcam-only
                         alignments: hazcam)
-  --root DIR            the scapes root (default: MPPP_SCAPES)
+  --root DIR            the scapes root (default: RPP_SCAPES)
   --group GROUP         site group(s) of the blocks, comma-separated (default ecam_consensus /
                         zcam<zoom>_joint, else zcam<zoom>_consensus); zcam / nz take the sites
                         whose "zcam" list has the zoom
@@ -297,67 +297,67 @@ options:
 tests (default 100) and the number of passes (default 2, the covariance on the last). `zcam_backlash_rerun.bat`
 runs the joints with `--iterations 300`.
 
-## mppp doctor
+## rpp doctor
 
 ```text
-usage: mppp doctor [-h]
+usage: rpp doctor [-h]
 
 options:
   -h, --help  show this help message and exit
 ```
 
-## mppp version
+## rpp version
 
 ```text
-usage: mppp version [-h]
+usage: rpp version [-h]
 
 options:
   -h, --help  show this help message and exit
 ```
 
-## mppp gui
+## rpp gui
 
 Writes `open_in_colmap.bat`, `open_in_metashape.bat` (0.98.18; it replaces `open_in_colmap_fullres.bat`, which it deletes), `colmap_gui.ini` and (0.95.0) `dense_reconstruct.bat`
 into finished projects.
 
-## mppp single-sites
+## rpp single-sites
 
 0.96.0 (Christian, 10 Nov 2026: "We'll use these three as the test sites ... the single sites should come from a
-config file"). The single-station test sites of `mppp.ibr`, listed in `src/mppp/data/single_sites.json` (per
+config file"). The single-station test sites of `rpp.ibr`, listed in `src/rpp/data/single_sites.json` (per
 station: `site` - a site of `sites.json`, whose Navcam WORK folder is the block - or `work`; `station`; `frames`:
 `images`, `scale` or `sequences` for the dense step; optional `variants`, `mesh_args` / `depthmaps_args` /
 `ods_args`, `note`).
 
 ```text
-usage: mppp single-sites [LABEL ...] [--config FILE] [--root D:\rover_blocks] [--out DIR]
+usage: rpp single-sites [LABEL ...] [--config FILE] [--root D:\rover_blocks] [--out DIR]
                          [--steps dense mesh depthmaps ods] [--variants masked rover] [--width PX]
                          [--force] [--squares-only] [--retone]
                          [--publish DIR] [--publish-only] [--publish-width 8192] [--publish-views VIEW ...]
                          [--list] [--dry-run] [--install DIR]
 ```
 
-Per station and variant the steps run as their own processes: `mppp dense` (stereo and fusion, then the fusion with
+Per station and variant the steps run as their own processes: `rpp dense` (stereo and fusion, then the fusion with
 the rover kept), then `mesh`, `depthmaps --photometry` and `ods` into `<root>\single_sites\<label>\` (rover masked
 out) and `...\<label>\with_rover\` (rover shown). A failed step skips the rest of its variant (a failed dense step
 the whole station). Each station's output also goes to `single_site_log.txt` in its folder;
 `single_sites_summary.md` has a line per station and variant: the exit codes, how far the fused points reach, the
 ground plane, the panorama's coverage, whether the square is there. `--squares-only` only stacks the eye images
 already there; `--retone` makes the 8-bit images again from the 16-bit ones. Since 0.97.2 a mesh, depthmaps or ods
-step whose command, code (`mppp/ibr`, `sfm/dense.py`), cloud and upstream steps are unchanged since its last good
+step whose command, code (`rpp/ibr`, `sfm/dense.py`), cloud and upstream steps are unchanged since its last good
 run is skipped (`--force` runs everything; `step_<name>.json` in the station's folder is the record), the second
 variant takes the first one's terrain mesh, and `single_sites_status.json` says what is running. `--publish DIR`
 (0.97.3) copies the stations' stereo JPEGs, reduced to `--publish-width`, into `DIR/panos` and lists them in
 `DIR/panos.json` for the web viewer (`docs/ods` of the repository; see
 [Station products](station-products.md)); `--publish-only` does only that. `--install DIR` writes `run_single_site_ibr.bat` into DIR: it fast-forwards `D:\code\MPPP`
 to the newest bundle in `D:\rover_blocks\_transfer` when that bundle is ahead (never back), then runs
-`mppp single-sites` with its arguments - it names no version, so it never needs replacing.
+`rpp single-sites` with its arguments - it names no version, so it never needs replacing.
 
-## mppp dense
+## rpp dense
 
 0.95.0 (Christian, 28 Oct 2026): the COLMAP dense reconstruction of a finished block, preloaded from the alignment.
 
 ```text
-usage: mppp dense [-h] [--variant VARIANT] [--prepare] [--stereo] [--fusion] [--mesh]
+usage: rpp dense [-h] [--variant VARIANT] [--prepare] [--stereo] [--fusion] [--mesh]
                   [--max-image-size N] [--python PYTHON] [--overwrite] work
 ```
 
@@ -374,27 +374,27 @@ the fusion into `dense/fused.ply` with the masks, `--mesh` a Poisson mesh.
 `--sequence NCAM03461 ...` and `--scale 0.5` (the half-resolution frames), or `--images NAME ...`, works on those
 frames alone: a sub-model of them (the other frames deregistered, their observations dropped) is undistorted into
 its own workspace `<project>/dense_<station>[_<sequence>]`, so the patch-match stereo and the fusion see nothing
-else, and `mppp mesh --station` takes that workspace's `fused.ply` first. For example the sol-461 half-resolution
-Navcam frames of Rockytop: `mppp dense <WORK> --station 26_630 --scale 0.5 --prepare --stereo --fusion`.
+else, and `rpp mesh --station` takes that workspace's `fused.ply` first. For example the sol-461 half-resolution
+Navcam frames of Rockytop: `rpp dense <WORK> --station 26_630 --scale 0.5 --prepare --stereo --fusion`.
 A station run loosens COLMAP's patch-match and fusion filters (10 Nov 2026): a pixel needs a 0.4 deg triangulation
 angle instead of 3 deg (with Navcam's 0.424 m baseline, 61 m instead of 8 m) and one consistent source view instead
 of two, and a fused point 2 images instead of 5 - the far terrain of one station is seen by one stereo pair only.
 `--min-angle DEG` and `--min-views N` change them; a whole-block run keeps COLMAP's defaults.
 The options of the patch-match maps are recorded in `stereo/mppp_stereo.json`: maps made with other options are
 deleted before `--stereo` (COLMAP skips every image whose maps exist), `--restereo` deletes them in any case.
-`--keep-rover` fuses the same depth maps without the rover masks into `fused_rover.ply` (for `mppp mesh / depthmaps /
+`--keep-rover` fuses the same depth maps without the rover masks into `fused_rover.ply` (for `rpp mesh / depthmaps /
 ods`, which show the rover body and deck by default since 0.96.1 - products in `ods/<station>_rover/`;
 `--mask-rover` for the rover-masked products in `ods/<station>/`); after a run, `--fusion --keep-rover` alone is
 enough.
 
 `dense_reconstruct.bat`, written next to `open_in_colmap.bat`, does the same with the COLMAP executable (a CUDA
-build is looked for first): double-click runs undistortion (without the masks: `mppp dense --prepare` for those),
-stereo and fusion; `set MPPP_DENSE_STEP=prepare|stereo|fusion|mesh` runs one step, `MPPP_DENSE_MAX_SIZE` the
-resolution, `MPPP_DENSE_MESH=1` adds the mesh. The GUI's Reconstruction > Dense reconstruction dialog takes the same
+build is looked for first): double-click runs undistortion (without the masks: `rpp dense --prepare` for those),
+stereo and fusion; `set RPP_DENSE_STEP=prepare|stereo|fusion|mesh` runs one step, `RPP_DENSE_MAX_SIZE` the
+resolution, `RPP_DENSE_MESH=1` adds the mesh. The GUI's Reconstruction > Dense reconstruction dialog takes the same
 `dense\` folder as its workspace, with the undistortion already done.
 
 ```text
-usage: mppp gui [-h] [--root DIR] [--variant VARIANT] [works ...]
+usage: rpp gui [-h] [--root DIR] [--variant VARIANT] [works ...]
 
 positional arguments:
   works              WORK folders (default: every WORK folder under --root
@@ -402,25 +402,25 @@ positional arguments:
 
 options:
   -h, --help         show this help message and exit
-  --root DIR         the scapes root (default: MPPP_SCAPES)
+  --root DIR         the scapes root (default: RPP_SCAPES)
   --variant VARIANT  the project colmap_<variant> instead of colmap
 ```
 
-## mppp mesh, mppp depthmaps, mppp ods
+## rpp mesh, rpp depthmaps, rpp ods
 
 0.96.0 (Christian, 9 Nov 2026: "the pipeline that generates the per image depth maps and photometric cube from the
 cleaned up 3d mesh ... prototype the stereoscopic pipeline. The output should just be two images"): the products of
 one **station** (a site and drive of the rover) of a finished block, under `<project>/ods/<station>/`
-(`mppp.ibr`; the `[ibr]` extra: open3d).
+(`rpp.ibr`; the `[ibr]` extra: open3d).
 
 ```text
-usage: mppp mesh      WORK --station S026D0392 [--points dense/fused.ply] [--colmap colmap.exe] [--dense-dir DIR]
+usage: rpp mesh      WORK --station S026D0392 [--points dense/fused.ply] [--colmap colmap.exe] [--dense-dir DIR]
                       [--mesh-radius 75] [--plane-radius 200] [--horizontal-plane] [--no-tie-points]
                       [--terrain-from DIR] [--keep-under-rover M] [--pivot-height zcam]
                       [--far-radius R] [--target-triangles 6000000] [--poisson-depth 10] [--cameras N] [--no-preview]
-usage: mppp depthmaps WORK --station ... [--cameras N] [--scale 1] [--zcam-scale 1] [--images NAME ...]
+usage: rpp depthmaps WORK --station ... [--cameras N] [--scale 1] [--zcam-scale 1] [--images NAME ...]
                       [--photometry] [--no-shadow] [--no-preview] [--no-validate]
-usage: mppp ods       WORK --station ... [--width 8192] [--ipd 0.064] [--cameras N] [--scale 1] [--images ...]
+usage: rpp ods       WORK --station ... [--width 8192] [--ipd 0.064] [--cameras N] [--scale 1] [--images ...]
                       [--sky-radius 300] [--no-far-field] [--no-geometry] [--pole-merge 0 90] [--pole-merge-down 0 90] [--eyes left right centre]
                       [--fill-cameras F] [--site-name NAME] [--no-nadir-mark] [--nadir-mark-deg 20]
                       [--rows-per-chunk 128] [--exclude STEM ...] [--stack-top left] [--retone] [--stack-only]
@@ -437,7 +437,7 @@ smoothing. Beyond the mesh: **the ground plane** out to `--plane-radius` (200 m)
 points and the block's tie points (seen by 3+ images) as the medians of 10 deg x range-ring bins and a Huber fit,
 so it follows the regional slope (`--horizontal-plane` for a level one; a tilt over 20 deg or too few bins falls
 back to it); it also fills the mesh's holes. Beyond the plane **the sky**, on a sphere of 300 m radius since 0.97.13 (200 m from 0.97.5)
-(`mppp ods --sky-radius`; at infinity before). The mesh has priority over
+(`rpp ods --sky-radius`; at infinity before). The mesh has priority over
 the plane even where the plane is nearer, and only the mesh occludes. `mesh.ply`, `ground_plane.json` (the plane,
 its tilt and its misfit per ring), `mesh_report.json` (the fused points per ring from the axis, the coverage by
 range), `mesh_preview.png` (the plane outlined in the range panorama). `--far-radius R` gives the 0.96.0
@@ -458,9 +458,9 @@ coverage: coloured, mesh, far, none); with the rover shown (the default since 0.
 frames out (both eyes of a pair).  **`mesh`** with the rover shown puts a floor at the rover deck: nothing below the deck top
 inside its footprint (RMECH x -1.10..+0.95 m, y +-0.60 m, z 0 = the deck top; the rover placed by the frames' label
 CAHVORE poses), the floor added to the mesh, `rover_deck.json`; `--no-deck-floor` to leave it out.  With the rover shown the mesh also takes NASA's Perseverance
-model (simplified, the arm stowed; `mppp.ibr.rover_model`) at the station's rover pose, the fused points within 4 cm
+model (simplified, the arm stowed; `rpp.ibr.rover_model`) at the station's rover pose, the fused points within 4 cm
 of it dropped (`--no-rover-model`, `--rover-model-parts`).  **`ods --bits 16`** (0.96.1) blends the panorama from 16-bit linear frames made
-again from the PDS products (`<project>/images16/`; `--pds` or `MPPP_PDS`): `<station>_ods_left_16.png`,
+again from the PDS products (`<project>/images16/`; `--pds` or `RPP_PDS`): `<station>_ods_left_16.png`,
 `_right_16.png`, `_360_3DTD_16.png` (uint16 linear, for colour work; what the 8-bit images clip at 255 is kept,
 saturated pixels are neutral) next to the 8-bit ones, which get a soft highlight roll-off (`--tone clip` for the old
 cut).  `mesh` also removes floating surface: anything above the cameras, and beyond
@@ -476,28 +476,28 @@ The current behaviour in one place - the eye separation (64 mm x cos(elevation) 
 `_360_3DTD` files, the file list and the web viewer - is on [Station products](station-products.md). The paragraph
 above is the record of how the commands grew.
 
-## mppp metashape
+## rpp metashape
 
 0.95.2 (Christian, 30 Oct 2026): a finished block as an Agisoft Metashape project - cameras, tie points and masks,
 the photos linked from the COLMAP project's `images\`.
 
 ```text
-usage: mppp metashape [-h] [--variant VARIANT] [--model MODEL] [--out OUT] [--max-points MAX_POINTS]
+usage: rpp metashape [-h] [--variant VARIANT] [--model MODEL] [--out OUT] [--max-points MAX_POINTS]
                       [--metashape METASHAPE] [--run] [--open] work
 ```
 
 Writes `<project>\metashape\`: `metashape_job.json`, the tie points as Bundler v0.3 (`<block>.bundler.out` and
 `<block>.bundler_images.txt`), `build_metashape_project.py` and `make_metashape_project.bat`. Double-click the batch
-file (or `--run`): Metashape Professional (`MPPP_METASHAPE`, else the standard install) builds `<block>.psx` there
-and leaves it open (`set MPPP_METASHAPE_HEADLESS=1`: without the window). Nothing is aligned or optimised: the
+file (or `--run`): Metashape Professional (`RPP_METASHAPE`, else the standard install) builds `<block>.psx` there
+and leaves it open (`set RPP_METASHAPE_HEADLESS=1`: without the window). Nothing is aligned or optimised: the
 sensors (one per COLMAP camera of `gui_native\sparse`) have their calibration fixed and every camera its COLMAP
-pose. The chunk's coordinate system is local and metric - MPPP's world frame of the block (x east, y north, z up;
+pose. The chunk's coordinate system is local and metric - RPP's world frame of the block (x east, y north, z up;
 the chunk transform adds the block offset). `metashape_check.json` reports COLMAP's observations and the imported
 tie points reprojected by Metashape (they should match COLMAP's residuals, about 0.15 px median).
 
 `--open` (0.98.18) is what `open_in_metashape.bat` in every project folder runs: the job is written when it is missing
 or older than the block's model, the project built without a window when the `.psx` is missing or older than the
-job, and Metashape opened on the `.psx`. `MPPP_PYTHON` and `MPPP_METASHAPE` override the Python and Metashape the
+job, and Metashape opened on the `.psx`. `RPP_PYTHON` and `RPP_METASHAPE` override the Python and Metashape the
 batch file names.
 
 | COLMAP | Metashape |
@@ -508,14 +508,14 @@ batch file names.
 | cx, cy (from the top-left corner) | cx - w/2, cy - h/2 (from the frame centre) |
 | k1, k2, k3, k4 | K1, K2, K3, K4 |
 | p1, p2 | P2, P1 (swapped: Metashape's P1 goes with x) |
-| sx1, sy1; k4-k6 of FULL_OPENCV | no place in Metashape: zero in every MPPP model (else fitted and reported) |
+| sx1, sy1; k4-k6 of FULL_OPENCV | no place in Metashape: zero in every RPP model (else fitted and reported) |
 
-## mppp nerfstudio
+## rpp nerfstudio
 
 0.95.2 (Christian, 30 Oct 2026): a finished block for Nerfstudio's splatfacto - every frame in one pinhole size.
 
 ```text
-usage: mppp nerfstudio [-h] [--variant VARIANT] [--model MODEL] [--out OUT] [--size SIZE] [--zcam-clip ZCAM_CLIP]
+usage: rpp nerfstudio [-h] [--variant VARIANT] [--model MODEL] [--out OUT] [--size SIZE] [--zcam-clip ZCAM_CLIP]
                        [--families FAMILIES] [--jpg] [--threads THREADS] [--overwrite] work
 ```
 
@@ -525,12 +525,12 @@ Writes `<project>\nerfstudio\`: `images\` and `masks\` (2048 x 1536 by default),
 `transforms.json`): Navcam and Hazcam keep their centre resolution scaled by 2048 / width (about 82 deg of a Navcam,
 100 deg of a Hazcam; the fisheye edges beyond are left out); Mastcam-Z frames lose their first 22 and last 16
 columns (`--zcam-clip`) and are scaled by 1536 / 1200. The masks are resampled the same way and are 0 wherever the
-frame has no source pixel. `transform_matrix` is camera to world with OpenGL camera axes, in MPPP's world frame
-(x east, y north, z up, metres; the block offset in `mppp`).
+frame has no source pixel. `transform_matrix` is camera to world with OpenGL camera axes, in RPP's world frame
+(x east, y north, z up, metres; the block offset in `rpp`).
 
 ```text
 ns-train splatfacto --data <project>\nerfstudio nerfstudio-data
 ```
 
-`mppp run SITE --metashape --nerfstudio` - and `scripts\windows\ecam_block.bat SITE` - align a site's Navcam +
+`rpp run SITE --metashape --nerfstudio` - and `scripts\windows\ecam_block.bat SITE` - align a site's Navcam +
 Hazcam block and write both exports.

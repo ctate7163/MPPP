@@ -1,4 +1,4 @@
-"""The 0.96 freeze driver (mppp_studies.calibration.freeze): its steps in a dry run, the mask gate, the status."""
+"""The 0.96 freeze driver (rpp_studies.calibration.freeze): its steps in a dry run, the mask gate, the status."""
 from __future__ import annotations
 
 import json
@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 
-from mppp_studies.calibration import freeze as fz
+from rpp_studies.calibration import freeze as fz
 
 
 def _root(tmp_path: Path) -> Path:
@@ -33,11 +33,11 @@ def test_dry_run_walks_every_step_and_writes_the_report(tmp_path):
     st = _status(root)
     assert st["state"] == "done" and st["tag"] == fz.TAG and st["failed"] == []
     assert [s for s in fz.STEPS if st["steps"][s]["state"] == "done"] == list(fz.STEPS)
-    assert st["mask"]["choice"].startswith("keep (mppp_mask_v3") and st["mask"]["set"] is None
+    assert st["mask"]["choice"].startswith("keep (rpp_mask_v3") and st["mask"]["set"] is None
     log = (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
-    assert "zjoints (dry run)" in log and "-m mppp_studies.calibration.run_pipeline" in log
+    assert "zjoints (dry run)" in log and "-m rpp_studies.calibration.run_pipeline" in log
     assert "--zcam-waive-aspect 63 79 110" in log and "mask_checkpoint=" not in log     # keep: no --set
-    assert "-m mppp_studies.calibration.deck" in log and "calib nz" in log and "ztest_zcam110_without_marble" in log
+    assert "-m rpp_studies.calibration.deck" in log and "calib nz" in log and "ztest_zcam110_without_marble" in log
     rep = (root / "mppp_pipeline" / fz.REPORT_FILE).read_text(encoding="utf-8")
     assert "# Freeze run report" in rep and "| zjoints | done |" in rep and "mask model: keep" in rep
     # a second start skips the done steps and ends at once
@@ -71,7 +71,7 @@ def test_blocks_mask_reads_the_finished_blocks(tmp_path):
 
 
 def test_mask_auto_takes_the_verdict_and_the_margin(tmp_path, monkeypatch):
-    home = tmp_path / "MPPP"
+    home = tmp_path / "RPP"
     ck_dir = home / "checkpoints"
     ck_dir.mkdir(parents=True)
     ck = ck_dir / "convnext_tiny_s4_seg_20261109_v9A.pt"
@@ -87,7 +87,7 @@ def test_mask_auto_takes_the_verdict_and_the_margin(tmp_path, monkeypatch):
     assert fz.trained_checkpoint(home, "v9B") is None
 
     def verdict(new, base):
-        (out / "mask_verdict.json").write_text(json.dumps({"models": {ck.stem: new, "mppp_mask_v3": base},
+        (out / "mask_verdict.json").write_text(json.dumps({"models": {ck.stem: new, "rpp_mask_v3": base},
                                                            "subset": "all"}), encoding="utf-8")
     # a clear win: the new model is used
     verdict(0.985, 0.970)
@@ -176,7 +176,7 @@ def test_ctrl_c_and_stop_marker_end_as_stopped_by_the_user(tmp_path, monkeypatch
         raise fz.ChainStopped("zjoints")
     monkeypatch.setattr(fz.Run, "s_zjoints", stopped)
     assert _run(root) == 130
-    assert _status(root)["stopped_by"].startswith("stop_mppp.bat")
+    assert _status(root)["stopped_by"].startswith("stop_rpp.bat")
     # and a start afterwards continues (the step runs again, the done ones are skipped)
     monkeypatch.setattr(fz.Run, "s_zjoints", lambda self: "exit 0")
     assert _run(root) == 0
@@ -211,10 +211,10 @@ def test_update_code_refuses_under_a_live_run(tmp_path, capsys):
 
 def test_version_gate(tmp_path, monkeypatch):
     root = _root(tmp_path)
-    monkeypatch.setattr(fz, "code_version", lambda r: "0.95.5 D:\\code\\MPPP_freeze2\\src\\mppp\\__init__.py")
+    monkeypatch.setattr(fz, "code_version", lambda r: "0.95.5 D:\\code\\MPPP_freeze2\\src\\rpp\\__init__.py")
     assert _run(root) == 1
     assert _status(root)["state"] == "failed"
-    assert f"needs MPPP {fz.REQUIRED_VERSION}.x" in (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
+    assert f"needs RPP {fz.REQUIRED_VERSION}.x" in (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
     (root / "cmods").mkdir()
     (root / "cmods" / "M2020_N_rig.json").write_text(json.dumps({"source": "freeze"}), encoding="utf-8")
     assert _run(root, "--any-version") == 0
@@ -228,19 +228,19 @@ def test_train_mask_verdict_from_the_ab_table(tmp_path):
     """train_masks.bat --compare (Christian, 9 Nov: "will the mask comparison run after the training so that we will
     know which is better?"): the verdict the freeze reads, from compare_mask_models' table - the fair subset when
     there is one, the winner and the margin new minus baseline."""
-    from mppp_studies.mask_training.train_mask import DEFAULT_BASELINE, read_verdict_from_ab, parser_for_test
+    from rpp_studies.mask_training.train_mask import DEFAULT_BASELINE, read_verdict_from_ab, parser_for_test
     ab = tmp_path / "mask_ab"
     ab.mkdir()
     ck = tmp_path / "convnext_tiny_s4_seg_20261109_v9A.pt"
     rows = ["subset,camera,frames,model,exclusion_IoU,hardware_recall,hardware_precision",
-            "all,all,40,mppp_mask_v3,0.9700,0.98,0.98", f"all,all,40,{ck.stem},0.9800,0.99,0.98",
-            "all,Mastcam-Z,10,mppp_mask_v3,0.9990,0.99,0.99",
-            "not_seen,all,12,mppp_mask_v3,0.9600,0.97,0.98", f"not_seen,all,12,{ck.stem},0.9750,0.98,0.98"]
+            "all,all,40,rpp_mask_v3,0.9700,0.98,0.98", f"all,all,40,{ck.stem},0.9800,0.99,0.98",
+            "all,Mastcam-Z,10,rpp_mask_v3,0.9990,0.99,0.99",
+            "not_seen,all,12,rpp_mask_v3,0.9600,0.97,0.98", f"not_seen,all,12,{ck.stem},0.9750,0.98,0.98"]
     (ab / "mask_ab.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
-    v = read_verdict_from_ab(ab, new=ck, baseline="mppp_mask_v3")
+    v = read_verdict_from_ab(ab, new=ck, baseline="rpp_mask_v3")
     assert v["subset"] == "not_seen" and v["winner"] == ck.stem and abs(v["margin"] - 0.015) < 1e-9
-    assert v["models"] == {"mppp_mask_v3": 0.96, ck.stem: 0.975} and v["baseline_label"] == DEFAULT_BASELINE
-    assert read_verdict_from_ab(tmp_path / "none", new=ck, baseline="mppp_mask_v3")["winner"] is None
+    assert v["models"] == {"rpp_mask_v3": 0.96, ck.stem: 0.975} and v["baseline_label"] == DEFAULT_BASELINE
+    assert read_verdict_from_ab(tmp_path / "none", new=ck, baseline="rpp_mask_v3")["winner"] is None
     a = parser_for_test().parse_args(["--compare", "--smoke"])
     assert a.compare == [] and a.compare_device == "auto"
     assert parser_for_test().parse_args(["--smoke"]).compare is None
@@ -272,7 +272,7 @@ def _pc_like_root(tmp_path: Path) -> Path:
 def _pc_like_training(tmp_path: Path, last_epoch: int, last_iter: int, epochs: int = 30, improved_at: int = 17) -> Path:
     """D:\\code\\MPPP\\checkpoints on 9 Nov: the v9A start that died at 14:48 and the live v9_v4.4 run - its card
     written at its best epoch only, its log at (last_epoch, last_iter)."""
-    home = tmp_path / "MPPP"
+    home = tmp_path / "RPP"
     ck_dir = home / "checkpoints"
     dead = ck_dir / "convnext_tiny_s4_seg_20261109_v9A_debug"
     dead.mkdir(parents=True)
@@ -343,7 +343,7 @@ def test_pc_like_root_auto_with_a_finished_training_and_a_verdict(tmp_path):
     ck = home / "checkpoints" / "convnext_tiny_s4_seg_20261109_v9_v4.4.pt"
     out = home / "Claude outputs" / f"mask_{ck.stem}"
     out.mkdir(parents=True)
-    (out / "mask_verdict.json").write_text(json.dumps({"models": {ck.stem: 0.9842, "mppp_mask_v3": 0.9712}, "subset": "not_seen"}), encoding="utf-8")
+    (out / "mask_verdict.json").write_text(json.dumps({"models": {ck.stem: 0.9842, "rpp_mask_v3": 0.9712}, "subset": "not_seen"}), encoding="utf-8")
     assert _run(root, "--mask-model", "auto", "--mask-home", str(home), "--cmods", str(root / "cmods_freeze2")) == 0
     st = _status(root)
     assert st["mask"]["set"] == str(ck) and st["mask"]["choice"] == f"new {ck.name}"
@@ -355,14 +355,14 @@ def test_pc_like_root_auto_with_a_finished_training_and_a_verdict(tmp_path):
     masks = tmp_path / "masks"
     for v in (7, 8, 9):
         (masks / f"masks_training_set_v{v}" / "masks").mkdir(parents=True)
-    assert fz.baseline_training_set(str(masks), "mppp_mask_v3") == str(masks / "masks_training_set_v7")
+    assert fz.baseline_training_set(str(masks), "rpp_mask_v3") == str(masks / "masks_training_set_v7")
     assert fz.baseline_training_set(str(masks), "D:\\ck\\x.pt") is None
     assert _run(root2, "--mask-model", "auto", "--mask-home", str(home), "--mask-root", str(masks),
                 "--cmods", str(root2 / "cmods_freeze2")) == 0
     log2 = (root2 / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
-    assert ("mask_ab (dry run)" in log2 and "-m mppp_studies.mask_training.compare_mask_models" in log2
-            and f"--data {masks / 'masks_training_set_v9'}" in log2 and "--models mppp_mask_v3" in log2
-            and f"--seen {masks / 'masks_training_set_v7'} --seen-split mppp_mask_v3 {masks / 'masks_training_set_v7'}" in log2)
+    assert ("mask_ab (dry run)" in log2 and "-m rpp_studies.mask_training.compare_mask_models" in log2
+            and f"--data {masks / 'masks_training_set_v9'}" in log2 and "--models rpp_mask_v3" in log2
+            and f"--seen {masks / 'masks_training_set_v7'} --seen-split rpp_mask_v3 {masks / 'masks_training_set_v7'}" in log2)
 
 
 def test_logon_launcher_carries_the_mask_options(tmp_path, monkeypatch):
@@ -402,14 +402,14 @@ def test_a_restart_after_a_reboot_is_said_and_keeps_the_runs_day(tmp_path, monke
     f.write_text(json.dumps({"state": "running", "started": "2026-11-10T08:29:36", "heartbeat": "2026-11-11T03:10:00", "pid": 4,
                              "tag": fz.TAG, "steps": {"wait": {"state": "done"}, "mask": {"state": "done"},
                                                       "cmods": {"state": "done"}, "zjoints": {"state": "running"}},
-                             "mask": {"state": "done", "choice": "keep (mppp_mask_v3)", "set": None}}), encoding="utf-8")
+                             "mask": {"state": "done", "choice": "keep (rpp_mask_v3)", "set": None}}), encoding="utf-8")
     seen = {}
 
     def pipeline(self, name, *args):
         seen.setdefault("day", self.day())
         return 0
     monkeypatch.setattr(fz.Run, "pipeline", pipeline)
-    monkeypatch.setattr(fz.Run, "mppp", lambda self, name, *a, **k: seen.setdefault(name, a) and 0)
+    monkeypatch.setattr(fz.Run, "rpp", lambda self, name, *a, **k: seen.setdefault(name, a) and 0)
     monkeypatch.setattr(fz.Run, "s_deck", lambda self: "no deck here")
     assert _run(root) == 0
     st = _status(root)
@@ -447,7 +447,7 @@ def test_fresh_sets_the_old_status_aside(tmp_path, monkeypatch):
 
 
 def test_seitah_overlook_parallax():
-    from mppp.pipeline import load_settings
+    from rpp.pipeline import load_settings
     assert load_settings(site="seitah_overlook").min_tri_angle_deg == 0.05      # 0.98.23 (was 0.10)
     assert load_settings(site="chal_rocks_large").min_tri_angle_deg == 0.25
 
@@ -508,8 +508,8 @@ def test_freeze3_ladder_step_runs_seitahs_states_with_100mm(tmp_path):
     report into camera_analysis/zcam_states_<day>_seitah - the newest states study, which the figures draw the ladder
     from; Seitah Overlook's block lists 100 mm."""
     import inspect
-    from mppp_studies.calibration import freeze as fz
-    from mppp.paths import data_file
+    from rpp_studies.calibration import freeze as fz
+    from rpp.paths import data_file
     assert fz.STEPS[-2:] == ("ladder", "report") and fz.LADDER_SITES == ("seitah_overlook",)
     src = inspect.getsource(fz.Run.s_ladder)
     assert "--variant\", \"states\"" in src and "zcam_states_{self.day()}_seitah" in src and "ZCAM_STATES_SETS" in src

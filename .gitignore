@@ -28,8 +28,13 @@ scapes/
 .DS_Store
 Thumbs.db
 
-# machine-specific: the Python the Windows .bat files use (scripts/windows/mppp_env.bat)
+# machine-specific: the Python the Windows .bat files use (scripts/windows/rpp_env.bat)
+scripts/windows/rpp_python.txt
+# 0.99.0: the same files under their names before the rename (rpp_env.bat still reads them)
 scripts/windows/mppp_python.txt
+scripts/windows/mppp_scapes.txt
+scripts/windows/mppp_pds.txt
+scripts/windows/mppp_cmods.txt
 
 # v0p50: transfer from Claude (the bundle) and working copies of the notebooks (git holds the versions)
 _transfer/
@@ -40,9 +45,9 @@ Claude outputs/
 /data/
 # v0p86: rendered JOSS paper (scripts/windows/make_paper.bat)
 paper/paper.pdf
-scripts/windows/mppp_scapes.txt
-scripts/windows/mppp_pds.txt
-scripts/windows/mppp_cmods.txt
+scripts/windows/rpp_scapes.txt
+scripts/windows/rpp_pds.txt
+scripts/windows/rpp_cmods.txt
 # documentation site built by mkdocs (mkdocs.yml; deployed by .github/workflows/docs.yml)
 site/
 docs/ods/upload_pending.json

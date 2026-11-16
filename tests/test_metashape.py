@@ -1,4 +1,4 @@
-"""MPPP -> Metashape (0.95.2, Christian 30 Oct): the camera models translate exactly, the frames and the Bundler tie
+"""RPP -> Metashape (0.95.2, Christian 30 Oct): the camera models translate exactly, the frames and the Bundler tie
 points line up with COLMAP's observations."""
 import json
 
@@ -7,8 +7,8 @@ import pytest
 
 pycolmap = pytest.importorskip("pycolmap")
 
-from mppp.sfm import metashape as MS  # noqa: E402
-from mppp.sfm import metashape_build as MB  # noqa: E402
+from rpp.sfm import metashape as MS  # noqa: E402
+from rpp.sfm import metashape_build as MB  # noqa: E402
 
 NL = [2948.943055, 2949.208628, 2573.477811, 1950.413699, 0.047527, -0.016316, 3e-05, -0.0002, 0.008977, -0.008065,
       0.0, 0.0]                                                   # a Navcam camera of Chal Rocks (gui_native)
@@ -53,7 +53,7 @@ def test_terms_metashape_has_no_place_for_are_fitted_and_reported():
 
 def _block(tmp_path):
     """A small block: two Navcam-like fisheye frames at two sizes and two Mastcam-Z frames, ground points."""
-    from mppp.sfm.project import SfmProject
+    from rpp.sfm.project import SfmProject
     rng = np.random.default_rng(3)
     rec = pycolmap.Reconstruction()
     cams = [("THIN_PRISM_FISHEYE", NL, 5120, 3840), ("FULL_OPENCV", Z63, 1648, 1200)]
@@ -157,9 +157,9 @@ def test_the_job_and_the_bundler_tie_points_line_up_with_colmap(tmp_path):
     assert reg["size"][2] >= 0.1 * max(reg["size"][:2]) and abs(reg["center"][1] - 6) < 1
 
 
-def test_the_metashape_side_script_needs_no_mppp():
+def test_the_metashape_side_script_needs_no_rpp():
     src = open(MB.__file__, encoding="utf-8").read()
-    assert "import mppp" not in src and "from mppp" not in src and "numpy" not in src.split('"""', 2)[2]
+    assert "import rpp" not in src and "from rpp" not in src and "numpy" not in src.split('"""', 2)[2]
     assert MB.M is None or hasattr(MB.M, "app")
     s = MB.stats([0.3, -0.1], [0.4, 0.1])
     assert s["n"] == 2 and s["max_px"] == pytest.approx(0.5) and s["mean_du_px"] == pytest.approx(0.1)
@@ -226,11 +226,11 @@ def test_open_in_metashape_bat_and_the_gui_files(tmp_path, monkeypatch):
     import os
     import subprocess
     import time
-    from mppp.sfm import metashape as MS
+    from rpp.sfm import metashape as MS
     p = MS.write_open_in_metashape_bat(tmp_path, python_exe=r"C:\py\python.exe")
     t = p.read_bytes().decode("utf-8")
     assert p.name == "open_in_metashape.bat" and "\r\n" in t
-    assert '-m mppp metashape "%~dp0." --open' in t and "MPPP_PYTHON=C:\\py\\python.exe" in t
+    assert '-m rpp metashape "%~dp0." --open' in t and "RPP_PYTHON=C:\\py\\python.exe" in t
     # the staleness logic, without pycolmap or Metashape: a job and a .psx newer than the model -> only started
     (tmp_path / "sparse" / "cahv_ba").mkdir(parents=True)
     (tmp_path / "sparse" / "cahv_ba" / "images.bin").write_bytes(b"x")

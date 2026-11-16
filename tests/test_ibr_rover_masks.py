@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import cv2
 import numpy as np
 
-from mppp.ibr.rover_masks import DIR, ensure_rover_masks, mask_file, model_input, skipped_frames
+from rpp.ibr.rover_masks import DIR, ensure_rover_masks, mask_file, model_input, skipped_frames
 
 
 def _block(tmp_path):

@@ -1,7 +1,7 @@
-"""mppp process --dry-run counts what processing would process (2 Nov 2026: it counted before the exclusions)."""
+"""rpp process --dry-run counts what processing would process (2 Nov 2026: it counted before the exclusions)."""
 from pathlib import Path
 
-from mppp.pipeline import Settings, apply_exclusions, product_summary, zcam_include_entries
+from rpp.pipeline import Settings, apply_exclusions, product_summary, zcam_include_entries
 
 NAMES = [
     "NLF_0460_0707782756_433RAD_N0260470NCAM03460_0A0195J01.IMG",

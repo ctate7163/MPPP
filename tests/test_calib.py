@@ -1,4 +1,4 @@
-"""mppp.calib: the frozen forms, the promoted models and their constraint to an image."""
+"""rpp.calib: the frozen forms, the promoted models and their constraint to an image."""
 import copy
 import json
 
@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 from conftest import config_selection_off
 
-from mppp import calib
-from mppp.calib import forms, models as M
+from rpp import calib
+from rpp.calib import forms, models as M
 
 
 def _nl():
@@ -134,7 +134,7 @@ def test_hazcam_start_model_and_loader_warning(caplog, tmp_path, monkeypatch):
     cm = tmp_path / "cmods"
     shutil.copytree(M._folder(None), cm)
     (cm / "M2020_RL.json").unlink()
-    with caplog.at_level(logging.WARNING, logger="mppp.calib"):
+    with caplog.at_level(logging.WARNING, logger="rpp.calib"):
         m = calib.load_camera("R", "L", folder=cm)
     assert m["file"] is None and "start model" in caplog.text
     name, p, applied = calib.camera_at(m, -30.0, sol=10)
@@ -200,7 +200,7 @@ def test_check_form_describe_and_fingerprint(tmp_path, monkeypatch):
     rep = calib.check_form(tmp_path)
     assert not rep["ok"] and any("sy1" in e for e in rep["errors"])
     assert calib.models_fingerprint(tmp_path) != fp
-    monkeypatch.setenv("MPPP_CMODS", str(tmp_path))
+    monkeypatch.setenv("RPP_CMODS", str(tmp_path))
     assert calib.models_fingerprint() == calib.models_fingerprint(tmp_path)
     assert calib.models_fingerprint(tmp_path / "empty") is None
 
@@ -209,10 +209,10 @@ def test_label_fallback_for_a_zoom_without_a_file():
     from conftest import ZL0
     if not ZL0.is_file():
         pytest.skip("example IMGs not present")
-    import mppp
-    from mppp.image import MPPPImage
+    import rpp
+    from rpp.image import RPPImage
     cfg = config_selection_off({"masking": {"infer_mask": False}})
-    im = MPPPImage(ZL0, cfg, mppp.load_waypoints())
+    im = RPPImage(ZL0, cfg, rpp.load_waypoints())
     meta = im.meta
     name, p, src = calib.label_camera(meta)
     K = np.asarray(meta["intrinsics_label"]["K"])
@@ -241,10 +241,10 @@ def test_navcam_label_fallback_is_the_cahvore_fisheye():
     from conftest import NLF
     if not NLF.is_file():
         pytest.skip("example IMGs not present")
-    import mppp
-    from mppp.image import MPPPImage
+    import rpp
+    from rpp.image import RPPImage
     cfg = config_selection_off({"masking": {"infer_mask": False}})
-    im = MPPPImage(NLF, cfg, mppp.load_waypoints())
+    im = RPPImage(NLF, cfg, rpp.load_waypoints())
     meta = im.meta
     name, p, src = calib.label_camera(meta)
     R = meta["camera_model_label"]["MODEL_COMPONENT_6"]
@@ -273,7 +273,7 @@ def test_scaled_and_sol_epochs():
 def test_promote_replaces_the_file_and_logs_it(tmp_path, monkeypatch):
     src = M._folder(None)
     dst = tmp_path / "cmods"
-    monkeypatch.setenv("MPPP_CMODS", str(dst))
+    monkeypatch.setenv("RPP_CMODS", str(dst))
     res = calib.promote([src], note="first")
     assert set(res["files"]) >= set(M.NAVCAM_FILES) and (dst / "CHANGES.md").read_text().count(" - first\n") == 1
     assert "seeded from the package copy" in (dst / "CHANGES.md").read_text()      # 0.95.0: the folder kept complete
@@ -318,24 +318,24 @@ def test_shipped_navcam_models_are_the_tied_joint():
 
 
 def test_cmods_folder_outside_git_init_status_ship(tmp_path, monkeypatch):
-    """0.95.0 (Christian, 27 Oct): the models in use live in MPPP_CMODS - `init` seeds the folder with the package
+    """0.95.0 (Christian, 27 Oct): the models in use live in RPP_CMODS - `init` seeds the folder with the package
     set, `status` compares it with the package copy, a promotion into it keeps it complete, and `ship` copies the
     models in use into the package folder (here a scratch copy) for a release."""
-    import mppp.paths as P
+    import rpp.paths as P
     pkg = tmp_path / "pkg"
     pkg.mkdir()
     for f in M._folder(None).iterdir():
         if f.is_file():
             (pkg / f.name).write_bytes(f.read_bytes())
     monkeypatch.setattr(P, "package_cmods_dir", lambda: pkg)
-    monkeypatch.delenv("MPPP_CMODS", raising=False)
+    monkeypatch.delenv("RPP_CMODS", raising=False)
     st = M.status()
     assert not st["override"] and st["same"] and st["missing"] == [] and st["differs"] == []
     dst = tmp_path / "scapes" / "cmods"
     res = M.init_folder(dst)
     assert set(res["copied"]) == set(M.package_files()) and res["kept"] == [] and (dst / "CHANGES.md").read_text().count("seeded") == 1
     assert M.init_folder(dst)["copied"] == []                           # a second init copies nothing
-    monkeypatch.setenv("MPPP_CMODS", str(dst))
+    monkeypatch.setenv("RPP_CMODS", str(dst))
     st = M.status()
     assert st["override"] and st["same"] and st["folder"] == str(dst) and st["package"] == str(pkg)
     assert calib.check_form()["ok"] and calib.models_fingerprint() == calib.models_fingerprint(pkg)
@@ -359,7 +359,7 @@ def test_cmods_folder_outside_git_init_status_ship(tmp_path, monkeypatch):
     assert sh["changed"] == ["CHANGES.md", "M2020_NL_fisheye_tangential.json"] or set(sh["changed"]) >= {"M2020_NL_fisheye_tangential.json"}
     assert json.loads((pkg / "M2020_NL_fisheye_tangential.json").read_text())["params"][0] == d["params"][0]
     assert M.status()["same"] and "freeze" in (pkg / "CHANGES.md").read_text()
-    monkeypatch.delenv("MPPP_CMODS")
+    monkeypatch.delenv("RPP_CMODS")
     assert M.ship().get("note")                                            # in use = the package copy: nothing to do
 
 

@@ -1,4 +1,4 @@
-"""Logged runs of the pipeline functions: status files, heartbeats, the log file, --set parsing (mppp.runner)."""
+"""Logged runs of the pipeline functions: status files, heartbeats, the log file, --set parsing (rpp.runner)."""
 import json
 import logging
 import os
@@ -8,7 +8,7 @@ import pytest
 
 
 def test_parse_set():
-    from mppp import runner as R
+    from rpp import runner as R
     v = R.parse_set(["A=3", "B=dict(x=1)", "C=rational", "D=[1, 2]", "E=((24,10,8),(8,2,2))", r"F=D:\scapes\x", "G=True"])
     assert v == {"A": 3, "B": "py:dict(x=1)", "C": "rational", "D": [1, 2], "E": [(24, 10, 8), (8, 2, 2)],
                  "F": "D:\\scapes\\x", "G": True}
@@ -17,7 +17,7 @@ def test_parse_set():
 
 
 def test_status_heartbeat(tmp_path):
-    from mppp import runner as R
+    from rpp import runner as R
     st = R.RunStatus(tmp_path / "s.json", work="w")
     st.update(state="running", step="features")
     d = R.read_status(tmp_path / "s.json")
@@ -33,7 +33,7 @@ def test_status_heartbeat(tmp_path):
 
 
 def test_pid_alive_and_dead_status(tmp_path):
-    from mppp.runner import RunStatus, pid_alive, read_status
+    from rpp.runner import RunStatus, pid_alive, read_status
     assert pid_alive(os.getpid())
     assert not pid_alive(2 ** 22 + 12345)
     st = RunStatus(tmp_path / "s.json", pid=2 ** 22 + 12345)
@@ -45,7 +45,7 @@ def test_pid_alive_and_dead_status(tmp_path):
 def test_log_writes_the_file_before_the_console(tmp_path, monkeypatch):
     """A blocked console (Windows QuickEdit selection) must not hold the log file back."""
     import builtins
-    from mppp.runner import Log, disable_quickedit
+    from rpp.runner import Log, disable_quickedit
     order = []
     real = builtins.print
     monkeypatch.setattr(builtins, "print", lambda *a, **k: order.append(("print", (tmp_path / "l.txt").is_file())))
@@ -56,10 +56,10 @@ def test_log_writes_the_file_before_the_console(tmp_path, monkeypatch):
 
 
 def test_run_logged_writes_log_status_and_runs_txt(tmp_path):
-    from mppp.runner import STATUS_FILE, RunAlive, read_status, run_logged
+    from rpp.runner import STATUS_FILE, RunAlive, read_status, run_logged
 
     def step(work, settings, stop_after=None):
-        logging.getLogger("mppp.pipeline").info("working on %s", Path(work).name)
+        logging.getLogger("rpp.pipeline").info("working on %s", Path(work).name)
         return {"verdict": "pass", "run_done": {"verdict": "pass", "images": 3, "run_key": "k"}, "tables": [1, 2]}
 
     work = tmp_path / "mars2020_sol_0460_rockytop"
@@ -81,7 +81,7 @@ def test_run_logged_writes_log_status_and_runs_txt(tmp_path):
     # a live run of the folder refuses a second one
     alive = json.loads((work / STATUS_FILE).read_text())
     alive.update(state="running", pid=os.getpid())
-    from mppp.runner import now
+    from rpp.runner import now
     alive["heartbeat"] = now()
     (work / STATUS_FILE).write_text(json.dumps(alive))
     with pytest.raises(RunAlive, match="still alive"):
@@ -91,8 +91,8 @@ def test_run_logged_writes_log_status_and_runs_txt(tmp_path):
 
 def test_set_value_with_a_plus_is_a_word():
     """0.94.4: --set MATCH_MODE=sift+lightglue is the string, not Python source (the A/B variant failed at once)."""
-    from mppp.runner import parse_set
+    from rpp.runner import parse_set
     d = parse_set(["MATCH_MODE=sift+lightglue", "PG=dict(max_ratio=0.8)"])
     assert d["MATCH_MODE"] == "sift+lightglue" and d["PG"] == "py:dict(max_ratio=0.8)"
-    from mppp.pipeline import Settings, normalize
+    from rpp.pipeline import Settings, normalize
     assert Settings().replace(**normalize({"match_mode": d["MATCH_MODE"]})).match_mode == "sift+lightglue"

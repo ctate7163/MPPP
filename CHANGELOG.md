@@ -3,6 +3,62 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.0 — 2026-11-16 (branch `rpp`)
+
+Christian (16 Nov): "The next version v0p99 will change the name to rpp for rover photogrammetry pipeline. ... we'll
+need to replace every mppp with rpp throughout the code and documentation. make sure it doesn't break the code
+anywhere."
+
+**RPP, formerly MPPP.** The pipeline is the Rover Photogrammetry Pipeline. Everything new says RPP; everything a PC,
+a block or a script already has keeps working. The entries below this one keep the old name: they record what the
+software was called then.
+
+- **Packages and commands:** `src/rpp` and `src/rpp_studies` (were `src/mppp`, `src/mppp_studies`); the `rpp`
+  command and `python -m rpp`. Logger names `rpp...`. The class `MPPPImage` is `RPPImage`.
+- **The old names still work (0.99 only):** `src/mppp` and `src/mppp_studies` are alias packages - `import mppp.X`
+  gives the module `rpp.X` itself, so old scripts, notebooks and pickles (`navcam_calibration_study` pickles an
+  `SfmProject`) load; `python -m mppp ...` and the `mppp` command run `rpp` with a note; `MPPPImage` stays an alias.
+- **PyPI:** the distribution is `rover-photogrammetry-pipeline` (`pip install rover-photogrammetry-pipeline`,
+  extras as before); the name `rpp` on PyPI belongs to another project (a REAPER file parser).
+- **Environment:** every `RPP_*` variable falls back to its `MPPP_*` spelling (`rpp.env.get`; all 70-odd variables
+  go through it). `rpp_env.bat` does the same for the batch files (an `MPPP_X` becomes `RPP_X` unless that is set;
+  not `MPPP_HOME`: a tree's home is its own folder) and reads `rpp_python.txt`, `rpp_scapes.txt`, `rpp_pds.txt`,
+  `rpp_cmods.txt`, else the `mppp_*.txt` of a tree set up before. `mppp_env.bat` is a stub that calls `rpp_env.bat`.
+  `rpp doctor` says which old names a PC still sets. `envs/rpp.yml`, `envs/rpp_gpu.yml`; the GPU fallback looks for
+  the conda environment `rpp_gpu`, then `mppp_gpu`.
+- **Kept as they are (`rpp.ondisk`), so that no block is processed or aligned again:**
+  - the names in WORK folders and roots: `mppp_manifest_v*.json`, `mppp_config_v*.json`, `mppp_settings.json`,
+    `mppp_status.json`, `mppp_dense*.json`, `mppp_sfm_log.json`, `mppp_stereo.json`, `mppp_stopped.txt`,
+    `mppp_batch.json`, `mppp_batches\`, `mppp_pipeline\`;
+  - the keys inside records (`"mppp"` version in `run_done.json` and the run settings, `mppp_version`,
+    `mppp_version_tag`), the mask card key `mppp_card` and format `mppp-mask-safetensors-1` (part of each released
+    file's bytes), the training-set marker `_mppp_regen.json`;
+  - the user cache `%LOCALAPPDATA%\mppp` (the mask models, `gpu_python.txt`, the waypoint cache and `gpu.lock`: v0p98
+    and v0p99 share it, so their GPU steps take turns);
+  - the packaged camera models `data/cmods/*.json` (their bytes are the models' fingerprint in every run key);
+  - the PC's folders `D:\code\MPPP` and `D:\code\MPPP_freeze`, the conda environments `mppp_gpu` / `mppp_gpu_lg`,
+    the example data's release asset `mppp_example_m2020_rockytop`.
+  The run key and the processing key of every site of `sites.json` (Navcam and Mastcam-Z, 122 keys) are the same as
+  on 0.98.29. A one-time `rpp migrate` renames the WORK-folder names after freeze-3.
+- **Mask models:** `rpp_mask_v1` .. `v4` (default `rpp_mask_v3`); the registry lists `mppp_mask_v*` as aliases.
+  A block whose configuration names `mppp_mask_v3` is not "configuration changed" (`process._canon`), and a run key
+  hashes a released model under its old name (`rpp_mask_v4` and `mppp_mask_v4` give the same key). The registry's
+  files are `rpp_mask_convnext_tiny_s4_v*.safetensors`; a cached file under its old name (the same bytes) is used where
+  it is, so nothing is downloaded again. URLs: `ctate7163/rpp-mask` first, then `ctate7163/mppp-mask` (Hugging Face
+  forwards it once renamed), then the GitHub release. `release_mask_model rename` renames the repository on Hugging
+  Face; `upload` refuses while only the old one exists. Exporting an old model again keeps its release name, so the
+  bytes and the SHA-256 are the released ones. `rpp_mask_v4` is marked not released (it is not on Hugging Face: 404).
+- **XMP:** new products carry `xmlns:rpp="https://github.com/ctate7163/RPP/ns/1.0/"` (and `/ns/0.1/` in processed
+  images); `xmp.read_fields` reads the `mppp:` fields of older products too.
+- **Batch files:** `sync_code.bat` and `freeze.bat` refuse to run in a tree that is not on `main` (the rpp worktree
+  `D:\code\RPP` has `sync_rpp.bat`; freeze-3 runs on v0p98 from `D:\code\MPPP`). `sync_code.bat` takes the newest
+  `rpp_v*.bundle`. `stop_mppp.bat` is `stop_rpp.bat`.
+- **Text:** code, docstrings, batch files, docs, notebooks and the README say RPP; Christian's quoted words keep their
+  wording. Not changed: this changelog's earlier entries, `docs/history/`, `paper/`, `data/cmods/CHANGES.md`.
+- `tests/test_rename.py` checks that the old spelling appears only in the names above, the compatibility code and
+  history; that `import mppp` gives the `rpp` modules and old pickles load; that `MPPP_SCAPES` alone still works; that
+  an `mppp_mask_v3` configuration and a v0p98 WORK folder are reused; and that the run keys did not change.
+
 ## 0.98.29 — 2026-11-16
 
 Christian (16 Nov): "I renamed the github repo. change https://ctate7163.github.io/RPP/ods/ to

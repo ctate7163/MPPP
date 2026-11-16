@@ -1,12 +1,12 @@
-"""Mastcam-Z focus breathing and backlash states (mppp.sfm.zcam, backlash). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
+"""Mastcam-Z focus breathing and backlash states (rpp.sfm.zcam, backlash). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
 import numpy as np
 import pytest
 from types import SimpleNamespace
 
 
 def test_focus_slope_fit_and_plot(tmp_path):
-    from mppp.sfm.project import SfmProject
-    from mppp.sfm.zcam import fit_focus_slopes, plot_focus_breathing
+    from rpp.sfm.project import SfmProject
+    from rpp.sfm.zcam import fit_focus_slopes, plot_focus_breathing
     imgs, table = [], []
     for g, a in (("ZL034", 0.05), ("ZR034", 0.04)):
         for c in (1000, 1030, 1070, 1100):
@@ -32,7 +32,7 @@ def _zcam_block(tmp_path, seed=0, noise=0.2):
     backlash groups (sequences zcam1, zcam2) and one regular group (zcam3, f = label) of the same focus count."""
     pycolmap = pytest.importorskip("pycolmap")
     from scipy.spatial.transform import Rotation
-    from mppp.sfm.project import SfmProject
+    from rpp.sfm.project import SfmProject
     rng = np.random.default_rng(seed)
     W, H, lab = 1648, 1200, 4680.0
     fb = lab * 1.0095
@@ -99,7 +99,7 @@ def _zcam_block(tmp_path, seed=0, noise=0.2):
 
 def test_focus_groups_and_image_fits(tmp_path):
     pytest.importorskip("scipy")
-    from mppp.sfm.backlash import focus_groups, image_focal_fits
+    from rpp.sfm.backlash import focus_groups, image_focal_fits
     proj, rec, model, truth = _zcam_block(tmp_path)
     g = focus_groups(proj.images)
     assert len(g) == 3 and sorted(len(v) for v in g.values()) == [3, 5, 6]
@@ -113,8 +113,8 @@ def test_focus_groups_and_image_fits(tmp_path):
 
 def test_classify_and_split_regular_group(tmp_path):
     pytest.importorskip("scipy")
-    from mppp.sfm.backlash import classify_groups, image_focal_fits, image_states, split_by_state
-    from mppp.sfm.thermal import strip_thermal_bins
+    from rpp.sfm.backlash import classify_groups, image_focal_fits, image_states, split_by_state
+    from rpp.sfm.thermal import strip_thermal_bins
     proj, rec, model, truth = _zcam_block(tmp_path)
     groups = classify_groups(proj, image_focal_fits(rec, proj), model)
     st = {g["sequence"]: g["state"] for g in groups}
@@ -136,7 +136,7 @@ def test_classify_and_split_regular_group(tmp_path):
 
 def test_backlash_stage_refines_both_states(tmp_path):
     pytest.importorskip("pyceres")
-    from mppp.sfm.backlash import backlash_stage
+    from rpp.sfm.backlash import backlash_stage
     proj, rec, model, truth = _zcam_block(tmp_path)
     rec2, rep = backlash_stage(rec, proj, model=model, mode="split", sigma_px=0.3, loss_scale=2.0,
                                max_iterations=30, verbose=False)
@@ -156,7 +156,7 @@ def test_backlash_stage_refines_both_states(tmp_path):
 def test_classify_with_navcam_scale_and_single_state_zoom(tmp_path):
     """v0p53: both focus states are scaled by the block's Navcam focal scale; 110 mm groups are 'single'."""
     pytest.importorskip("scipy")
-    from mppp.sfm.backlash import classify_groups, group_zoom, image_focal_fits, image_states
+    from rpp.sfm.backlash import classify_groups, group_zoom, image_focal_fits, image_states
     proj, rec, model, truth = _zcam_block(tmp_path)
     fits = image_focal_fits(rec, proj)
     g0 = {g["sequence"]: g for g in classify_groups(proj, fits, model)}
@@ -176,7 +176,7 @@ def _zcam_pair_block(tmp_path, R_rig, t_rig, seed=1, noise=0.2):
     (focus bins: no COLMAP rig); the right images start 2 cm and 0.2 deg off."""
     pycolmap = pytest.importorskip("pycolmap")
     from scipy.spatial.transform import Rotation
-    from mppp.sfm.project import SfmProject
+    from rpp.sfm.project import SfmProject
     rng = np.random.default_rng(seed)
     W, H, f = 1648, 1200, 4720.0
     base = [f, f, 824.0, 600.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
@@ -247,7 +247,7 @@ def test_zcam_virtual_rig_poses_right_images(tmp_path, hold):
     """v0p53: one Mastcam-Z rig per zoom for every focus bin - the right image is posed from its left partner."""
     pytest.importorskip("pyceres")
     from scipy.spatial.transform import Rotation
-    from mppp.sfm.reconstruction import bundle_adjust
+    from rpp.sfm.reconstruction import bundle_adjust
     R_rig = Rotation.from_rotvec(np.radians([0.05, -1.2, 0.3])).as_matrix()
     t_rig = np.array([-0.2425, 0.001, 0.002])
     proj, rec = _zcam_pair_block(tmp_path, R_rig, t_rig)
@@ -287,7 +287,7 @@ def _rows(groups):
 
 
 def test_measured_backlash_line_follows_the_focus_count():
-    from mppp.sfm.backlash import backlash_ratio_at, measured_backlash_lines
+    from rpp.sfm.backlash import backlash_ratio_at, measured_backlash_lines
     rows = _rows([(f"g{i}", 700, "zcam1", "R", F, 1.0095 + 4.5e-6 * (F - 600), 0.001, "x")
                   for i, F in enumerate(range(100, 1300, 100))]
                  + [("reg", 700, "zcam2", "R", 300, 0.9990, 0.001, "x")])        # a regular group stays out of the fit
@@ -304,7 +304,7 @@ def test_measured_backlash_line_follows_the_focus_count():
 def test_sequence_state_overrides_the_low_focus_groups():
     """Rio Chiquito sol 1337 ZCAM09408: the low-focus groups lie between the states on their own; the sequence is
     backlash and so are they (reported as conflicts); a sequence without a decision keeps the groups' verdicts."""
-    from mppp.sfm.backlash import apply_sequence_states
+    from rpp.sfm.backlash import apply_sequence_states
     rows = _rows([("a", 1337, "S1", "L", 180, 1.0057, 0.0010, "regular"),
                   ("b", 1337, "S1", "L", 300, 1.0066, 0.0010, "undecided"),
                   ("c", 1337, "S1", "L", 930, 1.0102, 0.0005, "backlash"),
@@ -323,7 +323,7 @@ def test_sequence_state_overrides_the_low_focus_groups():
 
 def test_listed_images_stay_regular_in_a_backlash_sequence(tmp_path):
     pytest.importorskip("scipy")
-    from mppp.sfm.backlash import classify_groups, image_focal_fits, image_states
+    from rpp.sfm.backlash import classify_groups, image_focal_fits, image_states
     proj, rec, model, truth = _zcam_block(tmp_path)
     for r in proj.images:                                    # zcam3 (f = label) becomes part of zcam1's sequence
         if r["sequence"] == "zcam3":
@@ -344,11 +344,11 @@ def test_listed_images_stay_regular_in_a_backlash_sequence(tmp_path):
     assert g3["all_listed"] and g3["ratio_fit"] is None and not g3.get("conflict")
 
 
-# the low-backlash list (mppp.sfm.backlash)
+# the low-backlash list (rpp.sfm.backlash)
 
 
 def test_low_backlash_list_shipped_and_matching(tmp_path):
-    from mppp.sfm.backlash import is_low_backlash, load_low_backlash, low_backlash_fingerprint, low_backlash_path
+    from rpp.sfm.backlash import is_low_backlash, load_low_backlash, low_backlash_fingerprint, low_backlash_path
     lst = load_low_backlash()
     assert low_backlash_path().is_file() and len(lst["entries"]) >= 60 and lst["clocks"]
     assert low_backlash_fingerprint() and len(lst["uncertain"]) == 1
@@ -413,7 +413,7 @@ def test_low_backlash_list_shipped_and_matching(tmp_path):
 
 def _zcam_setup(monkeypatch, with_regular=True):
     import pycolmap
-    from mppp.sfm import zcam
+    from rpp.sfm import zcam
     rec = pycolmap.Reconstruction()
     cams, db, obs = {}, {}, {}
     rng = np.random.default_rng(0)
@@ -446,7 +446,7 @@ def _zcam_setup(monkeypatch, with_regular=True):
 
 
 def test_param_lines_per_state(monkeypatch):
-    from mppp.sfm.zcam import focus_line_lines, refit_focus_lines
+    from rpp.sfm.zcam import focus_line_lines, refit_focus_lines
     rec, proj, model, db = _zcam_setup(monkeypatch)
     out = refit_focus_lines(rec, proj, model=model)
     zr = out["ZR034"]["lines"]
@@ -464,14 +464,14 @@ def test_param_lines_per_state(monkeypatch):
 
 
 def test_param_lines_regular_without_bins_follows_backlash(monkeypatch):
-    from mppp.sfm.zcam import refit_focus_lines
+    from rpp.sfm.zcam import refit_focus_lines
     rec, proj, model, db = _zcam_setup(monkeypatch, with_regular=False)
     out = refit_focus_lines(rec, proj, model=model)
     assert "skipped" in out["ZL034"]["lines"]["regular"]
 
 
 def test_found_list_append_and_load(tmp_path):
-    from mppp.sfm.backlash import append_found, is_low_backlash, load_low_backlash, low_backlash_fingerprint
+    from rpp.sfm.backlash import append_found, is_low_backlash, load_low_backlash, low_backlash_fingerprint
     f = tmp_path / "zcam_low_backlash_found.csv"
     g = {"names": ["ZL0_0500_0711000000_111RAD_N0261154ZCAM07999_0340LMA01.png"], "sol": 500, "sequence": "ZCAM07999",
          "focus_count": 400, "ratio": 1.0004, "z": -9.0}
@@ -488,7 +488,7 @@ def test_found_list_append_and_load(tmp_path):
 
 
 def test_backlash_mode_list_split_accepted():
-    from mppp.sfm.backlash import backlash_stage
+    from rpp.sfm.backlash import backlash_stage
     with pytest.raises(ValueError, match="list_split"):
         backlash_stage(None, None, mode="bogus")
 
@@ -499,7 +499,7 @@ def test_backlash_mode_list_split_accepted():
 def test_zcam_rig_full_refines_rotation_and_baseline(tmp_path):
     pytest.importorskip("pyceres")
     from scipy.spatial.transform import Rotation
-    from mppp.sfm.reconstruction import bundle_adjust
+    from rpp.sfm.reconstruction import bundle_adjust
     R_rig = Rotation.from_rotvec(np.radians([0.05, -1.2, 0.3])).as_matrix()
     t_rig = np.array([-0.2425, 0.001, 0.002])
     proj, rec = _zcam_pair_block(tmp_path, R_rig, t_rig)
@@ -519,7 +519,7 @@ def test_zcam_rig_full_refines_rotation_and_baseline(tmp_path):
 def test_zcam_rig_hold_stays_without_fit(tmp_path):
     pytest.importorskip("pyceres")
     from scipy.spatial.transform import Rotation
-    from mppp.sfm.reconstruction import bundle_adjust
+    from rpp.sfm.reconstruction import bundle_adjust
     R_rig = Rotation.from_rotvec(np.radians([0.05, -1.2, 0.3])).as_matrix()
     t_rig = np.array([-0.2425, 0.001, 0.002])
     proj, rec = _zcam_pair_block(tmp_path, R_rig, t_rig)
@@ -532,7 +532,7 @@ def test_zcam_rig_hold_stays_without_fit(tmp_path):
 
 def test_k1_k2_lines(monkeypatch):
     import pycolmap
-    from mppp.sfm import zcam
+    from rpp.sfm import zcam
     rec = pycolmap.Reconstruction()
     cams, db, obs = {}, {}, {}
     for cid, f in enumerate([100, 300, 500, 700, 900], 1):
@@ -650,7 +650,7 @@ def test_staged_nz_reconstruct_v0p74(tmp_path, monkeypatch):
     found list."""
     pytest.importorskip("pyceres")
     import copy
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     proj, rec = _nz_block(tmp_path)
     monkeypatch.setattr(R, "initial_reconstruction", lambda project: copy.deepcopy(rec))
     tracks = {pid: [(e.image_id, e.point2D_idx) for e in p.track.elements] for pid, p in rec.points3D.items()}
@@ -700,10 +700,10 @@ def test_stage_2_skips_its_last_round_when_the_focus_lines_settle(tmp_path, monk
     bins by less than it (two rounds instead of three); 0 never skips."""
     pytest.importorskip("pyceres")
     import copy
-    from mppp.sfm import reconstruction as R
-    from mppp.sfm.reconstruction import ZCAM_LINE_SETTLE_PX
+    from rpp.sfm import reconstruction as R
+    from rpp.sfm.reconstruction import ZCAM_LINE_SETTLE_PX
     assert ZCAM_LINE_SETTLE_PX == 0.1
-    from mppp.pipeline import Settings
+    from rpp.pipeline import Settings
     assert Settings().zcam_line_settle_px == 0.1 and "zcam_line_settle_px" not in Settings().key_dict()
     assert Settings(include_zcam=True).key_dict()["zcam_line_settle_px"] == 0.1
     proj, rec = _nz_block(tmp_path)
@@ -735,7 +735,7 @@ def _stage2_log(proj):
 
 def _bins(monkeypatch, pp0=(820.0, 600.0), cx_bins=820.0, form=None):
     import pycolmap
-    from mppp.sfm import zcam
+    from rpp.sfm import zcam
     rec = pycolmap.Reconstruction()
     cams, db, obs = {}, {}, {}
     rng = np.random.default_rng(1)
@@ -769,7 +769,7 @@ def _bins(monkeypatch, pp0=(820.0, 600.0), cx_bins=820.0, form=None):
 
 
 def test_line_form_lookup():
-    from mppp.sfm.zcam import LINE_FORM, line_form_for
+    from rpp.sfm.zcam import LINE_FORM, line_form_for
     p = SimpleNamespace(settings={"zcam_line_params": {"ZR": ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2"]}})
     assert line_form_for(p, "ZR034") == LINE_FORM["ZR"]
     assert LINE_FORM["ZR"]["p1"] == "constant"                      # zcam-v2: p1, p2 constant over focus
@@ -783,7 +783,7 @@ def test_line_form_lookup():
 
 
 def test_refit_lines_on_the_v0p75_form(monkeypatch):
-    from mppp.sfm.zcam import refit_focus_lines
+    from rpp.sfm.zcam import refit_focus_lines
     rec, proj, model, db = _bins(monkeypatch)
     out = refit_focus_lines(rec, proj, model=model)
     zr, zl = out["ZR034"]["lines"], out["ZL034"]["lines"]
@@ -810,8 +810,8 @@ def test_refit_lines_with_sequence_offsets(monkeypatch):
     line are recovered, a thin one (4 frames) is held at 0, the slope is the common one, the bins are set on their
     sequence's line; the k1 line and the pinned centre are untouched."""
     import pycolmap
-    from mppp.sfm import zcam
-    from mppp.sfm.zcam import refit_focus_lines
+    from rpp.sfm import zcam
+    from rpp.sfm.zcam import refit_focus_lines
     rec = pycolmap.Reconstruction()
     cams, db, obs = {}, {}, {}
     rng = np.random.default_rng(3)
@@ -855,8 +855,8 @@ def test_refit_lines_only_for_the_zooms_with_real_models(monkeypatch):
     """0.95.0 (Christian, 28 Oct): the bins of 79 and 110 mm stay off the focus lines (their refined values kept) until
     those zooms have real models; zcam_line_zooms in the project settings says which zooms go on lines."""
     import pycolmap
-    from mppp.sfm import zcam
-    from mppp.sfm.zcam import LINE_ZOOMS, refit_focus_lines
+    from rpp.sfm import zcam
+    from rpp.sfm.zcam import LINE_ZOOMS, refit_focus_lines
     assert LINE_ZOOMS == (34, 48, 63)
     rec, proj, model, db = _bins(monkeypatch)
     # a 79 mm bin beside the 34 mm ones
@@ -881,7 +881,7 @@ def test_refit_lines_pin_the_regular_state_at_its_own_principal_point(monkeypatc
     """0.95.0 (Christian, 27 Oct: the right eye's regular principal-point offset): a ZR regular-state line with its own
     bins is pinned at pp0 plus the model's regular_pp_offset_px, as the no-own-line path already added it (0.93.5) -
     before, the two paths disagreed and the low-state bins were set back to the high state's centre."""
-    from mppp.sfm.zcam import refit_focus_lines
+    from rpp.sfm.zcam import refit_focus_lines
     rec, proj, model, db = _bins(monkeypatch)
     model["cameras"]["ZR034"]["regular_pp_offset_px"] = [-5.0, 3.0]
     for key, cid in db.items():                       # the low-state bins' centres carry the offset
@@ -903,7 +903,7 @@ def test_refit_lines_pin_the_regular_state_at_its_own_principal_point(monkeypatc
 
 
 def test_refit_lines_free_form_and_foreign_pp0(monkeypatch):
-    from mppp.sfm.zcam import PIN_MAX_OFFSET_PX, refit_focus_lines
+    from rpp.sfm.zcam import PIN_MAX_OFFSET_PX, refit_focus_lines
     rec, proj, model, _ = _bins(monkeypatch, form={"ZL": {k: "free" for k in ("fx", "fy", "k1", "k2")},
                                                    "ZR": {k: "free" for k in ("fx", "fy", "cx", "cy", "k1", "k2")}})
     out = refit_focus_lines(rec, proj, model=model)
@@ -918,7 +918,7 @@ def test_refit_lines_free_form_and_foreign_pp0(monkeypatch):
 
 
 def test_bin_fallback_classifies_groups_without_image_fits():
-    from mppp.sfm.backlash import BIN_FALLBACK_SD, classify_groups
+    from rpp.sfm.backlash import BIN_FALLBACK_SD, classify_groups
     ims = []
     for sol, seq, foc, cam in ((1624, "ZCAM09705", 792.0, "ZR034_F00792"), (1618, "ZCAM09697", 1002.0, "ZR034_F01002")):
         ims += [{"name": f"ZR0_{sol}_{k}_{seq}.png", "instrument": cam, "camera_group": "ZR034", "eye": "R", "sol": sol,
@@ -942,7 +942,7 @@ def test_bin_fallback_classifies_groups_without_image_fits():
 
 
 def test_append_found_survives_a_group_without_a_fit(tmp_path):
-    from mppp.sfm.backlash import append_found
+    from rpp.sfm.backlash import append_found
     f = tmp_path / "found.csv"
     n = append_found(f, [{"names": ["a.png"], "sol": 1, "sequence": "ZCAM0", "focus_count": 5.0, "ratio": None, "z": None,
                           "sequence_z": -4.0, "sequence_state": "regular", "own_state": "undecided"}], site="s")
@@ -954,7 +954,7 @@ def test_split_starts_the_regular_camera_at_its_own_principal_point(tmp_path):
     """0.93.2: each backlash state its own camera - the split regular camera starts at the backlash camera's
     principal point plus the model's regular-state offset (regular_pp_offset_px); a model without one: unchanged."""
     pytest.importorskip("scipy")
-    from mppp.sfm.backlash import classify_groups, image_focal_fits, image_states, regular_pp_offsets, split_by_state
+    from rpp.sfm.backlash import classify_groups, image_focal_fits, image_states, regular_pp_offsets, split_by_state
     proj, rec, model, truth = _zcam_block(tmp_path)
     reg = [n for n, s in image_states(classify_groups(proj, image_focal_fits(rec, proj), model)).items() if s == "regular"]
     base = np.array(rec.cameras[proj.settings["database"]["cameras"]["ZL034_F00600"]].params, float)
@@ -972,7 +972,7 @@ def test_zcam_camera_at_regular_principal_point_from_its_lines():
     """0.93.2: a model whose regular lines carry cx, cy (pp0 + the offset) gives the regular state its own principal
     point; the backlash state keeps pp0."""
     import copy
-    from mppp import calib
+    from rpp import calib
     zm = calib.load_zcam(34)
     if zm is None:
         pytest.skip("no Z34 focus model")
@@ -991,7 +991,7 @@ def test_mixed_focus_group_unlisted_images_are_backlash():
     """0.93.3 (Seitah Overlook ZCAM08114): one focus count, five pointings, 1/3/5 listed regular (f/label 0.994),
     2/4 not (1.000) - the absolute threshold (1.0047) called the group regular; the listed images now set the
     reference, so the unlisted ones are backlash.  Unlisted images that fit like the listed ones stay regular."""
-    from mppp.sfm.backlash import image_states, mixed_group_state
+    from rpp.sfm.backlash import image_states, mixed_group_state
     base = {"names": ["p1", "p2", "p3", "p4", "p5"], "listed_names": ["p1", "p3", "p5"], "all_listed": False,
             "nav_scale": 1.0, "backlash_ratio": 1.0095, "state": "regular", "decided": True}
     row = dict(base, ratio_listed=0.994, sd_listed=0.0004, ratio_fit=1.000, sd_fit=0.0005)
@@ -1013,7 +1013,7 @@ def test_split_never_overwrites_the_listed_regular_bin(tmp_path):
     """0.93.4: a <bin>_reg camera that already exists (the list's own regular bin) is kept; the split's new camera
     gets a unique name that still ends in _reg."""
     pytest.importorskip("scipy")
-    from mppp.sfm.backlash import classify_groups, image_focal_fits, image_states, split_by_state
+    from rpp.sfm.backlash import classify_groups, image_focal_fits, image_states, split_by_state
     proj, rec, model, truth = _zcam_block(tmp_path)
     reg = [n for n, s in image_states(classify_groups(proj, image_focal_fits(rec, proj), model)).items() if s == "regular"]
     db = proj.settings["database"]["cameras"]
@@ -1028,7 +1028,7 @@ def test_split_never_overwrites_the_listed_regular_bin(tmp_path):
 
 def test_single_state_zoom_and_one_state_rule():
     """0.93.5 (Christian): 110 mm has no state - "single" everywhere; one rule for a camera's state."""
-    from mppp import calib
+    from rpp import calib
     assert calib.zcam_state("ZL110_F01234") == "single" and calib.zcam_state("ZR110_F00900_reg") == "single"
     assert calib.zcam_state("ZL034_F01254_2_reg") == "regular" and calib.zcam_state("ZL034_F01254_reg@chal") == "regular"
     assert calib.zcam_state("ZL034_F01254_reg", {"backlash_state": "backlash"}) == "backlash"
@@ -1042,16 +1042,16 @@ def test_single_state_zoom_and_one_state_rule():
                                          "regular": {"fx": {"a": 14000.0, "b": 0.0}, "fy": {"a": 14001.0, "b": 0.0}}}}}}
     _, p, _ = calib.zcam_camera_at(m, "ZL110", 600.0, "regular")
     assert p[0] == pytest.approx(15000.0) and p[1] == pytest.approx(15001.0)        # the one state's lines
-    from mppp_studies.calibration.fit import regular_ratio
+    from rpp_studies.calibration.fit import regular_ratio
     assert regular_ratio([], "ZL110")["ratio"] is None
-    from mppp.sfm.reconstruction import HAZCAM_MIN_REFINE_OBSERVATIONS
+    from rpp.sfm.reconstruction import HAZCAM_MIN_REFINE_OBSERVATIONS
     assert HAZCAM_MIN_REFINE_OBSERVATIONS == 500                                     # Christian, 22 Oct
 
 
 def test_check_zcam_regular_state_limits():
     """0.93.5: a fitted regular ratio outside 1.004..1.016 or a regular aspect apart from the backlash one fails; a
     110 mm model with a regular state fails."""
-    from mppp_studies.calibration.fit import check_zcam
+    from rpp_studies.calibration.fit import check_zcam
     ln = lambda fx, fy: {"fx": {"a": fx, "b": 0.0}, "fy": {"a": fy, "b": 0.0}}           # noqa: E731
     new = {"cameras": {"ZL034": {"f0_px": 4733.0, "aspect": 1.0008, "regular_ratio": 1.0238,
                                  "lines": {"backlash": ln(4731.7, 4735.3), "regular": ln(4659.9, 4587.0)}},
@@ -1069,7 +1069,7 @@ def test_check_zcam_regular_state_limits():
 
 def test_shipped_z34_regular_state_is_a_focus_state():
     """0.93.5: the shipped Z34 model's regular ratio is a focus state's (the 22 Oct joint wrote 1.024)."""
-    from mppp import calib
+    from rpp import calib
     zm = calib.load_zcam(34)
     if zm is None:
         pytest.skip("no Z34 focus model")
@@ -1081,8 +1081,8 @@ def test_split_leaves_regular_cameras_and_strip_restores_the_base(tmp_path):
     """0.93.5: images already in a regular camera (the list's _reg bins) are not split again; strip_thermal_bins
     gives the base camera back its image count and state."""
     pytest.importorskip("scipy")
-    from mppp.sfm.backlash import classify_groups, image_focal_fits, image_states, split_by_state
-    from mppp.sfm.thermal import strip_thermal_bins
+    from rpp.sfm.backlash import classify_groups, image_focal_fits, image_states, split_by_state
+    from rpp.sfm.thermal import strip_thermal_bins
     proj, rec, model, truth = _zcam_block(tmp_path)
     states = image_states(classify_groups(proj, image_focal_fits(rec, proj), model))
     allreg = list(states)                                     # every image asked to be regular
@@ -1104,7 +1104,7 @@ def test_split_leaves_regular_cameras_and_strip_restores_the_base(tmp_path):
 def test_sequence_rule_skips_implausible_and_disabled_list(tmp_path):
     """0.93.5: a failed bin (implausible) keeps its own state under the sequence rule; a project built without a
     list keeps none when it is classified."""
-    from mppp.sfm.backlash import apply_sequence_states, classify_groups, image_focal_fits
+    from rpp.sfm.backlash import apply_sequence_states, classify_groups, image_focal_fits
     rows = [{"sol": 1, "sequence": "ZCAM1", "group_key": f"g{i}", "state": "regular", "z": -9.0, "ratio_fit": 0.999,
              "sd_fit": 0.0005, "threshold_ratio": 1.0047} for i in range(3)]
     rows.append({"sol": 1, "sequence": "ZCAM1", "group_key": "bad", "state": "undecided", "z": 30.0,

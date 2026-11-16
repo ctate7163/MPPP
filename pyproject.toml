@@ -3,9 +3,9 @@ requires = ["setuptools>=77.0.3"]          # 77: the SPDX license expression and
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mppp"
-dynamic = ["version"]      # from mppp.__version__ (the single source)
-description = "Mars Photogrammetry Preprocessing Pipeline: Mars 2020 PDS images to COLMAP and Metashape, with rover masks, camera models and pose priors"
+name = "rover-photogrammetry-pipeline"   # 0.99.0: the import name is rpp (formerly mppp); "rpp" on PyPI is another project
+dynamic = ["version"]      # from rpp.__version__ (the single source)
+description = "Rover Photogrammetry Pipeline (RPP, formerly MPPP): Mars rover PDS images to COLMAP and Metashape, with rover masks, camera models and pose priors"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
@@ -40,25 +40,26 @@ plots   = ["matplotlib", "pillow"]                                            # 
 maps    = ["matplotlib", "scipy", "pillow", "adjustText", "rasterio", "pyproj"]   # the M20 site-map figures (make_maps.bat)
 notebooks = ["jupyterlab", "matplotlib", "pillow"]
 rover   = ["spiceypy>=6"]                                                     # the rover kernels (studies/rover_frame)
-release = ["huggingface_hub"]                                                 # mppp_studies.mask_training.release_mask_model
-ibr     = ["open3d>=0.20"]                                                     # 0.96: mppp mesh / depthmaps / ods (mppp.ibr)
+release = ["huggingface_hub"]                                                 # rpp_studies.mask_training.release_mask_model
+ibr     = ["open3d>=0.20"]                                                     # 0.96: rpp mesh / depthmaps / ods (rpp.ibr)
 docs    = ["mkdocs>=1.6.1,<2", "mkdocs-material>=9.7", "mkdocstrings[python]>=1.0"]     # the documentation site (mkdocs.yml)
 dev     = ["pytest", "flake8", "nbformat", "pillow"]
-all     = ["mppp[mask,sfm,error,plots,maps,notebooks,rover,ibr,dev]"]
+all     = ["rover-photogrammetry-pipeline[mask,sfm,error,plots,maps,notebooks,rover,ibr,dev]"]
 
 [tool.setuptools.dynamic]
-version = { attr = "mppp.__version__" }
+version = { attr = "rpp.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["mppp*"]
+include = ["rpp*", "mppp*"]     # mppp, mppp_studies: the names before 0.99 (alias packages)
 
 [tool.setuptools.package-data]
-mppp = ["data/*.json", "data/*.csv", "data/*.txt", "data/cmods/*.json", "data/cmods/*.md", "data/rover/*.npz", "data/rover/*.md"]
-mppp_studies = ["validation/*.json", "calibration/data/*.json"]
+rpp = ["data/*.json", "data/*.csv", "data/*.txt", "data/cmods/*.json", "data/cmods/*.md", "data/rover/*.npz", "data/rover/*.md"]
+rpp_studies = ["validation/*.json", "calibration/data/*.json"]
 
 [project.scripts]
-mppp = "mppp.cli:main"
+rpp = "rpp.cli:main"
+mppp = "mppp:cli_main"          # 0.99 only: the command before the rename, with a note
 
 [project.urls]
 Homepage = "https://github.com/ctate7163/RPP"

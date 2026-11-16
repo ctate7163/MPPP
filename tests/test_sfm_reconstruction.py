@@ -1,11 +1,11 @@
-"""Triangulation, weighted bundle adjustment, outliers, staging (mppp.sfm.reconstruction). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
+"""Triangulation, weighted bundle adjustment, outliers, staging (rpp.sfm.reconstruction). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
 import numpy as np
 import pytest
-from mppp.paths import data_dir  # noqa: E402
+from rpp.paths import data_dir  # noqa: E402
 from pathlib import Path
 import copy
 from types import SimpleNamespace
-from mppp.sfm.reconstruction import camera_changes  # noqa: E402
+from rpp.sfm.reconstruction import camera_changes  # noqa: E402
 
 
 pycolmap = pytest.importorskip("pycolmap")
@@ -17,7 +17,7 @@ DATA_DIR = data_dir()
 def _synthetic(tmp_path, noise_native_px=0.3, seed=0):
     """Two stations, a mast pan of 6 stereo exposures each (half and quarter resolution), terrain points."""
     from helpers import synthetic_navcam_cameras
-    from mppp.sfm.project import SfmProject
+    from rpp.sfm.project import SfmProject
     from scipy.spatial.transform import Rotation
     rng = np.random.default_rng(seed)
     cams = synthetic_navcam_cameras()
@@ -134,7 +134,7 @@ def _build_rec(proj, truth, P, cams_d, rigT, noise, rng, perturb=True):
 
 
 def test_weighted_ba_recovers_intrinsics_and_poses(tmp_path):
-    from mppp.sfm.reconstruction import bundle_adjust, native_residuals
+    from rpp.sfm.reconstruction import bundle_adjust, native_residuals
     proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
     rec, true_params = _build_rec(proj, truth, P, cams_d, rigT, noise, rng)
     out = bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, refine_rig="rotation", max_iterations=200)
@@ -156,7 +156,7 @@ def test_weighted_ba_recovers_intrinsics_and_poses(tmp_path):
 
 def test_weights_follow_native_resolution(tmp_path):
     """Quarter-resolution observations get 1/16 the weight of half-resolution ones in full-res pixels."""
-    from mppp.sfm.reconstruction import bundle_adjust
+    from rpp.sfm.reconstruction import bundle_adjust
     proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
     rec, _ = _build_rec(proj, truth, P, cams_d, rigT, noise, rng, perturb=False)
     out = bundle_adjust(rec, proj, sigma_px=noise, loss_scale=1e6, refine_intrinsics=False, refine_rig=False,
@@ -167,7 +167,7 @@ def test_weights_follow_native_resolution(tmp_path):
 
 def test_filter_observations_removes_outliers(tmp_path):
     """v0p9 bug found on Belva: numpy ids were not recognised by pycolmap maps, so nothing was filtered."""
-    from mppp.sfm.reconstruction import filter_observations, native_residuals
+    from rpp.sfm.reconstruction import filter_observations, native_residuals
     proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
     rec, _ = _build_rec(proj, truth, P, cams_d, rigT, noise, rng, perturb=False)
     pid = next(iter(rec.points3D))
@@ -180,7 +180,7 @@ def test_filter_observations_removes_outliers(tmp_path):
 
 def test_two_view_tracks_kept_and_counted():
     import pycolmap
-    from mppp.sfm.reconstruction import drop_short_tracks, reconstruct
+    from rpp.sfm.reconstruction import drop_short_tracks, reconstruct
     import inspect
     assert inspect.signature(reconstruct).parameters["min_track_length"].default == 2
     rec = pycolmap.Reconstruction()
@@ -207,7 +207,7 @@ def test_two_view_tracks_kept_and_counted():
 
 
 def test_fixed_camera_params_tangential_switch():
-    from mppp.sfm.reconstruction import fixed_camera_params
+    from rpp.sfm.reconstruction import fixed_camera_params
     assert fixed_camera_params("FULL_OPENCV") == [6, 7, 9, 10, 11]
     assert fixed_camera_params("FULL_OPENCV", refine_tangential=True) == [9, 10, 11]
     assert fixed_camera_params("FULL_OPENCV", refine_principal_point=False, refine_tangential=True) == [2, 3, 9, 10, 11]
@@ -216,7 +216,7 @@ def test_fixed_camera_params_tangential_switch():
 
 def test_reconstruct_defaults_four_rounds_and_half_degree():
     import inspect
-    from mppp.sfm.reconstruction import DEFAULT_SCHEDULE, reconstruct
+    from rpp.sfm.reconstruction import DEFAULT_SCHEDULE, reconstruct
     sig = inspect.signature(reconstruct).parameters
     assert sig["schedule"].default == DEFAULT_SCHEDULE and len(DEFAULT_SCHEDULE) == 4
     assert DEFAULT_SCHEDULE[-1] == DEFAULT_SCHEDULE[-2] == (8.0, 2.0, 2.0)   # v0p14.5: round 4 repeats round 3
@@ -230,8 +230,8 @@ def test_ba_recovers_tangential_only_when_asked(tmp_path):
     pytest.importorskip("pyceres")
     import numpy as np
     from helpers import _build_rec, _synthetic
-    from mppp.sfm.reconstruction import bundle_adjust
-    from mppp.sfm.health import _camera_change
+    from rpp.sfm.reconstruction import bundle_adjust
+    from rpp.sfm.health import _camera_change
     proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
     for k in cams_d:                                                    # truth has tangential distortion
         cams_d[k]["params"][6], cams_d[k]["params"][7] = 3e-4, -2e-4
@@ -259,7 +259,7 @@ def test_ba_holds_camera_specific_parameters(tmp_path):
     pytest.importorskip("pyceres")
     import numpy as np
     from helpers import _build_rec, _synthetic
-    from mppp.sfm.reconstruction import bundle_adjust
+    from rpp.sfm.reconstruction import bundle_adjust
     proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
     rec, true_params = _build_rec(proj, truth, P, cams_d, rigT, noise, rng)
     start = {cid: np.array(rec.cameras[cid].params) for cid in (1, 2)}
@@ -271,8 +271,8 @@ def test_ba_holds_camera_specific_parameters(tmp_path):
     assert abs(p2[0] - start[2][0]) > 1.0                               # its focal length moved (+0.3 % start)
     assert abs(p1[2] - start[1][2]) > 0.5 and abs(p1[4] - start[1][4]) > 1e-4     # NL refines as before
     # NR dressed as a Mastcam-Z focus bin: table, plot and health run on it
-    from mppp.sfm.health import assess_alignment
-    from mppp.sfm.zcam import write_focus_breathing
+    from rpp.sfm.health import assess_alignment
+    from rpp.sfm.zcam import write_focus_breathing
     proj.cameras["NR"].update(group="NR", focus_count_median=1000.0, focus_count_range=[995.0, 1004.0], n_images=12)
     for r in proj.images:
         r["camera_group"] = r["instrument"]
@@ -292,7 +292,7 @@ def test_attitude_prior_holds_the_block_orientation(tmp_path):
     pytest.importorskip("pyceres")
     from scipy.spatial.transform import Rotation
     from helpers import _build_rec, _synthetic
-    from mppp.sfm.reconstruction import bundle_adjust
+    from rpp.sfm.reconstruction import bundle_adjust
     rot = {}
     for sigma in (None, 0.01):
         proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path / str(sigma))
@@ -326,7 +326,7 @@ def _solved(tmp_path, seed=0):
 
 
 def test_find_outlier_frames_flags_a_frame_that_left_its_station(tmp_path):
-    from mppp.sfm.reconstruction import OUTLIER_DEFAULTS, exclude_frames, find_outlier_frames
+    from rpp.sfm.reconstruction import OUTLIER_DEFAULTS, exclude_frames, find_outlier_frames
     proj, rec, _ = _solved(tmp_path)
     assert find_outlier_frames(rec, proj) == []                       # a consistent block: nothing flagged
     # frame 3's priors are 1.5 m off (its solved pose did not follow them: a frame that "did not align")
@@ -370,7 +370,7 @@ def test_find_outlier_frames_drops_a_weakly_tied_hazcam_pair_off_its_station(tmp
     station's shift spread): a Hazcam pair more than hazcam_shift_m (0.3 m) from its station's Navcam shift with
     fewer than hazcam_strong_observations is dropped, from a single Navcam frame on; a strongly tied pair that far
     off is judged by the station MAD test as before, and a pair that follows its station is kept."""
-    from mppp.sfm.reconstruction import OUTLIER_DEFAULTS, find_outlier_frames
+    from rpp.sfm.reconstruction import OUTLIER_DEFAULTS, find_outlier_frames
     assert OUTLIER_DEFAULTS["hazcam_shift_m"] == 0.3 and OUTLIER_DEFAULTS["hazcam_strong_observations"] == 3000
     proj, rec, _ = _solved(tmp_path)
     by_name = {r["name"]: r for r in proj.images}
@@ -397,7 +397,7 @@ def test_find_outlier_frames_drops_a_weakly_tied_hazcam_pair_off_its_station(tmp
     # relaxed: a 1 m limit keeps it
     assert find_outlier_frames(rec, proj, hazcam_shift_m=1.0, hazcam_strong_observations=1, min_shift_m=1.0) == []
     # one Navcam frame at the station is enough for the Hazcam rule (the MAD test needs three)
-    from mppp.sfm.reconstruction import exclude_frames
+    from rpp.sfm.reconstruction import exclude_frames
     assert exclude_frames(rec, fids[2:]) == len(fids) - 2
     found = find_outlier_frames(rec, proj)
     assert [f["frame_id"] for f in found] == [haz] and "weakly tied Hazcam pair" in found[0]["reasons"][0]
@@ -408,7 +408,7 @@ def test_find_mistied_bins_focal_and_station_shift(tmp_path):
     1.7 m shift): a Mastcam-Z bin is a far-field mis-tie only when both its focal length is off the model by more than
     2 % and its frames sit more than 0.5 m from where the station's Navcam shift puts them; either alone passes, a bin
     held at the model is not judged, and the frames' station shift is taken off before the test."""
-    from mppp.sfm.reconstruction import ZCAM_MISTIE_FOCAL_PCT, ZCAM_MISTIE_SHIFT_M, find_mistied_bins
+    from rpp.sfm.reconstruction import ZCAM_MISTIE_FOCAL_PCT, ZCAM_MISTIE_SHIFT_M, find_mistied_bins
     assert ZCAM_MISTIE_FOCAL_PCT == 2.0 and ZCAM_MISTIE_SHIFT_M == 0.5
     proj, rec, _ = _solved(tmp_path)
     db = proj.settings["database"]["cameras"]
@@ -445,7 +445,7 @@ def test_find_mistied_bins_focal_and_station_shift(tmp_path):
     for r in proj.images:
         if r["name"] in names:
             r.pop("prior_C_label", None)                                   # the frames where the priors say again
-    from mppp.sfm.reconstruction import ZCAM_MISTIE_SMALL_FRAMES
+    from rpp.sfm.reconstruction import ZCAM_MISTIE_SMALL_FRAMES
     assert ZCAM_MISTIE_SMALL_FRAMES == 3
     n_fr = len({int(rec.images[i].frame_id) for i in rec.reg_image_ids() if int(rec.images[i].camera_id) == cid})
     assert n_fr > 3 and find_mistied_bins(rec, proj) == []                 # a larger bin: no
@@ -463,7 +463,7 @@ def test_find_mistied_bins_focal_and_station_shift(tmp_path):
 def test_find_outlier_frames_flags_large_residuals(tmp_path):
     from scipy.spatial.transform import Rotation
     import pycolmap
-    from mppp.sfm.reconstruction import find_outlier_frames
+    from rpp.sfm.reconstruction import find_outlier_frames
     proj, rec, _ = _solved(tmp_path)
     fr = rec.frames[5]
     T = fr.rig_from_world
@@ -476,7 +476,7 @@ def test_find_outlier_frames_flags_large_residuals(tmp_path):
 
 
 def test_convergence_statistics_counts_ray_angles(tmp_path):
-    from mppp.sfm.reconstruction import CONVERGENCE_BINS_DEG, convergence_statistics
+    from rpp.sfm.reconstruction import CONVERGENCE_BINS_DEG, convergence_statistics
     proj, rec, _ = _solved(tmp_path)
     cs = convergence_statistics(rec, proj)
     n2 = sum(1 for p in rec.points3D.values() if p.track.length() >= 2)
@@ -497,7 +497,7 @@ def test_convergence_statistics_counts_ray_angles(tmp_path):
 
 def test_triangulate_passes_the_track_options(tmp_path, monkeypatch):
     pycolmap = pytest.importorskip("pycolmap")
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     seen = {}
 
     def fake(rec, db, images, out, clear_points, options, refine_intrinsics):
@@ -516,7 +516,7 @@ def test_triangulate_passes_the_track_options(tmp_path, monkeypatch):
 def test_rig_translation_prior_keeps_the_baseline(tmp_path):
     pytest.importorskip("pyceres")
     from helpers import _build_rec, _synthetic
-    from mppp.sfm.reconstruction import bundle_adjust
+    from rpp.sfm.reconstruction import bundle_adjust
     proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
     proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
     rec, _ = _build_rec(proj, truth, P, cams, rigT, noise, rng)
@@ -534,7 +534,7 @@ def test_rig_translation_prior_keeps_the_baseline(tmp_path):
 def test_navcam_network_and_hold(tmp_path):
     pytest.importorskip("pyceres")
     from helpers import _build_rec, _synthetic
-    from mppp.sfm.reconstruction import bundle_adjust, navcam_network
+    from rpp.sfm.reconstruction import bundle_adjust, navcam_network
     proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
     proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
     net = navcam_network(proj)
@@ -552,7 +552,7 @@ def test_navcam_network_and_hold(tmp_path):
 def test_reconstruct_holds_navcam_intrinsics_on_a_weak_network(tmp_path, monkeypatch):
     pytest.importorskip("pyceres")
     from helpers import _build_rec, _synthetic
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
     proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
     rec0, _ = _build_rec(proj, truth, P, cams, rigT, noise, rng)
@@ -573,7 +573,7 @@ def test_reconstruct_holds_navcam_intrinsics_on_a_weak_network(tmp_path, monkeyp
 def test_reconstruct_staged_solves_navcam_first(tmp_path, monkeypatch):
     pytest.importorskip("pyceres")
     from helpers import _build_rec, _synthetic
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
     proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
     rec0, _ = _build_rec(proj, truth, P, cams, rigT, noise, rng)
@@ -602,8 +602,8 @@ def test_bundle_adjust_solver_choice_and_block_rotation(tmp_path):
     pytest.importorskip("pyceres")
     import pycolmap
     from helpers import _build_rec, _synthetic
-    from mppp.sfm.reconstruction import bundle_adjust
-    from mppp.sfm.health import assess_alignment
+    from rpp.sfm.reconstruction import bundle_adjust
+    from rpp.sfm.health import assess_alignment
     proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
     proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
     rec, _ = _build_rec(proj, truth, P, cams, rigT, noise, rng)
@@ -635,7 +635,7 @@ def test_bundle_adjust_solver_choice_and_block_rotation(tmp_path):
 
 
 def test_outlier_residual_floor():
-    from mppp.sfm.reconstruction import OUTLIER_DEFAULTS
+    from rpp.sfm.reconstruction import OUTLIER_DEFAULTS
     assert OUTLIER_DEFAULTS["min_residual_px"] == 2.0                    # 22 Oct 2026 (1.6 since v0p61)
 
 
@@ -696,7 +696,7 @@ def test_camera_missing_from_reconstruction():
 
 def test_unlocalized_stations_and_dropped_priors(tmp_path):
     pytest.importorskip("pyceres")
-    from mppp.sfm.reconstruction import bundle_adjust, unlocalized_stations
+    from rpp.sfm.reconstruction import bundle_adjust, unlocalized_stations
     proj, rec, noise, fid = _short_stop(tmp_path)
     truth = _centre(rec, fid)
     u = unlocalized_stations(proj, 4, rec=rec)
@@ -724,7 +724,7 @@ def test_unlocalized_stations_and_dropped_priors(tmp_path):
 def test_register_stations_only_moves_the_short_stop(tmp_path, monkeypatch):
     pytest.importorskip("pyceres")
     import pycolmap
-    from mppp.sfm import reconstruction as RC
+    from rpp.sfm import reconstruction as RC
     proj, rec, noise, fid = _short_stop(tmp_path)
     truth = _centre(rec, fid)
     # matches from the tracks; then the short stop's observations leave the tracks (as after triangulating with
@@ -758,8 +758,8 @@ def test_register_stations_only_moves_the_short_stop(tmp_path, monkeypatch):
 def test_reconstruct_with_localize_min_images(tmp_path, monkeypatch):
     pytest.importorskip("pyceres")
     import copy
-    from mppp.sfm import reconstruction as R
-    from mppp.sfm import health as H
+    from rpp.sfm import reconstruction as R
+    from rpp.sfm import health as H
     proj, rec0, noise, fid = _short_stop(tmp_path)
     monkeypatch.setattr(R, "initial_reconstruction", lambda project: copy.deepcopy(rec0))
     monkeypatch.setattr(R, "triangulate", lambda rec, project, **kw: rec)          # no database: keep the points
@@ -788,7 +788,7 @@ def _zcam_block(tmp_path, seed=0, noise=0.2):
     backlash groups (sequences zcam1, zcam2) and one regular group (zcam3, f = label) of the same focus count."""
     pycolmap = pytest.importorskip("pycolmap")
     from scipy.spatial.transform import Rotation
-    from mppp.sfm.project import SfmProject
+    from rpp.sfm.project import SfmProject
     rng = np.random.default_rng(seed)
     W, H, lab = 1648, 1200, 4680.0
     fb = lab * 1.0095
@@ -854,7 +854,7 @@ def _zcam_block(tmp_path, seed=0, noise=0.2):
 
 
 def test_tangential_per_family():
-    from mppp.sfm.reconstruction import fixed_camera_params, tangential_for, tangential_setting
+    from rpp.sfm.reconstruction import fixed_camera_params, tangential_for, tangential_setting
     rt = {"N": True, "Z": False}
     assert tangential_for(rt, "NL") and tangential_for(rt, "NR_T-040-030")
     assert not tangential_for(rt, "ZL034") and not tangential_for(rt, "ZR034_f1200")
@@ -871,7 +871,7 @@ def test_bundle_adjust_holds_zcam_tangential_only(tmp_path):
     pytest.importorskip("pyceres")
     sys.path.insert(0, str(Path(__file__).parent))
     from helpers import _synthetic_block
-    from mppp.sfm.reconstruction import bundle_adjust
+    from rpp.sfm.reconstruction import bundle_adjust
     proj, rec, noise = _synthetic_block(tmp_path)
     # pretend the right eye is a Mastcam-Z camera: its p1, p2 must stay, the left eye's move
     cid = proj.settings["database"]["cameras"]
@@ -895,7 +895,7 @@ def test_bundle_adjust_holds_zcam_tangential_only(tmp_path):
 def test_restore_frames_after_write_read(tmp_path):
     """pycolmap 4 drops deregistered frames on write/read (triangulate_points): stage 2 must bring them back."""
     pycolmap = pytest.importorskip("pycolmap")
-    from mppp.sfm.reconstruction import restore_frames
+    from rpp.sfm.reconstruction import restore_frames
     proj, rec, model, truth = _zcam_block(tmp_path)
     init = pycolmap.Reconstruction(rec)
     rec.deregister_frame(12)
@@ -960,7 +960,7 @@ def _block():
 def test_restore_frames_brings_back_a_torn_down_stereo_rig():
     """The 30 Sep threeforks_south failure: ``Camera 28 from rig 27 not found`` at the start of stage 2."""
     pycolmap, rec = _block()
-    from mppp.sfm.reconstruction import restore_frames
+    from rpp.sfm.reconstruction import restore_frames
     init = pycolmap.Reconstruction(rec)
     rec.deregister_frame(3)
     rec.tear_down()                                   # what triangulate_points does to stage 1
@@ -979,7 +979,7 @@ def test_restore_frames_brings_back_a_torn_down_stereo_rig():
 def test_restore_frames_keeps_refined_cameras_that_survived():
     """A camera still in the block (refined in stage 1) is not overwritten by its start value."""
     pycolmap, rec = _block()
-    from mppp.sfm.reconstruction import restore_frames
+    from rpp.sfm.reconstruction import restore_frames
     init = pycolmap.Reconstruction(rec)
     rec.deregister_frame(3)
     rec.tear_down()
@@ -995,7 +995,7 @@ def test_staged_reconstruct_with_a_zcam_stereo_rig(tmp_path, monkeypatch):
     pycolmap = pytest.importorskip("pycolmap")
     import copy
     from helpers import _build_rec, _synthetic
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
     rec0, _ = _build_rec(proj, truth, P, cams, rigT, noise, rng)
     fids = sorted(rec0.frames)
@@ -1053,7 +1053,7 @@ def test_staged_reconstruct_with_a_zcam_stereo_rig(tmp_path, monkeypatch):
 
 def test_min_frame_observations_default_20_and_one_setting(tmp_path, monkeypatch):
     import inspect
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     assert R.MIN_FRAME_OBSERVATIONS == 20
     assert R.OUTLIER_DEFAULTS["min_observations"] is None                  # follows MIN_FRAME_OBSERVATIONS
     assert inspect.signature(R.bundle_adjust).parameters["min_frame_observations"].default is None
@@ -1072,7 +1072,7 @@ def test_min_frame_observations_default_20_and_one_setting(tmp_path, monkeypatch
 def test_outlier_test_uses_the_frame_limit(tmp_path):
     pytest.importorskip("pyceres")
     from helpers import _build_rec, _synthetic
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
     rec, _ = _build_rec(proj, truth, P, cams, rigT, noise, rng, perturb=False)
     obs = min(sum(1 for q in rec.images[d.id].points2D if q.has_point3D()) for f in rec.frames.values()
@@ -1090,7 +1090,7 @@ def test_navcam_rig_yaw_hold(tmp_path, mode):
     refined with refine_rig="rotation"."""
     pytest.importorskip("pyceres")
     from helpers import _build_rec, _synthetic
-    from mppp.sfm.reconstruction import bundle_adjust
+    from rpp.sfm.reconstruction import bundle_adjust
     proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
     proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
     proj.settings["navcam_rig_yaw"] = mode
@@ -1111,7 +1111,7 @@ def test_navcam_rig_roll_hold(tmp_path):
     """0.91: navcam_rig_roll = "hold" keeps the start roll (quaternion z) with the yaw; the pitch still moves."""
     pytest.importorskip("pyceres")
     from helpers import _build_rec, _synthetic
-    from mppp.sfm.reconstruction import bundle_adjust
+    from rpp.sfm.reconstruction import bundle_adjust
     proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
     proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
     proj.settings["navcam_rig_yaw"] = "hold"
@@ -1129,7 +1129,7 @@ def test_navcam_rig_roll_hold(tmp_path):
 
 def test_outlier_frame_threshold_and_reconstruct_options():
     import inspect
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     assert R.OUTLIER_DEFAULTS["min_residual_px"] == 2.0
     sig = inspect.signature(R._reconstruct).parameters
     assert sig["zcam_focus_line"].default is True and sig["zcam_line_cycles"].default == 2
@@ -1141,7 +1141,7 @@ def test_outlier_frame_threshold_and_reconstruct_options():
 
 def test_aspect_prior_cost():
     pyceres = pytest.importorskip("pyceres")
-    from mppp.sfm.reconstruction import AspectPrior
+    from rpp.sfm.reconstruction import AspectPrior
     x = np.array([100.0, 101.0, 5.0, 5.0])
     prob = pyceres.Problem()
     c = AspectPrior(1.0, 1e-4, 4)
@@ -1155,7 +1155,7 @@ def test_aspect_prior_cost():
 def test_bundle_adjust_holds_the_navcam_aspect(tmp_path):
     pytest.importorskip("pyceres")
     from helpers import _synthetic, _build_rec
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
     rec0, _ = _build_rec(proj, truth, P, cams, rigT, noise, rng)
     if "database" not in proj.settings:
@@ -1185,7 +1185,7 @@ def test_bundle_adjust_holds_the_navcam_aspect(tmp_path):
 def test_staged_reconstruct_records_aspect_and_guard(tmp_path, monkeypatch):
     pytest.importorskip("pyceres")
     from helpers import _block_without_navcam_zcam_matches
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     proj, new, zf, fam = _block_without_navcam_zcam_matches(tmp_path)
     monkeypatch.setattr(R, "initial_reconstruction", lambda project: copy.deepcopy(new))
     # 0.95.0: the every-frame pose-guided pass (and its beyond-ground guard) runs with scope "final" / "all"
@@ -1214,7 +1214,7 @@ def test_bundle_adjust_retries_a_failed_solve(tmp_path, monkeypatch):
     pytest.importorskip("pyceres")
     import pyceres
     from helpers import _build_rec, _synthetic
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     proj, truth, Pts, cams, rigT, noise, rng = _synthetic(tmp_path / "blk", noise_native_px=0.1)
     rec, _ = _build_rec(proj, truth, Pts, cams, rigT, noise, rng, perturb=True)
     proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
@@ -1237,7 +1237,7 @@ def test_bundle_adjust_retries_a_failed_solve(tmp_path, monkeypatch):
 
 def test_set_camera_params_checks_the_write(tmp_path):
     import pycolmap
-    from mppp.sfm.reconstruction import _set_camera_params
+    from rpp.sfm.reconstruction import _set_camera_params
     r = pycolmap.Reconstruction()
     r.add_camera(pycolmap.Camera(camera_id=1, model="SIMPLE_PINHOLE", width=10, height=10, params=[5.0, 5.0, 5.0]))
     _set_camera_params(r, 1, [6.0, 5.0, 5.0])
@@ -1261,7 +1261,7 @@ def test_reconstruct_with_two_rig_epochs(tmp_path, monkeypatch):
 
 
 def test_epoch_tie_key_and_tie():
-    from mppp.sfm.reconstruction import epoch_tie_key, _tie_epoch_cameras
+    from rpp.sfm.reconstruction import epoch_tie_key, _tie_epoch_cameras
     assert epoch_tie_key("NL#1") == "NL" and epoch_tie_key("NR#2_T-022.5-020") == "NR_T-022.5-020"
     assert epoch_tie_key("NL_T-020-015") == "NL_T-020-015" and epoch_tie_key("ZL034#1") == "ZL034#1"
     cams = {1: "NL", 2: "NR", 3: "NL#1", 4: "NR#1", 5: "NL_T-020-015", 6: "NL#1_T-020-015", 7: "NL#1_T-010-005"}
@@ -1283,8 +1283,8 @@ def _two_epoch_block(tmp_path, monkeypatch, **kw):
     pytest.importorskip("pyceres")
     import pycolmap
     from helpers import _build_rec, _synthetic
-    from mppp.sfm import reconstruction as R
-    from mppp.sfm.thermal import image_temperatures
+    from rpp.sfm import reconstruction as R
+    from rpp.sfm.thermal import image_temperatures
     proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
     for r in proj.images:
         later = r["station"].endswith("0100")
@@ -1373,7 +1373,7 @@ def test_untied_epochs_keep_their_own_cameras(tmp_path, monkeypatch):
     pytest.importorskip("pyceres")
     def setup(project):
         project.settings["navcam_rig_epochs_tie"] = False
-    import mppp.sfm.reconstruction as R
+    import rpp.sfm.reconstruction as R
     orig = R._tie_epoch_cameras
     monkeypatch.setattr(R, "_tie_epoch_cameras", lambda b, w, p: (setup(p), orig(b, w, p))[1])
     proj, rec, single, rigT = _two_epoch_block(tmp_path, monkeypatch)
@@ -1385,14 +1385,14 @@ def test_untied_epochs_keep_their_own_cameras(tmp_path, monkeypatch):
 
 def test_reconstruct_signature_round1_hold():
     import inspect
-    from mppp.sfm.reconstruction import ROUND1_HOLD, reconstruct
+    from rpp.sfm.reconstruction import ROUND1_HOLD, reconstruct
     assert ROUND1_HOLD is True
     assert inspect.signature(reconstruct).parameters["round1_hold"].default is True
 
 
 def test_translation_tie_cost():
     pytest.importorskip("pyceres")
-    from mppp.sfm.reconstruction import _translation_tie_class
+    from rpp.sfm.reconstruction import _translation_tie_class
     c = _translation_tie_class()(1e-3)
     a = np.array([0, 0, 0, 1, 0.42, 0.001, 0.002])
     b = np.array([0, 0, 0, 1, 0.41, 0.001, 0.0])
@@ -1426,7 +1426,7 @@ class _Rec:
 
 
 def test_prior_gauge_moves_the_block_onto_its_priors():
-    from mppp.sfm.reconstruction import PRIOR_GAUGE_RECENTRE, prior_gauge
+    from rpp.sfm.reconstruction import PRIOR_GAUGE_RECENTRE, prior_gauge
     assert PRIOR_GAUGE_RECENTRE is True
     priors = np.array([[0, 0, 0], [10, 0, 0], [0, 10, 1.0]])
     rec = _Rec(priors + [-0.19, -0.07, -0.10])
@@ -1438,12 +1438,12 @@ def test_prior_gauge_moves_the_block_onto_its_priors():
 
 
 def test_covariance_damping_steps():
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     assert R.COVARIANCE_DAMPING_STEPS[0] == 0.0 and max(R.COVARIANCE_DAMPING_STEPS) <= 1e-4
 
 
 def test_covariance_uses_camera_views():
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     assert R.COVARIANCE_CAMERA_VIEWS is True
 
 
@@ -1452,10 +1452,10 @@ def test_covariance_uses_camera_views():
 
 def test_triangulation_keeps_cameras_with_k2_above_one(tmp_path):
     """The ZR dropout (19 Oct diagnostic): COLMAP triangulates no image of a camera with |k2| > 1 unless its
-    bogus-camera limit is lifted - mppp.sfm.reconstruction.triangulate lifts it."""
+    bogus-camera limit is lifted - rpp.sfm.reconstruction.triangulate lifts it."""
     import numpy as np
     import pycolmap
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     rng = np.random.default_rng(0)
     W, H, f = 1648, 1200, 4700.0
     X = rng.uniform([-3, -2, 18], [3, 2, 30], size=(300, 3))
@@ -1511,7 +1511,7 @@ def test_triangulation_keeps_cameras_with_k2_above_one(tmp_path):
 def test_k2_clamped_to_ten():
     import numpy as np
     import pycolmap
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     rec = pycolmap.Reconstruction()
     for cid, k2 in ((1, 12.5), (2, -30.0), (3, 2.2)):
         rec.add_camera(pycolmap.Camera(model="FULL_OPENCV", width=1648, height=1200,
@@ -1524,7 +1524,7 @@ def test_k2_clamped_to_ten():
 def test_mixed_navcam_zcam_points_need_a_third_view():
     """Two-view points with a Navcam and a Mastcam-Z image are deleted; stereo pairs of one type are kept."""
     from types import SimpleNamespace as NS
-    from mppp.sfm.reconstruction import drop_mixed_short_tracks, drop_short_tracks, MIN_MIXED_TRACK_LENGTH
+    from rpp.sfm.reconstruction import drop_mixed_short_tracks, drop_short_tracks, MIN_MIXED_TRACK_LENGTH
 
     class Rec:
         def __init__(self, tracks):
@@ -1558,7 +1558,7 @@ def test_unsurveyed_stations_get_loose_priors(tmp_path):
     1 m / 1 deg; the gauge is weighted by 1 / sigma^2."""
     import numpy as np
     import pytest
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     assert R.UNSURVEYED_PRIOR_SIGMA_M == 10.0 and R.UNSURVEYED_ATTITUDE_PRIOR_DEG == 3.0
     assert R.is_unsurveyed({"position_source": "waypoint site 6 drive 0 + label ORIGIN_OFFSET_VECTOR"})
     assert not R.is_unsurveyed({"position_source": "waypoint site 6 drive 2666 (exact)"})
@@ -1586,7 +1586,7 @@ def test_unsurveyed_stations_get_loose_priors(tmp_path):
 def test_drop_isolated_points():
     """0.94.4: a point far from every other point (a false match at the wrong range) is deleted, the surface stays."""
     import pycolmap
-    from mppp.sfm.reconstruction import drop_isolated_points
+    from rpp.sfm.reconstruction import drop_isolated_points
     rng = np.random.default_rng(0)
     rec = pycolmap.Reconstruction()
     cam = pycolmap.Camera(model="SIMPLE_PINHOLE", width=1000, height=1000, params=[800.0, 500, 500], camera_id=1)
@@ -1634,7 +1634,7 @@ def test_drop_isolated_points():
     drop_isolated_points(rec, 4.0, within_radii=0)
     assert pid in rec.points3D
     assert drop_isolated_points(rec, 4.0, two_view_only=False, within_radii=0)["deleted"] >= 1 and pid not in rec.points3D
-    from mppp.pipeline import Settings
+    from rpp.pipeline import Settings
     assert Settings().isolated_points_factor == 4.0
 
 
@@ -1644,7 +1644,7 @@ def test_restore_shared_cameras_after_a_rig_was_dropped():
     right camera that the stereo rig still uses.  The camera is put back."""
     from types import SimpleNamespace as NS
     import pycolmap
-    from mppp.sfm.reconstruction import restore_shared_cameras
+    from rpp.sfm.reconstruction import restore_shared_cameras
     cam = lambda i: NS(id=i, type=pycolmap.SensorType.CAMERA)          # noqa: E731
 
     class Rec:
@@ -1665,7 +1665,7 @@ def test_outlier_test_hazcam_frames_against_the_label_prior(tmp_path):
     (``hazcam_station_priors``).  Its shift is measured from the label prior (``prior_C_label``) like the Navcam
     frames', so a station that moved 0.4 m does not make its Hazcam frames outliers (Chal Rocks Large lost 34 Hazcam
     images that way); a Hazcam frame that really left its station still is."""
-    from mppp.sfm.reconstruction import find_outlier_frames, label_prior_C
+    from rpp.sfm.reconstruction import find_outlier_frames, label_prior_C
     proj, rec, _ = _solved(tmp_path)
     st = "S001D0000"
     frames_here = [fid for fid in rec.frames
@@ -1696,7 +1696,7 @@ def test_thin_points_keeps_every_tie_and_caps_the_two_view_points(tmp_path):
     same-station points beyond a per-image cap, spread over a grid, and keeps every tie (three or more views,
     two stations or two families); bundle_adjust(thin_cap=...) skips them and reports it; 0 keeps all."""
     pytest.importorskip("pyceres")
-    from mppp.sfm.reconstruction import bundle_adjust, thin_points
+    from rpp.sfm.reconstruction import bundle_adjust, thin_points
     proj, rec, _ = _solved(tmp_path)
     station = {r["name"]: r["station"] for r in proj.images}
     n_all = len(rec.points3D)
@@ -1730,7 +1730,7 @@ def test_thin_points_keeps_every_tie_and_caps_the_two_view_points(tmp_path):
     assert ba["points_in_adjustment"] == n_all - len(t["skip"])
     ba0 = bundle_adjust(rec, proj, sigma_px=0.3, loss_scale=10.0, max_iterations=3, refine_intrinsics=False)
     assert ba0["points_skipped"] == 0 and ba0["points_in_adjustment"] == n_all
-    from mppp.pipeline import Settings
+    from rpp.pipeline import Settings
     assert Settings().ba_points_cap == 0 and "ba_points_cap" in Settings().key_dict()
 
 
@@ -1738,7 +1738,7 @@ def test_zcam_aspect_targets_model_or_detector():
     """2 Nov 2026: each Mastcam-Z group held at its zoom model's fy / fx, or at the eye's detector aspect (median
     of the 34/48/63 mm models) when the model's is more than 0.2 % off it (110 mm: 0.993)."""
     from types import SimpleNamespace
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     asp = {"ZL034": 1.0006, "ZL048": 0.9998, "ZL063": 1.0000, "ZL079": 0.9990, "ZL110": 0.9928,
            "ZR034": 1.0009, "ZR048": 0.9997, "ZR063": 1.0000}
     cams = {f"{g}_F01000_b{i}": {"group": g} for i, g in enumerate(["ZL034", "ZL079", "ZL110", "ZR110", "ZR034"])}
@@ -1758,7 +1758,7 @@ def test_bundle_adjust_holds_the_zcam_aspect_per_bin(tmp_path):
     joints' explicit "free" leave it to the data; the project setting decides when the argument is not given."""
     pytest.importorskip("pyceres")
     from helpers import _zcam_rig_rec
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     proj, rec0, _ = _zcam_rig_rec(tmp_path)
     for k, g in (("ZL", "ZL034"), ("ZR", "ZR034")):
         proj.cameras[k]["group"] = g
@@ -1785,7 +1785,7 @@ def test_bundle_adjust_holds_the_zcam_aspect_per_bin(tmp_path):
 
 
 def test_zcam_aspect_setting_is_a_zcam_key_only():
-    from mppp.pipeline import Settings
+    from rpp.pipeline import Settings
     s = Settings()
     assert s.zcam_aspect == "hold"
     assert "zcam_aspect" not in s.replace(include_zcam=False).key_dict()
@@ -1797,8 +1797,8 @@ def test_aspect_hold_sigmas_from_the_run(tmp_path):
     the pipeline's settings) from project.settings; without them the module defaults (2e-5)."""
     pytest.importorskip("pyceres")
     from helpers import _zcam_rig_rec
-    from mppp.pipeline import Settings
-    from mppp.sfm import reconstruction as R
+    from rpp.pipeline import Settings
+    from rpp.sfm import reconstruction as R
     s = Settings()
     assert s.navcam_aspect_sigma == 1e-3 and s.zcam_aspect_sigma == 1e-3
     assert "zcam_aspect_sigma" not in s.replace(include_zcam=False).key_dict()
@@ -1821,16 +1821,16 @@ def test_mistie_exclusions_carry_the_station(tmp_path, caplog):
     after its last adjustment): the mis-tie exclusions name the image's station like every other exclusion, and the
     site log no longer needs one."""
     import logging as _lg
-    from mppp.sfm.reconstruction import _image_station
+    from rpp.sfm.reconstruction import _image_station
     proj, rec, _ = _solved(tmp_path)
     r0 = proj.images[0]
     assert _image_station(proj, r0["name"]) == r0["station"]
     assert _image_station(proj, "not_an_image.png") is None
-    # the log line of mppp.pipeline with an exclusion that has no station
-    log = _lg.getLogger("mppp.test_mistie")
+    # the log line of rpp.pipeline with an exclusion that has no station
+    log = _lg.getLogger("rpp.test_mistie")
     e = {"images": ["a.png"], "reasons": ["far-field mis-tie"], "kind": "mistie"}
     with caplog.at_level(_lg.INFO):
         log.info("   %s | %s | %s", ", ".join(e.get("images") or []), e.get("station") or "-", "; ".join(e.get("reasons") or []))
     assert "a.png | - | far-field mis-tie" in caplog.text
-    src = (__import__("pathlib").Path(__import__("mppp").__file__).parent / "pipeline.py").read_text(encoding="utf-8")
+    src = (__import__("pathlib").Path(__import__("rpp").__file__).parent / "pipeline.py").read_text(encoding="utf-8")
     assert 'e["station"]' not in src

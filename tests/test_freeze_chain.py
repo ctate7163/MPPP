@@ -1,4 +1,4 @@
-"""mppp_studies.calibration.freeze_chain (2 Nov 2026): the unattended chain - the root, the wait for v4.2, the mask choice, the
+"""rpp_studies.calibration.freeze_chain (2 Nov 2026): the unattended chain - the root, the wait for v4.2, the mask choice, the
 pipeline in three calls (blocks, final pass, studies), S2 last; a restart continues it."""
 import json
 import sys
@@ -14,20 +14,20 @@ import pytest
 @pytest.fixture(autouse=True)
 def _no_disk_wait(monkeypatch):
     """The disk-space wait (MIN_FREE_GB) is off in the tests - a CI disk may be smaller than the PC's."""
-    from mppp_studies.calibration import freeze_chain as F
+    from rpp_studies.calibration import freeze_chain as F
     monkeypatch.setattr(F, "MIN_FREE_GB", 0.0)
 
 
 def _ab_csv(path, v3, v42):
     path.mkdir(parents=True, exist_ok=True)
     rows = ["model,subset,camera,exclusion_IoU,hardware_recall",
-            f"mppp_mask_v3,not_seen,all,{v3},0.9", f"convnext_tiny_s4_seg_20261103_v8_v4.2,not_seen,all,{v42},0.9",
-            "mppp_mask_v3,all,Mastcam-Z,0.97,0.8"]
+            f"rpp_mask_v3,not_seen,all,{v3},0.9", f"convnext_tiny_s4_seg_20261103_v8_v4.2,not_seen,all,{v42},0.9",
+            "rpp_mask_v3,all,Mastcam-Z,0.97,0.8"]
     (path / "mask_ab.csv").write_text("\n".join(rows) + "\n")
 
 
 def _setup(tmp_path, monkeypatch, trained=True):
-    from mppp_studies.calibration import freeze_chain as F
+    from rpp_studies.calibration import freeze_chain as F
     ck, outp = tmp_path / "checkpoints", tmp_path / "outputs"
     v41 = ck / "convnext_tiny_s4_seg_20261102_v8_v4.1.pt"
     v42 = ck / "convnext_tiny_s4_seg_20261103_v8_v4.2.pt"
@@ -73,7 +73,7 @@ def test_chain_runs_through(tmp_path, monkeypatch):
     assert ran[7][1][-1] == str(old) and ran[7][1][ran[7][1].index("S1") - 1].endswith("tie_point_studies")
     ab = ran[0][1]
     assert ab[ab.index("--split-ckpt") + 1] == str(v42) and ab[ab.index("--also-held-out") + 1] == str(v41)
-    assert "--seen-split" in ab and "mppp_mask_v3" in ab and ab[-1].endswith("mask_ab_v3_v41_v42")
+    assert "--seen-split" in ab and "rpp_mask_v3" in ab and ab[-1].endswith("mask_ab_v3_v41_v42")
     blocks, final, studies = ran[1][1], ran[2][1], ran[3][1]
     for cmd in (blocks, final, studies):
         assert cmd[cmd.index("--root") + 1] == str(new) and f"mask_checkpoint={v42}" in cmd
@@ -175,7 +175,7 @@ def test_chain_refuses_second_instance(tmp_path, monkeypatch):
 
 
 def test_wait_for_v42_gives_up(tmp_path, monkeypatch):
-    from mppp_studies.calibration import freeze_chain as F
+    from rpp_studies.calibration import freeze_chain as F
     monkeypatch.setattr(F, "CKPT_DIR", tmp_path / "ck")
     monkeypatch.setattr(F, "OUTPUTS", tmp_path / "out")
     monkeypatch.setattr(F.time, "sleep", lambda s: None)
@@ -192,8 +192,8 @@ def test_wait_for_v42_gives_up(tmp_path, monkeypatch):
 
 
 def test_s2_verdict_limits(tmp_path, monkeypatch):
-    from mppp_studies.calibration import freeze_chain as F
-    from mppp_studies.calibration import tie_point_studies as T
+    from rpp_studies.calibration import freeze_chain as F
+    from rpp_studies.calibration import tie_point_studies as T
     c = F.Chain(type("A", (), {"root": str(tmp_path)})())
     work = tmp_path / "mars2020_sol_0461_rockytop_example_zcam" / "studies"
     work.mkdir(parents=True)
@@ -206,7 +206,7 @@ def test_s2_verdict_limits(tmp_path, monkeypatch):
 
 
 def test_run_stops_a_child_past_its_time(tmp_path, monkeypatch):
-    from mppp_studies.calibration import freeze_chain as F
+    from rpp_studies.calibration import freeze_chain as F
     c = F.Chain(type("A", (), {"root": str(tmp_path), "redo": None})())
     rc = c.run("sleepy", [sys.executable, "-c", "import time; time.sleep(30)"], timeout_h=0.0)
     assert rc in (124, 127) or rc != 0
@@ -279,7 +279,7 @@ def test_logon_task_registered_and_removed(tmp_path, monkeypatch):
     launcher = new / "mppp_pipeline" / "freeze_chain_logon.bat"
     assert tr == f'"{launcher}"' and sch[1][sch[1].index("/v") + 1] == F.LOGON_TASK
     text = launcher.read_bytes().decode()
-    assert str(bat) in text and "MPPP_NOPAUSE=1" in text and str(new) in text and "\r\n" in text
+    assert str(bat) in text and "RPP_NOPAUSE=1" in text and str(new) in text and "\r\n" in text
     calls.clear()
     assert F.main(["--root", str(new), "--old-root", str(old), "--skip-ab", "--no-logon-task"]) == 0
     assert not [c for c in calls if c and c[0] == "reg"]
@@ -331,7 +331,7 @@ def test_compatible_status_of_another_tag_continues(tmp_path, monkeypatch):
 def test_wait_for_space(tmp_path, monkeypatch):
     """3 Nov (audit): under MIN_FREE_GB a step waits for space (here it appears on the third look)."""
     import shutil
-    from mppp_studies.calibration import freeze_chain as F
+    from rpp_studies.calibration import freeze_chain as F
     monkeypatch.setattr(F, "MIN_FREE_GB", 25.0)
     clock = {"t": 0.0}
     monkeypatch.setattr(F.time, "time", lambda: clock["t"])

@@ -1,8 +1,8 @@
-"""The waypoint snapshot, its table and the site blocks (mppp.waypoints.table, blocks)."""
+"""The waypoint snapshot, its table and the site blocks (rpp.waypoints.table, blocks)."""
 
 
 def test_order_by_first_sol():
-    from mppp.waypoints.blocks import order_by_first_sol
+    from rpp.waypoints.blocks import order_by_first_sol
     assert list(order_by_first_sol({"b": {"sols": [[5, 6], [1, 2]]}, "a": {"sols": [[3, 4]]}})) == ["b", "a"]
 
 
@@ -11,7 +11,7 @@ def test_load_waypoints_auto_refresh(tmp_path, monkeypatch):
     fresh one alone; a failed download warns and keeps the file."""
     import json, time, warnings
     import urllib.request
-    from mppp.waypoints import table as T
+    from rpp.waypoints import table as T
     calls = []
     body = json.dumps({"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"sol": 1, "site": 3, "drive": 0,
                        "easting": 0, "northing": 0, "elev_geoid": 0}, "geometry": {"type": "Point", "coordinates": [77.45, 18.44]}}]}).encode()
@@ -27,7 +27,7 @@ def test_load_waypoints_auto_refresh(tmp_path, monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", fake_open)
     target = tmp_path / "wp.json"
     w = T.load_waypoints(target, refresh="auto")                       # missing -> downloaded
-    assert len(calls) == 1 and w["_mppp_source"]["n_features"] == 1 and T.waypoints_age_days(target) < 0.01
+    assert len(calls) == 1 and w["_rpp_source"]["n_features"] == 1 and T.waypoints_age_days(target) < 0.01
     T.load_waypoints(target, refresh="auto")                           # fresh -> left alone
     assert len(calls) == 1
     old = time.time() - 3 * 86400
@@ -42,4 +42,4 @@ def test_load_waypoints_auto_refresh(tmp_path, monkeypatch):
     with warnings.catch_warnings(record=True) as rec:
         warnings.simplefilter("always")
         w = T.load_waypoints(target, refresh=True)
-    assert w["_mppp_source"]["n_features"] == 1 and any("could not download" in str(x.message) for x in rec)
+    assert w["_rpp_source"]["n_features"] == 1 and any("could not download" in str(x.message) for x in rec)

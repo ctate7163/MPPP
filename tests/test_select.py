@@ -1,4 +1,4 @@
-"""Product selection and waypoints (mppp.select, waypoints, sfm select_best_products). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
+"""Product selection and waypoints (rpp.select, waypoints, sfm select_best_products). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
 import numpy as np
 import pytest
 from conftest import synthetic_waypoints
@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def test_find_imgs_by_sequence_and_the_archive_untouched(tmp_path):
-    from mppp.select import find_imgs
+    from rpp.select import find_imgs
     a = tmp_path / "NLF_0709_0729883381_848RAD_N0332864SAPP00601_0A00LLJ01.IMG"
     b = tmp_path / "NLF_0709_0729883381_848RAD_N0332864SAPP00601_0A00LLJ02.IMG"
     c = tmp_path / "ZL0_0710_0729888971_069RAD_N0332864ZCAM07114_1100LMA01.IMG"
@@ -20,7 +20,7 @@ def test_find_imgs_by_sequence_and_the_archive_untouched(tmp_path):
 
 
 def test_waypoint_lookup_and_radius():
-    from mppp.waypoints import waypoint_for_site_drive, waypoints_within_radius, offset_lonlat
+    from rpp.waypoints import waypoint_for_site_drive, waypoints_within_radius, offset_lonlat
     wp = synthetic_waypoints()
     assert waypoint_for_site_drive(wp, 33, 1000)["properties"]["sol"] == 705
     assert waypoint_for_site_drive(wp, 33, 900)["properties"]["drive"] == 1000     # nearest
@@ -33,23 +33,23 @@ def test_waypoint_lookup_and_radius():
 
 
 def test_waypoints_snapshot_cache_and_refresh(tmp_path, monkeypatch):
-    from mppp import waypoints as W
-    monkeypatch.setenv("MPPP_CACHE", str(tmp_path))
+    from rpp import waypoints as W
+    monkeypatch.setenv("RPP_CACHE", str(tmp_path))
     wp = W.load_waypoints()
-    assert wp["_mppp_source"]["packaged_snapshot"] and wp["_mppp_source"]["path"] == str(W.snapshot_path())
+    assert wp["_rpp_source"]["packaged_snapshot"] and wp["_rpp_source"]["path"] == str(W.snapshot_path())
     src = tmp_path / "remote.json"
     src.write_text(json.dumps({"type": "FeatureCollection", "features": [{"properties": {"site": 1, "drive": 0}}]}))
     wp = W.load_waypoints(refresh=True, url=src.as_uri())
-    assert wp["_mppp_source"]["path"] == str(tmp_path / "M20_waypoints.json") and wp["_mppp_source"]["n_features"] == 1
-    assert W.load_waypoints()["_mppp_source"]["n_features"] == 1                # the cache now wins
+    assert wp["_rpp_source"]["path"] == str(tmp_path / "M20_waypoints.json") and wp["_rpp_source"]["n_features"] == 1
+    assert W.load_waypoints()["_rpp_source"]["n_features"] == 1                # the cache now wins
     with pytest.warns(UserWarning, match="could not download"):
-        assert W.load_waypoints(refresh=True, url=(tmp_path / "missing.json").as_uri())["_mppp_source"]["n_features"] == 1
-    from mppp_studies.error.waypoints import load_featurecollection                     # one loader for both
+        assert W.load_waypoints(refresh=True, url=(tmp_path / "missing.json").as_uri())["_rpp_source"]["n_features"] == 1
+    from rpp_studies.error.waypoints import load_featurecollection                     # one loader for both
     assert len(load_featurecollection()["features"]) == 1
 
 
 def test_select_best_products_several_sequences():
-    from mppp.sfm.project import select_best_products
+    from rpp.sfm.project import select_best_products
     names = ["NLF_0770_0736000000_000RAD_N0390000NCAM00500_0A0195J01.IMG",
              "ZL0_0770_0736000100_000RAD_N0390000ZCAM08000_0340LMA01.IMG",
              "NLF_0770_0736000200_000RAD_N0390000SAPP00500_0A0195J01.IMG"]
@@ -65,8 +65,8 @@ def _wp(site, drive, sol, e, n):
 
 
 def test_stations_near_and_find_imgs_near(tmp_path):
-    from mppp.waypoints import stations_near
-    from mppp.select import find_imgs_near
+    from rpp.waypoints import stations_near
+    from rpp.select import find_imgs_near
     wps = {"features": [_wp(26, 500, 461, 1000.0, 2000.0), _wp(26, 600, 470, 1010.0, 2000.0),
                         _wp(30, 100, 600, 1003.0, 2004.0),       # 5.0 m from S026D0500: a later visit
                         _wp(30, 200, 610, 1016.0, 2000.0),       # 6 m from S026D0600: outside 5 m
@@ -102,7 +102,7 @@ def test_stations_near_and_find_imgs_near(tmp_path):
 
 
 def test_select_best_products_leaves_out_navcam_tiles(tmp_path, monkeypatch):
-    from mppp.sfm import project as P
+    from rpp.sfm import project as P
     tile = tmp_path / "NRF_0092_0675115592_573RAD_N0040136NCAM00698_0A00LLJ01.IMG"
     full = tmp_path / "NRF_0092_0675115592_000RAD_N0040136NCAM00698_0A00LLJ01.IMG"
     half = tmp_path / "NLF_0092_0675110134_691RAD_N0040136NCAM00507_0A0295J01.IMG"
@@ -125,8 +125,8 @@ def test_select_best_products_leaves_out_navcam_tiles(tmp_path, monkeypatch):
 
 
 def test_frame_fraction_reads_labels_only_for_small_files(tmp_path, monkeypatch):
-    from mppp.sfm import project as P
-    import mppp.labels as L
+    from rpp.sfm import project as P
+    import rpp.labels as L
     big = tmp_path / "NRF_0092_0675115592_000RAD_N0040136NCAM00698_0A00LLJ01.IMG"
     big.write_bytes(b"")
     monkeypatch.setattr(L, "read_pds", lambda *a, **k: pytest.fail("label read for a full-size file"))
@@ -146,7 +146,7 @@ def test_frame_fraction_reads_labels_only_for_small_files(tmp_path, monkeypatch)
 
 
 def test_quarter_frame_rule(tmp_path, monkeypatch):
-    from mppp.sfm import project as P
+    from rpp.sfm import project as P
     assert P.NAVCAM_MIN_FRAME_FRACTION == pytest.approx(1 / 3)          # v0p85 (0.2 before)
     names = {"a": "NLF_0049_0000000001_000RAD_N0010000NCAM00603_0A00LLJ01.IMG",     # 1280x960 full-res tile, 1/16
              "b": "NLF_0049_0000000002_000RAD_N0010000NCAM00500_0A0295J01.IMG",     # 0.19 of the frame: dropped (v0p65)
@@ -162,12 +162,12 @@ def test_quarter_frame_rule(tmp_path, monkeypatch):
     assert {p.name for p in kept} == {names["d"]} and rep["n_dropped_subframes"] == 3
     kept, rep = P.select_best_products(paths, sizes={n: 1 for n in names.values()}, min_frame_fraction=0.2)
     assert {p.name for p in kept} == {names["c"], names["d"]} and rep["n_dropped_subframes"] == 2
-    from mppp.pipeline import PROCESS_RULES
+    from rpp.pipeline import PROCESS_RULES
     assert PROCESS_RULES == 6                                   # 0.94.0
 
 
 def test_find_imgs_over_several_visits(tmp_path):
-    from mppp.select import find_imgs, in_sol_range, sol_ranges
+    from rpp.select import find_imgs, in_sol_range, sol_ranges
     assert sol_ranges((1, 2)) == [(1, 2)] and sol_ranges([[1, 2], [5, 6]]) == [(1, 2), (5, 6)]
     assert in_sol_range(5, [[1, 2], [5, 6]]) and not in_sol_range(3, [[1, 2], [5, 6]]) and in_sol_range(3, (1, 4))
     names = {s: f"NLF_{s:04d}_0700000000_000RAD_N{s:03d}0100NCAM00100_0A0095J01.IMG" for s in (95, 365, 700)}
@@ -183,7 +183,7 @@ def _wp(site, drive, sol, e, n):
 
 
 def test_find_imgs_near_min_sol(tmp_path):
-    from mppp.select import find_imgs_near
+    from rpp.select import find_imgs_near
     wps = {"features": [_wp(9, 1000, 178, 0.0, 0.0), _wp(9, 900, 175, 5.0, 0.0), _wp(9, 1914, 341, 0.0, 8.0)]}
     for sol, site, drive in [(178, 9, 1000), (175, 9, 900), (177, 9, 900), (341, 9, 1914)]:
         (tmp_path / f"NLF_{sol:04d}_0700000000_000RAD_N{site:03d}{drive:04d}NCAM00100_0A0095J01.IMG").write_bytes(b"")

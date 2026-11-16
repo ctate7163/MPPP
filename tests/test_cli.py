@@ -1,4 +1,4 @@
-"""The mppp command (mppp.cli): argument parsing, the bookkeeping subcommands, a dry processing run, refusals."""
+"""The rpp command (rpp.cli): argument parsing, the bookkeeping subcommands, a dry processing run, refusals."""
 import json
 import shutil
 import subprocess
@@ -14,12 +14,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 def clean_env(monkeypatch):
-    for k in ("MPPP_PDS", "MPPP_SCAPES", "MPPP_GPU_PYTHON", "COLMAP_BAT"):
+    for k in ("RPP_PDS", "RPP_SCAPES", "RPP_GPU_PYTHON", "COLMAP_BAT"):
         monkeypatch.delenv(k, raising=False)
 
 
 def test_parser_and_entry_point():
-    from mppp.cli import build_parser, main
+    from rpp.cli import build_parser, main
     ap = build_parser()
     a = ap.parse_args(["-v", "--log", "x.txt", "align", "/w", "--variant", "v", "--set", "A=1", "--set", "B=2",
                        "--gui", "--stop-after", "match", "--force"])
@@ -35,20 +35,20 @@ def test_parser_and_entry_point():
     with pytest.raises(SystemExit):
         ap.parse_args(["align"])
     assert main([]) == 2
-    assert 'mppp = "mppp.cli:main"' in (ROOT / "pyproject.toml").read_text()
+    assert 'rpp = "rpp.cli:main"' in (ROOT / "pyproject.toml").read_text()
 
 
 def test_version(capsys):
-    import mppp
-    from mppp.cli import main
+    import rpp
+    from rpp.cli import main
     assert main(["version"]) == 0
-    assert f"mppp {mppp.__version__}" in capsys.readouterr().out
-    r = subprocess.run([sys.executable, "-m", "mppp.cli", "version"], capture_output=True, text=True, timeout=120)
-    assert r.returncode == 0 and mppp.__version__ in r.stdout
+    assert f"rpp {rpp.__version__}" in capsys.readouterr().out
+    r = subprocess.run([sys.executable, "-m", "rpp.cli", "version"], capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0 and rpp.__version__ in r.stdout
 
 
 def test_sites(capsys, tmp_path):
-    from mppp.cli import main
+    from rpp.cli import main
     assert main(["sites", "list"]) == 0
     out = capsys.readouterr().out
     assert "rockytop" in out and "sols 460-530" in out and "groups:" in out
@@ -61,7 +61,7 @@ def test_sites(capsys, tmp_path):
 
 
 def test_cmods_list(capsys):
-    from mppp.cli import main
+    from rpp.cli import main
     assert main(["cmods", "list"]) == 0
     out = capsys.readouterr().out
     assert "camera models in use" in out and "M2020_NL_fisheye_tangential.json" in out and "ERROR" not in out
@@ -69,14 +69,14 @@ def test_cmods_list(capsys):
 
 
 def test_mask_list(capsys):
-    from mppp.cli import main
+    from rpp.cli import main
     assert main(["mask", "list"]) == 0
     assert "(default)" in capsys.readouterr().out
     assert main(["mask", "install"]) == 2
 
 
 def test_process_dry_run_and_run(tmp_path, capsys, clean_env):
-    from mppp.cli import main
+    from rpp.cli import main
     pds = tmp_path / "pds" / "sol0461"
     pds.mkdir(parents=True)
     for f in (NLF, ZL0):
@@ -105,7 +105,7 @@ def test_process_dry_run_and_run(tmp_path, capsys, clean_env):
 
 
 def test_align_refuses_a_folder_without_processed(tmp_path, capsys, clean_env):
-    from mppp.cli import main
+    from rpp.cli import main
     work = tmp_path / "mars2020_sol_0460_rockytop"
     work.mkdir()
     assert main(["align", str(work)]) == 2
@@ -137,7 +137,7 @@ def test_align_scape_script_wraps_the_cli(tmp_path, capsys, clean_env):
 
 
 def test_cli_doctor_and_maps_help(capsys):
-    from mppp.cli import main
+    from rpp.cli import main
     rc = main(["doctor"])
     out = capsys.readouterr().out
     assert rc in (0, 1) and "camera models" in out and "pycolmap" in out
@@ -147,11 +147,11 @@ def test_cli_doctor_and_maps_help(capsys):
 
 
 def test_gui_command_writes_open_in_colmap(tmp_path):
-    """22 Oct: batch runs had no open_in_colmap.bat; GUI files are now on by default and `mppp gui` writes them for
+    """22 Oct: batch runs had no open_in_colmap.bat; GUI files are now on by default and `rpp gui` writes them for
     finished projects."""
-    from mppp.cli import main
-    from mppp.pipeline import Settings
-    from mppp.sfm.project import SfmProject
+    from rpp.cli import main
+    from rpp.pipeline import Settings
+    from rpp.sfm.project import SfmProject
     assert Settings().gui_files
     w = tmp_path / "mars2020_sol_0460_rockytop_zcam"
     pd = w / "colmap"
@@ -165,8 +165,8 @@ def test_calib_waits_for_running_sites(tmp_path, monkeypatch):
     """0.95.0 (Christian, 27 Oct): a joint waits for a site of its groups whose alignment is running (an alive
     mppp_status.json) instead of reading a half-written project; with --wait-h 0 it takes the finished ones now."""
     import os
-    from mppp_studies.calibration.cli import _wait_for_running
-    from mppp.runner import STATUS_FILE, RunStatus
+    from rpp_studies.calibration.cli import _wait_for_running
+    from rpp.runner import STATUS_FILE, RunStatus
     w = tmp_path / "chal_rocks_zcam"
     w.mkdir()
     st = RunStatus(w / STATUS_FILE, pid=os.getpid())

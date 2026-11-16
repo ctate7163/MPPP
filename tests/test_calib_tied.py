@@ -1,4 +1,4 @@
-"""The one-adjustment Navcam joint (mppp_studies.calibration.tied) on a synthetic block: units, ties, result, files."""
+"""The one-adjustment Navcam joint (rpp_studies.calibration.tied) on a synthetic block: units, ties, result, files."""
 import json
 from pathlib import Path
 
@@ -10,7 +10,7 @@ pycolmap = pytest.importorskip("pycolmap")
 
 def _tied_setup(tmp_path):
     from helpers import _build_rec, _synthetic
-    from mppp_studies.calibration import tied as T
+    from rpp_studies.calibration import tied as T
     proj, truth, Pts, cams, rigT, noise, rng = _synthetic(tmp_path / "blk", noise_native_px=0.1)
     rec, _ = _build_rec(proj, truth, Pts, cams, rigT, noise, rng, perturb=False)
     # sols: the first station early in the mission (before the knot), the second late; temperatures in two bins
@@ -72,19 +72,19 @@ def test_tied_adjust_and_files(tmp_path):
     assert 0 < res["rig"]["sd_rate"]["yaw"] < 5 and np.isnan(res["rig"]["sd_sol0_mdeg"]["yaw"])
     assert T.describe_result(res)
     out = T.write_tied(res, tmp_path / "cand", note="test")
-    from mppp.calib import forms
+    from rpp.calib import forms
     nl = json.loads((out / "M2020_NL_fisheye_tangential.json").read_text())
     rig = json.loads((out / "M2020_N_rig.json").read_text())
     assert nl["early_mission"]["per_eye"] and "dfx_px" in nl["early_mission"]
     assert nl["early_mission"]["applied_terms"] == ["fx", "fy", "cx", "cy"]     # the projects apply the offsets
-    from mppp.calib.constrain import camera_at
+    from rpp.calib.constrain import camera_at
     _, p_early, applied = camera_at(nl, -20.0, sol=100)
     _, p_late, _ = camera_at(nl, -20.0, sol=1000)
     assert p_early[2] - p_late[2] == pytest.approx(nl["early_mission"]["dcx_px"]) and "early_mission" in applied
     assert rig["drift"]["sol0"] == 0.0 and rig["drift"]["knot_ref"] == 0.0 and "roll_mdeg_per_sol" in rig["drift"]
     assert not forms.validate_rig(rig)
     assert (out / "tied_joint.json").exists() and (out / "consensus.json").exists()
-    from mppp_studies.calibration.fit import check_navcam
+    from rpp_studies.calibration.fit import check_navcam
     rep = check_navcam(out)
     names = [c["check"] for c in rep["checks"]]
     assert "block agreement" in names and "leave-one-block-out" not in names
@@ -114,8 +114,8 @@ def test_tied_figure_inputs_feed_the_refined_figures(tmp_path):
     assert fi["bins"] and fi["rig_residuals"]["blocks"] and "pp_slopes" in fi["consensus"]["thermal"]
     out = T.write_tied(res, tmp_path / "cand")
     assert (out.parent / "rig_residuals.json").is_file() and (out / "thermal_bins.json").is_file()
-    from mppp.calib import load_camera
-    from mppp_studies.calibration import plots as C
+    from rpp.calib import load_camera
+    from rpp_studies.calibration import plots as C
     rig = json.loads((out / "M2020_N_rig.json").read_text())
     inuse = {e: load_camera("N", e[1]) for e in ("NL", "NR")}
     cons = json.loads((out / "consensus.json").read_text())
@@ -185,7 +185,7 @@ def test_isotropic_focal_slope(tmp_path):
 def test_diagnostic_bins_merge_thin_cold_bins():
     """22 Oct (Christian): the cold morning images (1-3 per 2 degC bin of a block) were all below the figure cut;
     the diagnostic pass merges a block's adjacent thin bins until each eye has 8 images, at most 10 degC wide."""
-    from mppp_studies.calibration.tied import merge_bins
+    from rpp_studies.calibration.tied import merge_bins
     frames, counts = {}, {}
     k = 0
     for b, n in ((-14, 2), (-13, 1), (-12, 3), (-11, 2), (-10, 9), (-9, 1), (-2, 10), (0, 3)):
@@ -217,7 +217,7 @@ def test_joint_refines_the_rig_roll_the_blocks_hold(tmp_path):
 
 
 def test_early_offsets_kept_only_where_significant():
-    from mppp_studies.calibration import tied as T
+    from rpp_studies.calibration import tied as T
     em = lambda off, sd: {"offsets_px": dict(zip(T.EARLY_TERMS, off)), "sd_px": dict(zip(T.EARLY_TERMS, sd))}  # noqa
     res = {"NL": {"early_mission": em([-0.015, -0.009, 0.207, 0.137], [0.04, 0.05, 0.05, 0.04])},
            "NR": {"early_mission": em([0.029, 0.022, 0.293, 0.160], [0.04, 0.05, 0.05, 0.04])}}
@@ -228,7 +228,7 @@ def test_early_offsets_kept_only_where_significant():
 
 
 def test_covariance_check_needs_the_joints_own_sd(tmp_path):
-    from mppp_studies.calibration import tied as T
+    from rpp_studies.calibration import tied as T
     res = {"rig": {"sd_sol0_mdeg": {"pitch": float("inf"), "yaw": float("nan"), "roll": 0.1},
                    "sd_rate": {"pitch": float("inf"), "yaw": float("inf"), "roll": 0.08}, "sd_pitch_early": 0.4},
            "held": {"Q0": [1], "H": [1, 2]}}
@@ -251,7 +251,7 @@ def test_keypoint_scale_follows_fx_slope_with_iso(tmp_path):
 
 
 def test_joint_points_by_stations_within_the_angle_limits(tmp_path):
-    from mppp_studies.calibration import joint as J
+    from rpp_studies.calibration import joint as J
     proj, rec, idx, st, T = _tied_setup(tmp_path)
     ids = J._subsample_points(rec, 200, seed=1)
     ang, nst = J.point_geometry(rec, ids)
@@ -262,7 +262,7 @@ def test_joint_points_by_stations_within_the_angle_limits(tmp_path):
 
 def test_exact_tie_covariance_agrees_with_colmap_and_reports_correlations(tmp_path, monkeypatch):
     """0.94.4 (Christian, 25 Oct: the 24/25 Oct joints' global sd came out infinite): the covariance of the global
-    terms with the ties eliminated exactly (mppp.calib.tiecov) agrees with COLMAP's estimator where that works (one
+    terms with the ties eliminated exactly (rpp.calib.tiecov) agrees with COLMAP's estimator where that works (one
     small block, a hinge, four sols), does not depend on the tie sigmas, and the log says when the sd are unusable."""
     pytest.importorskip("pyceres")
     proj, rec, idx, st, T = _tied_setup(tmp_path)
@@ -299,7 +299,7 @@ def test_exact_tie_covariance_agrees_with_colmap_and_reports_correlations(tmp_pa
 
 def test_exact_tie_solve_does_not_depend_on_the_tie_sigma(tmp_path, monkeypatch):
     """0.94.4 (25 Oct): with stiff tie residuals Levenberg-Marquardt stops in a flat valley (the synthetic pitch rate
-    0.24 at 1e-6, 0.19 at 1e-10 at the same cost); the exact refinement (mppp.calib.tiesolve: the ties as
+    0.24 at 1e-6, 0.19 at 1e-10 at the same cost); the exact refinement (rpp.calib.tiesolve: the ties as
     constraints) reaches the same globals whatever the sigma, never raises the cost, and leaves the ties in place."""
     pytest.importorskip("pyceres")
     proj, rec, idx, st, T = _tied_setup(tmp_path)
@@ -331,7 +331,7 @@ def test_law_check_deviations_and_held_residuals(tmp_path):
     and compares any law with the same free units."""
     pytest.importorskip("pyceres")
     import copy
-    from mppp_studies.calibration import lawcheck as L
+    from rpp_studies.calibration import lawcheck as L
     proj, rec, idx, st, T = _tied_setup(tmp_path)
     free = L.units_free(rec, proj, idx, st, iterations=30, verbose=False)
     held = L.law_held(rec, proj, idx, st, iterations=30)
@@ -370,10 +370,10 @@ def test_a_held_slope_keeps_the_joints_own_sd(tmp_path):
 
 
 def test_calib_lawcheck_command(tmp_path, monkeypatch):
-    """27 Oct: the 25 Oct law check as a command - ``mppp calib lawcheck --law LABEL=DIR``."""
-    from mppp import cli
-    from mppp_studies.calibration import cli as scli
-    from mppp_studies.calibration import lawcheck as L
+    """27 Oct: the 25 Oct law check as a command - ``rpp calib lawcheck --law LABEL=DIR``."""
+    from rpp import cli
+    from rpp_studies.calibration import cli as scli
+    from rpp_studies.calibration import lawcheck as L
     seen = {}
     monkeypatch.setattr(scli, "_navcam_blocks", lambda a: {"a": tmp_path / "a", "b": tmp_path / "b"})
 
@@ -417,8 +417,8 @@ def test_covariance_check_skips_held_terms(tmp_path):
     """0.94.5 (27 Oct: the joint holding NL cy failed promotion on "covariance missing" - a held term has no sd):
     the covariance check counts only the fitted terms; a NaN on a fitted term still fails it."""
     import shutil
-    from mppp.calib import models as M
-    from mppp_studies.calibration.fit import check_navcam
+    from rpp.calib import models as M
+    from rpp_studies.calibration.fit import check_navcam
     cur = M._folder(None)
     cand = tmp_path / "cand"
     cand.mkdir()
@@ -454,7 +454,7 @@ def test_exact_tie_step_skipped_when_met_or_fruitless(tmp_path, monkeypatch):
     # a fruitless refine (no decrease): the second pass does not run it
     monkeypatch.setattr(T, "EXACT_TIE_MET_SHARE", 0.0)
     calls = []
-    import mppp.calib.tiesolve as TS
+    import rpp.calib.tiesolve as TS
 
     def fake_refine(prob, ties, *a, **k):
         calls.append(1)
@@ -479,7 +479,7 @@ def test_stereo_difference_terms_and_their_sd(tmp_path):
     stereo principal-point difference its own sd (the exact stereo block), smaller than hypot(sd_L, sd_R) of two
     correlated eyes, and the law check's stereo rows use it."""
     pytest.importorskip("pyceres")
-    from mppp_studies.calibration import lawcheck as L
+    from rpp_studies.calibration import lawcheck as L
     proj, rec, idx, st, T = _tied_setup(tmp_path)
     assert T.STEREO_PP_TERMS and T.STEREO_TERMS == ("dG_cx", "dG_cy", "dS_cx", "dS_cy")
     rec2, proj2, units = T.tied_reconstruction(rec, proj, idx, st, bin_deg=10.0)
@@ -547,7 +547,7 @@ def test_zero_terms_sets_and_validates():
     """3 Nov 2026: --zero D_roll S_NL_cx ... sets the global terms to 0 (fit_tied holds them)."""
     import numpy as np
     import pytest as _pt
-    from mppp_studies.calibration import tied as TJ
+    from rpp_studies.calibration import tied as TJ
     st = {"D": np.array([5.4, 2.7, -4.9]), "Q0": np.zeros(3), "H": np.zeros(3),
           "S": {"NL": np.ones(len(TJ.SLOPE_TERMS)), "NR": np.ones(len(TJ.SLOPE_TERMS))},
           "G": {"NL": np.ones(10), "NR": np.ones(10)}, "E": {"NL": np.ones(len(TJ.EARLY_TERMS)), "NR": np.ones(len(TJ.EARLY_TERMS))}}
@@ -576,9 +576,9 @@ def test_yaw_knee_from_the_rig_file(tmp_path):
     """0.95.5 (Christian, 7 Nov: "the knee looks real"): a rig file with a yaw knee (yaw_early_mdeg_per_sol) starts
     the joint with H's yaw, which the joint then fits (roll stays linear); the law matches rig_at at every sol."""
     import shutil
-    from mppp.calib import models as M
-    from mppp_studies.calibration import plots as C
-    from mppp_studies.calibration import tied as T
+    from rpp.calib import models as M
+    from rpp_studies.calibration import plots as C
+    from rpp_studies.calibration import tied as T
     src = M._folder(None)
     d = tmp_path / "cm"
     shutil.copytree(src, d)

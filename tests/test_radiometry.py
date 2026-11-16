@@ -13,8 +13,8 @@ from conftest import NLF, ZL0, config_selection_off, needs_data, synthetic_waypo
 
 
 def _radiance_from_pds(path):
-    """(radiance, valid) straight from the PDS RAD product, as mppp.image reads it."""
-    from mppp.labels import label_float, read_pds
+    """(radiance, valid) straight from the PDS RAD product, as rpp.image reads it."""
+    from rpp.labels import label_float, read_pds
     L, dn = read_pds(path)
     scale = label_float(L, "DERIVED_IMAGE_PARMS.RADIANCE_SCALING_FACTOR", "IMAGE.SCALING_FACTOR")
     offset = label_float(L, "DERIVED_IMAGE_PARMS.RADIANCE_OFFSET", "IMAGE.OFFSET", default=0.0)
@@ -25,7 +25,7 @@ def _radiance_from_pds(path):
 
 def test_quantise_is_linear_and_invertible():
     """uint16 = round(rad x s16): slope s16, zero intercept, residual <= half a count, zero reserved for invalid."""
-    from mppp.radiometry import quantise
+    from rpp.radiometry import quantise
     rng = np.random.default_rng(1)
     rad = rng.uniform(0.0, 0.3, size=(40, 50, 3))
     valid = np.ones((40, 50), bool)
@@ -51,13 +51,13 @@ def test_png16_traces_back_to_pds_radiance(img):
     """With the colour processing at unity (no tau correction, white balance 1, brightness 1) the 16-bit product is
     round(radiance x scale) of the PDS RAD values, pixel for pixel; with the default processing the recorded
     factors invert it back to the PDS radiance within one count."""
-    from mppp import MPPPImage
+    from rpp import RPPImage
     s16 = 2e5
     unity = config_selection_off({"masking": {"infer_mask": False, "mask_invalid": True},
                                   "radiometry": {"apply_tau_correction": False},
                                   "color": {"enhance": False, "brightness_by_family": {"N": 1.0, "Z": 1.0}, "scale_rad_to_int16": s16},
                                   "resize": {"apply_padding": False}})
-    im = MPPPImage(img, unity, synthetic_waypoints())
+    im = RPPImage(img, unity, synthetic_waypoints())
     rad, valid, scale, offset = _radiance_from_pds(img)
     assert im.meta["radiance_scaling_factor"] == scale and im.meta["radiance_offset"] == offset
     assert im.meta["white_balance"] == [1.0, 1.0, 1.0] and im.meta["brightness"] == 1.0
@@ -65,7 +65,7 @@ def test_png16_traces_back_to_pds_radiance(img):
     m = (im.mask_valid > 0)
     assert im.image_int16.shape[:2] == rad.shape[:2] and m.shape == valid.shape
     if rad.ndim == 2:
-        from mppp.labels import label_get, read_pds
+        from rpp.labels import label_get, read_pds
         L, _ = read_pds(img, load_image=False)
         cfa = str(label_get(L, "INSTRUMENT_STATE_PARMS.CFA_TYPE", default="")).upper()
         bayer = str(label_get(L, "INSTRUMENT_STATE_PARMS.BAYER_METHOD", default="")).upper()
@@ -81,7 +81,7 @@ def test_png16_traces_back_to_pds_radiance(img):
     assert np.all(im.image_int16[~m] == 0)
     # the default processing: invert with the factors the manifest records
     default = config_selection_off({"masking": {"infer_mask": False}, "resize": {"apply_padding": False}})
-    im2 = MPPPImage(img, default, synthetic_waypoints())
+    im2 = RPPImage(img, default, synthetic_waypoints())
     meta = im2.meta
     factor = np.asarray(meta["white_balance"]) * meta["brightness"] * s16 / (meta["scale_zenith"] or 1.0)
     recovered = im2.image_int16.astype(np.float64) / factor.reshape(1, 1, 3)
@@ -95,7 +95,7 @@ def test_png16_traces_back_to_pds_radiance(img):
 @needs_data
 def test_png16_file_round_trip(tmp_path):
     """The written PNG16 holds the uint16 product unchanged (lossless), with the mask in the alpha channel."""
-    from mppp import MPPPImage, process_images
+    from rpp import RPPImage, process_images
     cfg = config_selection_off({"masking": {"infer_mask": False}, "export": {"formats": ["PNG16"],
                                                                             "store_mask_in_alpha": True},
                                 "resize": {"apply_padding": False}})
@@ -105,6 +105,6 @@ def test_png16_file_round_trip(tmp_path):
     import cv2
     png = cv2.imread(str(out), cv2.IMREAD_UNCHANGED)
     assert png.dtype == np.uint16 and png.shape[2] == 4
-    im = MPPPImage(ZL0, cfg, synthetic_waypoints())
+    im = RPPImage(ZL0, cfg, synthetic_waypoints())
     assert np.array_equal(png[..., :3][..., ::-1], im.image_int16)      # OpenCV reads BGR
     assert np.array_equal(png[..., 3] > 0, im.mask > 0)

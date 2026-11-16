@@ -1,4 +1,4 @@
-"""MPPP -> Nerfstudio (0.95.2, Christian 30 Oct): one pinhole size (2048 x 1536), the frames resampled through
+"""RPP -> Nerfstudio (0.95.2, Christian 30 Oct): one pinhole size (2048 x 1536), the frames resampled through
 COLMAP's exact model, Mastcam-Z clipped 22 / 16 columns, OpenGL camera-to-world matrices that reproject COLMAP's
 points."""
 import json
@@ -9,7 +9,7 @@ import pytest
 pycolmap = pytest.importorskip("pycolmap")
 cv2 = pytest.importorskip("cv2")
 
-from mppp.sfm import nerfstudio as NS  # noqa: E402
+from rpp.sfm import nerfstudio as NS  # noqa: E402
 
 NL = [2948.943055, 2949.208628, 2573.477811, 1950.413699, 0.047527, -0.016316, 3e-05, -0.0002, 0.008977, -0.008065,
       0.0, 0.0]
@@ -29,7 +29,7 @@ def test_target_cameras():
 
 def _scene(tmp_path):
     from scipy.spatial.transform import Rotation
-    from mppp.sfm.project import SfmProject
+    from rpp.sfm.project import SfmProject
     rng = np.random.default_rng(5)
     rec = pycolmap.Reconstruction()
     cams = [("THIN_PRISM_FISHEYE", [v / 4 if i < 4 else v for i, v in enumerate(NL)], 1280, 960),

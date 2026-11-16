@@ -53,7 +53,7 @@ def _rec(z_offset=0.0, n_zz=0):
 
 
 def test_navcam_tie_counts_need_a_third_look():
-    from mppp.sfm.reconstruction import ZCAM_MIN_NAVCAM_TIES, navcam_tie_counts
+    from rpp.sfm.reconstruction import ZCAM_MIN_NAVCAM_TIES, navcam_tie_counts
     c = navcam_tie_counts(_rec())
     assert ZCAM_MIN_NAVCAM_TIES == 10
     assert c[10] == 45 and c[11] == 40 and c[12] == 5          # the two-view N-Z points do not count
@@ -61,7 +61,7 @@ def test_navcam_tie_counts_need_a_third_look():
 
 
 def test_zcam_points_above_and_below_the_navcam_terrain():
-    from mppp.sfm.health import zcam_terrain, zcam_terrain_line
+    from rpp.sfm.health import zcam_terrain, zcam_terrain_line
     on = zcam_terrain(_rec())
     assert on["zcam"]["below_fraction"] == 0 and on["zcam"]["above_fraction"] == 0 and on["zcam"]["on_grid"] > 0
     low = zcam_terrain(_rec(z_offset=-0.6))                    # a frame aligned 0.6 m low: its ties below the ground
@@ -79,7 +79,7 @@ def _zname(eye, zoom, k):
 def test_zoom_ladder_63_to_110_tie_through_wider_zooms():
     """21 Oct (Christian): 34 and 48 mm need 10 ties with Navcam; 63-110 mm need 10 ties with Navcam or with a
     Mastcam-Z image at a wider zoom."""
-    from mppp.sfm.reconstruction import _zoom_of, navcam_tie_counts
+    from rpp.sfm.reconstruction import _zoom_of, navcam_tie_counts
     images = {1: _Image("NLF_a", [0, 0, 1.9]), 2: _Image("NRF_a", [0.42, 0, 1.9]),
               20: _Image(_zname("L", 34, 1), [0, 0, 2]), 21: _Image(_zname("R", 34, 1), [0, 0, 2]),
               30: _Image(_zname("L", 48, 2), [0, 0, 2]), 31: _Image(_zname("R", 48, 2), [0, 0, 2]),
@@ -99,7 +99,7 @@ def test_zoom_ladder_63_to_110_tie_through_wider_zooms():
 def test_long_zoom_ties_with_two_looks_and_through_its_mosaic():
     """0.94.4 (Christian, 24 Oct; Chal Rocks 79 mm): a tie with a wider zoom counts with two looks, and a long-zoom
     frame with fewer direct ties is anchored through the frames of its own mosaic that are anchored."""
-    from mppp.sfm.reconstruction import (ZCAM_MIN_NAVCAM_TIES, ZCAM_MOSAIC_TIES, mosaic_anchored, navcam_tie_counts,
+    from rpp.sfm.reconstruction import (ZCAM_MIN_NAVCAM_TIES, ZCAM_MOSAIC_TIES, mosaic_anchored, navcam_tie_counts,
                                          zcam_anchor_ties)
     images = {1: _Image("NLF_a", [0, 0, 1.9]),
               20: _Image(_zname("L", 34, 1), [0, 0, 2]),
@@ -121,8 +121,8 @@ def test_long_zoom_ties_with_two_looks_and_through_its_mosaic():
 
 def test_uncalibrated_zoom_residuals_not_judged_early():
     """0.94.4: a zoom without a calibrated focus model is not excluded on its residual before the final test."""
-    from mppp import calib
-    from mppp.sfm.reconstruction import uncalibrated_zooms
+    from rpp import calib
+    from rpp.sfm.reconstruction import uncalibrated_zooms
     images = {50: _Image(_zname("L", 79, 4), [0, 0, 2]), 20: _Image(_zname("L", 34, 1), [0, 0, 2]),
               1: _Image("NLF_a", [0, 0, 1.9])}
     u = uncalibrated_zooms(_Rec(images, []))

@@ -1,4 +1,4 @@
-"""mppp.ibr (0.96.0 prototypes): the pivot fit, the mesh cleanup, ray-cast depth against the analytic plane, the
+"""rpp.ibr (0.96.0 prototypes): the pivot fit, the mesh cleanup, ray-cast depth against the analytic plane, the
 photometric angles, and the ODS render on a synthetic station."""
 from __future__ import annotations
 
@@ -12,11 +12,11 @@ pycolmap = pytest.importorskip("pycolmap")
 o3d = pytest.importorskip("open3d")
 from scipy.spatial.transform import Rotation  # noqa: E402
 
-from mppp.ibr import mesh as M  # noqa: E402
-from mppp.ibr import ods as O  # noqa: E402
-from mppp.ibr import photometry as PH  # noqa: E402
-from mppp.ibr import raycast as RC  # noqa: E402
-from mppp.ibr.station import fit_pivot, parse_station, select_station, station_images  # noqa: E402
+from rpp.ibr import mesh as M  # noqa: E402
+from rpp.ibr import ods as O  # noqa: E402
+from rpp.ibr import photometry as PH  # noqa: E402
+from rpp.ibr import raycast as RC  # noqa: E402
+from rpp.ibr.station import fit_pivot, parse_station, select_station, station_images  # noqa: E402
 
 NL = [2948.943055, 2949.208628, 2573.477811, 1950.413699, 0.047527, -0.016316, 3e-05, -0.0002, 0.008977, -0.008065, 0.0, 0.0]
 Z63 = [8627.12, 8636.17, 900.98, 664.32, 0.469, 0.6, 0.0028, 0.0015, 0.0, 0.0, 0.0, 0.0]
@@ -68,7 +68,7 @@ def test_parse_station_and_pivot_fit():
     assert label == "Sol0091_S003D1234" and [r["name"] for r in got] == ["NLF_1.png"]      # 0.97.14: the sol in the code
     assert station_images(rows, "3_1300")[0] == "Sol0092_S003D1300"
     assert station_images(rows, "Sol0052_S003D1300")[0] == "Sol0052_S003D1300"              # a code with its sol keeps it
-    from mppp.ibr.station import station_code, station_key, sol_of_frames
+    from rpp.ibr.station import station_code, station_key, sol_of_frames
     assert station_code(3, 2046, 52) == "Sol0052_S003D2046" and station_code(3, 2046) == "S003D2046"
     assert station_key("Sol0052_S003D2046") == "S003D2046" == station_key("S003D2046")
     assert parse_station("Sol0052_S003D2046") == (3, 2046, None)
@@ -222,7 +222,7 @@ def test_photometric_angles_on_a_plane_and_a_shadow():
 
 
 def test_colmap_array_round_trip_and_photometry_files(tmp_path):
-    from mppp.sfm.dense import read_colmap_array
+    from rpp.sfm.dense import read_colmap_array
     a = np.random.default_rng(1).uniform(0, 90, (7, 11)).astype(np.float32)
     a[0, 0] = np.nan
     f = PH.write_colmap_array(tmp_path / "x.incidence.bin", a)
@@ -333,11 +333,11 @@ def test_ods_render_colours_each_direction_from_its_frame(tmp_path):
 
 # ----------------------------------------------------------------------------- the CLI end to end
 def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
-    """``mppp mesh`` -> ``mppp depthmaps --photometry`` -> ``mppp ods`` on a saved block: the station's folder under
+    """``rpp mesh`` -> ``rpp depthmaps --photometry`` -> ``rpp ods`` on a saved block: the station's folder under
     the project, the fused cloud meshed (Poisson), four maps, the photometric cube, two eye images."""
     import cv2
-    from mppp.cli import main as mppp_main
-    from mppp.sfm.project import SfmProject
+    from rpp.cli import main as rpp_main
+    from rpp.sfm.project import SfmProject
     rec = pycolmap.Reconstruction()
     cam = pycolmap.Camera(camera_id=1, model="SIMPLE_PINHOLE", width=400, height=300, params=np.array([200.0, 200.0, 150.0]))
     rec.add_camera(cam)
@@ -381,7 +381,7 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     o3d.io.write_point_cloud(str(root / "dense" / "fused.ply"), pcd)
 
     work = str(root.parent)
-    assert mppp_main(["mesh", work, "--station", "3_10", "--mask-rover", "--poisson-depth", "7", "--target-triangles", "20000", "--no-preview"]) == 0
+    assert rpp_main(["mesh", work, "--station", "3_10", "--mask-rover", "--poisson-depth", "7", "--target-triangles", "20000", "--no-preview"]) == 0
     out = root / "ods" / "Sol0091_S003D0010"
     rep = json.loads((out / "mesh_report.json").read_text(encoding="utf-8"))
     assert (out / "mesh.ply").is_file() and (out / "ground_plane.json").is_file() and rep["points"] == len(pts)
@@ -395,7 +395,7 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     cen, _, _ = M.triangle_geometry(V, F)
     assert M.horizontal_distance(cen, rep["pivot_block_m"]).max() <= 200.05           # 0.97.0: the apron to the plane's 200 m
 
-    assert mppp_main(["depthmaps", work, "--station", "3_10", "--mask-rover", "--scale", "0.25", "--photometry", "--no-preview"]) == 0
+    assert rpp_main(["depthmaps", work, "--station", "3_10", "--mask-rover", "--scale", "0.25", "--photometry", "--no-preview"]) == 0
     maps = sorted((out / "maps").glob("*.npz"))
     assert len(maps) == 4
     m = RC.load_maps(maps[0])
@@ -407,7 +407,7 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     ok = np.isfinite(inc)
     assert ok.any() and np.all(inc[ok] >= 0) and np.all(inc[ok] <= 90)
 
-    assert mppp_main(["ods", work, "--station", "3_10", "--mask-rover", "--width", "256", "--scale", "0.25", "--rows-per-chunk", "32"]) == 0
+    assert rpp_main(["ods", work, "--station", "3_10", "--mask-rover", "--width", "256", "--scale", "0.25", "--rows-per-chunk", "32"]) == 0
     L = cv2.imread(str(out / "Sol0091_S003D0010_ods_left.png"))
     Rr = cv2.imread(str(out / "Sol0091_S003D0010_ods_right.png"))
     assert L.shape == (128, 256, 3) and Rr.shape == L.shape
@@ -425,7 +425,7 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     pcd2.normals = o3d.utility.Vector3dVector(np.tile([0.0, 0.0, 1.0], (len(allp), 1)))
     o3d.io.write_point_cloud(str(root / "dense" / "fused_rover.ply"), pcd2)
     outr = root / "ods" / "Sol0091_S003D0010_rover"
-    assert mppp_main(["mesh", work, "--station", "3_10", "--rover", "--rover-cloud", "--poisson-depth", "8",
+    assert rpp_main(["mesh", work, "--station", "3_10", "--rover", "--rover-cloud", "--poisson-depth", "8",
                       "--target-triangles", "40000", "--no-preview"]) == 0
     rr = json.loads((outr / "mesh_report.json").read_text(encoding="utf-8"))
     assert rr["rover"] == "shown" and rr["points_file"].endswith("fused_rover.ply") and rr["points"] == len(allp)
@@ -433,12 +433,12 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     assert abs(gpr["offset"]) < 0.05 and gpr["sources"]["fused_points"] == len(pts)          # the terrain, not the deck
     Vr, Fr = M.read_mesh(outr / "mesh.ply")
     assert (np.abs(Vr[:, 2] - 1.0) < 0.15).sum() > 50                                        # the deck is in the mesh
-    assert mppp_main(["mesh", work, "--station", "3_10", "--rover", "--poisson-depth", "8", "--target-triangles", "40000",
+    assert rpp_main(["mesh", work, "--station", "3_10", "--rover", "--poisson-depth", "8", "--target-triangles", "40000",
                       "--no-preview"]) == 0
     rr = json.loads((outr / "mesh_report.json").read_text(encoding="utf-8"))
     assert rr["rover"] == "shown" and rr["points_file"].endswith("fused.ply") and rr["points"] == len(pts)   # terrain alone
     assert rr["fill"]["triangles"] >= 0 and "filled_by_ring" in rr["fill"]
-    assert mppp_main(["ods", work, "--station", "3_10", "--rover", "--width", "128", "--scale", "0.25"]) == 0
+    assert rpp_main(["ods", work, "--station", "3_10", "--rover", "--width", "128", "--scale", "0.25"]) == 0
     assert json.loads((outr / "ods.json").read_text(encoding="utf-8"))["rover"] == "shown"
     assert (out / "Sol0091_S003D0010_ods_left.png").is_file() and (outr / "Sol0091_S003D0010_rover_ods_left.png").is_file()     # both variants side by side
     assert not (outr / "Sol0091_S003D0010_ods_left.png").is_file()                                    # 10 Nov: the station prefix
@@ -448,7 +448,7 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
     sqp = cv2.imread(str(out / "Sol0091_S003D0010_360_3DTD.png"))
     assert np.array_equal(sqp[:128], Lp) and np.array_equal(sqp[128:], Rp)                   # 10 Nov: left on top
     (out / "Sol0091_S003D0010_360_3DTD.png").unlink()
-    assert mppp_main(["ods", work, "--station", "3_10", "--mask-rover", "--stack-only", "--stack-top", "right"]) == 0
+    assert rpp_main(["ods", work, "--station", "3_10", "--mask-rover", "--stack-only", "--stack-top", "right"]) == 0
     assert np.array_equal(cv2.imread(str(out / "Sol0091_S003D0010_360_3DTD.png"))[:128], Rp)
 
 
@@ -503,14 +503,14 @@ def test_ods_eyes_differ_by_the_parallax_of_the_baseline(tmp_path):
 
 
 def test_dense_subset_prepare_and_fusion_write_fused_ply(tmp_path, monkeypatch):
-    """mppp dense --station (0.96): a sub-model of the station's frames, its own workspace; and the fusion writes
+    """rpp dense --station (0.96): a sub-model of the station's frames, its own workspace; and the fusion writes
     fused.ply (pycolmap 4.2's stereo_fusion writes a model folder unless output_type="ply" - the Rockytop sandbox
     run found run_dense raising after the fusion with no fused.ply).  Patch-match needs CUDA: the depth maps are
     cast from the plane here, in COLMAP's format."""
     import cv2
-    from mppp.sfm.dense import prepare_dense, run_dense, subset_images, subset_label
-    from mppp.sfm.project import SfmProject
-    from mppp.ibr.photometry import write_colmap_array
+    from rpp.sfm.dense import prepare_dense, run_dense, subset_images, subset_label
+    from rpp.sfm.project import SfmProject
+    from rpp.ibr.photometry import write_colmap_array
     proj0, rec, st, scene, P, colours = _station_scene(tmp_path)
     root = proj0.root
     for im in rec.images.values():                                      # textured, so the fusion has colours
@@ -557,12 +557,12 @@ def test_dense_subset_prepare_and_fusion_write_fused_ply(tmp_path, monkeypatch):
 
 
 def test_dense_stereo_goes_to_the_pipelines_gpu_python(tmp_path, monkeypatch):
-    """9 Nov: mppp dense --stereo looked only at GPU_PYTHON; on the PC the CUDA python is gpu_python.txt (MPPP_GPU_PY),
+    """9 Nov: rpp dense --stereo looked only at GPU_PYTHON; on the PC the CUDA python is gpu_python.txt (RPP_GPU_PY),
     so the stereo would have run in the CPU pycolmap and stopped.  Now: --python, else GPU_PYTHON, else the alignment's
-    own lookup (pipeline._default_gpu_python: MPPP_GPU_PYTHON, MPPP_GPU_PY, gpu_python.txt, the mppp_gpu env)."""
-    import mppp.sfm.gpu as G
-    from mppp.cli import main as mppp_main
-    from mppp.sfm.project import SfmProject
+    own lookup (pipeline._default_gpu_python: RPP_GPU_PYTHON, RPP_GPU_PY, gpu_python.txt, the rpp_gpu env)."""
+    import rpp.sfm.gpu as G
+    from rpp.cli import main as rpp_main
+    from rpp.sfm.project import SfmProject
     proj0, rec, st, scene, P, colours = _station_scene(tmp_path)
     root = proj0.root
     (root / "gui_native" / "sparse").mkdir(parents=True)
@@ -574,24 +574,24 @@ def test_dense_stereo_goes_to_the_pipelines_gpu_python(tmp_path, monkeypatch):
     calls = []
     monkeypatch.delenv("GPU_PYTHON", raising=False)
     monkeypatch.setattr(pycolmap, "has_cuda", False, raising=False)
-    import mppp.pipeline as PL
-    monkeypatch.setattr(PL, "_default_gpu_python", lambda: "/envs/mppp_gpu/python.exe")
+    import rpp.pipeline as PL
+    monkeypatch.setattr(PL, "_default_gpu_python", lambda: "/envs/rpp_gpu/python.exe")
     monkeypatch.setattr(G, "run_step", lambda py, step, proj, **kw: calls.append((py, step, kw)) or {"steps": {}})
-    assert mppp_main(["dense", str(root.parent), "--station", "3_10", "--stereo", "--fusion"]) == 0
+    assert rpp_main(["dense", str(root.parent), "--station", "3_10", "--stereo", "--fusion"]) == 0
     py, step, kw = calls[0]
-    assert py == "/envs/mppp_gpu/python.exe" and step == "dense" and kw["steps"] == ["stereo", "fusion"]
+    assert py == "/envs/rpp_gpu/python.exe" and step == "dense" and kw["steps"] == ["stereo", "fusion"]
     assert kw["workspace"].endswith("dense_S003D0010") and len(kw["images"]) == 4
-    from mppp.sfm.dense import STATION_FUSION_OPTIONS, STATION_STEREO_OPTIONS
+    from rpp.sfm.dense import STATION_FUSION_OPTIONS, STATION_STEREO_OPTIONS
     assert kw["stereo_options"] == STATION_STEREO_OPTIONS and kw["fusion_options"] == STATION_FUSION_OPTIONS
     calls.clear()
-    assert mppp_main(["dense", str(root.parent), "--station", "3_10", "--stereo", "--min-angle", "1.5", "--min-views", "3"]) == 0
+    assert rpp_main(["dense", str(root.parent), "--station", "3_10", "--stereo", "--min-angle", "1.5", "--min-views", "3"]) == 0
     kw = calls[0][2]
     assert kw["stereo_options"] == {"min_triangulation_angle": 1.0, "filter_min_triangulation_angle": 1.5,
                                     "filter_min_num_consistent": 2}
     assert kw["fusion_options"] == {"min_num_pixels": 3}
     # 0.98.14: --whole-block - the block's frames in one shared workspace, the station's own frames recorded beside it
     calls.clear()
-    assert mppp_main(["dense", str(root.parent), "--station", "3_10", "--whole-block", "--stereo", "--fusion"]) == 0
+    assert rpp_main(["dense", str(root.parent), "--station", "3_10", "--whole-block", "--stereo", "--fusion"]) == 0
     kw = calls[0][2]
     assert kw["workspace"].endswith("dense_block_N") and len(kw["images"]) == len(rows) and kw["stereo_options"] == STATION_STEREO_OPTIONS
     stub = json.loads((root / "dense_S003D0010_block" / "mppp_dense.json").read_text(encoding="utf-8"))
@@ -604,8 +604,8 @@ def test_station_dense_options_reach_the_mesh_radius_and_are_set_on_pycolmap():
     option objects (a misspelt field raises instead of being ignored)."""
     import math
     import pytest
-    from mppp.ibr.mesh import DEFAULT_RADIUS_M
-    from mppp.sfm.dense import STATION_FUSION_OPTIONS, STATION_STEREO_OPTIONS, set_options
+    from rpp.ibr.mesh import DEFAULT_RADIUS_M
+    from rpp.sfm.dense import STATION_FUSION_OPTIONS, STATION_STEREO_OPTIONS, set_options
     assert 0.424 / math.tan(math.radians(3.0)) < 8.2                     # the default: the 8 m cut-off seen
     assert 0.424 / math.tan(math.radians(STATION_STEREO_OPTIONS["filter_min_triangulation_angle"])) >= DEFAULT_RADIUS_M
     po, fo = pycolmap.PatchMatchOptions(), pycolmap.StereoFusionOptions()
@@ -745,9 +745,9 @@ def test_two_view_terrain_is_fused_with_the_station_options(tmp_path):
     ground: every ground point is seen by exactly two images.  COLMAP's default fusion (5 images a point) fuses
     nothing; the station options (2) fuse the pair's ground out to 20 m and beyond, on the ground to a few mm."""
     import cv2
-    from mppp.sfm.dense import STATION_FUSION_OPTIONS, prepare_dense, run_dense
-    from mppp.sfm.project import SfmProject
-    from mppp.ibr.photometry import write_colmap_array
+    from rpp.sfm.dense import STATION_FUSION_OPTIONS, prepare_dense, run_dense
+    from rpp.sfm.project import SfmProject
+    from rpp.ibr.photometry import write_colmap_array
     rec = pycolmap.Reconstruction()
     cam = pycolmap.Camera(camera_id=1, model="SIMPLE_PINHOLE", width=640, height=480, params=np.array([500.0, 320.0, 240.0]))
     rec.add_camera(cam)
@@ -829,7 +829,7 @@ def test_two_view_terrain_is_fused_with_the_station_options(tmp_path):
     assert (h > 20).sum() > 500 and h.max() > 40                                 # the pair's far ground is there
     rings = M.points_by_ring(pts, P)
     assert all(r["points"] > 0 for r in rings if 10 <= r["ring_m"][0] < 30)
-    # mppp dense --keep-rover: the same depth maps fused without the masks, into fused_rover.ply
+    # rpp dense --keep-rover: the same depth maps fused without the masks, into fused_rover.ply
     kept = run_dense(proj, workspace=ws, steps=("fusion",), max_image_size=640, fusion_options=STATION_FUSION_OPTIONS,
                      keep_rover=True)["steps"]["fusion"]
     assert kept["ply"].endswith("fused_rover.ply") and kept["masks"] is None and kept["rover_kept"]
@@ -843,7 +843,7 @@ def test_two_view_terrain_is_fused_with_the_station_options(tmp_path):
 def test_old_patch_match_maps_are_cleared_when_the_options_change(tmp_path):
     """COLMAP's patch-match skips every image whose maps exist (the PC, 10 Nov: --stereo again took 0.3 s and the
     8 m cut-off stayed).  Maps made with other options - or unrecorded ones when this run sets options - go first."""
-    from mppp.sfm.dense import STATION_STEREO_OPTIONS, stereo_outputs_ready
+    from rpp.sfm.dense import STATION_STEREO_OPTIONS, stereo_outputs_ready
     ws = tmp_path / "ws"
     for d in ("depth_maps", "normal_maps"):
         (ws / "stereo" / d).mkdir(parents=True)
@@ -1053,7 +1053,7 @@ def test_black_padding_is_not_image_content(tmp_path):
 def test_sky_fill_carries_the_sky_up_without_black_or_sawtooth():
     """Christian, 10 Nov: "extrapolate and blur the light blue sky upwards so that there isn't a shape boundary
     there" - "make sure not to extrapolate black pixel areas"."""
-    from mppp.ibr.raycast import LABEL_FAR, LABEL_MESH
+    from rpp.ibr.raycast import LABEL_FAR, LABEL_MESH
     H, W = 400, 800
     rgb = np.zeros((H, W, 3), np.uint8)
     source = np.full((H, W), -1, np.int16)
@@ -1100,7 +1100,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     The shipped config has the three test stations; the plan resolves each block from sites.json and builds the
     commands of both variants; a failed dense step stops that station; the summary has a line per variant; the
     installed batch file names no version."""
-    from mppp.ibr import single_sites as SS
+    from rpp.ibr import single_sites as SS
     cfg = SS.load_config()
     assert cfg["stations"]["Sol0690_S032D1184_Z34"]["experimental"] is True      # 0.98.2: runs only when named
     assert {r["label"] for r in SS.plan(cfg, tmp_path)} == set(cfg["stations"]) - {"Sol0690_S032D1184_Z34"}
@@ -1153,7 +1153,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert rover_ods[-4:] == ["--bits", "16", "--fill-cameras", "F"]   # 0.97.7: the front Hazcams fill in
     assert rover_ods[rover_ods.index("--prefix") + 1] == "Sol0052_S003D2046_rover"           # 0.97.14: the files' names
     assert rover_ods[rover_ods.index("--site-name") + 1] == "Van Zyl Overlook"              # 0.97.7: for the nadir mark
-    from mppp.ibr.nadir import block_name                                                    # 0.97.17: the block's name
+    from rpp.ibr.nadir import block_name                                                    # 0.97.17: the block's name
     assert block_name("van_zyl_overlook_huge") == "Van Zyl Overlook" and block_name("witch_hazel_large") == "Witch Hazel Hill"
     assert block_name("taylorfjellet_large") == "Taylorfjellet" and block_name("rockytop") == "Rockytop"
     assert block_name("not_a_site_tiny") == "Not A Site" and block_name(None) is None
@@ -1202,7 +1202,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert (root / "single_sites" / "Sol0052_S003D2046" / "single_site_log.txt").exists()
     f = SS.install(tmp_path / "inst")
     b = f.read_bytes()
-    assert f.name == "run_single_site_ibr.bat" and b"\r\n" in b and b"python -m mppp single-sites --upload %*" in b
+    assert f.name == "run_single_site_ibr.bat" and b"\r\n" in b and b"python -m rpp single-sites --upload %*" in b
     assert b"7dbd5da" not in b and b"_transfer" in b and b"--ff-only" in b and b"merge-base --is-ancestor" in b
 
 
@@ -1224,8 +1224,8 @@ def test_full_fov_undistortion_keeps_the_fisheye_corners(tmp_path):
     keeps them, at a size scaled so the centre keeps the default's focal length; a change of the setting redoes
     the workspace, and the stereo record carries it (old maps cleared)."""
     import cv2
-    from mppp.sfm.dense import prepare_dense, stereo_outputs_ready
-    from mppp.sfm.project import SfmProject
+    from rpp.sfm.dense import prepare_dense, stereo_outputs_ready
+    from rpp.sfm.project import SfmProject
     params = [v / 4 if i < 4 else v for i, v in enumerate(NL)]                       # a quarter-size Navcam: 1280 x 960
     rec = pycolmap.Reconstruction()
     cam = pycolmap.Camera(camera_id=1, model="THIN_PRISM_FISHEYE", width=1280, height=960, params=np.asarray(params, float))
@@ -1274,7 +1274,7 @@ def test_full_fov_undistortion_keeps_the_fisheye_corners(tmp_path):
 # ----------------------------------------------------------------------------- 10 Nov: the rover deck floor, left-out pairs, prefixes
 def test_rover_deck_pose_floor_and_clamp():
     from scipy.spatial.transform import Rotation as Rot
-    from mppp.ibr import rover_deck as RD
+    from rpp.ibr import rover_deck as RD
     rng = np.random.default_rng(3)
     R_true = Rot.from_euler("zyx", [73.0, 1.5, -2.0], degrees=True).as_matrix() @ np.diag([1.0, -1.0, -1.0])  # z down -> up
     t_true = np.array([30.4, 7.7, 0.8])
@@ -1309,7 +1309,7 @@ def test_rover_deck_pose_floor_and_clamp():
 
 
 def test_mesh_with_the_deck_floor(tmp_path):
-    from mppp.ibr import rover_deck as RD
+    from rpp.ibr import rover_deck as RD
     R = np.diag([1.0, -1.0, -1.0])                              # RNAV x = block x, z down
     pose = {"R_block_from_rnav": R, "t_block_from_rnav": np.zeros(3)}
     # terrain at z = 0 around the rover, a partial deck at its top (z = 1.133 m), and a sag below it
@@ -1331,8 +1331,8 @@ def test_mesh_with_the_deck_floor(tmp_path):
 
 def test_exclude_pairs_and_prefix(tmp_path):
     from types import SimpleNamespace
-    from mppp.ibr.cli import _frames, _pair_key
-    from mppp.ibr.ods import ods_file, ods_prefix, find_prefix, stack_file
+    from rpp.ibr.cli import _frames, _pair_key
+    from rpp.ibr.ods import ods_file, ods_prefix, find_prefix, stack_file
     a, b = "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01", "NRF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01"
     assert _pair_key(a) == _pair_key(b + ".png") and _pair_key(a) != _pair_key(a.replace("0707875039", "0707875040"))
     st = SimpleNamespace(label="Sol0461_S026D0630", key="S026D0630", images=[a + ".png", b + ".png", "NLF_0461_1_x.png", "NRF_0461_1_x.png"])
@@ -1348,8 +1348,8 @@ def test_exclude_pairs_and_prefix(tmp_path):
 
 def test_squares_left_on_top_named_by_station(tmp_path):
     import cv2
-    from mppp.ibr.ods import stack_eyes
-    from mppp.ibr import single_sites as SS
+    from rpp.ibr.ods import stack_eyes
+    from rpp.ibr import single_sites as SS
     L = np.full((8, 16, 3), 40, np.uint8)
     R = np.full((8, 16, 3), 200, np.uint8)
     cv2.imwrite(str(tmp_path / "ods_left.png"), L)              # eye images named before 10 Nov
@@ -1364,7 +1364,7 @@ def test_squares_left_on_top_named_by_station(tmp_path):
 
 
 def test_floating_surface_removed_and_deep_faces_cut(tmp_path):
-    from mppp.ibr import rover_deck as RD
+    from rpp.ibr import rover_deck as RD
     P = np.array([0.0, 0.0, 1.9])
     plane = {"normal": [0.0, 0.0, 1.0], "offset": 0.0}
     X = np.array([[1.0, 0, 2.5],        # above the cameras, near: goes
@@ -1400,16 +1400,16 @@ def test_linear16_of_a_real_product_and_the_archive_lookup(tmp_path):
     import cv2
     import shutil
     from types import SimpleNamespace
-    import mppp
+    import rpp
     from conftest import NLF
-    from mppp.ibr import linear16 as L16
-    cfg = mppp.load_config()
+    from rpp.ibr import linear16 as L16
+    cfg = rpp.load_config()
     i16, sat, facts = L16.linear16_of_product(NLF, cfg)
-    from mppp.image import MPPPImage
-    c8 = mppp.load_config({"masking": {"infer_mask": False}, "camera_model": {"extrinsics_from_waypoints": False},
+    from rpp.image import RPPImage
+    c8 = rpp.load_config({"masking": {"infer_mask": False}, "camera_model": {"extrinsics_from_waypoints": False},
                            "selection": {"max_boresight_elevation_deg": None, "max_exposure_ms": None, "max_centre_tint": None,
                                          "max_saturated_fraction": None, "lmst_window_h": None}})
-    i8 = MPPPImage(NLF, c8, None).image_int8
+    i8 = RPPImage(NLF, c8, None).image_int8
     assert i16.dtype == np.uint16 and i16.shape == i8.shape
     free = (i8 < 255).all(axis=2)
     assert np.abs(i16[free] / 64.0 - i8[free]).max() <= 0.51                   # the 8-bit image is the 16-bit one / 64 ...
@@ -1426,7 +1426,7 @@ def test_linear16_of_a_real_product_and_the_archive_lookup(tmp_path):
     root = tmp_path / "blk" / "colmap"
     (root / "images").mkdir(parents=True)
     (tmp_path / "blk" / "processed").mkdir()
-    (tmp_path / "blk" / "processed" / "mppp_config_v0p95.json").write_text(json.dumps(mppp.load_config()), encoding="utf-8")
+    (tmp_path / "blk" / "processed" / "mppp_config_v0p95.json").write_text(json.dumps(rpp.load_config()), encoding="utf-8")
     name = NLF.stem + ".png"
     cv2.imwrite(str(root / "images" / name), i8[: i8.shape[0] // 2, : i8.shape[1] // 2])
     arch = tmp_path / "pds" / "00461" / "ids" / "rdr" / "ncam"
@@ -1486,7 +1486,7 @@ def test_ods_16bit_keeps_what_8bit_clips(tmp_path):
 
 
 def test_ground_fill_and_levels():
-    from mppp.ibr.linear16 import auto_levels, tone_levels
+    from rpp.ibr.linear16 import auto_levels, tone_levels
     H, W = 64, 128
     rgb = np.zeros((H, W, 3), np.float32)
     source = np.full((H, W), -1, np.int16)
@@ -1514,7 +1514,7 @@ def test_ground_fill_and_levels():
 
 def test_retone_from_the_16bit_panoramas(tmp_path):
     import cv2
-    from mppp.ibr.linear16 import retone
+    from rpp.ibr.linear16 import retone
     g = np.random.default_rng(0)
     for eye in ("left", "right"):
         a = np.zeros((64, 128, 3), np.uint16)
@@ -1528,7 +1528,7 @@ def test_retone_from_the_16bit_panoramas(tmp_path):
 
 
 def test_rover_model_in_the_mesh(tmp_path):
-    from mppp.ibr import rover_deck as RD, rover_model as RM
+    from rpp.ibr import rover_deck as RD, rover_model as RM
     assert RM.available()
     V, F, meta = RM.load()
     assert meta["credit"] == "NASA/JPL-Caltech" and 150000 < len(F) < 250000 and meta["arm_stow_deg"] == [90.09, 16.37, 71.66, -88.18, 81.48] and "antenna" in meta["parts"]   # 0.97.0
@@ -1557,7 +1557,7 @@ def test_rover_model_in_the_mesh(tmp_path):
 
 
 def test_mast_mask_from_the_rover_model():
-    from mppp.ibr import rover_deck as RD, rover_model as RM
+    from rpp.ibr import rover_deck as RD, rover_model as RM
     V, F, meta = RM.load(["mast"])
     mv = V[np.unique(F)]
     assert meta["mast_axis_xy_m"] == [0.716, 0.559] and len(F) > 2000
@@ -1596,8 +1596,8 @@ def test_pivot_at_mastcamz_height_and_shared_tone_levels(tmp_path):
     rendered; one 16-to-8-bit scaling for the rover-shown and the rover-masked panorama; the centre depth files; the
     jpg pictures with linear and log depth."""
     from scipy.spatial.transform import Rotation
-    from mppp.ibr import linear16 as L16
-    from mppp.ibr import station as S
+    from rpp.ibr import linear16 as L16
+    from rpp.ibr import station as S
     up = np.array([0.0, 0.0, 1.0])
     axis = np.array([2.0, -1.0, 5.0])                       # the elevation axis on the azimuth axis
     C, R, G = [], [], []
@@ -1646,7 +1646,7 @@ def test_pivot_at_mastcamz_height_and_shared_tone_levels(tmp_path):
 def test_floating_rule_keeps_far_terrain_above_the_plane():
     """0.97.0 (Rockytop S026D0630: the mesh ended at 15 m where the ground rose above the fitted plane): with the
     local ground, a hill 3 m high 25-40 m away is terrain; a blob 2 m above the ground 8 m away is still floating."""
-    from mppp.ibr import mesh as M
+    from rpp.ibr import mesh as M
     rng = np.random.default_rng(3)
     xy = rng.uniform(-45, 45, (60_000, 2))
     z = 3.0 * np.exp(-((xy[:, 0] - 30) ** 2 + xy[:, 1] ** 2) / (2 * 8.0 ** 2))          # a hill to the east
@@ -1668,7 +1668,7 @@ def test_fill_terrain_closes_holes_and_flattens_under_the_rover():
     holes. The far field should interpolate over hole in the terrain"): a sloped terrain with a far hole and junk
     under the rover - after the fill every downward ray from the pivot within the radius meets a surface, the ground
     under the rover follows the slope, and the far hole is bridged at the terrain's height."""
-    from mppp.ibr import mesh as M
+    from rpp.ibr import mesh as M
     n = 161
     g = np.linspace(-20, 20, n)
     X, Y = np.meshgrid(g, g)
@@ -1711,8 +1711,8 @@ def test_surface_check_keeps_rover_pixels_on_the_rover_and_terrain_on_terrain(tm
     'rover model') on a ground mesh, one camera looking down; its mask calls a patch larger than the box 'rover'."""
     import cv2
     import pycolmap
-    from mppp.ibr import ods as O
-    from mppp.ibr.raycast import Scene
+    from rpp.ibr import ods as O
+    from rpp.ibr.raycast import Scene
     # the ground z = 0 (two triangles) and a box top at z = 0.5 over |x|, |y| < 0.5: the model, last in the mesh
     Vg = np.array([[-5, -5, 0], [5, -5, 0], [5, 5, 0], [-5, 5, 0]], float)
     Fg = np.array([[0, 1, 2], [0, 2, 3]])
@@ -1751,7 +1751,7 @@ def test_surface_check_keeps_rover_pixels_on_the_rover_and_terrain_on_terrain(tm
 def test_ods_pole_merging():
     """0.97.0 (12 Nov): the eye separation falls towards the poles.  0.97.13: as cos(elevation) above and below the
     horizon, and nothing else scales it (no near-surface limit, no fade with range): true disparity x cos(elevation)."""
-    from mppp.ibr import ods as O
+    from rpp.ibr import ods as O
     P = np.zeros(3)
     e = np.radians([0.0, 30.0, -30.0, 45.0, -60.0, 90.0, -90.0])
     assert np.allclose(O.pole_merge(e, O.POLE_MERGE_DEG, O.POLE_MERGE_DOWN_DEG), np.cos(e), atol=1e-12)
@@ -1776,7 +1776,7 @@ def test_ods_pole_merging():
 def test_exposure_and_enhanced_views(tmp_path):
     """0.97.0 (12 Nov): one automatic 16-bit gain per station and the contrast-enhanced 8-bit products."""
     import cv2
-    from mppp.ibr import linear16 as L
+    from rpp.ibr import linear16 as L
     rng = np.random.default_rng(0)
     x = np.clip(rng.normal(60, 15, (64, 128, 3)), 1, None).astype(np.float32)        # 8-bit linear units
     x[:4] = 300.0                                                                      # a bright sky
@@ -1805,8 +1805,8 @@ def test_exposure_and_enhanced_views(tmp_path):
 
 def test_sky_sphere_and_range_merge():
     """0.97.0 (12 Nov): the sky on a 200 m sphere, the plane out to it, the eye separation fading with range."""
-    from mppp.ibr import ods as O
-    from mppp.ibr.raycast import LABEL_FAR, LABEL_PLANE, SKY_RANGE_M, Scene
+    from rpp.ibr import ods as O
+    from rpp.ibr.raycast import LABEL_FAR, LABEL_PLANE, SKY_RANGE_M, Scene
     V = np.array([[-1, -1, -2.0], [1, -1, -2.0], [0, 1, -2.0]]); F = np.array([[0, 1, 2]])
     plane = {"normal": [0, 0, 1], "offset": -2.0, "centre": [0, 0, 0], "up": [0, 0, 1], "radius_m": 100.0}
     sc = Scene((V, F), plane=plane, sky=True)
@@ -1826,7 +1826,7 @@ def test_sky_sphere_and_range_merge():
 
 
 def test_enhlocal_is_one_filter_for_both_eyes():
-    from mppp.ibr import linear16 as L
+    from rpp.ibr import linear16 as L
     rng = np.random.default_rng(1)
     a = rng.integers(20, 200, (64, 256, 3)).astype(np.uint8)
     b = np.roll(a, 7, axis=1)                                         # the other eye: the same scene, shifted
@@ -1837,8 +1837,8 @@ def test_enhlocal_is_one_filter_for_both_eyes():
 def test_rover_mesh_on_the_masked_terrain(tmp_path):
     """0.97.0 (12 Nov): the rover-shown mesh is the rover-masked terrain mesh plus the model - no second surface run."""
     import types
-    from mppp.ibr import cli as C, rover_model
-    from mppp.ibr.mesh import read_mesh, write_mesh
+    from rpp.ibr import cli as C, rover_model
+    from rpp.ibr.mesh import read_mesh, write_mesh
     src, out = tmp_path / "S1", tmp_path / "S1" / "with_rover"
     src.mkdir()
     V = np.array([[0, 0, 0.0], [1, 0, 0], [0, 1, 0]]); F = np.array([[0, 1, 2]])
@@ -1852,7 +1852,7 @@ def test_rover_mesh_on_the_masked_terrain(tmp_path):
     assert r["terrain_from"] == str(src) and len(read_mesh(out / "mesh.ply")[1]) == 1 and (out / "ground_plane.json").is_file()
     a.mesh_radius = 30.0
     assert C._mesh_on_terrain(src, out, None, st, a, None) is None            # other settings: built again
-    from mppp.ibr import single_sites as S
+    from rpp.ibr import single_sites as S
     cfg = {"stations": {"S1": {"station": "3_10", "work": str(tmp_path)}}}
     cmds = S.plan(cfg, tmp_path)[0]["commands"]
     m = [c["argv"] for c in cmds if c["step"] == "mesh"]
@@ -1870,7 +1870,7 @@ def test_rover_mesh_on_the_masked_terrain(tmp_path):
 
 def test_stereo_cached(tmp_path):
     """0.97.0 (12 Nov): a workspace whose maps are all there, made with the same options, needs no stereo step."""
-    from mppp.sfm import dense as D
+    from rpp.sfm import dense as D
     ws = tmp_path / "dense_x"
     (ws / "images").mkdir(parents=True)
     (ws / "images" / "a.png").write_bytes(b"x")
@@ -1888,8 +1888,8 @@ def test_stereo_cached(tmp_path):
 
 def test_far_underlay_and_apron():
     """0.97.0 (12 Nov): beyond 20 m every grid cell has a surface just under the terrain; an apron falls to the plane."""
-    from mppp.ibr import mesh as M
-    from mppp.ibr.raycast import LABEL_MESH, Scene
+    from rpp.ibr import mesh as M
+    from rpp.ibr.raycast import LABEL_MESH, Scene
     rng = np.random.default_rng(0)
     # a ragged terrain 0.5 m above the plane: small triangles scattered to 50 m, most of the area a gap
     c = rng.uniform(-50, 50, (4000, 2)); c = c[np.hypot(c[:, 0], c[:, 1]) < 50]
@@ -1913,7 +1913,7 @@ def test_far_underlay_and_apron():
 def test_nearby_stations_and_width(tmp_path):
     """0.97.0 (12 Nov): the neighbours' frames for the dense step; the single-site panorama width for one run."""
     import types
-    from mppp.sfm.dense import nearby_station_images
+    from rpp.sfm.dense import nearby_station_images
     rows = []
     for (site, drive, x) in ((3, 10, 0.0), (3, 20, 8.0), (3, 30, 40.0)):
         for i in range(2):
@@ -1924,7 +1924,7 @@ def test_nearby_stations_and_width(tmp_path):
     nb = nearby_station_images(proj, "3_10", 15.0, families="N", scale=0.5)
     assert nb["names"] == ["NLF_3_20_0.png", "NLF_3_20_1.png"] and nb["stations"]["S003D0020"]["distance_m"] == 8.0
     assert nearby_station_images(proj, "3_10", 5.0)["names"] == []
-    from mppp.ibr import single_sites as S
+    from rpp.ibr import single_sites as S
     cfg = {"stations": {"S1": {"station": "3_10", "work": str(tmp_path), "nearby_m": 15}}, "ods_args": ["--width", "8192"]}
     cmds = S.plan(cfg, tmp_path, ods_width=16384)[0]["commands"]
     dense = [c["argv"] for c in cmds if c["step"] == "dense"][0]
@@ -1937,7 +1937,7 @@ def test_nearby_stations_and_width(tmp_path):
 
 def test_a_boulder_is_not_floating():
     """0.97.0 (12 Nov): a surface that climbs from the ground stays; the same heights with nothing under them go."""
-    from mppp.ibr import mesh as M
+    from rpp.ibr import mesh as M
     rng = np.random.default_rng(0)
     g = np.c_[rng.uniform(-20, 20, (40000, 2)), np.zeros(40000)]                    # flat ground, z = 0
     plane = {"normal": [0, 0, 1], "offset": 0.0, "centre": [0, 0, 2.0], "up": [0, 0, 1], "radius_m": 100.0}
@@ -1957,7 +1957,7 @@ def test_a_boulder_is_not_floating():
 def test_single_sites_skips_steps_that_are_up_to_date(tmp_path, monkeypatch):
     """0.97.2: a step with the same command, code, cloud and upstream steps as its last good run is skipped; a changed
     mesh command runs the mesh and everything after it again; --force runs all; the status file names the last step."""
-    from mppp.ibr import single_sites as S
+    from rpp.ibr import single_sites as S
     work = tmp_path / "blk"
     (work / "colmap" / "dense_S1").mkdir(parents=True)
     (work / "colmap" / "dense_S1" / "fused.ply").write_bytes(b"x")
@@ -1990,14 +1990,14 @@ def test_single_sites_skips_steps_that_are_up_to_date(tmp_path, monkeypatch):
     ran.clear()
     S.run_all(S.plan(cfg, tmp_path, out), out, force=True)
     assert len(ran) == 6
-    assert b"MPPP_NO_PAUSE" in S.BAT.encode() and "exit /b !RC!" in S.BAT
+    assert b"RPP_NO_PAUSE" in S.BAT.encode() and "exit /b !RC!" in S.BAT
 
 
 def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
-    """0.97.3: `mppp single-sites --publish`: the variants' _360_3DTD.jpg into panos/ (reduced), panos.json for the
+    """0.97.3: `rpp single-sites --publish`: the variants' _360_3DTD.jpg into panos/ (reduced), panos.json for the
     page, entries of earlier runs kept; the labelled test pair is a square with the left eye on top."""
     import cv2
-    from mppp.ibr import web
+    from rpp.ibr import web
     r = tmp_path / "out"
     for sub, pre in (("", "S1"), ("with_rover", "S1_rover")):
         (r / "S1" / sub).mkdir(parents=True, exist_ok=True)
@@ -2051,7 +2051,7 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
 def test_even_sky_lifts_a_dark_patch_and_leaves_the_far_hills():
     """0.97.4: a dark patch in the sky (a frame that clipped towards the sun) is lifted to the sky around it; a far
     hill (also "far", but with a sharp skyline) and the ground are not touched."""
-    from mppp.ibr import ods
+    from rpp.ibr import ods
     H, W = 512, 1024
     el = 90.0 - (np.arange(H) + 0.5) / H * 180.0
     sky = 180.0 + 40.0 * np.cos(np.radians(el))[:, None] + 15.0 * np.cos(np.linspace(0, 2 * np.pi, W, endpoint=False))[None, :]
@@ -2075,10 +2075,10 @@ def test_even_sky_lifts_a_dark_patch_and_leaves_the_far_hills():
 
 
 def test_xmp_is_written_into_jpeg_and_png_without_touching_the_pixels(tmp_path):
-    """0.97.4: the stereo packet (GPano, GSpherical top-bottom, mppp) in the _360_3DTD products; written twice it is
+    """0.97.4: the stereo packet (GPano, GSpherical top-bottom, rpp) in the _360_3DTD products; written twice it is
     there once; a file that is not a square pair is left alone."""
     import cv2
-    from mppp.ibr import xmp
+    from rpp.ibr import xmp
     im = np.random.default_rng(0).integers(0, 255, (256, 256, 3), dtype=np.uint8)
     files = {"a_360_3DTD.jpg": im, "a_360_3DTD.png": im, "a_360_3DTD_16.png": im.astype(np.uint16) * 200}
     for n, arr in files.items():
@@ -2089,7 +2089,7 @@ def test_xmp_is_written_into_jpeg_and_png_without_touching_the_pixels(tmp_path):
     for n in files:
         x = xmp.read_xmp(tmp_path / n)
         assert x.count(b"<x:xmpmeta") == 1 and b"<GSpherical:StereoMode>top-bottom</GSpherical:StereoMode>" in x
-        assert b"<GPano:ProjectionType>equirectangular</GPano:ProjectionType>" in x and b"<mppp:TopEye>left</mppp:TopEye>" in x
+        assert b"<GPano:ProjectionType>equirectangular</GPano:ProjectionType>" in x and b"<rpp:TopEye>left</rpp:TopEye>" in x
         assert np.array_equal(cv2.imread(str(tmp_path / n), cv2.IMREAD_UNCHANGED), before[n])
         assert xmp.image_size(tmp_path / n) == (256, 256)
     assert xmp.read_xmp(tmp_path / "wide_360_3DTD.png") is None
@@ -2098,10 +2098,10 @@ def test_xmp_is_written_into_jpeg_and_png_without_touching_the_pixels(tmp_path):
 def test_camera_head_follows_the_mast_angles_and_casts_a_shadow():
     """0.97.7: the head at the labels' RSM angles (180, 90 = the model's pose), the angles back from a camera
     rotation, and the mast, booms and head as shadow casters on a plane that holds no rover."""
-    from mppp.ibr import rover_model
-    from mppp.ibr.photometry import occluder, shadow_map
-    from mppp.ibr.raycast import Scene
-    from mppp.ibr.rover_deck import MECH_IN_RNAV_M
+    from rpp.ibr import rover_model
+    from rpp.ibr.photometry import occluder, shadow_map
+    from rpp.ibr.raycast import Scene
+    from rpp.ibr.rover_deck import MECH_IN_RNAV_M
     if not rover_model.available():
         pytest.skip("no rover model")
     assert "head" in rover_model.load()[2]["parts"]
@@ -2148,7 +2148,7 @@ def test_camera_head_follows_the_mast_angles_and_casts_a_shadow():
 def test_nadir_mark_lines_credit_and_disc():
     """0.97.8: a light blue disc at the nadir with the credits in one line around its rim; NASA/JPL-Caltech/MSSS for Navcam alone,
     with MSSS/ASU for Mastcam-Z."""
-    from mppp.ibr import nadir
+    from rpp.ibr import nadir
     nav = ["NLF_0461_0707871340_000RAD_N0260630NCAM03461_0A0195J01.png", "FLF_0461_0707871340_000RAD_N0260630FHAZ00000_0A0195J01.png"]
     assert nadir.credit(nav) == "NASA/JPL-Caltech/MSSS" and nadir.credit(nav + ["ZL0_0464_x.png"]) == "NASA/JPL-Caltech/MSSS/ASU"
     assert nadir.site_name("van_zyl_overlook_huge") == "Van Zyl Overlook" and nadir.site_name(None) is None
@@ -2212,8 +2212,8 @@ def test_fill_only_source_colours_only_what_the_others_do_not_see(tmp_path):
     full weight where none does."""
     import cv2
     import pycolmap
-    from mppp.ibr.ods import SourceImage, candidates
-    from mppp.ibr.raycast import Scene
+    from rpp.ibr.ods import SourceImage, candidates
+    from rpp.ibr.raycast import Scene
     V = np.array([[-50, -50, 0], [50, -50, 0], [50, 50, 0], [-50, 50, 0]], float)
     scene = Scene((V, np.array([[0, 1, 2], [0, 2, 3]])))
     cam = pycolmap.Camera(model="PINHOLE", width=400, height=400, params=[400.0, 400.0, 200.0, 200.0])
@@ -2237,7 +2237,7 @@ def test_fill_only_source_colours_only_what_the_others_do_not_see(tmp_path):
 
 def test_picture_scales_are_attached_and_read_back(tmp_path):
     """0.97.7: every photometry_jpg picture carries its value scale; decode() gives floats with units back."""
-    from mppp.ibr import photometry as PH, raycast as RC, scales as SC
+    from rpp.ibr import photometry as PH, raycast as RC, scales as SC
     H, W = 240, 320
     yy, xx = np.mgrid[0:H, 0:W]
     rng = (0.6 + 70.0 * xx / W).astype(np.float32)                                  # 0.6 .. 70 m, smooth
@@ -2258,7 +2258,7 @@ def test_picture_scales_are_attached_and_read_back(tmp_path):
     inner[30:-30, 10:-10] = True                                                     # off the class borders (JPEG blocks)
     inner[:, W // 2 - 10:W // 2 + 10] = False
     for f in files:
-        from mppp.ibr.xmp import read_fields
+        from rpp.ibr.xmp import read_fields
         fields = read_fields(f)
         assert fields["Product"] == SC.kind_of(f) and "npz" in fields["ExactValues"]
         d = SC.decode(f)
@@ -2288,8 +2288,8 @@ def test_fill_frames_are_colour_matched_to_the_regular_ones(tmp_path):
     regular frames keep their gain."""
     import cv2
     import pycolmap
-    from mppp.ibr.ods import SourceImage, estimate_fill_colour
-    from mppp.ibr.raycast import Scene
+    from rpp.ibr.ods import SourceImage, estimate_fill_colour
+    from rpp.ibr.raycast import Scene
     g = np.linspace(-6.0, 6.0, 25)                                     # a level ground of small triangles
     xx, yy = np.meshgrid(g, g)
     V = np.c_[xx.ravel(), yy.ravel(), np.zeros(xx.size)]
@@ -2322,8 +2322,8 @@ def test_shadow_is_sharp_and_takes_grazing_incidence():
     """0.97.11: the mask is what the rays say, pixel by pixel, plus every surface with an incidence above 86 deg;
     no closing, no growing (0.97.8 did both); no surface stays 0.  The shadow ray starts off the surface along its
     normal, so a surface the Sun grazes does not shadow itself."""
-    from mppp.ibr import photometry as PH
-    from mppp.ibr.raycast import Scene
+    from rpp.ibr import photometry as PH
+    from rpp.ibr.raycast import Scene
     assert PH.SHADOW_GROW_PX == 0 and PH.SHADOW_CLOSE_PX == 0 and 80.0 < PH.SHADOW_INCIDENCE_DEG < 89.0
     sh = np.full((60, 80), PH.SHADOW_LIT, np.uint8)
     sh[:5] = PH.SHADOW_UNKNOWN                                     # sky
@@ -2475,7 +2475,7 @@ def test_nadir_mark_lies_on_the_ground_and_its_first_row_is_larger(tmp_path):
     """0.97.13: the first row is taller than the second; each eye sees the disc on the plane below the pivot, so the
     eyes' pictures of it differ by that plane's disparity, and from the pivot it is the drawing itself."""
     import cv2
-    from mppp.ibr import nadir
+    from rpp.ibr import nadir
     W, H = 4096, 2048
     m = nadir.make_mark(W, H, nadir.mark_lines(["NLF_0052_a"], "Van Zyl Overlook"), centre_azimuth_deg=180.0)
     assert m["rows"][1]["height_px"] >= m["rows"][0]["height_px"] and m["rows"][0]["span_deg"] <= 180.5    # 0.98.14: no longer the larger
@@ -2508,7 +2508,7 @@ def test_enhanced_views_smooth_the_sky(tmp_path):
     """0.97.13: with the render's sky weight map the enhanced views replace the sky by its blur (a frame's edge in
     the sky goes), leave the terrain and the skyline alone, and do not sharpen the sky."""
     import cv2
-    from mppp.ibr import linear16 as L
+    from rpp.ibr import linear16 as L
     H, W = 512, 1024
     el = 90.0 - (np.arange(H) + 0.5) / H * 180.0
     x = np.zeros((H, W, 3), np.float32)
@@ -2548,7 +2548,7 @@ def test_frame_black_padding_is_the_no_data_flag_in_the_pictures(tmp_path):
     is black; a dark rock inside the frame is not padding.  The plane fills no hole within 10 m; near cells with
     surface get the interpolated surface under them."""
     import cv2
-    from mppp.ibr import photometry as PH
+    from rpp.ibr import photometry as PH
     H, W = 120, 160
     frame = np.full((H, W, 3), 120, np.uint8)
     frame[:, :40] = 0                                                          # the padding: a quarter of the frame
@@ -2589,13 +2589,13 @@ def test_frame_black_padding_is_the_no_data_flag_in_the_pictures(tmp_path):
 def test_block_settings_reach_the_16bit_frames_and_the_terrain_is_reused(tmp_path):
     """0.97.15, two old bugs: the block's settings snapshot holds them under "config" (they were not applied to the
     16-bit frames); the report's station has no "label" (the second variant's terrain was always built again)."""
-    import mppp
+    import rpp
     from types import SimpleNamespace
-    from mppp.ibr import linear16 as L, cli as C
+    from rpp.ibr import linear16 as L, cli as C
     blk = tmp_path / "blk"
     (blk / "processed").mkdir(parents=True)
     (blk / "colmap").mkdir()
-    cfg = mppp.load_config({"color": {"brightness_by_family": {"N": 0.5}}})
+    cfg = rpp.load_config({"color": {"brightness_by_family": {"N": 0.5}}})
     old = json.loads(json.dumps(cfg))
     del old["color"]["white_balance_hazcam"]
     (blk / "processed" / "mppp_config_v0p97.json").write_text(json.dumps({"mppp_version": "0.97.4", "config": old}))
@@ -2625,7 +2625,7 @@ def test_context_frames_are_masked_fill_only_and_stay_off_the_rover(tmp_path):
     rover shown too, it never colours the rover model, it is not one of the station's own frames, and the station
     list passes it to the dense step and to the panorama."""
     import cv2
-    from mppp.ibr import single_sites as SS
+    from rpp.ibr import single_sites as SS
     proj, rec, st, scene, P, colours = _station_scene(tmp_path)
     for n in st.images:
         cv2.imwrite(str(proj.root / "masks" / (n + ".png")), np.full((300, 400), 255, np.uint8))
@@ -2690,7 +2690,7 @@ def test_geometry_panoramas_masked_black_and_image_copies(tmp_path):
     assert abs(g[0] - 255) < 12 and abs(g[1] - 128) < 12 and abs(g[2] - 128) < 12, g      # BGR: up in blue
     near, far = rl[128 - 6, 10].astype(int), rl[64 + 12, 10].astype(int)      # steeply down against near the horizon
     assert not np.array_equal(near, far)
-    from mppp.ibr import web as W
+    from rpp.ibr import web as W
     assert sorted(W.station_files(out)) == ["normal", "range linear", "range log", "standard"]
     rep2 = O.render_station(proj, rec, st, scene, tmp_path / "o2", width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, geometry=False)
     assert "geometry" not in rep2 and not list((tmp_path / "o2").glob("*range*"))
@@ -2706,7 +2706,7 @@ def test_geometry_panoramas_masked_black_and_image_copies(tmp_path):
     for mode in ("log", "linear"):
         img = RC.depth_rgb(np.full((8, 8), 5.0, np.float32), lab, mode)
         assert not img[:4].any() and img[4:].any()
-    from mppp.ibr.scales import scales
+    from rpp.ibr.scales import scales
     assert scales()["depth_log"]["special"]["masked_rgb"] == [0, 0, 0]
     src = tmp_path / "frame.png"
     cv2.imwrite(str(src), np.full((20, 30, 3), 90, np.uint8))
@@ -2716,10 +2716,10 @@ def test_geometry_panoramas_masked_black_and_image_copies(tmp_path):
 
 
 def test_web_upload_commits_the_panoramas_only_and_pushes(tmp_path):
-    """0.97.21 (Christian, 13 Nov 2026): `mppp single-sites --upload` - the viewer's panoramas committed, the branch
+    """0.97.21 (Christian, 13 Nov 2026): `rpp single-sites --upload` - the viewer's panoramas committed, the branch
     pushed; other changes stay out of the commit; a remote that is ahead is merged in, nothing forced."""
     import subprocess
-    from mppp.ibr import web
+    from rpp.ibr import web
 
     def git(cwd, *a):
         return subprocess.run(["git", "-C", str(cwd), *a], capture_output=True, text=True, check=True).stdout.strip()
@@ -2761,7 +2761,7 @@ def test_ground_mark_published_and_upload_keeps_a_failed_push_for_the_next_one(t
     from above, the depth below the eyes, a radius a little over the mark's own); the upload is the batch file's
     default, never waits at a prompt, tries a failed push again and leaves a marker when it did not go through."""
     import subprocess
-    from mppp.ibr import web, single_sites as SS
+    from rpp.ibr import web, single_sites as SS
     proj, rec, st, scene, P, colours = _station_scene(tmp_path)
     out = tmp_path / "sites" / "Sol0091_S003D0010"
     rep = O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, geometry=False)
@@ -2798,7 +2798,7 @@ def test_colour_0p98_pipeline_view_enhanced_without_clipping_radiance_record_and
     """0.98.0 (Christian, 14 Nov 2026): the standard 8-bit view is the 16-bit image on the pipeline's 8-bit scale; the
     enhanced curve clips at neither end; the 16-bit scale is one for every station and ods.json says how to get back
     to radiance; the blend records how many frames' worth each terrain pixel has."""
-    from mppp.ibr import linear16 as L
+    from rpp.ibr import linear16 as L
     x = np.linspace(0.0, 1023.0, 2048, dtype=np.float32)[:, None] * np.ones((1, 3), np.float32)
     y = L.tone_pipeline(x)
     assert np.allclose(y[x[:, 0] <= 235], x[x[:, 0] <= 235]) and (np.diff(y[:, 0]) >= -1e-4).all() and 254.0 < y[-1, 0] <= 255.0
@@ -2839,8 +2839,8 @@ def test_rover_surface_is_the_model_coloured_from_the_pivot(tmp_path):
     rover model of mesh.ply with all its triangles; the panorama from the pivot and its range go with it, and a point
     of the model is coloured when it is the surface the pivot sees - a hidden one is grey."""
     import json, numpy as np, cv2, open3d as o3d
-    from mppp.ibr import rover_surface as RS, web
-    from mppp.ibr.mesh import write_mesh
+    from rpp.ibr import rover_surface as RS, web
+    from rpp.ibr.mesh import write_mesh
     W, H = 1024, 512
     out = tmp_path / "S1" / "with_rover"; out.mkdir(parents=True)
 
@@ -2909,8 +2909,8 @@ def test_rover_surface_bias_on_the_perseverance_model():
     """The viewer's "seen from the pivot" test on NASA's model: nearly every point the pivot sees passes it, nearly
     none of the hidden ones (BIAS_M, BIAS_REL)."""
     import numpy as np, open3d as o3d
-    from mppp.ibr import rover_model as RM, rover_surface as RS
-    from mppp.ibr.mesh import ROVER_MODEL_PARTS
+    from rpp.ibr import rover_model as RM, rover_surface as RS
+    from rpp.ibr.mesh import ROVER_MODEL_PARTS
     if not RM.available():
         pytest.skip("no rover model")
     V, F, _ = RM.load(ROVER_MODEL_PARTS)
@@ -2947,7 +2947,7 @@ def test_heal_sky_replaces_a_frame_shaped_patch_and_leaves_a_clean_sky():
     artifacts"): a brighter rectangle in a sky that brightens towards the horizon is brought to the sky around it,
     the horizon's own gradient stays, and a clean sky is not touched."""
     import numpy as np
-    from mppp.ibr import ods
+    from rpp.ibr import ods
     H, W = 512, 1024
     el = (90.0 - (np.arange(H) + 0.5) / H * 180.0)[:, None]
     sky = np.clip(120.0 + 60.0 * np.exp(-np.clip(el, 0, 90) / 15.0), 0, 255) * np.ones((1, W))
@@ -2992,7 +2992,7 @@ def test_block_terrain_station_plan():
     """0.98.14 (Christian, 15 Nov 2026: "for rockytop use a model made from the full ncam block alignment"): a station
     with "terrain": "block" - the dense step on the whole block, the mesh from the block's cloud, the ground under the
     rover kept; the shipped Rockytop stations ask for it."""
-    from mppp.ibr import single_sites as SS
+    from rpp.ibr import single_sites as SS
     cfg = SS.load_config()
     # 0.98.19 (Christian, 16 Nov 2026): the four Rockytop stations share the terrain set "rockytop" - the half-res
     # end-of-drive 360s and the quarter-res mid-drive pairs
@@ -3039,7 +3039,7 @@ def test_welcome_picture_keeps_its_colour_and_the_map_gets_an_orthomosaic(tmp_pa
     """0.98.14 (Christian, 15 Nov 2026: "the welcome screen should have color, just be a little more muted" and "Add low
     res ortho to the info map")."""
     import cv2
-    from mppp.ibr import web
+    from rpp.ibr import web
     w = tmp_path / "web"; (w / "panos").mkdir(parents=True)
     img = np.zeros((64, 64, 3), np.uint8); img[:] = (40, 90, 200)              # BGR: an orange
     cv2.imwrite(str(w / "panos" / "S_360_3DTD.jpg"), img, [cv2.IMWRITE_JPEG_QUALITY, 98])
@@ -3053,7 +3053,7 @@ def test_welcome_picture_keeps_its_colour_and_the_map_gets_an_orthomosaic(tmp_pa
     rasterio = pytest.importorskip("rasterio")
     pytest.importorskip("pyproj")
     from rasterio.transform import from_origin
-    from mppp.waypoints.table import _props
+    from rpp.waypoints.table import _props
     wp, tr = web.traverse_map()
     P = [_props(x) for x in wp["features"]]
     P = [q for q in P if q.get("lon") is not None and q.get("easting") is not None]
@@ -3091,7 +3091,7 @@ def test_rover_variant_gets_a_turning_disc_and_the_page_faces(tmp_path):
     the last eye, and on publishing a rover variant without one takes the terrain-only variant's disc.  The welcome
     view opens west under its new title; the page has the N E S W O cross and its keys."""
     import shutil
-    from mppp.ibr import web, single_sites as SS
+    from rpp.ibr import web, single_sites as SS
     proj, rec, st, scene, P, colours = _station_scene(tmp_path)
     base = tmp_path / "sites" / "Sol0091_S003D0010"
     O.render_station(proj, rec, st, scene, base, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, geometry=False)
@@ -3107,7 +3107,7 @@ def test_rover_variant_gets_a_turning_disc_and_the_page_faces(tmp_path):
     assert vs["rover"]["ground_mark"]["file"] == vs["masked"]["ground_mark"]["file"]
     assert web.WELCOME_YAW_DEG == 270.0
     page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
-    assert "Rover Photogrammetry Viewer" in page and "MPPP stereo viewer" not in page and "WELCOME_AZ_DEG = 270" in page
+    assert "Rover Photogrammetry Viewer" in page and "RPP stereo viewer" not in page and "WELCOME_AZ_DEG = 270" in page
     assert all(f'id="face{k}"' in page for k in "NESWO") and "lookKeys" in page   # O looks level since 0.98.28
 
 
@@ -3118,7 +3118,7 @@ def test_o_looks_along_the_rover_x_and_y_b_home_buttons(tmp_path):
     only view. ... make the Enter VR button a little larger if supported" and "In the info box, capitalize Sol".
     The station's ods.json records the rover's +x azimuth; publish passes it on; an older record gives it as the
     text's middle less 135 deg (the page took the text's middle itself until 0.98.27: 135 deg off)."""
-    from mppp.ibr import web, nadir, single_sites as SS
+    from rpp.ibr import web, nadir, single_sites as SS
     proj, rec, st, scene, P, colours = _station_scene(tmp_path)
     base = tmp_path / "sites" / "Sol0091_S003D0010"
     rep = O.render_station(proj, rec, st, scene, base, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, geometry=False)
@@ -3145,13 +3145,13 @@ def test_o_looks_along_the_rover_x_and_y_b_home_buttons(tmp_path):
 
 def test_viewer_moves_to_its_own_repository(tmp_path, monkeypatch):
     """0.98.29 (Christian, 16 Nov 2026: "I renamed the github repo. change https://ctate7163.github.io/RPP/ods/ to
-    https://ctate7163.github.io/RPV/"): --upload publishes into MPPP_VIEWER_DIR or the RPV checkout beside this one;
+    https://ctate7163.github.io/RPV/"): --upload publishes into RPP_VIEWER_DIR or the RPV checkout beside this one;
     the pipeline's own docs/ods page sends visitors on GitHub to the RPV site with the station link; the code link
     names the renamed repository."""
-    from mppp.ibr import web, single_sites as SS
-    monkeypatch.setenv("MPPP_VIEWER_DIR", str(tmp_path / "RPV"))
+    from rpp.ibr import web, single_sites as SS
+    monkeypatch.setenv("RPP_VIEWER_DIR", str(tmp_path / "RPV"))
     assert web.viewer_dir() == tmp_path / "RPV"
-    monkeypatch.delenv("MPPP_VIEWER_DIR")
+    monkeypatch.delenv("RPP_VIEWER_DIR")
     home = Path(web.__file__).resolve().parents[3]
     assert web.viewer_dir() in (home.parent / "RPV", home / "docs" / "ods")
     assert web.VIEWER_URL == "https://ctate7163.github.io/RPV/"
@@ -3171,7 +3171,7 @@ def test_info_map_is_the_blank_panel_d_and_the_menu_says_sol_then_name(tmp_path,
     particular location" - mapplot3 figure 8 is that picture (its extent beside it); publish takes the newest, puts its
     extent into the traverse map's metres, and the page draws the x on it."""
     import cv2
-    from mppp.ibr import web, single_sites as SS
+    from rpp.ibr import web, single_sites as SS
     wp, tr = web.traverse_map()
     if not tr:
         pytest.skip("no waypoint table")
@@ -3186,7 +3186,7 @@ def test_info_map_is_the_blank_panel_d_and_the_menu_says_sol_then_name(tmp_path,
                                                     "key": web.dtm_map_key(wp, root)}))
     w = tmp_path / "repo" / "docs" / "ods"
     (w / "panos").mkdir(parents=True)
-    monkeypatch.delenv("MPPP_ODS_MAP", raising=False)
+    monkeypatch.delenv("RPP_ODS_MAP", raising=False)
     assert web.dtm_map_source(w, root) == png
     called = []
     monkeypatch.setattr(web, "render_dtm_map", lambda *a, **k: called.append(a))
@@ -3203,7 +3203,7 @@ def test_info_map_is_the_blank_panel_d_and_the_menu_says_sol_then_name(tmp_path,
     page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
     assert "menuLabel(q)" in page and "Sol ${String(sols[0]).padStart(4, '0')} ${siteName(p)}" in page
     assert "Site ${parseInt(sd[1], 10)}, Drive ${parseInt(sd[2], 10)}" in page and "#ff9500" in page and "strokeRect(mx - r, my - r" in page and "traverse.dtm" in page
-    study = Path(SS.__file__).resolve().parents[2] / "mppp_studies" / "sites" / "m20_sites"
+    study = Path(SS.__file__).resolve().parents[2] / "rpp_studies" / "sites" / "m20_sites"
     src = (study / "mapplot3.py").read_text(encoding="utf-8")
     assert "def fig8(out):" in src and "'8': (fig8, 'm20_ods_traverse_map.png')" in src and "'2 km'" in src
 
@@ -3212,8 +3212,8 @@ def test_stations_of_16_nov_and_context_patterns(tmp_path):
     """0.98.19 (Christian, 16 Nov 2026): sol 1177 with its mid-drive pair, sol 1183 with sols 1182 and 1185, sol 1308 with
     the sol 1307-1308 mid-drive pairs and the sol 1307 360, sol 609 with sol 606 (a pattern: the block was not made yet),
     and sol 33 as context at the first station."""
-    from mppp.ibr import single_sites as SS
-    from mppp.ibr.ods import expand_names
+    from rpp.ibr import single_sites as SS
+    from rpp.ibr.ods import expand_names
     cfg = SS.load_config()
     st = cfg["stations"]
     assert len(st["Sol1177_S054D0000"]["frames"]["images"]) == 12 and any("N0530198NCAM00301" in n for n in st["Sol1177_S054D0000"]["context"])
@@ -3237,7 +3237,7 @@ def test_frames_whose_mask_left_the_rover_in_take_the_models_silhouette(tmp_path
     painted on the ground (rover masked) and kept off the rover model (rover shown).  Such a frame takes the rover
     model's silhouette; a frame whose mask does mask the rover keeps its mask."""
     import cv2
-    from mppp.ibr import rover_model
+    from rpp.ibr import rover_model
     img = np.full((60, 80, 3), 100, np.uint8)
     cv2.imwrite(str(tmp_path / "a.png"), img)
     good = np.full((60, 80), 255, np.uint8)
@@ -3271,14 +3271,14 @@ def test_16bit_sources_are_looked_for_in_the_zcam_archive_beside_the_navcam_one(
     """0.98.24 (Christian, 16 Nov 2026: "for the z34 ods ... 214 of 214 frames have no 16-bit image ... it should
     generate them"): the Mastcam-Z products sit in <archive>/zcam/<sol>, beside <archive>/datadrive/<sol>; a root
     naming either finds both."""
-    from mppp.ibr import linear16 as L
+    from rpp.ibr import linear16 as L
     dd = tmp_path / "m2020" / "datadrive" / "00690" / "ids" / "rdr" / "ncam"
     zc = tmp_path / "m2020" / "zcam" / "00690"
     dd.mkdir(parents=True)
     zc.mkdir(parents=True)
     (dd / "NLF_0690_0728000000_000RAD_N0321184NCAM00500_0A0195J01.IMG").write_bytes(b"x")
     (zc / "ZL0_0690_0728175201_111RAD_N0321184ZCAM08692_0340LMA01.IMG").write_bytes(b"x")
-    monkeypatch.delenv("MPPP_PDS", raising=False)
+    monkeypatch.delenv("RPP_PDS", raising=False)
 
     class P:                                     # a block without a processed folder: the roots are the given one
         root = tmp_path / "block" / "colmap"

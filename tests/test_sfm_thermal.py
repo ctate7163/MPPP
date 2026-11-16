@@ -1,4 +1,4 @@
-"""Navcam temperature model and thermal stage (mppp.sfm.thermal). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
+"""Navcam temperature model and thermal stage (rpp.sfm.thermal). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
 import copy
 import json
 import pytest
@@ -18,7 +18,7 @@ def _synthetic_block(tmp_path):
 
 
 def test_temperature_bins_merge_small_bins():
-    from mppp.sfm.thermal import temperature_bins, _tag
+    from rpp.sfm.thermal import temperature_bins, _tag
     T = {1: -35.0, 2: -34.0, 3: -25.0, 4: -24.0, 5: -23.0, 6: -22.0, 7: -12.0}
     n = {f: 2 for f in T}
     b = temperature_bins(T, n, bin_deg=10, min_images=4)
@@ -30,8 +30,8 @@ def test_temperature_bins_merge_small_bins():
 
 
 def test_thermal_stage_splits_relabels_and_strips(tmp_path):
-    from mppp.sfm.reconstruction import bundle_adjust
-    from mppp.sfm.thermal import image_temperatures, thermal_stage, strip_thermal_bins
+    from rpp.sfm.reconstruction import bundle_adjust
+    from rpp.sfm.thermal import image_temperatures, thermal_stage, strip_thermal_bins
     proj, rec, noise = _synthetic_block(tmp_path)
     bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, max_iterations=20)
     temps = image_temperatures(proj)
@@ -52,8 +52,8 @@ def test_thermal_stage_splits_relabels_and_strips(tmp_path):
 
 
 def test_thermal_stage_held_bins_follow_the_model(tmp_path):
-    from mppp.sfm.reconstruction import bundle_adjust
-    from mppp.sfm.thermal import image_temperatures, thermal_stage
+    from rpp.sfm.reconstruction import bundle_adjust
+    from rpp.sfm.thermal import image_temperatures, thermal_stage
     proj, rec, noise = _synthetic_block(tmp_path)
     bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, max_iterations=10)
     f0 = {k: float(rec.cameras[v].params[0]) for k, v in proj.settings["database"]["cameras"].items()}
@@ -72,8 +72,8 @@ def test_reconstruct_ends_with_the_thermal_stage_and_a_rerun_strips_it(tmp_path,
     import copy
     import pycolmap
     from helpers import _build_rec, _synthetic
-    from mppp.sfm import reconstruction as R
-    from mppp.sfm.thermal import image_temperatures
+    from rpp.sfm import reconstruction as R
+    from rpp.sfm.thermal import image_temperatures
     proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
     proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
     for r in proj.images:
@@ -94,10 +94,10 @@ def test_reconstruct_ends_with_the_thermal_stage_and_a_rerun_strips_it(tmp_path,
 
 
 def test_health_and_export_on_a_binned_block(tmp_path):
-    from mppp.sfm.reconstruction import bundle_adjust
-    from mppp.sfm.thermal import image_temperatures, thermal_stage
-    from mppp.sfm.health import assess_alignment
-    from mppp.sfm.export import export_for_error, native_reconstruction
+    from rpp.sfm.reconstruction import bundle_adjust
+    from rpp.sfm.thermal import image_temperatures, thermal_stage
+    from rpp.sfm.health import assess_alignment
+    from rpp.sfm.export import export_for_error, native_reconstruction
     proj, rec, noise = _synthetic_block(tmp_path)
     bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, max_iterations=10)
     rec2, rep = thermal_stage(rec, proj, image_temperatures(proj), bin_deg=10, fine_range=None, min_images=4, max_iterations=5, verbose=False)
@@ -111,7 +111,7 @@ def test_health_and_export_on_a_binned_block(tmp_path):
 
 
 def test_zcam_label_temperature(tmp_path):
-    from mppp.labels import camera_temperature, read_pds
+    from rpp.labels import camera_temperature, read_pds
     lab = ("PDS_VERSION_ID = PDS3\r\nRECORD_TYPE = FIXED_LENGTH\r\nRECORD_BYTES = 100\r\nLABEL_RECORDS = 1\r\n"
            "GROUP = INSTRUMENT_STATE_PARMS\r\n"
            "  INSTRUMENT_TEMPERATURE = (28.15 <degC>, -15.04 <degC>, -15.41 <degC>, -16.23 <degC>)\r\n"
@@ -128,8 +128,8 @@ def test_zcam_label_temperature(tmp_path):
 
 def test_thermal_stage_has_no_rig_temperature_term():
     import inspect
-    from mppp.sfm import thermal as TH
-    from mppp.sfm.reconstruction import _reconstruct
+    from rpp.sfm import thermal as TH
+    from rpp.sfm.reconstruction import _reconstruct
     src = inspect.getsource(_reconstruct)
     assert 'refine_rig == "auto"' in src and "rig_slopes" not in src
     assert "rig_slopes" not in inspect.signature(TH.thermal_stage).parameters
@@ -139,7 +139,7 @@ def test_thermal_stage_has_no_rig_temperature_term():
 
 def test_thermal_model_for_project_is_the_start_cameras_model():
     from types import SimpleNamespace
-    from mppp.sfm.thermal import thermal_model_for_project
+    from rpp.sfm.thermal import thermal_model_for_project
     th = {"T_median_degC": -12.5, "T0_degC": -20.0, "fx_ppm_per_degC": 40.0, "fy_ppm_per_degC": 45.0,
           "cx_px_per_degC": 0.0, "cy_px_per_degC": 0.0, "k1_per_degC": -7e-6}
     p = SimpleNamespace(settings={"navcam_cameras": {"NL": {"thermal": th}, "NR": {}}})
@@ -154,19 +154,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_thermal_defaults_and_notebook():
     import inspect
-    from mppp.sfm import thermal as T
-    from mppp.sfm.reconstruction import reconstruct
+    from rpp.sfm import thermal as T
+    from rpp.sfm.reconstruction import reconstruct
     assert T.THERMAL_BIN_DEG == 5.0 and T.THERMAL_MIN_IMAGES == 5
     sig = inspect.signature(T.thermal_stage).parameters
     assert sig["bin_deg"].default == 5.0 and sig["min_images"].default == 5
     assert inspect.signature(reconstruct).parameters["thermal_min_images"].default == 5
-    from mppp.pipeline import Settings
+    from rpp.pipeline import Settings
     s = Settings()
     assert s.thermal_bins_deg == 5 and s.thermal_min_images == 5 and s.thermal_free == ("fx", "fy", "k1")
 
 
 def test_temperature_bins_merge_as_documented():
-    from mppp.sfm.thermal import temperature_bins
+    from rpp.sfm.thermal import temperature_bins
     # 5 degC bins: -20..-15 (6 images), -15..-10 (2 images), -5..0 (8 images)
     T = {1: -19.0, 2: -18.0, 3: -17.0, 4: -12.0, 5: -3.0, 6: -2.0, 7: -1.5, 8: -1.0}
     n = {1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 6: 2, 7: 2, 8: 2}
@@ -182,7 +182,7 @@ def test_temperature_bins_merge_as_documented():
 
 
 def test_thermal_bin_lines_show_cx_cy_and_held_marks():
-    from mppp.sfm.thermal import thermal_bin_lines
+    from rpp.sfm.thermal import thermal_bin_lines
     rows = [{"camera": "NL_T-020-015", "images": 12, "T_median_degC": -17.2, "T_min_degC": -19.0, "T_max_degC": -15.1,
              "fx": 2956.5, "fy": 2956.4, "cx": 2561.0, "cy": 1920.5,
              "start": {"fx": 2956.0, "fy": 2956.0, "cx": 2561.0, "cy": 1920.5}}]
@@ -199,13 +199,13 @@ def test_thermal_bin_lines_show_cx_cy_and_held_marks():
 
 def test_split_by_temperature_records_the_start(tmp_path):
     pytest.importorskip("pycolmap")
-    src = (ROOT / "src" / "mppp" / "sfm" / "thermal.py").read_text(encoding="utf-8")
+    src = (ROOT / "src" / "rpp" / "sfm" / "thermal.py").read_text(encoding="utf-8")
     assert '"start": {"fx": float(p[0]), "fy": float(p[1]), "cx": float(p[2]), "cy": float(p[3]),' in src   # v0p75.1: + k1
 
 
 def test_thermal_stage_refuses_distortion_terms():
     """v0p50: a temperature bin fits at most fx, fy, cx, cy - never the Navcam distortion; v0p75.1: except k1."""
-    from mppp.sfm.thermal import thermal_stage
+    from rpp.sfm.thermal import thermal_stage
     with pytest.raises(ValueError, match="distortion"):
         thermal_stage(None, None, {}, free=("fx", "k2"))
 
@@ -215,8 +215,8 @@ def test_thermal_stage_refuses_distortion_terms():
 
 def _binned_stage1(tmp_path):
     from helpers import _write_database, _zcam_rig_rec
-    from mppp.sfm import reconstruction as R
-    from mppp.sfm.thermal import image_temperatures, thermal_stage
+    from rpp.sfm import reconstruction as R
+    from rpp.sfm.thermal import image_temperatures, thermal_stage
     proj, rec, zf = _zcam_rig_rec(tmp_path)
     _write_database(rec, proj.database)
     proj.images_dir.mkdir(parents=True, exist_ok=True)
@@ -233,7 +233,7 @@ def _binned_stage1(tmp_path):
 
 def test_thermal_bin_rigs_avoid_the_set_aside_zcam_rig(tmp_path):
     pytest.importorskip("pyceres")
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     proj, rec, init, zf, rep = _binned_stage1(tmp_path)
     assert 2 not in rec.rigs and min(r for r in rec.rigs if r != 1) > 2          # the bin rigs start above rig 2
     assert R.restore_frames(rec, init, zf) == len(zf)                           # 0.61.0: "rig.HasSensor" failed here
@@ -242,7 +242,7 @@ def test_thermal_bin_rigs_avoid_the_set_aside_zcam_rig(tmp_path):
 
 def test_stage2_triangulates_against_a_synced_database(tmp_path):
     pytest.importorskip("pyceres")
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     proj, rec, init, zf, rep = _binned_stage1(tmp_path)
     R.restore_frames(rec, init, zf)
     for f in zf:
@@ -259,8 +259,8 @@ def test_stage2_triangulates_against_a_synced_database(tmp_path):
 def test_staged_reconstruct_with_thermal_after_stage1_and_a_real_database(tmp_path, monkeypatch):
     pytest.importorskip("pyceres")
     from helpers import _write_database, _zcam_rig_rec
-    from mppp.sfm import reconstruction as R
-    from mppp.sfm.thermal import image_temperatures
+    from rpp.sfm import reconstruction as R
+    from rpp.sfm.thermal import image_temperatures
     proj, new, zf = _zcam_rig_rec(tmp_path)
     _write_database(new, proj.database)
     proj.images_dir.mkdir(parents=True, exist_ok=True)
@@ -277,12 +277,12 @@ def test_staged_reconstruct_with_thermal_after_stage1_and_a_real_database(tmp_pa
 
 
 def test_thermal_stage_holds_bins_with_few_images():
-    from mppp.sfm import thermal as T
+    from rpp.sfm import thermal as T
     assert T.THERMAL_MIN_BIN_IMAGES == 3
 
 
 def test_eye_key():
-    from mppp.sfm.thermal import eye_key
+    from rpp.sfm.thermal import eye_key
     assert eye_key("NL#1") == "NL" and eye_key("NR#2_T-20..-10") == "NR" and eye_key("NL_T-20..-10") == "NL"
     assert eye_key("ZL034_F00600") == "ZL034_F00600" and eye_key("NL") == "NL"
 
@@ -291,7 +291,7 @@ def test_eye_key():
 
 
 def test_bin_edges_fine_in_the_middle():
-    from mppp.sfm.thermal import bin_edges, THERMAL_FINE_RANGE_DEGC, THERMAL_FINE_BIN_DEG
+    from rpp.sfm.thermal import bin_edges, THERMAL_FINE_RANGE_DEGC, THERMAL_FINE_BIN_DEG
     fr, fd = THERMAL_FINE_RANGE_DEGC, THERMAL_FINE_BIN_DEG
     assert (fr, fd) == ((-25.0, -5.0), 2.5)
     assert bin_edges(-17.3, 5.0, fr, fd) == (-17.5, -15.0)
@@ -305,7 +305,7 @@ def test_bin_edges_fine_in_the_middle():
 
 
 def test_temperature_bins_fine_then_merged():
-    from mppp.sfm.thermal import temperature_bins
+    from rpp.sfm.thermal import temperature_bins
     T = {1: -18.0, 2: -17.0, 3: -16.0, 4: -14.0, 5: -13.0, 6: -40.0}
     n = {1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 6: 2}
     b = temperature_bins(T, n, 5.0, 4, (-25.0, -5.0), 2.5)
@@ -316,14 +316,14 @@ def test_temperature_bins_fine_then_merged():
 
 
 def test_bin_tags_keep_half_degrees():
-    from mppp.sfm.thermal import _tag, eye_key
+    from rpp.sfm.thermal import _tag, eye_key
     assert _tag(-20.0, -15.0) == "T-020-015"
     assert _tag(-22.5, -20.0) == "T-022.5-020" and _tag(-25.0, -22.5) == "T-025-022.5"
     assert eye_key("NL_" + _tag(-22.5, -20.0)) == "NL" and eye_key("NR#1_" + _tag(-22.5, -20.0)) == "NR"
 
 
 def test_thermal_stage_takes_k1_but_no_other_distortion():
-    from mppp.sfm.thermal import thermal_stage, THERMAL_FREE
+    from rpp.sfm.thermal import thermal_stage, THERMAL_FREE
     assert THERMAL_FREE == ("fx", "fy", "k1")
     with pytest.raises(ValueError, match="distortion"):
         thermal_stage(None, None, {}, free=("fx", "k2"))
@@ -333,7 +333,7 @@ def test_bin_rig_gets_its_own_camera_for_an_eye_without_images(tmp_path):
     """v0p86 (Marble Mountain, 19 Oct): an eye without images in a temperature bin still gets a (held) bin camera on
     that bin's rig - a camera may sit on one rig only in the COLMAP database ("SQLite error: constraint failed" in
     sync_database), so the bin rig must not carry the eye's original camera."""
-    from mppp.sfm.thermal import image_temperatures, split_by_temperature
+    from rpp.sfm.thermal import image_temperatures, split_by_temperature
     proj, rec, noise = _synthetic_block(tmp_path)
     cold = {r["name"] for r in proj.images if r["station"].endswith("0000")}
     temps = {k: v for k, v in image_temperatures(proj).items() if not (k.startswith("NR") and k in cold)}

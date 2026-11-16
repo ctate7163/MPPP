@@ -1,0 +1,470 @@
+"""
+The standard figures (RPP 0.91; scripts\\windows\\make_figures.bat), in the formats of the calibration study
+(project doc "plot formats", 20 Oct 2026), from the promoted camera models, a Navcam joint folder, a Mastcam-Z
+calibration folder and the finished blocks, at 200 dpi by default:
+
+    python -m rpp_studies.paper.paper_figures --root D:\\scapes --study D:\\scapes\\camera_analysis\\navcal_v0p86_20261020_pipeline_pass2
+                                    [--out "D:\\code\\MPPP\\Claude outputs"] [--label "after the 20 Oct pass"]
+                                    [--zcam D:\\scapes\\camera_analysis\\zcam34_calibration_20261021] [--dpi 200]
+                                    [--site-map maps|simple|none] [--blocks folder ...] [--frame image.png ...]
+
+Writes, into ``--out`` (default ``<RPP>/Claude outputs``):
+  navcam_rig_trends_<tag>.png            rig trends 2x2 (rpp_studies.calibration.plots.plot_rig_trends) - needs --study;
+                                         _nolabels.png: the same without the block name at each point
+  navcam_intrinsics_vs_temperature_<tag>.png   (plot_intrinsics_vs_temperature) - needs --study and the blocks
+  lmst_histogram_<tag>.png + _by_site.csv      (rpp.waypoints.blocks.plot_lmst_histograms)
+  station_maps_<tag>/<block>.png         the blocks' health/station_map.png (rpp.sfm.export.plot_camera_shifts)
+  navcam_block_table_<tag>.md/.json      each block against the joint (rpp_studies.calibration.fit.navcam_block_table)
+  zcam_rig_trends_<tag>.png              Mastcam-Z rig rotations and baseline vs sol and lens temperature - --zcam
+                                         (+ _nolabels.png)
+  zcam_focus_lines_vs_temperature_<tag>.png   the blocks' focus lines vs lens temperature - --zcam
+  zcam<zoom>_efl_vs_focus_<tag>.png           a joint folder's focal length against focus (law and bins) - --zcam
+  zcam<zoom>_efl_vs_focus_<joint>.png         0.95.2: the same for the newest 34, 48 and 63 mm joints (--zcam-joints,
+                                              --zcam-zooms; the joint folder's name in the file name)
+  hazcam_rig_trends_<F|R>_<fit>.png           0.95.2: the newest Hazcam fit's rig trends (+ _nolabels) - --hazcam
+  hazcam_efl_vs_temperature_<fit>.png         0.95.2: its eyes' focal length against temperature (law and block bins)
+  zcam<zoom>_navcam_on_mast_head_<tag>.png    0.95.5: the Mastcam-Z pair (each zoom) and the Navcam on the mast head
+                                              through the deck_joint chain (rpp_studies.calibration.zcam_mast_head) - --mast-chain
+  zcam_mast_head_vs_zoom_<tag>.png            0.95.5: centre and image-centre pointing against zoom (+ the station
+                                              table and the Z mount per zoom: zcam_mast_head_<tag>.json)
+  deck_fiducials_label_vs_constrained[_early]_<tag>.png   0.97.0: the deck fiducials of one Navcam frame (sol 1642; _early: sol 448 since 0.98.21, was
+                                         sol 31) through the label CAHVORE and the law + mast chain (+ .json) - --deck-frame
+  deck_fiducials_and_vfs[_early]_<tag>.png    0.98.10: the same with the vicarious fiducials of the deck joint
+                                         (data/vf_points_20261115.json: the 15 Nov replacements green, the tag corners
+                                         VF01a-d each labelled)
+  navcam_baseline_deck_joint_<tag>.png   0.97.0: the deck joint's Navcam baseline against temperature and sol
+  site_map_<tag>.png                     the traverse map: figure 2 of ``rpp maps`` (crater | traverse, block table,
+                                         1 m DTM where M20_DEMS has it); --site-map simple: plot_site_map
+  undistorted_example.png                with --frame (rpp.colmap.plot_undistorted_example)
+"""
+from __future__ import annotations
+
+import argparse
+import glob
+import json
+import os
+import re
+import shutil
+import sys
+from pathlib import Path
+from typing import Optional, Union
+from rpp import env as rpp_env
+
+PathLike = Union[str, Path]
+
+HERE = Path(__file__).resolve().parents[3]          # the repository root (src/rpp_studies/paper -> root)
+
+
+SHIPPED_MAST_CHAIN = "deck_joint_mast_model_DJ32_20261107.json"
+DECK_FRAME = (r"D:\data\m2020\datadrive\01642\ids\rdr\ncam"
+              r"\NRF_1642_0812712250_112RAD_N0790870NCAM03642_0A0095J01.IMG")
+
+# 12 Nov (Christian: "a second plot using an image in the first 100 sols"): the sol-31 full-resolution left frame.
+# 16 Nov (Christian: "Replace the sol 31 image with another that shows all nine fiducials"): sol 31 showed six. No
+# frame of sols 0-100 on the PC shows all nine (the best: 7, quarter resolution); the earliest that does is this sol
+# 448 half-resolution right frame - AFT1, RPFA1, RPFA2, TDF1-4, LDIFF, RDIFF all detected (constrained rms 0.76 px).
+# The figure keeps its "_early" name.
+DECK_FRAME_EARLY = (r"D:\data\m2020\datadrive\00448\ids\rdr\ncam"
+                    r"\NRF_0448_0706724176_506RAD_N0250446NCAM03448_0A0195J02.IMG")
+
+def finished_blocks(root: Path, group: str = "ecam_consensus"):
+    """The block folders of a site group under ``root`` whose alignment finished (``colmap/run_done.json``)."""
+    from rpp.waypoints.sites import load_site_table
+    tab = load_site_table()
+    out = []
+    for name in tab["groups"].get(group) or []:
+        for f in sorted(glob.glob(str(root / f"mars2020_sol_*_{name}"))):
+            if (Path(f) / "colmap" / "run_done.json").is_file():
+                out.append(Path(f))
+    return out
+
+
+def site_map_from_maps(path: Path, dpi: int = 200) -> bool:
+    """The site map as figure 2 of the site-map study (``rpp maps figures 2``: crater | traverse with the official
+    blocks and their table; the 1 m DTM where M20_DEMS has it), copied to ``path``."""
+    import subprocess
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        r = subprocess.run([sys.executable, "-m", "rpp", "maps", "figures", "2", "--out", td, "--background", "dtm",
+                            "--tag", "dtm", "--dpi", str(dpi)])
+        found = sorted(Path(td).glob("m20_jezero_traverse_clusters_map*.png"))
+        if r.returncode or not found:
+            print("site map: rpp maps figures 2 failed - see above")
+            return False
+        shutil.copyfile(found[0], path)
+    print(f"site map: {path}")
+    return True
+
+
+def _newest(paths) -> Optional[Path]:
+    """The folder whose file (the listed json) was written last."""
+    best = None
+    for f in paths:
+        try:
+            t = Path(f).stat().st_mtime
+        except OSError:
+            continue
+        if best is None or t > best[0]:
+            best = (t, Path(f).parent)
+    return best[1] if best else None
+
+
+def newest_zcam_joint(root: PathLike, zoom: int) -> Optional[Path]:
+    """0.95.2: the newest Mastcam-Z joint folder of a zoom under <root>/camera_analysis: zcam<zoom>_joint_<date>[_N]
+    (zcam_joints.bat) or <study>/zcam<zoom>_joint (trial_joints_0p95.bat), with its zcam_joint.json."""
+    ca = Path(root) / "camera_analysis"
+    return _newest(glob.glob(str(ca / f"zcam{int(zoom)}_joint_*" / "zcam_joint.json"))
+                   + glob.glob(str(ca / "*" / f"zcam{int(zoom)}_joint" / "zcam_joint.json")))
+
+
+def newest_hazcam_fit(root: PathLike) -> Optional[Path]:
+    """0.95.2: the newest Hazcam fit folder under <root>/camera_analysis: hazcam_fit_<group>_<date>[_N] or
+    <study>/hazcam_fit, with its hazcam_fit.json."""
+    ca = Path(root) / "camera_analysis"
+    return _newest(glob.glob(str(ca / "hazcam_fit_*" / "hazcam_fit.json"))
+                   + glob.glob(str(ca / "*" / "hazcam_fit" / "hazcam_fit.json")))
+
+
+def folder_tag(folder: PathLike) -> str:
+    """A file-name tag for a joint or fit folder: its name, with its study's name for <study>/zcam34_joint."""
+    f = Path(folder)
+    return f.name if re.search(r"_\d{8}", f.name) else f"{f.parent.name}_{f.name}"
+
+
+def deck_baseline_figure(deck_joint: Optional[PathLike], chain: PathLike, out_png: PathLike, dpi: int = 200):
+    """The Navcam baseline figure: the station rigs of the newest main ``jr_<run>.json`` under ``deck_joint`` (not a
+    jackknife ``_st<k>`` / ``_jk<k>`` run) with the fit and datum variants of its ``eod_report.json``; without that
+    folder the fit of the mast-chain file ``chain`` (``navcam_rig.baseline_mm``) and no points."""
+    import re
+    from rpp_studies.calibration.plots import deck_baseline_rows, plot_deck_baseline
+    rows, fit, variants, label = [], None, {}, ""
+    d = Path(deck_joint) if deck_joint else None
+    if d and d.is_dir():
+        jrs = [p for p in d.glob("jr_*.json") if not re.search(r"_(st|jk)\d+\.json$", p.name)]
+        best = None
+        for p in sorted(jrs, key=os.path.getmtime, reverse=True):
+            r = deck_baseline_rows(json.loads(p.read_text(encoding="utf-8")))
+            if best is None or len(r) > len(best[1]):
+                best = (p, r)
+        if best and best[1]:
+            rows, label = best[1], f"({best[0].stem[3:]}, {len({r['station'] for r in best[1]})} stations)"
+            rep = d / "eod_report.json"
+            if rep.is_file():
+                R = json.loads(rep.read_text(encoding="utf-8"))
+                if R.get("run") == best[0].stem[3:]:
+                    fit = (R.get("rig_trends") or {}).get("baseline_mm", {}).get("linear")
+                    variants = {k: v["baseline_minus_20C_mm"] for k, v in (R.get("variants") or {}).items()
+                                if v.get("baseline_minus_20C_mm")}
+    if not rows:
+        m = json.loads(Path(chain).read_text(encoding="utf-8"))
+        b = (m.get("navcam_rig") or {}).get("baseline_mm")
+        if not b:
+            raise ValueError(f"no station rigs under {deck_joint} and no navcam_rig.baseline_mm in {chain}")
+        fit, label = {"coef": b["coef"], "jk_se": b.get("jk_se")}, f"({Path(chain).stem})"
+    return plot_deck_baseline(rows, out_png, fit, variants, label, dpi)
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--root", default=rpp_env.get("RPP_SCAPES"), help="the scapes root (default RPP_SCAPES)")
+    ap.add_argument("--blocks", nargs="*", default=None, help="block folders instead of the group under --root")
+    ap.add_argument("--group", default="ecam_consensus")
+    ap.add_argument("--study", default=None, help="a consensus study folder (consensus.json, rig_residuals.json, navcam_joint/)")
+    ap.add_argument("--cmods", default=None, help="the camera models the blocks were run with (default: the package's)")
+    ap.add_argument("--out", default=str(HERE / "Claude outputs"))
+    ap.add_argument("--tag", default=None, help="file name tag (default: the study folder's date or 'run')")
+    ap.add_argument("--label", default="", help="figure title label, e.g. 'after the 20 Oct pass'")
+    ap.add_argument("--terrain", default=rpp_env.get("RPP_TERRAIN"), help="folder of quantized-mesh .terrain tiles")
+    ap.add_argument("--refdata", default=None, help="folder with the site study's refdata.py (Mastcam-Z 360s, sample cores)")
+    ap.add_argument("--frame", default=None, help="a processed PNG frame for the undistortion example")
+    ap.add_argument("--frame-model", default="NL", help="its camera: NL, NR (promoted model) or a COLMAP cameras JSON")
+    ap.add_argument("--frame-mask", default=None)
+    ap.add_argument("--frame-T", type=float, default=-20.0)
+    ap.add_argument("--zcam", default=None, help="a Mastcam-Z calibration folder (zcam_calibration.py calibrate)")
+    ap.add_argument("--zcam-joints", nargs="*", default=None,
+                    help="Mastcam-Z joint folders (zcam_joint.json) for the efl vs focus figures; default: the newest "
+                         "of each of --zcam-zooms under <root>\\camera_analysis; '-' for none")
+    ap.add_argument("--zcam-zooms", default="34,48,63,79,110", help="the zooms of the default joint folders (0.97.0: all five; 34,48,63 before)")
+    ap.add_argument("--hazcam", default=None, help="a Hazcam fit folder (hazcam_fit.json); default: the newest "
+                                                   "under <root>\\camera_analysis; '-' for none")
+    ap.add_argument("--mast-chain", default=None,
+                    help="0.95.5: the deck_joint mast chain (deck_joint_mast_model.json) for the mast-head figures; "
+                         "default: the newest under <root>\\camera_analysis or --out; '-' for none")
+    ap.add_argument("--mast-labels", default=None, help="rover_frame_labels.json (default <root>\\camera_analysis\\)")
+    ap.add_argument("--deck-frame", default=rpp_env.get("RPP_DECK_FRAME", DECK_FRAME),
+                    help="0.97.0: one full-resolution Navcam RAD product (.IMG) of the deck for the fiducial figure "
+                         "(default RPP_DECK_FRAME or the sol-1642 frame under D:\\data\\m2020\\datadrive); - for none")
+    ap.add_argument("--deck-frame-early", default=rpp_env.get("RPP_DECK_FRAME_EARLY", DECK_FRAME_EARLY),
+                    help="0.97.2: a second deck frame for the same figure (_early; 0.98.21: sol 448, all nine targets); - for none")
+    ap.add_argument("--deck-joint", default=os.environ.get("EOD_WORK", r"D:\rover_frame_eod"),
+                    help="0.97.0: the deck_joint work folder (jr_<run>.json, eod_report.json) for the Navcam baseline "
+                         "figure (default EOD_WORK or D:\\rover_frame_eod); without it the shipped DJ32 fit alone")
+    ap.add_argument("--dpi", type=int, default=200)
+    ap.add_argument("--site-map", choices=["maps", "simple", "none"], default="maps")
+    a = ap.parse_args(argv)
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    from rpp.calib import models as M
+    from rpp_studies.calibration import plots as C
+    from rpp_studies.calibration import fit as F
+    from rpp_studies.sites import figures as B
+    from rpp.waypoints.sites import load_site_table
+    from rpp.waypoints.table import snapshot_path
+    study = Path(a.study) if a.study else None
+    tag = a.tag or (study.name if study else "run")
+    inuse = {"NL": M.load_camera("N", "L", a.cmods), "NR": M.load_camera("N", "R", a.cmods)}
+    rig_inuse = M.load_rig("N", a.cmods)
+    folders = [Path(b) for b in a.blocks] if a.blocks else (finished_blocks(Path(a.root), a.group) if a.root else [])
+    res = []
+    for f in folders:
+        try:
+            res.append(F.block_navcam_results(f))
+        except Exception as e:                                             # noqa: BLE001
+            print(f"{f.name}: skipped ({type(e).__name__}: {e})")
+    print(f"{len(res)} finished blocks")
+    # ---- 0.97.0 (Christian, 12 Nov 2026): the Seitah Overlook zoom ladder of sol 121 - low against high at each zoom
+    try:
+        st = _newest(Path(a.root).glob("camera_analysis/zcam_states_*/images.csv")) if a.root else None
+        if st is not None:
+            rows = C.zoom_ladder_rows(st / "images.csv")
+            if rows:
+                f = out / f"zcam_zoom_ladder_seitah_sol121_{st.name}.png"
+                gaps = C.plot_zoom_ladder(rows, f, dpi=a.dpi, title="Seitah Overlook ZCAM08114, sol 121, far focus: zoom "
+                                          "stepped up (low backlash state) and down (high); symbol size: tie-point observations")
+                (out / f"zcam_zoom_ladder_seitah_sol121_{st.name}.json").write_text(json.dumps(gaps, indent=1), encoding="utf-8")
+                print("zoom ladder: " + ", ".join(f"{k} {v['gap_pct']:.2f} %" for k, v in gaps.items() if v.get("gap_pct") is not None)
+                      + f" -> {f.name}")
+    except Exception as e:                                                 # noqa: BLE001 - the other figures still made
+        print(f"zoom ladder figure: skipped ({type(e).__name__}: {e})")
+    # ---- 0.97.0: the independent validation - test 3 (Mastcam-Z pairs alone), test 4 (deck focal) and the ledger
+    try:
+        from rpp_studies.validation import deck_focal as VD
+        from rpp_studies.validation import ledger as VL
+        from rpp_studies.validation import zpairs as VZ
+        (out / f"validation_ledger_{tag}.md").write_text(VL.table_md(), encoding="utf-8")
+        zp = _newest(Path(a.root).glob("camera_analysis/validation_zpairs_*/zpairs.json")) if a.root else None
+        if zp is not None:
+            import csv as _csv
+            zr = json.loads((zp / "zpairs.json").read_text(encoding="utf-8"))
+            with open(zp / "zpairs.csv", newline="", encoding="utf-8") as fh:
+                prs = [{k: (float(v) if k in ("sol", "pitch_mdeg", "zoom") and v not in ("", None) else v) for k, v in r.items()}
+                       for r in _csv.DictReader(fh)]
+            prs = [dict(r, zoom=int(r["zoom"])) for r in prs if r.get("pitch_mdeg") not in ("", None)]
+            VZ.figure(prs, zr["units"], {int(k): v for k, v in zr["trend"].items()}, out / f"validation_zpairs_pitch_vs_sol_{zp.name}.png",
+                      {34: (5.4, 1.5), 110: (5.3, 1.7)})
+            print(f"validation test 3: {zp.name}")
+        df = _newest(Path(a.root).glob("camera_analysis/validation_deck_focal_*/deck_focal.json")) if a.root else None
+        if df is not None:
+            VD._figure(json.loads((df / "deck_focal.json").read_text(encoding="utf-8")), out / f"validation_deck_focal_vs_temperature_{df.name}.png")
+            print(f"validation test 4: {df.name}")
+    except Exception as e:                                                 # noqa: BLE001
+        print(f"validation figures: skipped ({type(e).__name__}: {e})")
+    # ---- rig trends and intrinsics vs temperature (the study's refined formats)
+    if study and (study / "navcam_joint" / "consensus.json").is_file():
+        cons = json.loads((study / "navcam_joint" / "consensus.json").read_text(encoding="utf-8"))
+        rig_new = json.loads((study / "navcam_joint" / "M2020_N_rig.json").read_text(encoding="utf-8"))
+        rrf = study / "rig_residuals.json"
+        if rrf.is_file():
+            rr = json.loads(rrf.read_text(encoding="utf-8"))
+            th = {e: C.thermal_terms(inuse[e].get("thermal")) for e in ("NL", "NR")}
+            for suffix, labels in (("", True), ("_nolabels", False)):     # 22 Oct: also without the block names
+                C.plot_rig_trends(rr, cons, rig_new["drift"], out / f"navcam_rig_trends_{tag}{suffix}.png",
+                                  cx_inuse_px_per_degC=th["NR"]["cx_px"] - th["NL"]["cx_px"], label=a.label,
+                                  model_label=f"{tag} drift model", dpi=a.dpi, point_labels=labels)
+            tb = study / "thermal_bins.json"                 # 0.91: the tied joint's diagnostic block bins
+            tj = study / "navcam_joint" / "tied_joint.json"  # 22 Oct: re-cut from the joint (>= 4 images, more cold bins)
+            if tj.is_file():
+                from rpp_studies.calibration.tied import figure_inputs
+                bins = figure_inputs(json.loads(tj.read_text(encoding="utf-8")))["bins"]
+            else:
+                bins = json.loads(tb.read_text(encoding="utf-8")) if tb.is_file() else (F.thermal_bin_rows(res) if res else [])
+            pu = study / "pp_units.json"                     # 0.91: the pointing pass's per-block principal points
+            pp_units = json.loads(pu.read_text(encoding="utf-8")) if pu.is_file() else None
+            if bins:
+                C.plot_intrinsics_vs_temperature(cons, inuse, bins, rr,
+                                                 out / f"navcam_intrinsics_vs_temperature_{tag}.png", label=a.label,
+                                                 model_label=tag, pp_units=pp_units, dpi=a.dpi)
+        else:
+            print(f"no rig_residuals.json in {study}: rig trends and intrinsics figures skipped")
+    # ---- the block table against the joint the blocks were run with
+    if res:
+        rows = F.navcam_block_table(res, inuse["NL"], inuse["NR"], rig_inuse)
+        (out / f"navcam_block_table_{tag}.md").write_text(F.block_table_markdown(rows) + "\n", encoding="utf-8")
+        (out / f"navcam_block_table_{tag}.json").write_text(json.dumps(rows, indent=1), encoding="utf-8")
+        drift = F.fit_rig_drift(F.rig_rows(res), knot_sol="free")
+        (out / f"rig_drift_refit_{tag}.json").write_text(json.dumps(drift, indent=1, default=float), encoding="utf-8")
+    # ---- 0.95.5: the Mastcam-Z and Navcam cameras on the mast head, through the deck_joint chain
+    if a.mast_chain != "-" and a.root:
+        chain = a.mast_chain
+        if not chain:
+            cands = (glob.glob(str(Path(a.root) / "camera_analysis" / "**" / "deck_joint_mast_model.json"), recursive=True)
+                     + glob.glob(str(out / "**" / "deck_joint_mast_model.json"), recursive=True))
+            chain = max(cands, key=os.path.getmtime) if cands else None
+            if chain is None:                         # 0.97.0: the DJ32 chain of 7 Nov shipped with the studies, so the
+                shipped = Path(__file__).resolve().parents[1] / "calibration" / "data" / SHIPPED_MAST_CHAIN   # figure is
+                chain = str(shipped) if shipped.is_file() else None                                        # always made
+                if chain:
+                    print(f"mast head figures: no deck_joint_mast_model.json under {a.root} - the shipped {SHIPPED_MAST_CHAIN}")
+        # ---- 0.97.0: the deck fiducials of one frame through the label model and through the law + chain
+        from rpp_studies.calibration import fiducials as FD
+        for dframe, dname in ((a.deck_frame, ""), (a.deck_frame_early, "_early")):       # 12 Nov: + a frame of sols 0-100
+            if not (chain and dframe and dframe != "-"):
+                continue
+            if not Path(dframe).is_file():
+                print(f"deck fiducial figure: {dframe} not found - skipped (--deck-frame{dname.replace('_', '-')})")
+                continue
+            try:
+                dres = FD.deck_frame_models(dframe, chain, a.cmods)
+                FD.plot_deck_frame(dres, out / f"deck_fiducials_label_vs_constrained{dname}_{tag}.png", dpi=a.dpi)
+                if dres.get("vf", {}).get("points"):      # 0.98.10: the same figure with the vicarious fiducials
+                    FD.plot_deck_frame(dres, out / f"deck_fiducials_and_vfs{dname}_{tag}.png", dpi=a.dpi, show_vf=True)
+                (out / f"deck_fiducials_label_vs_constrained{dname}_{tag}.json").write_text(
+                    json.dumps({k: v for k, v in dres.items() if k != "image"}, indent=1), encoding="utf-8")
+            except Exception as e:                                         # noqa: BLE001
+                print(f"deck fiducial figure: skipped ({type(e).__name__}: {e})")
+        # ---- 0.97.0: the Navcam baseline of the deck_joint's station rigs against temperature and sol
+        if chain:
+            try:
+                f = deck_baseline_figure(a.deck_joint, chain, out / f"navcam_baseline_deck_joint_{tag}.png", a.dpi)
+                print(f"Navcam baseline (deck_joint): {f}")
+            except Exception as e:                                         # noqa: BLE001
+                print(f"Navcam baseline figure: skipped ({type(e).__name__}: {e})")
+        lab = a.mast_labels or str(Path(a.root) / "camera_analysis" / "rover_frame_labels.json")
+        if chain and Path(lab).is_file():
+            try:
+                from rpp_studies.calibration import zcam_mast_head
+                zcam_mast_head.run(a.root, chain, lab, None, out, tag, a.dpi, a.label)
+            except Exception as e:                                         # noqa: BLE001
+                print(f"mast head figures: skipped ({type(e).__name__}: {e})")
+        else:
+            print("mast head figures: no deck_joint_mast_model.json or rover_frame_labels.json - skipped")
+    # ---- station maps: the blocks' own health figures (plot_camera_shifts), collected
+    if folders:
+        sm = out / f"station_maps_{tag}"
+        sm.mkdir(exist_ok=True)
+        for f in folders:
+            src = f / "colmap" / "health" / "station_map.png"
+            if src.is_file():
+                shutil.copyfile(src, sm / f"{f.name}.png")
+    # ---- LMST histograms (the analyses script's format)
+    if folders:
+        roots = sorted({str(f.parent) for f in folders})
+        from rpp.config import default_config
+        from rpp.sfm.project import NAVCAM_MIN_FRAME_FRACTION
+        sites = [f.name.split("_", 3)[-1] for f in folders]
+        images, _used = B.lmst_images(roots, sites, NAVCAM_MIN_FRAME_FRACTION or None)
+        if images:
+            rows = sorted((B.lmst_site_row(k, list(v.values())) for k, v in images.items()), key=lambda r: r["first_sol"])
+            window = (default_config().get("selection") or {}).get("lmst_window_h")
+            B.plot_lmst_histograms(images, rows, out / f"lmst_histogram_{tag}.png", tuple(window) if window else None,
+                                   dpi=a.dpi)
+            B.write_lmst_table(rows, out / f"lmst_histogram_{tag}_by_site.csv")
+    # ---- Mastcam-Z: the calibration folder's model and block lines
+    if a.zcam:
+        zd = Path(a.zcam)
+        zm = zd / "M2020_ZCAM034_focus_model.json"
+        if zm.is_file():
+            zmodel = json.loads(zm.read_text(encoding="utf-8"))
+            for suffix, labels in (("", True), ("_nolabels", False)):
+                C.plot_zcam_rig_trends(zmodel, out / f"zcam_rig_trends_{tag}{suffix}.png", dpi=a.dpi, label=zd.name,
+                                       point_labels=labels)
+        bl = zd / "block_lines.json"
+        if bl.is_file():
+            import matplotlib
+            matplotlib.use("Agg")
+            from rpp_studies.misc.calibration_old.zcam_lines import plot_block_lines
+            plot_block_lines(json.loads(bl.read_text(encoding="utf-8")), out / f"zcam_focus_lines_vs_temperature_{tag}.png",
+                             dpi=a.dpi)
+        zj = zd / "zcam_joint.json"                         # 0.95.1: the efl against focus of a joint folder
+        if zj.is_file():
+            from rpp_studies.calibration.plots import plot_zcam_efl_vs_focus
+            res_ = json.loads(zj.read_text(encoding="utf-8"))
+            plot_zcam_efl_vs_focus(res_, out / f"zcam{int(res_.get('zoom', 34))}_efl_vs_focus_{tag}.png", dpi=a.dpi,
+                                   label=zd.name)
+        if not zm.is_file() and not bl.is_file():
+            print(f"no Mastcam-Z calibration in {zd}: zcam figures skipped")
+    # ---- 0.95.2 (Christian, 30 Oct): the efl vs focus of the newest joint of each zoom (34, 48, 63 by default)
+    from rpp_studies.calibration.plots import plot_hazcam_efl_vs_temperature, plot_hazcam_rig_trends, plot_zcam_efl_vs_focus
+    done_joints = {str(Path(a.zcam).resolve())} if a.zcam and (Path(a.zcam) / "zcam_joint.json").is_file() else set()
+    if a.zcam_joints == ["-"]:
+        joints = []
+    elif a.zcam_joints:
+        joints = [Path(j) for j in a.zcam_joints]
+    else:
+        joints = [newest_zcam_joint(a.root, int(z)) for z in str(a.zcam_zooms).split(",") if z.strip()] if a.root else []
+        for z, j in zip([z for z in str(a.zcam_zooms).split(",") if z.strip()], joints):
+            if j is None:
+                print(f"no Mastcam-Z {z} mm joint folder under {a.root}\\camera_analysis")
+    for j in [j for j in joints if j is not None]:
+        if str(j.resolve()) in done_joints:
+            continue
+        done_joints.add(str(j.resolve()))
+        zj = j / "zcam_joint.json"
+        if not zj.is_file():
+            print(f"{j}: no zcam_joint.json - skipped")
+            continue
+        res_ = json.loads(zj.read_text(encoding="utf-8"))
+        f = plot_zcam_efl_vs_focus(res_, out / f"zcam{int(res_.get('zoom', 34))}_efl_vs_focus_{folder_tag(j)}.png",
+                                   dpi=a.dpi, label=folder_tag(j))
+        print(f"Mastcam-Z {res_.get('zoom', 34)} mm: {j} -> {f.name if f else 'no eyes'}")
+        zmf = j / f"M2020_ZCAM{int(res_.get('zoom', 34)):03d}_focus_model.json"      # 0.97.0: the joint's rig trends
+        if zmf.is_file():
+            zm_ = json.loads(zmf.read_text(encoding="utf-8"))
+            for suffix, labels in (("", True), ("_nolabels", False)):
+                C.plot_zcam_rig_trends(zm_, out / f"zcam{int(res_.get('zoom', 34))}_rig_trends_{folder_tag(j)}{suffix}.png",
+                                       dpi=a.dpi, label=folder_tag(j), point_labels=labels)
+    # ---- 0.95.2 (Christian, 30 Oct): the Hazcams - rig trends of each pair, focal length against temperature
+    hz = None if a.hazcam == "-" else (Path(a.hazcam) if a.hazcam else (newest_hazcam_fit(a.root) if a.root else None))
+    if hz is not None:
+        hf = hz / "hazcam_fit.json"
+        if hf.is_file():
+            hres = json.loads(hf.read_text(encoding="utf-8"))
+            htag = folder_tag(hz)
+            made = []
+            for fam, r in (hres.get("rigs") or {}).items():
+                if r.get("skipped"):
+                    continue
+                for suffix, labels in (("", True), ("_nolabels", False)):
+                    f = plot_hazcam_rig_trends(r, out / f"hazcam_rig_trends_{fam}_{htag}{suffix}.png", dpi=a.dpi,
+                                               label=f"({htag})", point_labels=labels)
+                    if f:
+                        made.append(f.name)
+            f = plot_hazcam_efl_vs_temperature(hres, out / f"hazcam_efl_vs_temperature_{htag}.png", label=f"({htag})",
+                                               dpi=a.dpi)
+            if f:
+                made.append(f.name)
+            print(f"Hazcam: {hz} -> {', '.join(made) or 'nothing to plot'}")
+        else:
+            print(f"{hz}: no hazcam_fit.json - Hazcam figures skipped")
+    # ---- the traverse map
+    if a.site_map == "maps":
+        site_map_from_maps(out / f"site_map_{tag}.png", a.dpi)
+    elif a.site_map == "simple":
+        tab = load_site_table()
+        panos, samples = (), ()
+        if a.refdata:
+            sys.path.insert(0, str(Path(a.refdata)))
+            from refdata import PANOS, SAMPLES                                      # the site study's reference lists
+            panos, samples = PANOS, SAMPLES
+        B.plot_site_map(None, snapshot_path(), out / f"site_map_{tag}.png", terrain_dir=a.terrain, panos=panos,
+                        samples=samples, highlight=tab["groups"].get(a.group) or [], dpi=a.dpi)
+    if a.frame:
+        import cv2
+        from rpp.calib.constrain import camera_at
+        from rpp.colmap import plot_undistorted_example
+        im = cv2.cvtColor(cv2.imread(a.frame), cv2.COLOR_BGR2RGB)
+        mask = cv2.imread(a.frame_mask, cv2.IMREAD_GRAYSCALE) if a.frame_mask else None
+        if a.frame_model in ("NL", "NR"):
+            model, p, _ = camera_at(inuse[a.frame_model], T_degC=a.frame_T, sol=1000)
+            width, lens = 5120, f"THIN_PRISM_FISHEYE {a.frame_model}, promoted model at {a.frame_T:g} °C"
+        else:
+            m = json.loads(Path(a.frame_model).read_text())
+            model, p, width, lens = m["model"], m["params"], int(m.get("width", 5120)), m.get("source", m["model"])
+        plot_undistorted_example(im, model, p, width, out / "undistorted_example.png", mask=mask,
+                                 title=Path(a.frame).name, lens=lens)
+    print(f"figures in {out}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,13 +1,13 @@
 # The rover model
 
-MPPP ships a 3D model of Perseverance for the station products: with the rover shown, `mppp mesh` adds it
+RPP ships a 3D model of Perseverance for the station products: with the rover shown, `rpp mesh` adds it
 to the station mesh at the rover's pose and the station's images are projected onto it like onto the terrain
 (see [Station products](station-products.md)). Other users are welcome to use it for image-based rendering.
 
 | file | what |
 |---|---|
 | [`perseverance_rmech.glb`](rover/perseverance_rmech.glb) | glTF binary, one mesh per part, 197,539 triangles, 3.6 MB |
-| [`perseverance_rmech.npz`](https://github.com/ctate7163/RPP/raw/main/src/mppp/data/rover/perseverance_rmech.npz) | what `mppp.ibr.rover_model` loads: `vertices`, `faces`, `part`, `meta` |
+| [`perseverance_rmech.npz`](https://github.com/ctate7163/RPP/raw/main/src/rpp/data/rover/perseverance_rmech.npz) | what `rpp.ibr.rover_model` loads: `vertices`, `faces`, `part`, `meta` |
 | [`scripts/build_rover_model.py`](https://github.com/ctate7163/RPP/blob/main/scripts/build_rover_model.py) | builds the `.npz` from NASA's file; every number below is a named constant in it. `scripts/export_rover_glb.py` writes the `.glb` from the `.npz` |
 
 ## Source and credit
@@ -15,7 +15,7 @@ to the station mesh at the rover's pose and the station's images are projected o
 The model is derived from NASA's **"Mars Perseverance Rover, 3D Model"** (10 June 2020, file
 `25042_Perseverance.glb`), <https://science.nasa.gov/resource/mars-perseverance-rover-3d-model/>.
 
-**Credit: NASA/JPL-Caltech.** The geometry is NASA's; the changes listed here are MPPP's. NASA has not reviewed or
+**Credit: NASA/JPL-Caltech.** The geometry is NASA's; the changes listed here are RPP's. NASA has not reviewed or
 endorsed this version. NASA's material is made available under the
 NASA Images and Media Usage Guidelines (see nasa.gov); please credit
 NASA/JPL-Caltech when you use the model, and say that it was modified.
@@ -75,7 +75,7 @@ Every PDS image label records the rover's joint angles when the image was taken.
   reading the label again.
 - **Arm.** The label's five arm joint angles map to the model's joint angles as
   model = sign × label + offset, with signs (+, −, −, −, −) and offsets (0, 0, −90, +90, 0) degrees
-  (`mppp.ibr.rover_model.arm_model_angles_deg`). The stowed pose is the label angles
+  (`rpp.ibr.rover_model.arm_model_angles_deg`). The stowed pose is the label angles
   (90.09, −16.37, −161.66, 178.18, 278.52)°; over 443 stows it repeats to 7–29 mdeg, so one stowed model serves
   every station where the arm is stowed (`arm_is_stowed`).
 - **High-gain antenna.** The label azimuth and elevation of a checked frame (65°, −45°) match the model's neutral
@@ -89,7 +89,7 @@ are projected onto the wrong surface there.
 ## Use
 
 ```python
-from mppp.ibr import rover_model
+from rpp.ibr import rover_model
 V, F, meta = rover_model.load()                  # vertices (m, RMECH), triangles, metadata (source, parts, frame)
 V, F, meta = rover_model.load(parts=["body", "arm", "antenna"])     # some parts only
 Vh, Fh = rover_model.head_in_mech(az_deg=250.0, el_deg=70.0)       # the camera head at the label's mast angles

@@ -1,8 +1,8 @@
 # Station products and the stereo panorama viewer
 
-From a finished block MPPP makes the products of one **station** (one stop of the rover): a cleaned mesh, per-image
+From a finished block RPP makes the products of one **station** (one stop of the rover): a cleaned mesh, per-image
 depth and photometric maps, and an omnidirectional stereo panorama that can be looked at in a headset. The code is
-`mppp.ibr` (the `[ibr]` extra: open3d). The commands and every option are in [Command line](cli.md).
+`rpp.ibr` (the `[ibr]` extra: open3d). The commands and every option are in [Command line](cli.md).
 
 **See the result:** the [stereo panorama viewer](ods/index.html){target="_blank" rel="noopener"} (a prototype, below).
 
@@ -10,17 +10,17 @@ depth and photometric maps, and an omnidirectional stereo panorama that can be l
 
 | step | command | what it makes |
 |---|---|---|
-| dense | `mppp dense WORK --station S` | COLMAP patch-match stereo and fusion for the station's frames (`fused.ply`); cached, so a second run costs nothing |
-| mesh | `mppp mesh WORK --station S` | `mesh.ply`: the terrain out to 75 m, a ground plane beyond it to 200 m (300 m in `mppp ods`), the rover model |
-| depthmaps | `mppp depthmaps WORK --station S --photometry` | per image: depth, range, normal, incidence, emission, phase, cast shadow (also from the rover's mast, booms and camera head) |
-| ods | `mppp ods WORK --station S` | the stereo panorama and its companions |
+| dense | `rpp dense WORK --station S` | COLMAP patch-match stereo and fusion for the station's frames (`fused.ply`); cached, so a second run costs nothing |
+| mesh | `rpp mesh WORK --station S` | `mesh.ply`: the terrain out to 75 m, a ground plane beyond it to 200 m (300 m in `rpp ods`), the rover model |
+| depthmaps | `rpp depthmaps WORK --station S --photometry` | per image: depth, range, normal, incidence, emission, phase, cast shadow (also from the rover's mast, booms and camera head) |
+| ods | `rpp ods WORK --station S` | the stereo panorama and its companions |
 
-`mppp single-sites` runs all four for the stations listed in `src/mppp/data/single_sites.json`, each in two variants:
+`rpp single-sites` runs all four for the stations listed in `src/rpp/data/single_sites.json`, each in two variants:
 **with the rover** (the rover model in the mesh, the images unmasked) and **terrain only** (the rover masked out and
 the ground under it filled in). The second variant reuses the first one's terrain mesh. A step whose command, code
 and inputs have not changed since its last good run is skipped (`--force` runs everything);
 `single_sites_status.json` says which station and step is running; `single_sites_summary.md` lists the results and
-the minutes per step. On Windows: `scripts\windows\run_single_site_ibr.bat` (set `MPPP_NO_PAUSE=1` to run it
+the minutes per step. On Windows: `scripts\windows\run_single_site_ibr.bat` (set `RPP_NO_PAUSE=1` to run it
 unattended).
 
 ## The mesh
@@ -32,7 +32,7 @@ unattended).
   whole from itself: cells without surface (under the rover, behind rocks) are interpolated from the cells around
   them, and a second sheet of that interpolation lies 0.2 m under the terrain to catch a ray through a small gap.
 - With the rover shown, the [rover model](rover-model.md) is added at the station's rover pose.
-- The sky is a sphere of 300 m radius (`mppp ods --sky-radius`), and the ground plane reaches to it. `mppp ods`
+- The sky is a sphere of 300 m radius (`rpp ods --sky-radius`), and the ground plane reaches to it. `rpp ods`
   refines what lies beyond the plane per direction: see "The far field" below.
 
 ## The per-image maps
@@ -41,7 +41,7 @@ unattended).
 and a label per pixel; `photometry/<image>.npz` holds incidence, emission and phase (float16, degrees) and the cast
 shadow (0 unknown, 1 lit, 2 shadow). **These files are the numbers.**
 
-`mppp single-sites` makes the per-image maps for the terrain-only variant alone, and depth and normals only (since
+`rpp single-sites` makes the per-image maps for the terrain-only variant alone, and depth and normals only (since
 0.97.14): they were a fifth to a half of a station's run. In the station list `"photometry": true` adds the
 photometric maps and `"depthmaps_variants": ["rover", "masked"]` makes them with the rover shown as well. The
 panoramas do not need the per-image maps.
@@ -77,7 +77,7 @@ The panorama step also writes the model alone through the panorama's own rays (0
 left eye on top as in the colour panoramas. Range is from each eye's ray origin in the colours of the table above;
 the normal is in the station's frame, RGB = 127.5 (1 + [east, north, up]), so level ground is blue. No source frame
 is used, so a fault seen there is in the mesh, the plane, the rover model or the far field and not in the blending.
-`mppp ods --no-geometry` leaves them out; `mppp single-sites --publish-views standard "range log" normal` puts them
+`rpp ods --no-geometry` leaves them out; `rpp single-sites --publish-views standard "range log" normal` puts them
 in the viewer's list.
 
 `run_single_site_ibr.bat <station>` publishes the station's panoramas into `docs/ods`, commits them and pushes the
@@ -90,8 +90,8 @@ point is the panorama's north (no letters: they would be sideways or upside down
 lays it on the ground as a real surface (`ground_mark` in `panos.json`: its depth below the eyes and its radius), so
 in a headset it has the disparity of a thing on the ground.
 
-Each picture carries its scale as JSON in its XMP metadata (`mppp:Scale`), `photometry_jpg/scales.json` lists them
-all, and `mppp.ibr.scales.decode(path)` returns the values as floats with their units. Read back from a JPEG, a
+Each picture carries its scale as JSON in its XMP metadata (`rpp:Scale`), `photometry_jpg/scales.json` lists them
+all, and `rpp.ibr.scales.decode(path)` returns the values as floats with their units. Read back from a JPEG, a
 value is good to about 0.2 degrees (incidence, emission), 0.4 degrees (phase), 0.15 m (linear range), 1 % (log
 range) and 0.5 degrees (normal) on smooth surfaces, and worse at edges; for photometry use the `.npz` files.
 
@@ -106,7 +106,7 @@ Hazcam pair when it was taken within 2 hours of them, which colours the ground u
 frame sees the surface, and its colours are matched to the regular frames first, per channel, on the surface both
 see (`ods.json`, `fill_colour_match`). The regular frames are not changed.
 
-**Context frames** (`"context"` in the station list, `mppp ods --context-images`) are frames of the block taken
+**Context frames** (`"context"` in the station list, `rpp ods --context-images`) are frames of the block taken
 from another place, or from this place on another sol. They add to the terrain in the dense step, and in the
 panorama they are fill-only sources like the Hazcam pair, with three differences: their rover mask is applied in
 both variants (the rover in them is somewhere else), they never colour the rover model, and each is colour-matched
@@ -130,7 +130,7 @@ sharpest. The result is one smooth field of 1 / radius per direction, not three 
 three, filled from the decided directions around where the frames do not tell (one frame only, plain sky), smoothed
 over 1.5 degrees, and equal to the sky sphere's radius at the ground plane's rim, so the plane and the far field
 meet without a step. `ods.json` records it (`far_field`: the share decided, the shares nearest each radius),
-`far_field.npz` holds the field, and the depth products show it. `mppp ods --no-far-field` keeps the one sphere.
+`far_field.npz` holds the field, and the depth products show it. `rpp ods --no-far-field` keeps the one sphere.
 
 Files (the prefix is the station's code, with `_rover` for the with-rover variant). The code is
 `Sol<sol, 4 digits>_S<site, 3>D<drive, 4>`, for example `Sol0052_S003D2046`: the first sol of the frames the
@@ -149,7 +149,7 @@ the place alone (`dense_S003D2046`), and `--station` takes either form.
 
 The PNG files are the data record; the JPEGs are for viewing. `_360_3DTD` in a file name is the convention headset
 viewers read (360 degrees, 3D, top-down). The stacked files also carry XMP metadata (Google Photo Sphere
-`GPano`, `GSpherical:StereoMode = top-bottom`, and `mppp:` fields); there is no single standard for stereo stills,
+`GPano`, `GSpherical:StereoMode = top-bottom`, and `rpp:` fields); there is no single standard for stereo stills,
 and a viewer that reads only `GPano` shows the square as one mono sphere.
 
 ### The eye separation
@@ -165,9 +165,9 @@ to 0.97.12 had both, and the cosine only near the nadir).
 What the cosine does: with a share s of the separation a point at distance d is seen at d / s. Everything along
 one line of sight is seen 1 / cos(elevation) farther - the rover and the terrain behind it alike, so their depths
 stay in proportion. Flat ground h below the eyes is seen h / cos(elevation) below them: 1.15 h at -30 degrees,
-1.41 h at -45, 2 h at -60. The ground appears to dip towards the rover. `mppp ods --pole-merge START END` and
+1.41 h at -45, 2 h at -60. The ground appears to dip towards the rover. `rpp ods --pole-merge START END` and
 `--pole-merge-down START END` set where the fall starts and ends on each side (`0 90` is the cosine; `90 90`
-none); the constants are at the top of `mppp/ibr/ods.py`, and `ods.json` records what was used.
+none); the constants are at the top of `rpp/ibr/ods.py`, and `ods.json` records what was used.
 
 ### The mark at the nadir
 
@@ -182,7 +182,7 @@ can have its own shape in both. The first row is 1.6 times as tall as the second
 under the mast - the deck with the rover shown, the ground without (the median depth below the pivot of what is
 seen at the disc's rim, `depth_below_pivot_m`): each eye sees it with that surface's disparity, so it is at the
 surface's distance and not at infinity. The disc is in every colour panorama, not in the depth products; `ods.json`
-records it (`nadir_mark`), and `mppp ods --no-nadir-mark` leaves it out.
+records it (`nadir_mark`), and `rpp ods --no-nadir-mark` leaves it out.
 
 ### Sky and brightness
 
@@ -202,7 +202,7 @@ the device can show (maximum texture size, compressed-texture formats).
 
 - On the documentation site: [https://ctate7163.github.io/RPV/](https://ctate7163.github.io/RPV/){target="_blank" rel="noopener"}
   (opens in a new tab from these pages; GitHub's own rendering of the README does not allow that).
-- To add stations: `mppp single-sites Sol0052_S003D2046 --publish docs/ods --publish-only` copies the stereo JPEGs (the standard view; reduced
+- To add stations: `rpp single-sites Sol0052_S003D2046 --publish docs/ods --publish-only` copies the stereo JPEGs (the standard view; reduced
   to 8192) into `docs/ods/panos/` and lists them in `docs/ods/panos.json`; commit and push `docs/ods`.
 - Another image list: `.../ods/?index=URL` (same origin, or a host that allows cross-origin requests).
 
@@ -212,7 +212,7 @@ tiled 16K / 32K images and zoom are not done.
 ## The rover as a 3D model (0.98.14)
 
 A station run also renders the with-rover panorama from the pivot and writes `with_rover/<prefix>_rover_surface.glb`:
-the Perseverance model where `mppp mesh --rover` put it (all its triangles, in metres about the pivot), the rows of
+the Perseverance model where `rpp mesh --rover` put it (all its triangles, in metres about the pivot), the rows of
 that panorama that hold the rover, and their range. The viewer colours a point of the model with the panorama's pixel
 in its direction when it is the surface the pivot sees there (its distance against the range image, with a bias of
 12 mm + 1.2 %); what the pivot does not see was seen by no camera and is the rover grey. So the rover has no holes
@@ -220,7 +220,7 @@ from any viewpoint and its edges are the model's. `<prefix>_rover_surface.json` 
 seen from the pivot. To build it again from a folder that already has the centre panorama:
 
 ```
-python -m mppp.ibr.rover_surface D:\rover_blocks\single_sites\Sol0052_S003D2046\with_rover
+python -m rpp.ibr.rover_surface D:\rover_blocks\single_sites\Sol0052_S003D2046\with_rover
 ```
 
 On a screen, `.../ods/?head=0.15,0,0` puts the eye 0.15 m east of the pivot (east, up, south, metres) to look at the
@@ -228,7 +228,7 @@ model's parallax. (0.98.2-0.98.13: a grid mesh cut from the panorama's depth, wi
 
 ## Experimental: a Mastcam-Z panorama on the Navcam terrain (0.98.2)
 
-`python -m mppp single-sites Sol0690_S032D1184_Z34` renders the 34 mm frames of sol 690 at Three Forks onto the
+`python -m rpp single-sites Sol0690_S032D1184_Z34` renders the 34 mm frames of sol 690 at Three Forks onto the
 terrain made from the station's Navcam frames. Stations marked `"experimental": true` in `single_sites.json` run only
 when named.
 

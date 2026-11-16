@@ -1,4 +1,4 @@
-"""File names, PDS labels, CAHV/CAHVOR(E) camera models, the Metashape and COLMAP camera conventions (mppp.filenames, labels, cmod, camera, colmap). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
+"""File names, PDS labels, CAHV/CAHVOR(E) camera models, the Metashape and COLMAP camera conventions (rpp.filenames, labels, cmod, camera, colmap). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
 import json
 import numpy as np
 import pytest
@@ -17,7 +17,7 @@ def _synthetic_cahv(fx=1200.0, fy=1190.0, cx=640.3, cy=479.1, seed=0):
 
 
 def test_parse_zcam():
-    from mppp import parse_filename
+    from rpp import parse_filename
     fn = parse_filename("ZL0_0709_0729888971_069RAD_N0332864ZCAM07114_0340LMA01.IMG")
     assert (fn.instrument, fn.family, fn.eye, fn.filter) == ("ZL", "Z", "L", "0")
     assert (fn.sol, fn.site, fn.drive) == (709, 33, 2864)
@@ -28,7 +28,7 @@ def test_parse_zcam():
 
 
 def test_parse_navcam_and_downsample():
-    from mppp import parse_filename
+    from rpp import parse_filename
     fn = parse_filename("NLF_0709_0729883381_848RAD_N0332864SAPP00601_0A00LLJ01.IMG")
     assert fn.camera_code == "NLF" and fn.camera_group == "NL0" and fn.zoom_mm is None
     half = parse_filename("NRF_0709_0729883381_848RAD_N0332864SAPP00601_0A01LLJ02.IMG")
@@ -36,13 +36,13 @@ def test_parse_navcam_and_downsample():
 
 
 def test_parse_rejects_garbage():
-    from mppp import parse_filename
+    from rpp import parse_filename
     with pytest.raises(ValueError):
         parse_filename("not_a_pds_name.IMG")
 
 
 def test_cahv_decomposition_round_trip():
-    from mppp.camera import CAHVOR
+    from rpp.camera import CAHVOR
     C, A, H, V, Rm = _synthetic_cahv()
     cam = CAHVOR(C, A, H, V)
     intr, R = cam.decompose(1280, 960)
@@ -61,7 +61,7 @@ def test_cahv_decomposition_round_trip():
 
 
 def test_padding_shifts_principal_point_only():
-    from mppp.camera import CAHVOR
+    from rpp.camera import CAHVOR
     intr, _ = CAHVOR(*_synthetic_cahv()[:4]).decompose(1280, 960)
     p = intr.shifted(100, 50, 1480, 1060)
     assert (p.cx - intr.cx, p.cy - intr.cy) == (pytest.approx(100), pytest.approx(50))
@@ -70,7 +70,7 @@ def test_padding_shifts_principal_point_only():
 
 
 def test_pose_level_camera_looking_north():
-    from mppp.camera import pose_from_label
+    from rpp.camera import pose_from_label
     # rover-nav == site (identity quaternion); camera looks north (+x NED), x right = east, y down
     R_cam = np.array([[0, 1, 0], [0, 0, 1], [1, 0, 0]], float)
     pose = pose_from_label(R_cam, [1.0, 2.0, -3.0], [1, 0, 0, 0], [10.0, 20.0, -5.0], "t", "t")
@@ -84,7 +84,7 @@ def test_pose_level_camera_looking_north():
 
 
 def test_ypr_matches_legacy_formula():
-    from mppp.camera import pose_from_label
+    from rpp.camera import pose_from_label
     rng = np.random.default_rng(3)
     for _ in range(20):
         rot_cam = Rotation.from_rotvec(rng.normal(size=3)).as_matrix()
@@ -102,7 +102,7 @@ def test_ypr_matches_legacy_formula():
 
 
 def test_colmap_text_model_round_trip(tmp_path):
-    from mppp.colmap import write_text_model
+    from rpp.colmap import write_text_model
     R = Rotation.from_euler("xyz", [10, 20, 30], degrees=True).as_matrix()
     C = np.array([105.0, 203.0, 7.0])
     intr = {"width": 100, "height": 80, "K": [[500, 0, 49.5], [0, 501, 39.5], [0, 0, 1]],
@@ -127,8 +127,8 @@ def test_colmap_text_model_round_trip(tmp_path):
 
 def test_one_projection_for_everyone():
     import pycolmap
-    from mppp.colmap import project_camera, scale_camera_params
-    from mppp_studies.error.colmap import project_camera as pe
+    from rpp.colmap import project_camera, scale_camera_params
+    from rpp_studies.error.colmap import project_camera as pe
     assert pe is project_camera
     p = [2950, 2951, 2560, 1920, -0.27, 0.1, 0, 0, -0.02, 0, 0, 0]
     x = np.array([[0.3, -0.2, 1.0], [0.01, 0.02, 2.0]])
@@ -140,7 +140,7 @@ def test_one_projection_for_everyone():
 
 
 def test_unproject_inverts_project():
-    from mppp.colmap import project_camera, unproject_camera
+    from rpp.colmap import project_camera, unproject_camera
     p = [2951, 2951, 2594, 1942, -0.27, 0.10, 1.7e-4, 1.7e-4, -0.02, 0, 0, 0]
     xy = np.random.default_rng(1).uniform(-0.8, 0.8, (500, 2))
     uv = project_camera("FULL_OPENCV", p, np.c_[xy, np.ones(len(xy))])
@@ -149,14 +149,14 @@ def test_unproject_inverts_project():
 
 
 def _navcam(eye="L", zero=()):
-    from mppp.paths import data_dir
-    from mppp.sfm.project import camera_from_colmap_json
+    from rpp.paths import data_dir
+    from rpp.sfm.project import camera_from_colmap_json
     return camera_from_colmap_json(data_dir() / f"cmods/M2020_N{eye}_fisheye_tangential.json", zero)
 
 
 def test_navcam_camera_is_invertible_over_the_whole_frame():
     pycolmap = pytest.importorskip("pycolmap")
-    from mppp.colmap import project_camera, unproject_camera
+    from rpp.colmap import project_camera, unproject_camera
     g = np.stack(np.meshgrid(np.linspace(0.5, 5119.5, 41), np.linspace(0.5, 3839.5, 31)), -1).reshape(-1, 2)
     for eye in "LR":
         c = _navcam(eye)
@@ -185,8 +185,8 @@ from conftest import ZL0  # noqa: E402
 
 
 def _label_model(path):
-    from mppp.cmod import CameraModel
-    from mppp.labels import label_get, read_pds
+    from rpp.cmod import CameraModel
+    from rpp.labels import label_get, read_pds
     L, _ = read_pds(path, load_image=False)
     w, h = int(label_get(L, "IMAGE.LINE_SAMPLES")), int(label_get(L, "IMAGE.LINES"))
     fs = float(label_get(L, "IMAGE.FIRST_LINE_SAMPLE", default=1))
@@ -195,12 +195,12 @@ def _label_model(path):
 
 
 def _navcam_model():
-    from mppp.paths import data_dir
+    from rpp.paths import data_dir
     return json.loads((data_dir() / "cmods" / "M2020_NL_fisheye_tangential.json").read_text())
 
 
 def test_navcam_label_is_cahvore_fisheye_and_matches_the_promoted_model():
-    from mppp.cmod import CameraModel, compare_to_colmap
+    from rpp.cmod import CameraModel, compare_to_colmap
     cm, (dx, dy) = _label_model(NLF)
     assert cm.kind == "CAHVORE" and cm.mtype == 2 and cm.linearity == 0.0
     full = cm.rescaled(0.5, dx, dy, 5120, 3840)                 # 0.91: a tile of a half-resolution frame
@@ -213,8 +213,8 @@ def test_navcam_label_is_cahvore_fisheye_and_matches_the_promoted_model():
 
 
 def test_decompose_matches_camera_py_and_rescale_is_exact():
-    from mppp.camera import CAHVOR
-    from mppp.labels import label_get, read_pds
+    from rpp.camera import CAHVOR
+    from rpp.labels import label_get, read_pds
     for path in (NLF, ZL0):
         cm, _ = _label_model(path)
         L, _ = read_pds(path, load_image=False)
@@ -228,7 +228,7 @@ def test_decompose_matches_camera_py_and_rescale_is_exact():
 
 
 def test_cahvor_is_brown_k1_k2_and_cahvore_fits_navcam():
-    from mppp.cmod import fit_to_colmap
+    from rpp.cmod import fit_to_colmap
     p = [4700.0, 4710.0, 830.0, 590.0, -0.47, 0.65, 0, 0, 0, 0, 0, 0]
     cm, rep = fit_to_colmap("FULL_OPENCV", p, 1648, 1200, "CAHVOR", step=64)
     assert rep["rms_px"] < 1e-6 and np.allclose(cm.R[1:], [-0.47, 0.65], atol=1e-8)
@@ -241,7 +241,7 @@ def test_cahvor_is_brown_k1_k2_and_cahvore_fits_navcam():
 
 def test_compare_cameras_removes_rotation():
     from scipy.spatial.transform import Rotation
-    from mppp.cmod import PixelCamera, compare_cameras
+    from rpp.cmod import PixelCamera, compare_cameras
     p = np.array([1000.0, 1000, 640, 480, -0.2, 0.05, 0, 0, 0, 0, 0, 0])
     a = PixelCamera.colmap("FULL_OPENCV", p, 1280, 960)
     assert compare_cameras(a, a)["max_px"] < 1e-6
