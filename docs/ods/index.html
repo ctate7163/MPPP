@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>MPPP stereo panoramas</title>
+<title>Rover Photogrammetry Viewer (RPV)</title>
 <!--
   MPPP stereo 360 viewer (prototype, 0.97.3; 0.97.18: the eye shown on a screen can be chosen).  One static page: three.js (vendor/, r170, MIT) and panos.json.
   Images: <name>_360_3DTD.jpg from `mppp ods` - square, the left eye on top of the right, each an equirectangular
@@ -23,6 +23,8 @@
          background: linear-gradient(#000c, #0000); z-index: 2; }
   #bar select, #bar button { background: #222; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; font: inherit; }
   #title { font-weight: 600; margin-right: 6px; }
+  #credit { position: fixed; left: 10px; bottom: 28px; color: #999; font-size: 11px; z-index: 2; text-shadow: 0 0 4px #000; }
+  #credit a { color: #9cf; }
   #note { position: fixed; left: 10px; bottom: 10px; right: 170px; color: #bbb; font-size: 12px; z-index: 2; text-shadow: 0 0 4px #000; }
   #diag { position: fixed; right: 170px; bottom: 10px; color: #888; font-size: 11px; z-index: 2; text-shadow: 0 0 4px #000; text-align: right; }
   #compass { position: fixed; right: 12px; top: 50%; transform: translateY(-50%); z-index: 2; display: grid;
@@ -36,7 +38,7 @@
 </head>
 <body>
 <div id="bar">
-  <span id="title">MPPP stereo panoramas</span>
+  <span id="title">Rover Photogrammetry Viewer (RPV)</span>
   <select id="station" title="station"></select>
   <select id="variant" title="variant"></select>
   <select id="view" title="view"></select>
@@ -51,6 +53,7 @@
 </div>
 <div id="msg">loading the list ...</div>
 <div id="note"></div>
+<div id="credit"></div>
 <div id="diag" title="what this device can show"></div>
 <script type="module">
 import * as THREE from 'three';
@@ -328,6 +331,18 @@ function place(m, azDeg, elDeg, dist, width) {                   // in the page'
 // directions in the sky in white, 40 m away, and the title a few metres ahead.  The words hang in "world", so they
 // keep their directions as the viewer turns.
 const WELCOME_AZ_DEG = 270;                     // 0.98.19: the welcome view opens looking west, its title there
+// 0.98.27 (Christian, 16 Nov 2026: 'the ods welcome page should read Rover Photogrammetry Viewer (RPV) followed by a line
+// about it being created by Christian Tate at MSSS for research purposes with the code available at the github link').
+// CODE_URL: GitHub sends the old name on to a renamed repository, so this keeps working through a rename to RPP.
+const VIEWER_NAME = 'Rover Photogrammetry Viewer (RPV)';
+const CREDIT = 'Created by Christian Tate at MSSS for research purposes';
+const CODE_URL = 'https://github.com/ctate7163/MPPP';
+{                                                 // on a screen the welcome view also gets the credit with a link to click
+  const c = $('credit'), l = document.createElement('a');
+  l.href = CODE_URL; l.target = '_blank'; l.rel = 'noopener'; l.textContent = CODE_URL.replace(/^https:\/\//, '');
+  c.title = 'Malin Space Science Systems, San Diego'; c.append(CREDIT + '. Code: ', l);
+  c.style.display = 'none';
+}
 const welcome = new THREE.Group();
 welcome.visible = false;
 world.add(welcome);
@@ -339,13 +354,16 @@ function showWelcome(on) {
       welcome.add(place(textPanel([{ text: name, px: 300, weight: 800 }], { width: 1400 }), az, 32, 40, 14));
     // 0.98.19 (Christian, 16 Nov 2026: 'change the text to "Rover Photogrammetry Viewer". Put the text under West, and
     // make west the opening direction'): the title under WEST, which the page opens looking at
-    welcome.add(place(textPanel([{ text: 'Rover Photogrammetry Viewer', px: 200, weight: 900 },
-                                 { text: 'Mars 2020 Perseverance rover', px: 150, weight: 700 }]), WELCOME_AZ_DEG, 14, 5, 4.2));
+    welcome.add(place(textPanel([{ text: VIEWER_NAME, px: 190, weight: 900 },
+                                 { text: CREDIT, px: 80, weight: 600 },
+                                 { text: 'Code: ' + CODE_URL.replace(/^https:\/\//, ''), px: 80, weight: 600, color: '#cfe8ff' },
+                                 { text: 'Mars 2020 Perseverance rover', px: 120, weight: 700 }]), WELCOME_AZ_DEG, 14, 5, 4.2));
     welcome.add(place(textPanel([{ text: 'trigger: next site   |   left trigger: back   |   stick: turn', px: 84, weight: 600 },
                                  { text: 'X: info and map   |   A: view   |   grip: rover on, off or 3D', px: 84, weight: 600 }],
                                 { back: 'rgba(0,0,0,0.35)' }), WELCOME_AZ_DEG, -6, 5, 3.6));
   }
   welcome.visible = !!on;
+  $('credit').style.display = on ? '' : 'none';
 }
 
 // X (key I): a small page with the site, the sol and a map of the traverse (over a low-resolution orbital picture,

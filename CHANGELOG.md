@@ -3,6 +3,17 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.27 — 2026-11-16
+
+Christian (16 Nov): "the ods welcome page should read Rover Photogrammetry Viewer (RPV) followed by a line about it
+being created by Christian Tate at MSSS for research purposes with the code available at the github link."
+
+- Viewer (`docs/ods/index.html`): the welcome title is "Rover Photogrammetry Viewer (RPV)", then "Created by Christian
+  Tate at MSSS for research purposes", then "Code: github.com/ctate7163/MPPP" (`CODE_URL`; GitHub forwards the old
+  name after a rename), then "Mars 2020 Perseverance rover". On a screen the welcome view also shows the credit with a
+  link to click (bottom left). The page title and the bar read "Rover Photogrammetry Viewer (RPV)"; the info panel's
+  name for the welcome entry (`web.welcome_pano`) too.
+
 ## 0.98.26 — 2026-11-16
 
 The pre-freeze-3 run (16 Nov, 11:14): both blocks were killed by a Ctrl-C at 11:20:41 (`forrtl: error (200):

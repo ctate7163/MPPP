@@ -140,7 +140,7 @@ def welcome_pano(web: Path, station_entry: Optional[Dict[str, Any]]) -> Optional
             tag_stereo(dst, extra={"Station": WELCOME_STATION})
         except Exception:                                    # noqa: BLE001
             pass
-    return {"id": WELCOME_ID, "title": "Welcome", "welcome": True, "site_name": "Rover Photogrammetry Viewer",
+    return {"id": WELCOME_ID, "title": "Welcome", "welcome": True, "site_name": "Rover Photogrammetry Viewer (RPV)",
             "yaw_deg": WELCOME_YAW_DEG,                       # 0.98.19 (Christian, 16 Nov 2026): it opens looking west
             "variants": [{"key": "welcome", "label": "welcome", "views": {"standard": "panos/" + dst.name}}]}
 
