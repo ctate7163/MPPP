@@ -74,7 +74,7 @@ def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: 
     """
     The products of ``sol_range`` plus, for sites the rover visited more than
     once, the products of every other waypoint station within ``radius_m``
-    metres of one of the stations imaged in ``sol_range`` - whatever their sol.  Stations are (site, drive) from the file names, placed by the
+    meters of one of the stations imaged in ``sol_range`` - whatever their sol.  Stations are (site, drive) from the file names, placed by the
     waypoint table (``rpp.load_waypoints()``).  ``radius_m=None`` or 0 gives
     :func:`find_imgs` over ``sol_range`` alone.  Returns ``(paths, report)``;
     the report lists the stations in range, the stations added with their

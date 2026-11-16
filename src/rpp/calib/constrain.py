@@ -351,9 +351,9 @@ def panel_letters(axs, fontsize: Optional[float] = None) -> None:
     letter starts the title - "A. pitch: ..." - and the title is left-justified.  Call after the titles are set;
     ``fontsize`` overrides the title's own size."""
     for k, ax in enumerate(a for a in np.ravel(axs) if a.axison):
-        centre, left = ax.get_title(loc="center"), ax.get_title(loc="left")
-        size = fontsize or (ax.title.get_fontsize() if centre else ax._left_title.get_fontsize())
-        text = left or centre
+        center, left = ax.get_title(loc="center"), ax.get_title(loc="left")
+        size = fontsize or (ax.title.get_fontsize() if center else ax._left_title.get_fontsize())
+        text = left or center
         ax.set_title("", loc="center")
         ax.set_title(f"{chr(ord('A') + k)}. {text}" if text else f"{chr(ord('A') + k)}.", loc="left", fontsize=size)
 

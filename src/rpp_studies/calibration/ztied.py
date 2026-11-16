@@ -103,7 +103,7 @@ BLOCK_ASPECT_MIN_OBS = 1000                # the same cut as the lines (MIN_BIN_
 FREED_TERM_NUDGE = {"k1": 0.02, "k2": 0.05, "p1": 1e-4, "p2": 1e-4}
 EYE_SLOPE_TIE_SD = 1e-7                   # px/count: the eye-slope tie of eye_slope_tests (exact)
 # 0.95.0 (Christian, 29 Oct): the joint refines the Mastcam-Z rig translation (1 cm prior per axis on the start rig's
-# right centre) instead of holding it at the CAHV value; "rotation" holds it again (the 0.94 joint)
+# right center) instead of holding it at the CAHV value; "rotation" holds it again (the 0.94 joint)
 ZJOINT_RIG_FIT = "full"
 # 0.95.0 (Christian, 29 Oct: "fix the Zcam rig drift ... put this into an early mission principal point offset if it
 # is significant"): the Z34 rig pitch per block was -28 and -36 mdeg at Chal Rocks (sol 102) and Seitah Overlook
@@ -131,7 +131,7 @@ POOL_SEQUENCES_REPORTED = 10            # the pools with the largest |dfy - dfx|
 # (report only, not gated); visits are the pools' sols split at gaps over this many sols
 VISIT_GAP_SOLS = 100
 # 0.96 (item C of 5 Nov; Z63 ZCAM08038, sol 78: ZL's bins sat -3,450 / -3,760 ppm in fx where its low state's step is
-# -4,170 ppm, ZR's within +900 of 0 - ZL in the low state, labelled high; the mini-block of 5 Nov evening confirmed
+# -4,170 ppm, ZR's within +900 of 0 - ZL in the low state, labeled high; the mini-block of 5 Nov evening confirmed
 # it): per sequence and eye, from the diagnostic pass, "possible low state" when one eye's dfx is within this
 # fraction of its low-state step and the other eye's within the same fraction of 0, fx and fy moving together.  A
 # warning in the report and check.json, not a failure
@@ -302,7 +302,7 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
         u["images"] = len(sols_of.get(cid) or [])  # 0.95.0: the bin's frames in the problem
     mark_early_bins(proj, zunits, sg, early_sol)                                # 0.95.1
     sg["mixed"] = mixed_exposures(proj.images, zunits)
-    sg["paired_low"] = paired_low_exposures(proj.images, zunits)         # 0.95.0 (Mastcam-Z joint: ZR's low-state principal-point offset fitted relative to ZL's from every exposure paired with ZL (not only the mixed ones); the site runs pin a regular-state line at pp0 + the model's offset (Christian, 27 Oct: the state shows in the centre - Seitah ZR063 0.65 px))
+    sg["paired_low"] = paired_low_exposures(proj.images, zunits)         # 0.95.0 (Mastcam-Z joint: ZR's low-state principal-point offset fitted relative to ZL's from every exposure paired with ZL (not only the mixed ones); the site runs pin a regular-state line at pp0 + the model's offset (Christian, 27 Oct: the state shows in the center - Seitah ZR063 0.65 px))
     sg["split_cameras_left_out"] = split_out
     sg["low_cameras_not_on_list"] = off_list
     sg["found_list"] = sg_found
@@ -434,7 +434,7 @@ def mixed_exposures(images: Sequence[Dict[str, Any]], zunits: Dict[int, Dict[str
 
 
 def paired_low_exposures(images: Sequence[Dict[str, Any]], zunits: Dict[int, Dict[str, Any]]) -> Dict[str, int]:
-    """0.95.0 (Christian, 27 Oct: "the right eye's regular principal-point offset - the state shows in the centre"):
+    """0.95.0 (Christian, 27 Oct: "the right eye's regular principal-point offset - the state shows in the center"):
     per eye group, the exposures in which this eye is in the regular (low) state and the other eye is in the problem
     in any state.  With ZL the reference eye (its principal point pinned, its regular offset held unless the mixed
     exposures make it observable), ZR's regular-state offset is the right-minus-left boresight change of the low
@@ -796,7 +796,7 @@ def adjust_z(rec, proj, idx, st, units, zunits, sg, iterations: int = 100, covar
              hold: Union[Sequence[str], Dict[str, Sequence[str]]] = ()):
     """The Mastcam-Z joint's adjustment: Navcam cameras and rigs held (the promoted law), frame poses free, the
     Mastcam-Z bins tied to the global terms (:func:`make_zties`), the Mastcam-Z rig refined - ``refine_zcam_rig``
-    "full" (rotation and translation, 1 cm prior on the right centre) or "rotation"; default ``sg["rig_fit"]``, else
+    "full" (rotation and translation, 1 cm prior on the right center) or "rotation"; default ``sg["rig_fit"]``, else
     "rotation".  0.95.1: the thin bins (:func:`mark_thin_bins`) are held at their start (the Z79 joint of 28 Oct: a
     free 389-observation bin went to fx 10247, fy 6701 px and the rms to 34.9 px)."""
     from rpp.sfm.reconstruction import bundle_adjust
@@ -926,7 +926,7 @@ def f0_uncertainty(e: Dict[str, Any], free_rows: Sequence[Dict[str, Any]]) -> Di
     are random effects with the prior sd :data:`SEQ_OFFSET_SD` x f, so with few sequences the covariance's sd of f0
     is about that prior / sqrt(sequences) - Z48 of 4 Nov: +-13.39 px, the same as each offset's sd - and reflects
     the assumed scatter, not the observed one.  Here the scatter is estimated from the fitted offsets (their sample
-    sd; shrunk towards 0 by the prior, so a lower bound where the prior binds), f0's sd from it (scatter /
+    sd; shrunk toward 0 by the prior, so a lower bound where the prior binds), f0's sd from it (scatter /
     sqrt(sequences)), and the larger of the two adopted.  The prior stays as it is in the fit.  Returns
     {"reported_px", "free_sequences", "prior_sd_px", "sequence_scatter_px", "sequence_scatter_ppm", "from_scatter_px",
     "adopted_px", "adopted_ppm", "adopted_source", "prior_bound" (the fitted offsets' sd within 10 % of the prior:
@@ -1034,7 +1034,7 @@ def ratio_group_rows(res: Dict[str, Any], ba: Dict[str, Any], zunits: Dict[int, 
 
 
 def rig_result(proj, sg, zoom: int = ZOOM, ba: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """The joint's Mastcam-Z rig.  0.95.1 (rig translation refined): the right centre in the left camera's frame
+    """The joint's Mastcam-Z rig.  0.95.1 (rig translation refined): the right center in the left camera's frame
     (x right, y down, z along the boresight) against the start rig's (the model in use / CAHV), with its sd and z per
     axis from the covariance of the rig block ("extra:zrig|Z0nn", scaled by the variance factor)."""
     fam = f"Z{zoom:03d}"
@@ -1044,7 +1044,7 @@ def rig_result(proj, sg, zoom: int = ZOOM, ba: Optional[Dict[str, Any]] = None) 
     mode = sg.get("rig_fit") or "rotation"
     out = {"R_sensor_from_ref": R.tolist(), "t_sensor_from_ref": t.tolist(), "baseline_m": float(np.linalg.norm(t)),
            "change_mdeg": float(J.rotation_mdeg(sg["rig"]["R"], R)), "fit": mode,
-           "translation_source": ("refined in the joint (1 cm prior per axis on the start rig's right centre)"
+           "translation_source": ("refined in the joint (1 cm prior per axis on the start rig's right center)"
                                   if mode == "full" else "held (the rig in use)")}
     C0 = -np.asarray(sg["rig"]["R"], float).T @ np.asarray(sg["rig"]["t"], float)
     C = -R.T @ t
@@ -1077,7 +1077,7 @@ def rig_lines(r: Dict[str, Any]) -> List[str]:
     if not r or r.get("fit") != "full":
         return []
     ch = r.get("translation_change_mm") or [0, 0, 0]
-    out = [f"rig translation refined: the right centre moved x {ch[0]:+.2f}, y {ch[1]:+.2f}, z (along the boresight) "
+    out = [f"rig translation refined: the right center moved x {ch[0]:+.2f}, y {ch[1]:+.2f}, z (along the boresight) "
            f"{ch[2]:+.2f} mm from the start rig; baseline {1e3 * r['baseline_m']:.2f} mm ({r['baseline_change_mm']:+.2f})"]
     if r.get("translation_sd_mm"):
         sd, z = r["translation_sd_mm"], r["translation_z"]
@@ -1876,7 +1876,7 @@ def residual_directions(rec, zunits: Dict[int, Dict[str, Any]], images: Sequence
     per sequence (block | sol | sequence; focus bins without one: block | state) and eye, from the final joint pass,
     the rms of the x and y residuals apart and the scale left in fx and fy (:func:`_direction_stats`); for pans the
     same per row (elevation tier: the frames' boresight elevations clustered at gaps over ``row_gap_fraction`` of the
-    vertical field of view).  Mostly vertical residuals growing away from the centre mean a real pull (pose or
+    vertical field of view).  Mostly vertical residuals growing away from the center mean a real pull (pose or
     structure) that pooling would hide; no direction means the bins were the problem.  Returns {"sequences": rows
     sorted by rms (block, sequence, sol, eye, images, the stats, "rows": [{tier, elevation_deg, images, stats}]),
     "row_gap_deg": {eye: deg}}."""
@@ -2028,9 +2028,9 @@ def low_state_step_ppm(res: Dict[str, Any], eye: str) -> Optional[float]:
 
 def opposite_state_flags(res: Dict[str, Any], tol: float = OPPOSITE_STATE_TOL) -> Dict[str, Any]:
     """0.96 (item C of 5 Nov): per sequence, the two eyes' dfx from the diagnostic pass (:func:`sequence_scales`)
-    against the eyes' low-state steps (:func:`low_state_step_ppm`).  An eye labelled high whose dfx is within ``tol``
+    against the eyes' low-state steps (:func:`low_state_step_ppm`).  An eye labeled high whose dfx is within ``tol``
     of its step while the other eye's is within ``tol`` of 0, fx and fy moving together (|dfy - dfx| within the same
-    tolerance), is flagged "possible low state"; the mirror (an eye labelled low at +|step|, the other at 0) "possible
+    tolerance), is flagged "possible low state"; the mirror (an eye labeled low at +|step|, the other at 0) "possible
     high state".  A warning, not a failure.  Returns {"tolerance", "steps_ppm": {eye: step}, "sequences_checked",
     "flags": [{block, sequence, sol, eye, flag, dfx_ppm, dfy_ppm, step_ppm, other_eye, other_dfx_ppm, observations}]}."""
     d = res.get("diagnostics") or {}
@@ -2081,7 +2081,7 @@ def opposite_state_lines(os_: Optional[Dict[str, Any]]) -> List[str]:
     out = [head + f": {len(os_['flags'])} flagged (WARNING - check the low-state list)"]
     for f in os_["flags"]:
         out.append(f"  {f['block']} {f.get('sequence') or f['key']}" + (f" sol {f['sol']}" if f.get("sol") is not None else "")
-                   + f": {f['flag']} (labelled {'/'.join(f['labelled'])}): dfx {f['dfx_ppm']:+.0f}, dfy {f['dfy_ppm']:+.0f} ppm "
+                   + f": {f['flag']} (labeled {'/'.join(f['labelled'])}): dfx {f['dfx_ppm']:+.0f}, dfy {f['dfy_ppm']:+.0f} ppm "
                      f"against a step of {f['step_ppm']:+.0f}; {f['other_eye']} dfx {f['other_dfx_ppm']:+.0f} ppm; "
                      f"{f['observations']} obs")
     return out
@@ -2290,8 +2290,8 @@ def _tangential_corner_px(G, frame_px: Tuple[int, int] = FRAME_PX) -> float:
     return out
 
 
-def _rig_centre(proj, zoom: int) -> Optional[np.ndarray]:
-    """The right Mastcam-Z centre in the left camera's frame (m) of the zoom's rig as refined in ``proj``."""
+def _rig_center(proj, zoom: int) -> Optional[np.ndarray]:
+    """The right Mastcam-Z center in the left camera's frame (m) of the zoom's rig as refined in ``proj``."""
     v = (proj.settings.get("zcam_virtual_rig") or {}).get(f"Z{zoom:03d}") or {}
     R, t = v.get("R_refined") or v.get("R_sensor_from_ref"), v.get("t_refined") or v.get("t_sensor_from_ref")
     if R is None or t is None:
@@ -2307,13 +2307,13 @@ def eye_slope_tests(rec, proj, idx, st, units, zunits, sg, g, ba, zoom: int = ZO
     dz / D - with D tied to the focus count, that lands in ZR's focus slope.  Three adjustments from the joint's
     solution, each against the full model as delta chi^2 = 2 (cost change) / variance factor:
 
-    (1) ``rig translation free``: the Mastcam-Z rig's translation refined (1 cm prior per axis on the right centre,
-    :data:`rpp.sfm.reconstruction.ZCAM_RIG_TRANSLATION_SIGMA_M`) - the slopes it gives and how far the right centre
+    (1) ``rig translation free``: the Mastcam-Z rig's translation refined (1 cm prior per axis on the right center,
+    :data:`rpp.sfm.reconstruction.ZCAM_RIG_TRANSLATION_SIGMA_M`) - the slopes it gives and how far the right center
     moves (mm, in the left camera's frame: z along the boresight);
     (2) ``one slope for both eyes``: b_ZR = b_ZL, the rig as in the joint - the cost of equal slopes;
     (3) ``one slope, rig translation free``: both - against (1), the cost of equal slopes once the rig may move.
 
-    If the rig is the cause, (1) moves the centre a few mm (mostly z) and brings the slopes together, and (3) costs
+    If the rig is the cause, (1) moves the center a few mm (mostly z) and brings the slopes together, and (3) costs
     little against (1) while (2) costs a lot."""
     from scipy.stats import chi2
     cov = ba.get("covariance") or {}
@@ -2326,7 +2326,7 @@ def eye_slope_tests(rec, proj, idx, st, units, zunits, sg, g, ba, zoom: int = ZO
     ib = GLOBAL_TERMS.index("b")
     fixed = fixed or {}
     hold = {e: sorted(fixed.get(e, {})) for e in eyes}
-    C0 = _rig_centre(proj, zoom)
+    C0 = _rig_center(proj, zoom)
     out: Dict[str, Any] = {"base": {"b": {e: float(g[e][ib]) for e in eyes}, "cost": cost0, "variance_factor": vf,
                                     "rig_centre_m": None if C0 is None else C0.tolist()}, "tests": []}
     runs = {}
@@ -2358,7 +2358,7 @@ def eye_slope_tests(rec, proj, idx, st, units, zunits, sg, g, ba, zoom: int = ZO
         except Exception as ex:                                       # noqa: BLE001
             out["tests"].append({"test": name, "error": f"{type(ex).__name__}: {ex}"})
             continue
-        C = _rig_centre(pv, zoom)
+        C = _rig_center(pv, zoom)
         runs[name] = float(bav["final_cost"])
         row = {"test": name, "rig": rig_mode, "one_slope": bool(tie_b), "cost": float(bav["final_cost"]),
                "b": {e: float(gv[e][ib]) for e in eyes}, "seconds": time.time() - t,
@@ -2380,7 +2380,7 @@ def eye_slope_tests(rec, proj, idx, st, units, zunits, sg, g, ba, zoom: int = ZO
             ch = row.get("rig_centre_change_mm")
             log.info(f"  eye-slope test {row['test']}: b {zl} {row['b'][zl]:.5f}, {zr} {row['b'][zr]:.5f} px/count; "
                      f"delta chi2 {d:+.1f} against {ref_name} ({dof} dof)"
-                     + (f"; right centre moved ({ch[0]:+.2f}, {ch[1]:+.2f}, {ch[2]:+.2f}) mm" if ch else "")
+                     + (f"; right center moved ({ch[0]:+.2f}, {ch[1]:+.2f}, {ch[2]:+.2f}) mm" if ch else "")
                      + f" ({row['seconds']:.0f} s)")
     return out
 
@@ -2401,7 +2401,7 @@ def eye_slope_lines(est: Optional[Dict[str, Any]]) -> List[str]:
             out.append(f"test {t['test']}: slopes " + ", ".join(f"{e} {v:.5f}" for e, v in sorted(b.items()))
                        + f" px/count; delta chi2 {t['delta_chi2']:+.1f} against {t['against']} ({t['dof']} dof, "
                          f"{'significant' if t['significant'] else 'not significant'} at 0.001)"
-                       + (f"; the right centre moved x {ch[0]:+.2f}, y {ch[1]:+.2f}, z (along the boresight) "
+                       + (f"; the right center moved x {ch[0]:+.2f}, y {ch[1]:+.2f}, z (along the boresight) "
                           f"{ch[2]:+.2f} mm" if ch else ""))
         else:
             out.append(f"test {t.get('test')}: {t.get('error') or t.get('note')}")
@@ -2713,7 +2713,7 @@ def candidate_model(res: Dict[str, Any], model: Dict[str, Any]) -> Dict[str, Any
                       per_block=[{"block": x["block"], "sol": x["sol"], "T_optics_degC": x["T_optics_degC"]} for x in rows],
                       translation_change_mm=r.get("translation_change_mm"), translation_sd_mm=r.get("translation_sd_mm"),
                       note="the Mastcam-Z joint: one rig for every block and focus (rotation refined, translation "
-                           + ("refined, 1 cm prior on the start rig's right centre" if r.get("fit") == "full" else "held")
+                           + ("refined, 1 cm prior on the start rig's right center" if r.get("fit") == "full" else "held")
                            + "); per_block / residuals from the diagnostic pass (each block's own rig, the early-mission "
                              "principal-point offset applied)")
     new["rig"].pop("sd_baseline_mm", None)

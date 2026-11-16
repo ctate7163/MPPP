@@ -421,14 +421,14 @@ usage: rpp mesh      WORK --station S026D0392 [--points dense/fused.ply] [--colm
 usage: rpp depthmaps WORK --station ... [--cameras N] [--scale 1] [--zcam-scale 1] [--images NAME ...]
                       [--photometry] [--no-shadow] [--no-preview] [--no-validate]
 usage: rpp ods       WORK --station ... [--width 8192] [--ipd 0.064] [--cameras N] [--scale 1] [--images ...]
-                      [--sky-radius 300] [--no-far-field] [--no-geometry] [--pole-merge 0 90] [--pole-merge-down 0 90] [--eyes left right centre]
+                      [--sky-radius 300] [--no-far-field] [--no-geometry] [--pole-merge 0 90] [--pole-merge-down 0 90] [--eyes left right center]
                       [--fill-cameras F] [--site-name NAME] [--no-nadir-mark] [--nadir-mark-deg 20]
                       [--rows-per-chunk 128] [--exclude STEM ...] [--stack-top left] [--retone] [--stack-only]
                       [--prefix Sol0052_S003D2046] [--bits 16] [--pds DIR] [--tone soft]
 ```
 
 `--station` is `S026D0392`, `26_392` or `sol:461`.  **`mesh`**: the station's frames by camera family, the mast
-pivot fitted from their centres and rotations (`station.json`), then the surface over the fused cloud (the newest
+pivot fitted from their centers and rotations (`station.json`), then the surface over the fused cloud (the newest
 `dense*/fused.ply`, or `--points`): Poisson (open3d), or COLMAP's Delaunay mesher through `--colmap` over
 `--dense-dir`; then the cleanup of the 31 Oct plan — components under 1 %, rubber sheets (long thin triangles),
 surface no fused point supports within τ(z) = max(5 cm, 2 % z, 3 σz), everything farther than `--mesh-radius`
@@ -450,10 +450,10 @@ photometric cube from the sun direction of the frame's row (`sun_enu` turned int
 emission, phase and the cast shadow — `photometry/` (npz), `photometry_maps/` (COLMAP `.bin` arrays; only with `--colmap-bins` since 0.97.13),
 `photometry_jpg/`, `photometry_report.json`.  **`ods`**: the omni-directional stereo panorama — equirectangular,
 `--width` × half, the eyes `--ipd` apart on the circle around the pivot — each eye's rays cast into the scene and
-every hit coloured from the source frame that sees it best (the smallest angle to the frame's axis, inside the
+every hit colored from the source frame that sees it best (the smallest angle to the frame's axis, inside the
 frame and its mask): `<station>_ods_left.png`, `<station>_ods_right.png`, `<station>_360_3DTD.png/.jpg`
-(the left eye above the right; `--stack-top right`), `provenance.png` (which frame coloured what), `ods.json` (the
-coverage: coloured, mesh, far, none); with the rover shown (the default since 0.96.1) they are
+(the left eye above the right; `--stack-top right`), `provenance.png` (which frame colored what), `ods.json` (the
+coverage: colored, mesh, far, none); with the rover shown (the default since 0.96.1) they are
 `<station>_rover_ods_...`, with `--mask-rover` `<station>_ods_...`; `--exclude STEM ...` leaves
 frames out (both eyes of a pair).  **`mesh`** with the rover shown puts a floor at the rover deck: nothing below the deck top
 inside its footprint (RMECH x -1.10..+0.95 m, y +-0.60 m, z 0 = the deck top; the rover placed by the frames' label
@@ -461,7 +461,7 @@ CAHVORE poses), the floor added to the mesh, `rover_deck.json`; `--no-deck-floor
 model (simplified, the arm stowed; `rpp.ibr.rover_model`) at the station's rover pose, the fused points within 4 cm
 of it dropped (`--no-rover-model`, `--rover-model-parts`).  **`ods --bits 16`** (0.96.1) blends the panorama from 16-bit linear frames made
 again from the PDS products (`<project>/images16/`; `--pds` or `RPP_PDS`): `<station>_ods_left_16.png`,
-`_right_16.png`, `_360_3DTD_16.png` (uint16 linear, for colour work; what the 8-bit images clip at 255 is kept,
+`_right_16.png`, `_360_3DTD_16.png` (uint16 linear, for color work; what the 8-bit images clip at 255 is kept,
 saturated pixels are neutral) next to the 8-bit ones, which get a soft highlight roll-off (`--tone clip` for the old
 cut).  `mesh` also removes floating surface: anything above the cameras, and beyond
 3 m of the mast axis anything less than 1 m below them, heights above the ground plane (`--keep-floating`).  
@@ -471,7 +471,7 @@ how a value turns back into radiance), the standard 8-bit panorama is the 16-bit
 8-bit frames, with each channel rolled off above 235 (`--tone pipeline`; `auto`, `soft` and `clip` are the earlier
 rules), and the enhanced views clip neither the shadows nor the highlights.
 
-The current behaviour in one place - the eye separation (64 mm x cos(elevation) since 0.97.13), the far field
+The current behavior in one place - the eye separation (64 mm x cos(elevation) since 0.97.13), the far field
 (100 m, 300 m or infinity per direction), the sky filling and evening, the 16-bit product, the XMP metadata of the
 `_360_3DTD` files, the file list and the web viewer - is on [Station products](station-products.md). The paragraph
 above is the record of how the commands grew.
@@ -489,7 +489,7 @@ usage: rpp metashape [-h] [--variant VARIANT] [--model MODEL] [--out OUT] [--max
 Writes `<project>\metashape\`: `metashape_job.json`, the tie points as Bundler v0.3 (`<block>.bundler.out` and
 `<block>.bundler_images.txt`), `build_metashape_project.py` and `make_metashape_project.bat`. Double-click the batch
 file (or `--run`): Metashape Professional (`RPP_METASHAPE`, else the standard install) builds `<block>.psx` there
-and leaves it open (`set RPP_METASHAPE_HEADLESS=1`: without the window). Nothing is aligned or optimised: the
+and leaves it open (`set RPP_METASHAPE_HEADLESS=1`: without the window). Nothing is aligned or optimized: the
 sensors (one per COLMAP camera of `gui_native\sparse`) have their calibration fixed and every camera its COLMAP
 pose. The chunk's coordinate system is local and metric - RPP's world frame of the block (x east, y north, z up;
 the chunk transform adds the block offset). `metashape_check.json` reports COLMAP's observations and the imported
@@ -505,7 +505,7 @@ batch file names.
 | THIN_PRISM_FISHEYE (Navcam, Hazcam) | Fisheye |
 | FULL_OPENCV (Mastcam-Z) | Frame |
 | fx, fy | f = fy, b1 = fx - fy |
-| cx, cy (from the top-left corner) | cx - w/2, cy - h/2 (from the frame centre) |
+| cx, cy (from the top-left corner) | cx - w/2, cy - h/2 (from the frame center) |
 | k1, k2, k3, k4 | K1, K2, K3, K4 |
 | p1, p2 | P2, P1 (swapped: Metashape's P1 goes with x) |
 | sx1, sy1; k4-k6 of FULL_OPENCV | no place in Metashape: zero in every RPP model (else fitted and reported) |
@@ -522,11 +522,11 @@ usage: rpp nerfstudio [-h] [--variant VARIANT] [--model MODEL] [--out OUT] [--si
 Writes `<project>\nerfstudio\`: `images\` and `masks\` (2048 x 1536 by default), `transforms.json` and
 `sparse_pc.ply` (the tie points, splatfacto's start). Each frame is resampled through COLMAP's exact camera model
 (`gui_native\sparse`) into a pinhole frame with its own focal length and principal point (per frame in
-`transforms.json`): Navcam and Hazcam keep their centre resolution scaled by 2048 / width (about 82 deg of a Navcam,
+`transforms.json`): Navcam and Hazcam keep their center resolution scaled by 2048 / width (about 82 deg of a Navcam,
 100 deg of a Hazcam; the fisheye edges beyond are left out); Mastcam-Z frames lose their first 22 and last 16
 columns (`--zcam-clip`) and are scaled by 1536 / 1200. The masks are resampled the same way and are 0 wherever the
 frame has no source pixel. `transform_matrix` is camera to world with OpenGL camera axes, in RPP's world frame
-(x east, y north, z up, metres; the block offset in `rpp`).
+(x east, y north, z up, meters; the block offset in `rpp`).
 
 ```text
 ns-train splatfacto --data <project>\nerfstudio nerfstudio-data

@@ -36,7 +36,7 @@ a single number formed by correlating two patches.  If the two image
 measurements are independent then sigma_disp = sqrt(2) * sigma_x', and the two
 formulations agree exactly.  Both conventions appear in the literature; this
 code uses sigma_x' (per-image) throughout because it is the quantity that
-generalises to N rays and to mixed mono/stereo visibility.
+generalizes to N rays and to mixed mono/stereo visibility.
 ``tests/test_error_model.py::test_two_ray_analytic`` verifies the
 correspondence numerically.
 
@@ -124,7 +124,7 @@ def tangent_basis(n: np.ndarray) -> np.ndarray:
 
 
 def sym_inv3(M: np.ndarray) -> np.ndarray:
-    """Batched inverse of symmetric 3x3, symmetrised on output."""
+    """Batched inverse of symmetric 3x3, symmetrized on output."""
     Mi = np.linalg.inv(M)
     return 0.5 * (Mi + np.swapaxes(Mi, -1, -2))
 
@@ -193,7 +193,7 @@ class OcclusionMask:
 
 #: Working profile carried over from the original error_map.py.
 #: PROVENANCE UNVERIFIED -- confirm against rover CAD / ray-cast before publishing,
-#: and note whether it is referenced to the mast rotation centre or to each camera
+#: and note whether it is referenced to the mast rotation center or to each camera
 #: (the difference is a few degrees, which matters in the near field).
 DEFAULT_ROVER_MASK = OcclusionMask(
     az_deg=[0, 100, 150, 160, 170, 185, 187, 205, 220, 240, 260, 310, 320, 360],
@@ -286,7 +286,7 @@ class Station:
     """
     One imaging station (waypoint).
 
-    xyz     : (3,) position in the working frame [m], typically E,N,U centred on
+    xyz     : (3,) position in the working frame [m], typically E,N,U centered on
               the anchor station.
     az_deg  : rover heading, degrees clockwise from North.
     path_m  : cumulative distance driven from the anchor along the traverse.
@@ -323,14 +323,14 @@ class PoseModel:
 
     The attitude term scales as r^2, so it dominates the far field absolutely.
 
-    IMPORTANT MODELLING CHOICES
+    IMPORTANT MODELING CHOICES
     ---------------------------
     * Errors are RELATIVE TO THE ANCHOR.  The anchor has zero pose covariance by
       definition (free-network / inner-constraint convention).  The common-mode
       part of pose error is a pure datum shift and does not degrade internal
       reconstruction quality, so it is correctly excluded here.
     * Interior orientation (principal distance, principal point, distortion
-      residual) is NOT included.  It is common to every station, so modelling it
+      residual) is NOT included.  It is common to every station, so modeling it
       per-station would let averaging remove it -- exactly wrong.  It belongs in
       rho_inf (the common-mode correlation floor) instead.
     * Pose errors are treated as independent between stations.  For telemetry
@@ -521,12 +521,12 @@ class ModelConfig:
         #   L_eff  = 1.46 h -- INFORMATION per possible pair, S/eps^2, decays
         #                      with this (pooled; LOSO 1.40-1.56; single
         #                      exponential at 0.061 dex, no sub-hour plateau --
-        #                      the plateau reported earlier was an artefact of
+        #                      the plateau reported earlier was an artifact of
         #                      describing completeness and precision separately).
         # Using L_eff for counts under-predicts them by the whole eps^2 factor.
         # An earlier analytic 1/L_eff = 1/tau + 2/L_eps gave 1.09 h and was wrong
         # by 26 %: it used the same-station tau (1.90 h) instead of the
-        # cross-station one (2.32 h), and linearised (1+x)^-2 over x up to 1.5.
+        # cross-station one (2.32 h), and linearized (1+x)^-2 over x up to 1.5.
         # Separability S(theta,dL) = P(theta)h(dL) holds below ~8 deg
         # (L_eff 1.40-1.45 h); at 11 deg 1.21 h, at 20 deg 0.98 h.
     L_eff_h: float = 1.46        # information scale; use if weighting by S/eps^2
@@ -588,7 +588,7 @@ class ModelConfig:
         # 'tilt'        based on transition tilt tau rather than angle, which is
         #               the quantity that actually governs affine matchability
         #               for grazing rover geometry.
-        # The kernel SHAPE is a modelling assumption, not received wisdom from
+        # The kernel SHAPE is a modeling assumption, not received wisdom from
         # the stereo literature.  It is swappable precisely because it is
         # unsettled; report results under at least two kernels.
     theta_min_deg: Optional[float] = None
@@ -692,7 +692,7 @@ class Grid:
         return np.stack([X, Y, Z], axis=-1), N
 
     def extent_edges(self) -> Tuple[float, float, float, float]:
-        """imshow extent using cell EDGES, not centres."""
+        """imshow extent using cell EDGES, not centers."""
         dx = (self.x[-1] - self.x[0]) / max(self.x.size - 1, 1)
         dy = (self.y[-1] - self.y[0]) / max(self.y.size - 1, 1)
         return (self.x[0] - dx / 2, self.x[-1] + dx / 2,
@@ -733,14 +733,14 @@ class PrecisionField:
 
     @property
     def eps_intra_px(self) -> float:
-        """Reference eps for normalisation; the min if stations differ."""
+        """Reference eps for normalization; the min if stations differ."""
         vals = [s.instrument.eps_intra_px for s in self.stations]
         return float(min(vals)) if vals else float("nan")
 
     @property
     def ifov_ref(self) -> float:
         """
-        Reference IFOV for G_n / GSD normalisation.
+        Reference IFOV for G_n / GSD normalization.
 
         With MIXED instruments (e.g. Z34 + Navcam in one network) there is no
         single pixel angle, so the FINEST is used: G_n then reads as "how many
@@ -979,7 +979,7 @@ def solve_precision_field(grid: Grid,
             qual[i] = np.where(contrib[i], w_st[i] / sp ** 2, -1.0)
         # Greedy leader clustering, per cell: take stations in descending
         # quality; keep one unless it lies within theta_c of a station already
-        # KEPT.  (Dropping a station because a *dropped* neighbour was better
+        # KEPT.  (Dropping a station because a *dropped* neighbor was better
         # lets a chain A-B-C-D collapse to one look although A and C are
         # independent -- caught by the spacing sweep flat-lining at 1.0x.)
         near = np.zeros((Nst, Nst, Ny, Nx), dtype=bool)
@@ -1069,14 +1069,14 @@ def _correlation_inflation(u: np.ndarray, vis: np.ndarray, cfg: ModelConfig) -> 
         inflate = N / N_eff
 
     This is an approximation to full GLS (Sigma^-1 = J^T C^-1 J) that captures
-    the saturation behaviour without any N x N inversion.  Spot-check against
+    the saturation behavior without any N x N inversion.  Spot-check against
     full GLS at a handful of cells before relying on it.
 
-    NOTE: the exponential kernel is a modelling assumption imported from
+    NOTE: the exponential kernel is a modeling assumption imported from
     geodetic covariance practice.  The correlated-error MECHANISMS are well
     documented in the stereo literature (sub-pixel interpolation bias /
     pixel-locking, foreshortening bias, interior-orientation residual, surface
-    definition ambiguity) but this parameterisation is not standard, and
+    definition ambiguity) but this parameterization is not standard, and
     theta_c has not been measured for Mars surface imagery.
     """
     Nst = u.shape[0]
@@ -1193,7 +1193,7 @@ def gate_powerlaw(theta_rad, cfg) -> np.ndarray:
     """
     Measured cross-station survival gate, A*(1+theta/theta_c)^(-k).
 
-    theta_c = theta_bar/CV^2 and k = 1/CV^2, so the gate is parameterised by
+    theta_c = theta_bar/CV^2 and k = 1/CV^2, so the gate is parameterized by
     the two numbers that transfer between sites: the mean angular tolerance
     theta_bar and its scene-wide spread CV.  For CV->0 it tends to
     A*exp(-theta/theta_bar).  A is the completeness at zero angle relative to the
@@ -1223,7 +1223,7 @@ def load_occlusion_profiles(path: Optional[str] = None) -> Dict[str, "OcclusionM
     Each row gives, for that azimuth in the ROVER frame, the minimum elevation
     at which terrain is visible past rover hardware; below it the view is
     blocked. Hand-measured by CT from rover-frame az-el projected mosaics
-    centred on the mast rotation axis, by reading where the rover meets the
+    centered on the mast rotation axis, by reading where the rover meets the
     terrain.
 
     Returns e.g. {"zcam_left": OcclusionMask, ..., "ncam_right": ...}.
@@ -1273,12 +1273,12 @@ def choose_anchor(stations: Sequence[Station],
 
     'first'  -- first in traverse order.  Natural when errors should be read as
                 "how far has the network drifted from where we started".
-    'center' -- closest to the geometric centre of the station set.  Minimises
+    'center' -- closest to the geometric center of the station set.  Minimizes
                 the maximum path length to any station, so telemetry pose error
                 is smallest in the worst case.  Default.
     'site'   -- the station flagged is_anchor already, i.e. the SITE frame
                 origin.  Use when tying to the mission site frame matters more
-                than minimising internal error.
+                than minimizing internal error.
 
     Returns the index chosen.  Note the anchor carries ZERO pose covariance by
     the free-network convention: reported sigmas are relative to it.

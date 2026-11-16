@@ -17,7 +17,7 @@ cameras.bin`` (refined cameras), ``run_done.json`` and ``health/health.json``.
   temperature (applied when significant), and the stereo rig (rotation, baseline) - written as a focus model that
   notebook 03 starts from (``lines``, ``rig``) plus a report;
 * :func:`check_model` - sanity limits before a model is promoted;
-* :func:`export_point_cloud` - a block's points as PLY (colours of the native model).
+* :func:`export_point_cloud` - a block's points as PLY (colors of the native model).
 """
 from __future__ import annotations
 
@@ -91,7 +91,7 @@ def grade_block(info: Dict[str, Any], limits: Optional[Dict[str, Any]] = None) -
     Is this block good enough to calibrate Mastcam-Z from?  Fails on: no finished run; health FAIL in a check other
     than the Mastcam-Z start-model ones (``fail_checks_allowed``: focal change, ray displacement - the start model is
     what is being calibrated); registered fraction, beyond-ground share, Navcam residual median, Navcam corners
-    (edge-to-centre ratio, corner tie points) outside ``GRADE``; fewer than ``min_bins_per_eye`` refined backlash bins
+    (edge-to-center ratio, corner tie points) outside ``GRADE``; fewer than ``min_bins_per_eye`` refined backlash bins
     per eye.  Score (higher is better): registered fraction, small residual, many Mastcam-Z bins, a focus span, good
     corners.  Returns {"ok", "score", "reasons", "name"}.
     """
@@ -446,7 +446,7 @@ def report_lines(model: Dict[str, Any], grades: Optional[Sequence[Dict[str, Any]
 
 
 def export_point_cloud(work: PathLike, out: Optional[PathLike] = None) -> Dict[str, Any]:
-    """A block's points as PLY (the native model with colours, ``gui_native/sparse``, else ``sparse/cahv_ba``), in
+    """A block's points as PLY (the native model with colors, ``gui_native/sparse``, else ``sparse/cahv_ba``), in
     the project's world frame (site ENU minus ``offset``, written beside it as JSON).  Returns {"ply", "points",
     "offset", "frame"}."""
     import pycolmap

@@ -166,7 +166,7 @@ def test_weights_follow_native_resolution(tmp_path):
 
 
 def test_filter_observations_removes_outliers(tmp_path):
-    """v0p9 bug found on Belva: numpy ids were not recognised by pycolmap maps, so nothing was filtered."""
+    """v0p9 bug found on Belva: numpy ids were not recognized by pycolmap maps, so nothing was filtered."""
     from rpp.sfm.reconstruction import filter_observations, native_residuals
     proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
     rec, _ = _build_rec(proj, truth, P, cams_d, rigT, noise, rng, perturb=False)
@@ -649,8 +649,8 @@ def _rec():
 
 
 def _short_stop(tmp_path, offset=(1.5, -1.0, 0.0)):
-    """The synthetic block with one stereo frame of the second station relabelled as a two-image station whose
-    waypoint prior is ``offset`` metres off."""
+    """The synthetic block with one stereo frame of the second station relabeled as a two-image station whose
+    waypoint prior is ``offset`` meters off."""
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent))
@@ -665,7 +665,7 @@ def _short_stop(tmp_path, offset=(1.5, -1.0, 0.0)):
     return proj, rec, noise, fid
 
 
-def _centre(rec, fid):
+def _center(rec, fid):
     fr = rec.frames[fid]
     return np.asarray(fr.rig_from_world.inverse().translation)
 
@@ -698,7 +698,7 @@ def test_unlocalized_stations_and_dropped_priors(tmp_path):
     pytest.importorskip("pyceres")
     from rpp.sfm.reconstruction import bundle_adjust, unlocalized_stations
     proj, rec, noise, fid = _short_stop(tmp_path)
-    truth = _centre(rec, fid)
+    truth = _center(rec, fid)
     u = unlocalized_stations(proj, 4, rec=rec)
     assert list(u) == ["S001D0150"] and u["S001D0150"]["images"] == 2 and u["S001D0150"]["prior"] == "dropped"
     assert u["S001D0150"]["cross_points"] > 20
@@ -712,12 +712,12 @@ def test_unlocalized_stations_and_dropped_priors(tmp_path):
     assert ba1["frames_without_position_prior"] == 1 and ba1["priors"] == ba0["priors"] - 1
     # with its prior the 1.8 m error drags the short stop and the whole block (~12-14 cm); without it the block
     # moves only by the noise (~4-5 cm)
-    e0 = np.linalg.norm(_centre(r0, fid) - truth)
-    e1 = np.linalg.norm(_centre(r1, fid) - truth)
+    e0 = np.linalg.norm(_center(r0, fid) - truth)
+    e1 = np.linalg.norm(_center(r1, fid) - truth)
     assert e1 < 0.6 * e0
     other = [f for f in rec.frames if f != fid]
-    m0 = np.mean([np.linalg.norm(_centre(r0, f) - _centre(rec, f)) for f in other])
-    m1 = np.mean([np.linalg.norm(_centre(r1, f) - _centre(rec, f)) for f in other])
+    m0 = np.mean([np.linalg.norm(_center(r0, f) - _center(rec, f)) for f in other])
+    m1 = np.mean([np.linalg.norm(_center(r1, f) - _center(rec, f)) for f in other])
     assert m1 < 0.6 * m0
 
 
@@ -726,7 +726,7 @@ def test_register_stations_only_moves_the_short_stop(tmp_path, monkeypatch):
     import pycolmap
     from rpp.sfm import reconstruction as RC
     proj, rec, noise, fid = _short_stop(tmp_path)
-    truth = _centre(rec, fid)
+    truth = _center(rec, fid)
     # matches from the tracks; then the short stop's observations leave the tracks (as after triangulating with
     # its wrong prior pose), so that its tie points are only correspondences to the other station's points
     pairs = {}
@@ -744,15 +744,15 @@ def test_register_stations_only_moves_the_short_stop(tmp_path, monkeypatch):
             if el.image_id in mine and pid in rec.points3D:
                 rec.delete_observation(el.image_id, el.point2D_idx)
     register_stations = RC.register_stations
-    others = {f: _centre(rec, f) for f in rec.frames if f != fid}
+    others = {f: _center(rec, f) for f in rec.frames if f != fid}
     # the frame starts at its (wrong) prior
     fr = rec.frames[fid]
     fr.rig_from_world = fr.rig_from_world * pycolmap.Rigid3d(pycolmap.Rotation3d(np.eye(3)), -np.array([1.5, -1.0, 0.0]))
-    assert np.linalg.norm(_centre(rec, fid) - truth) > 1.0
+    assert np.linalg.norm(_center(rec, fid) - truth) > 1.0
     rep = register_stations(rec, proj, only=["S001D0150"], max_error_px=40.0, min_inliers=10, verbose=False)
     assert rep["stations"]["S001D0150"]["registered"]
-    assert np.linalg.norm(_centre(rec, fid) - truth) < 0.2          # from 1.8 m: within reach of triangulation
-    assert all(np.allclose(_centre(rec, f), c) for f, c in others.items())
+    assert np.linalg.norm(_center(rec, fid) - truth) < 0.2          # from 1.8 m: within reach of triangulation
+    assert all(np.allclose(_center(rec, f), c) for f, c in others.items())
 
 
 def test_reconstruct_with_localize_min_images(tmp_path, monkeypatch):
@@ -1413,8 +1413,8 @@ class _Frame:
 
 
 class _Rec:
-    def __init__(self, centres):
-        self.frames = {i: _Frame(c) for i, c in enumerate(centres)}
+    def __init__(self, centers):
+        self.frames = {i: _Frame(c) for i, c in enumerate(centers)}
         self.moved = None
 
     def transform(self, sim):
@@ -1426,13 +1426,13 @@ class _Rec:
 
 
 def test_prior_gauge_moves_the_block_onto_its_priors():
-    from rpp.sfm.reconstruction import PRIOR_GAUGE_RECENTRE, prior_gauge
-    assert PRIOR_GAUGE_RECENTRE is True
+    from rpp.sfm.reconstruction import PRIOR_GAUGE_RECENTER, prior_gauge
+    assert PRIOR_GAUGE_RECENTER is True
     priors = np.array([[0, 0, 0], [10, 0, 0], [0, 10, 1.0]])
     rec = _Rec(priors + [-0.19, -0.07, -0.10])
     g = prior_gauge(rec, list(enumerate(priors)))
     assert np.allclose(g["mean_residual_m"], [0.19, 0.07, 0.10]) and g["recentred"]
-    g2 = prior_gauge(rec, list(enumerate(priors)), recentre=False)
+    g2 = prior_gauge(rec, list(enumerate(priors)), recenter=False)
     assert np.allclose(g2["mean_residual_m"], 0, atol=1e-12) and not g2["recentred"]
     assert prior_gauge(rec, []) is None
 
@@ -1579,7 +1579,7 @@ def test_unsurveyed_stations_get_loose_priors(tmp_path):
     fid = next(iter(rec.frames))
     T = rec.frames[fid].rig_from_world
     C = -np.asarray(T.rotation.matrix()).T @ np.asarray(T.translation)
-    g = R.prior_gauge(rec, [(fid, C + [1.0, 0, 0], 1.0), (fid, C + [101.0, 0, 0], 0.01)], recentre=False)
+    g = R.prior_gauge(rec, [(fid, C + [1.0, 0, 0], 1.0), (fid, C + [101.0, 0, 0], 0.01)], recenter=False)
     assert abs(g["mean_residual_m"][0] - 2.01 / 1.01) < 1e-9
 
 
@@ -1610,7 +1610,7 @@ def test_drop_isolated_points():
         tr.add_element(1, n)
         tr.add_element(2, n)
         rec.add_point3D(xyz, tr, np.zeros(3, np.uint8))
-    assert drop_isolated_points(rec, 4.0, within_radii=1.5)["deleted"] == 0     # both cameras 0.25 m from their centre
+    assert drop_isolated_points(rec, 4.0, within_radii=1.5)["deleted"] == 0     # both cameras 0.25 m from their center
     out = drop_isolated_points(rec, 4.0, within_radii=0)
     left = np.array([p.xyz for p in rec.points3D.values()])
     assert out["deleted"] >= 18 and out["deleted"] <= 40 and np.abs(left[:, 2]).max() < 1.0

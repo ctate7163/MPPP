@@ -24,10 +24,10 @@ algebraic_connectivity (Fiedler value, lambda_2 of the Laplacian L = D - W)
     edge connectivity: 0 <= lambda_2 <= kappa_v <= kappa_e <= d_min.
     lambda_2 = 0 means the graph is DISCONNECTED -- some stations cannot be tied
     to the others at all, and their relative pose is unrecoverable from imagery.
-    Larger is more rigid.  Used in recent SfM work to characterise view-graph
+    Larger is more rigid.  Used in recent SfM work to characterize view-graph
     difficulty.
 
-normalised_fiedler = lambda_2 / lambda_max
+normalized_fiedler = lambda_2 / lambda_max
     Scale-free version, comparable between sites with different station counts
     and different absolute overlap.
 
@@ -86,7 +86,7 @@ class ViewGraph:
         return float(ev[1]) if ev.size > 1 else 0.0
 
     @property
-    def normalised_fiedler(self) -> float:
+    def normalized_fiedler(self) -> float:
         ev = self.eigenvalues
         return float(ev[1] / ev[-1]) if ev.size > 1 and ev[-1] > 0 else 0.0
 
@@ -238,7 +238,7 @@ def graph_report(g: ViewGraph) -> str:
         "   (lambda_2; 0 = disconnected)",
         f"edge threshold          : {g._thr():.5f}"
         f"   ({g.rel_threshold:.0%} of strongest edge)",
-        f"normalised Fiedler      : {g.normalised_fiedler:.5f}"
+        f"normalized Fiedler      : {g.normalized_fiedler:.5f}"
         "   (lambda_2 / lambda_max)",
         f"weakest station         : {g.weakest_station} "
         f"(degree {g.degrees.min():.4f})",

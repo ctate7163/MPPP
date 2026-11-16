@@ -47,7 +47,7 @@ This builds `<block>.psx` with the following:
 - the masks;
 - a local metric frame: RPP's world frame (x east, y north, z up), with the block offset in the chunk transform.
 
-Nothing is aligned or optimised in Metashape. Double-click `open_in_metashape.bat` in the project folder (0.98.18:
+Nothing is aligned or optimized in Metashape. Double-click `open_in_metashape.bat` in the project folder (0.98.18:
 it converts and builds the project the first time, then opens it) or `make_metashape_project.bat` (Metashape
 Professional), and continue with *Build Depth Maps* or *Build Mesh*. `metashape_check.json` compares Metashape's reprojection of
 the tie points with COLMAP's residuals. The calibration mapping (THIN_PRISM_FISHEYE → Fisheye,
@@ -66,9 +66,9 @@ Mastcam-Z frames lose 22 columns on the left and 16 on the right, the dark edge 
 `train-ns.bat` in the folder starts a small splatfacto run tuned for these scenes:
 
 - half-size images (`--downscale-factor 2`);
-- starting from the sparse points (no random initialisation);
-- no camera optimisation, since the poses are the block's;
-- regular pruning of floaters (opacity resets, alpha and scale culling, scale regularisation);
+- starting from the sparse points (no random initialization);
+- no camera optimization, since the poses are the block's;
+- regular pruning of floaters (opacity resets, alpha and scale culling, scale regularization);
 - 15,000 iterations.
 
 Extra options go to `ns-train` (`train-ns.bat --max-num-iterations 30000`). See

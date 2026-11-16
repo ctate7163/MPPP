@@ -1,14 +1,14 @@
 """
-Waypoint localisation check (RPP v0p82): which rover stations' waypoint positions disagree with the bundle adjustment.
+Waypoint localization check (RPP v0p82): which rover stations' waypoint positions disagree with the bundle adjustment.
 
-A block's refined camera centres are compared with their waypoint priors station by station, after the best
+A block's refined camera centers are compared with their waypoint priors station by station, after the best
 similarity transform (scale, rotation, translation) between the two - fitted robustly (Huber) on the stations that
-kept their prior, so that one bad localisation does not bend the fit.  Only *surveyed* stations - those with a
+kept their prior, so that one bad localization does not bend the fit.  Only *surveyed* stations - those with a
 waypoint of their own (``position_source`` "waypoint site N drive D (exact)") - enter the fit: a station placed from
 the rover's onboard estimate (site origin + label ORIGIN_OFFSET_VECTOR, :func:`rpp.sfm.reconstruction.is_unsurveyed`)
 is checked against the fit but says nothing about the block's scale (0.90: the scale check of 19 Oct was skewed by
-such stations - Hippo Pools -3418 ppm from 5 stations, 3 of them unsurveyed).  What is left per station is its localisation
-error relative to the others: the manual localisations against the HiRISE basemap are good to about 0.3-0.5 m (JPL,
+such stations - Hippo Pools -3418 ppm from 5 stations, 3 of them unsurveyed).  What is left per station is its localization
+error relative to the others: the manual localizations against the HiRISE basemap are good to about 0.3-0.5 m (JPL,
 Censible, ICRA 2024), a station far beyond that - or far beyond the block's own scatter - is flagged.
 
     from rpp.sfm import waypoint_check as WC
@@ -35,7 +35,7 @@ import numpy as np
 from .reconstruction import is_unsurveyed
 
 PathLike = Union[str, Path]
-FLAG_ABS_M = 1.0          # horizontal residual above this: always flagged (about 2-3x the manual localisation accuracy)
+FLAG_ABS_M = 1.0          # horizontal residual above this: always flagged (about 2-3x the manual localization accuracy)
 FLAG_MIN_M = 0.5          # ... and above this and FLAG_K x the block's robust scatter
 FLAG_K = 3.0
 MIN_OBSERVATIONS = 30     # images with fewer tie-point observations are not used (their pose is weak)
@@ -51,7 +51,7 @@ def _project_dir(p: PathLike) -> Path:
 
 
 def station_rows(project_dir: PathLike, min_observations: int = MIN_OBSERVATIONS) -> List[Dict[str, Any]]:
-    """Per station: image-weighted mean refined centre and prior centre (local frame, m), images, sols, prior kept /
+    """Per station: image-weighted mean refined center and prior center (local frame, m), images, sols, prior kept /
     dropped - from ``error_input/poses.csv`` (refined position and refined - prior) and ``project.json``."""
     pdir = _project_dir(project_dir)
     P = json.loads((pdir / "project.json").read_text(encoding="utf-8"))
@@ -84,7 +84,7 @@ def similarity_fit(src: np.ndarray, dst: np.ndarray, w: Optional[np.ndarray] = N
                    iterations: int = 20, translation_only: bool = False, horizontal: bool = True) -> Dict[str, Any]:
     """Robust (Huber, IRLS) similarity ``dst ~ s R src + t`` (Umeyama per iteration); ``w`` base weights.
     ``horizontal`` (0.90, the default): the rotation is a yaw about the vertical axis and the scale is fitted in
-    the east-north plane - the waypoint elevations are a few decimetres rough, and a free 3-D rotation turned
+    the east-north plane - the waypoint elevations are a few decimeters rough, and a free 3-D rotation turned
     them into a tilt that posed as scale and rotation (Enchanted Lake, 6 stations over 55 m: 1.7 deg, -4300 ppm,
     with horizontal offsets of 0.1 m)."""
     src, dst = np.asarray(src, float), np.asarray(dst, float)
@@ -126,7 +126,7 @@ def similarity_fit(src: np.ndarray, dst: np.ndarray, w: Optional[np.ndarray] = N
 
 def check_block(project_dir: PathLike, name: Optional[str] = None, abs_m: float = FLAG_ABS_M, min_m: float = FLAG_MIN_M,
                 k: float = FLAG_K) -> Dict[str, Any]:
-    """The localisation check of one block (module docstring).  Returns {"block", "project", "stations": [...],
+    """The localization check of one block (module docstring).  Returns {"block", "project", "stations": [...],
     "similarity": {scale_ppm, rotation_mdeg, yaw_mdeg, translation_m, translation_only}, "scatter_h_m", "flagged"}."""
     pdir = _project_dir(project_dir)
     rows = station_rows(pdir)
@@ -155,7 +155,7 @@ def check_block(project_dir: PathLike, name: Optional[str] = None, abs_m: float 
     scatter = float(max(np.hypot(*mad), 0.05))
     # the scale's standard error from the scatter and the stations' horizontal spread about their centroid (the
     # lever arm of a scale): a block whose waypoints sit in two clusters 50 m apart has a 1000-ppm-class se, and a
-    # localisation offset between rover sites then poses as scale (Enchanted Lake, 0.90)
+    # localization offset between rover sites then poses as scale (Enchanted Lake, 0.90)
     hc = src[:, :2] - np.average(src[:, :2], axis=0, weights=w ** 2)
     lever = float(np.sqrt(np.sum(hc ** 2)))
     scale_se_ppm = float(1e6 * scatter / lever) if lever > 0 and not fit["translation_only"] else None
@@ -195,7 +195,7 @@ def scale_anisotropy(kept: Sequence[Dict[str, Any]], fit: Dict[str, Any]) -> Opt
     P = np.array([r["prior"] for r in kept])
     Rz = np.array([r["residual_m"] for r in kept])
     w = np.array([r["images"] for r in kept], float)
-    w = w / w.mean()                                   # weights by images, normalised to a mean of 1
+    w = w / w.mean()                                   # weights by images, normalized to a mean of 1
     out = {}
     for ax, name in ((0, "E"), (1, "N")):
         x = P[:, ax] - np.average(P[:, ax], weights=w)
@@ -257,7 +257,7 @@ def write_flags(m: Dict[str, Any], out_dir: PathLike) -> Path:
             w.writerow([e["station"], e["site"], e["drive"], e["sols"][0], e["sols"][1],
                         f"{e['worst_residual_h_m']:.3f}", *(f"{x:+.3f}" if x is not None else "" for x in r),
                         e.get("position_prior"), int(e["flag"]), " ".join(e["blocks"]), " | ".join(e["reasons"])])
-    L = [f"# Waypoint localisation check ({m['created'][:10]})", "",
+    L = [f"# Waypoint localization check ({m['created'][:10]})", "",
          f"Rule: horizontal residual after the block's robust similarity > {m['rule']['abs_m']:g} m, or > "
          f"{m['rule']['min_m']:g} m and > {m['rule']['k']:g} x the block's scatter.", "",
          "| block | stations (surveyed + onboard) | scale ppm | rotation mdeg | mean raw offset E N U m | scatter m | flagged |",

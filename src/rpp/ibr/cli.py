@@ -132,7 +132,7 @@ def _tie_points(rec, min_track: int = 3) -> np.ndarray:
 
 def _rover_args(p) -> None:
     p.add_argument("--pivot-height", default="zcam", choices=["zcam", "fit"], help="0.97.0: the pivot's height on the "
-                   "azimuth axis - zcam (default: the Mastcam-Z centres' height with the head level, whatever "
+                   "azimuth axis - zcam (default: the Mastcam-Z centers' height with the head level, whatever "
                    "cameras are rendered, so Navcam and Mastcam-Z products share one viewpoint) or fit (the frames' "
                    "own fit, as before); use the same for mesh, depthmaps and ods")
     p.add_argument("--rover", action="store_true", help="the rover body and deck shown - the default since 0.96.1 "
@@ -162,7 +162,7 @@ def add_parsers(sub) -> None:
     p.add_argument("--mesh-radius", type=float, default=75.0, help="the mesh to this horizontal distance from the mast "
                    "axis (m; default 75)")
     p.add_argument("--keep-under-rover", type=float, default=None, metavar="M",
-                   help="0.97.0: under the rover's footprint keep the terrain within M metres of the ground's height "
+                   help="0.97.0: under the rover's footprint keep the terrain within M meters of the ground's height "
                         "around it (for a cloud that holds nearby stations' frames, rpp dense --nearby-m; default: all "
                         "of it is replaced by the interpolated ground)")
     p.add_argument("--terrain-from", default=None, metavar="DIR",
@@ -227,7 +227,7 @@ def add_parsers(sub) -> None:
     p.add_argument("--station", required=True)
     p.add_argument("--width", type=int, default=None, help="per eye (default 16384, 0.98.30: 16K; publishing reduces "
                    "the JPEGs to 8192; 8192 from 0.97.10 to 0.98.29)")
-    p.add_argument("--ipd", type=float, default=0.064, help="eye separation in metres")
+    p.add_argument("--ipd", type=float, default=0.064, help="eye separation in meters")
     p.add_argument("--sky-radius", type=float, default=None, metavar="M",
                    help="0.97.0: the sky on a sphere of this radius about the mast axis and the ground plane out to it "
                         "(default 300; beyond it the far field: --no-far-field)")
@@ -247,7 +247,7 @@ def add_parsers(sub) -> None:
                         "100 m, the sky radius and infinity, blended)")
     p.add_argument("--cameras", default="N")
     p.add_argument("--fill-cameras", default="", metavar="LETTERS",
-                   help="0.97.7: the station's frames of these camera families as fill-only sources - they colour what "
+                   help="0.97.7: the station's frames of these camera families as fill-only sources - they color what "
                         "the panorama's own frames do not see (F: the front Hazcam pair, for the terrain under the arm; "
                         "R: the rear pair); those of the same sols; default none")
     p.add_argument("--site-name", default=None, help="0.97.7: the site's name in the mark at the nadir (e.g. Rockytop)")
@@ -266,7 +266,7 @@ def add_parsers(sub) -> None:
                    "goes together: NLF_... also drops its NRF_ partner)")
     p.add_argument("--bits", type=int, default=8, choices=[8, 16], help="16 (0.96.1): the frames made again from their "
                    "PDS products as 16-bit linear images (<project>/images16/, rpp.ibr.linear16), the panorama blended "
-                   "in them: <station>_ods_left_16.png, _right_16.png, _360_3DTD_16.png (uint16 linear, for colour "
+                   "in them: <station>_ods_left_16.png, _right_16.png, _360_3DTD_16.png (uint16 linear, for color "
                    "work) next to the 8-bit ones; saturated pixels neutral. Falls back to 8 bits where a product is "
                    "not found")
     p.add_argument("--pds", default=None, help="--bits 16: the PDS archive (default RPP_PDS, else the one the block's "
@@ -282,12 +282,14 @@ def add_parsers(sub) -> None:
                         "channel at 95 %% of the range - one gain per station, kept in the levels file")
     p.add_argument("--keep-mast", action="store_true", help="rover shown: keep the mast and its wind-sensor booms in "
                    "the frames (default: masked - the rover model's mast projected into every frame)")
-    p.add_argument("--no-ground-fill", action="store_true", help="leave black what no frame coloured below the horizon "
+    p.add_argument("--no-ground-fill", action="store_true", help="leave black what no frame colored below the horizon "
                    "(default: filled as plain terrain from the terrain around it - under the rover, behind the arm)")
     p.add_argument("--prefix", default=None, help="the panoramas' file-name prefix (default the station, Sol0052_S003D2046_ / "
                    "Sol0052_S003D2046_rover_: Sol0052_S003D2046_ods_left.png ...; '' for the bare ods_left.png)")
     p.add_argument("--rows-per-chunk", type=int, default=128)
-    p.add_argument("--eyes", nargs="+", default=["left", "right"], choices=["left", "right", "centre"])
+    p.add_argument("--eyes", nargs="+", default=["left", "right"], choices=["left", "right", "center", "centre"],
+                   help="the eyes to render; center: the view from the pivot (0.99.2: center, or the old spelling 'centre' - the file is "
+                        "<station>_ods_centre.png either way, the name the products have had since 0.97.0)")
     p.add_argument("--no-gains", action="store_true", help="no gain compensation between the source frames")
     p.add_argument("--stack-top", default="left", choices=["left", "right"], help="the eye on top in "
                    "<station>_360_3DTD.png / .jpg (default left: the left eye above the right; right before 10 Nov)")
@@ -299,13 +301,13 @@ def add_parsers(sub) -> None:
     p.add_argument("--azimuth0", type=float, default=0.0, help="the azimuth (deg, from north through east) at the left "
                    "edge of the panorama: 0 = north in the first column (default)")
     p.add_argument("--north-center", action="store_true", help="north in the middle of the panorama (--azimuth0 -180), "
-                   "for viewers that face the image centre")
+                   "for viewers that face the image center")
     p.add_argument("--tone-levels", default=None, metavar="FILE", help="0.97.0, --tone auto: the black point and "
                    "the ground level of the 8-bit view kept in FILE (json) - read when it is there, else found on this "
                    "panorama and written; give the rover-shown and the rover-masked run the same FILE and their "
                    "16-to-8-bit scaling is identical")
-    p.add_argument("--no-depth", action="store_true", help="0.97.0: no depth products for the centre panorama "
-                   "(default, since 0.97.11 with or without --eyes centre: <prefix>_ods_centre_depth.npz, _depth_16.png, _depth_linear.jpg, "
+    p.add_argument("--no-depth", action="store_true", help="0.97.0: no depth products for the center panorama "
+                   "(default, since 0.97.11 with or without --eyes center: <prefix>_ods_centre_depth.npz, _depth_16.png, _depth_linear.jpg, "
                    "_depth_log.jpg - the range from the pivot along each pixel's ray)")
     p.add_argument("--retone", action="store_true", help="only make the 8-bit panoramas and the square again from the "
                    "16-bit ones in the folder (--tone auto; no rendering)")
@@ -492,6 +494,12 @@ def cmd_depthmaps(a: argparse.Namespace) -> int:
     return 0
 
 
+def _eyes(eyes):
+    """0.99.2: --eyes center is the panorama from the pivot, which the files and ods.json still call "centre"."""
+    from ..ondisk import PIVOT_EYE
+    return [PIVOT_EYE if e in ("center", "centre") else e for e in eyes]
+
+
 def cmd_ods(a: argparse.Namespace) -> int:
     from .ods import DEFAULT_WIDTH as ODS_DEFAULT_WIDTH, render_station, stack_eyes
     if a.retone:                                 # the 8-bit panoramas again from the 16-bit ones, no rendering
@@ -525,18 +533,18 @@ def cmd_ods(a: argparse.Namespace) -> int:
     scene = _scene(out)
     rep = render_station(project, rec, st, scene, out, width=a.width or ODS_DEFAULT_WIDTH, ipd_m=a.ipd, sky_radius_m=("default" if a.sky_radius is None else a.sky_radius), pole_merge_deg=_pole_merge(a), families=a.cameras, scale=a.scale,
                          far_field=not a.no_far_field, geometry=not a.no_geometry, zcam_scale=a.zcam_scale, images=_own_frames(project, st, a),
-                         context_images=_png(getattr(a, "context_images", None)), rows_per_chunk=a.rows_per_chunk, eyes=a.eyes,
+                         context_images=_png(getattr(a, "context_images", None)), rows_per_chunk=a.rows_per_chunk, eyes=_eyes(a.eyes),
                          use_masks=not a.rover, gains=not a.no_gains, stack_top=a.stack_top,
                          sky_fill=not a.no_sky_fill, mask_head_hardware=not a.keep_head_hardware,
                          azimuth0_deg=-180.0 if a.north_center else a.azimuth0, prefix=a.prefix,
                          bits=a.bits, pds=a.pds, tone=a.tone, exposure16=a.exposure16,
                          ground_fill=not a.no_ground_fill, mask_mast=not a.keep_mast,
-                         tone_levels_file=a.tone_levels, centre_depth=not a.no_depth,
+                         tone_levels_file=a.tone_levels, center_depth=not a.no_depth,
                          fill_families=a.fill_cameras, nadir_mark=not a.no_nadir_mark, site_name=a.site_name,
                          nadir_mark_deg=a.nadir_mark_deg)
     for eye, e in rep["eyes"].items():
         c = e["coverage"]
-        print(f"{eye}: {e['file']}  coloured {100 * c['coloured']:.1f}%, mesh {100 * c['mesh']:.1f}%, "
+        print(f"{eye}: {e['file']}  colored {100 * c['coloured']:.1f}%, mesh {100 * c['mesh']:.1f}%, "
               f"plane {100 * c.get('plane', 0):.1f}%, far {100 * c['far']:.1f}%, "
               f"no surface {100 * c['no_surface']:.1f}%, {e['sources_used']} sources")
     if rep.get("bits") == 16:

@@ -8,9 +8,9 @@ pitch and roll (its yaw rate 0), f +38.1 ppm/degC, NL cx +0.0517 px/degC.  Varia
 
   rot     : the rig rotation refined (pitch, roll; yaw held), translation held at CAHV - the reference
   trans   : as rot, plus the translation (tx along the baseline, ty, tz) refined with a weak prior on the right
-            camera centre (--sigma-m, default 0.05 m, i.e. effectively free at the mm level)
+            camera center (--sigma-m, default 0.05 m, i.e. effectively free at the mm level)
 
-Reported: the change of the right camera centre in the left camera frame (x along the baseline, y down, z forward)
+Reported: the change of the right camera center in the left camera frame (x along the baseline, y down, z forward)
 with its formal sd scaled by the variance factor, the cost change, and the baseline length.  The scale of the block
 comes from the waypoint priors (1 m per station): the baseline length (x) is tied to it and is the least
 determined component.
@@ -61,7 +61,7 @@ def main(argv=None):
     res = json.loads(rf.read_text()) if rf.exists() else {}
     _, _, T0 = NC.stereo_rig(rec0)
     R0, t0 = np.asarray(T0.rotation.matrix()), np.asarray(T0.translation)
-    C0 = -R0.T @ t0                                             # right centre in the left camera frame
+    C0 = -R0.T @ t0                                             # right center in the left camera frame
     for name, rr, sig in (("rot", "rotation", None), ("trans", True, a.sigma_m)):
         if a.only and name not in a.only:
             continue

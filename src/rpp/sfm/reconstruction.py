@@ -1,5 +1,5 @@
 """
-Reconstruction from the CAHV-initialised cameras.
+Reconstruction from the CAHV-initialized cameras.
 
 ``reconstruct(project)``:
 
@@ -21,7 +21,7 @@ Reconstruction from the CAHV-initialised cameras.
    re-triangulate with the refined poses; one round per ``schedule`` entry
    (four by default since v0p14.3), then a final adjustment.
 
-The result is in the project's world frame (ENU metres minus ``project.offset``).
+The result is in the project's world frame (ENU meters minus ``project.offset``).
 """
 from __future__ import annotations
 
@@ -73,7 +73,7 @@ K2_LIMIT = 10.0                  # v0p85 (Christian): a camera's k2 is kept with
 BOGUS_MAX_EXTRA_PARAM = 1.0e6    # COLMAP's "bogus camera" limits off (default 1.0, 10, 0.1) - see triangulate()
 BOGUS_MAX_FOCAL_RATIO = 1.0e3
 BOGUS_MIN_FOCAL_RATIO = 1.0e-3
-PRIOR_GAUGE_RECENTRE = True   # after every adjustment with position priors the whole block is moved onto them
+PRIOR_GAUGE_RECENTER = True   # after every adjustment with position priors the whole block is moved onto them
                               # (the mean prior residual; reprojection-invariant) - Chal Rocks Large (17 Oct) ended
                               # -0.19 m E, -0.07 m N, -0.10 m U off its priors on average, which a free gauge with
                               # Gaussian priors cannot do at convergence
@@ -422,7 +422,7 @@ def unlocalized_stations(project: SfmProject, min_images: int, rec=None,
 
 POSE_GUIDED_MAX_BEYOND_GROUND_RISE = 0.02    # undo the pose-guided stage above this rise (fraction of points)
 ISOLATED_POINTS_FACTOR = 4.0     # 0.94.4: before the final stage-2 adjustment, two-view points this many times the median
-ISOLATED_POINTS_K = 8            # neighbour spacing at their range (mean distance to the K nearest points / range) are dropped
+ISOLATED_POINTS_K = 8            # neighbor spacing at their range (mean distance to the K nearest points / range) are dropped
 ISOLATED_POINTS_RADII = 1.5      # ... only within this many radii of the cameras' bounding sphere (Christian, 23 Oct)
 NAVCAM_ASPECT_SIGMA = 2e-5      # 1-sigma of the fy / fx prior (relative; 0.03 px of a 1500 px focal length)
 # 2 Nov 2026 (Christian: "yes to the per-bin aspect hold"): every Mastcam-Z bin camera's fy / fx held at its zoom
@@ -517,10 +517,10 @@ def _translation_tie_class():
     return _TranslationTie
 
 
-EPOCH_TRANSLATION_TIE_SIGMA_M = 1e-6     # the epochs' baselines are one (to a micrometre)
+EPOCH_TRANSLATION_TIE_SIGMA_M = 1e-6     # the epochs' baselines are one (to a micrometer)
 
 
-ZCAM_RIG_TRANSLATION_SIGMA_M = 0.01     # prior on the Mastcam-Z right centre (in the left frame) per axis, m
+ZCAM_RIG_TRANSLATION_SIGMA_M = 0.01     # prior on the Mastcam-Z right center (in the left frame) per axis, m
 ZCAM_RIG_FIT = "full"                   # the Mastcam-Z rig of each zoom refined in stage 2 (notebook 03 ZCAM_RIG_FIT)
 
 
@@ -591,7 +591,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
 
     ``refine_zcam_rig`` ``"rotation"`` / ``"full"`` refines each Mastcam-Z zoom's stereo rig (one per zoom and
     block, the same for every focus: the focus motion is the principal points'), ``"full"`` also its translation with a
-    prior of ``zcam_rig_translation_sigma_m`` per axis on the right centre - whatever ``refine_rig`` and the rig's hold
+    prior of ``zcam_rig_translation_sigma_m`` per axis on the right center - whatever ``refine_rig`` and the rig's hold
     flag say; None: the rig follows ``refine_rig`` and its hold flag.
 
     Weighted BA in place (see module docstring).  ``navcam_aspect`` (v0p65; None:
@@ -606,7 +606,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     camera's orientation in the rig and keeps the CAHV stereo baseline vector,
     which then fixes the scale of the reconstruction; True refines the
     baseline too (scale is then set only by the position priors, weakly for
-    stations metres apart - the first Belva test shrank it from 0.424 to
+    stations meters apart - the first Belva test shrank it from 0.424 to
     0.14 m); False holds the rig fixed.  Frames with fewer than
     ``min_frame_observations`` observations (None: ``MIN_FRAME_OBSERVATIONS``, 20 since v0p43.3, was 30) are held
     at their current pose
@@ -622,8 +622,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     the line through them (0.6 deg at Three Forks, 2.4 deg with Mastcam-Z).
     Relative orientations come from the tie points and are not affected.
     None or 0 switches it off.  ``rig_translation_sigma_m``: with
-    ``refine_rig=True``, a prior (this 1-sigma per axis, metres) holding the
-    right camera's centre in the rig near its CAHV value, so the data can move
+    ``refine_rig=True``, a prior (this 1-sigma per axis, meters) holding the
+    right camera's center in the rig near its CAHV value, so the data can move
     the stereo baseline without the scale being left to the position priors
     alone.  ``covariance``: after the solve, the covariance of the
     rig and camera blocks with the 3-D points eliminated
@@ -637,7 +637,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     model f(T) = f0 (1 + b (T - T0)) with one shared camera at T0).
     ``localize_min_images`` (v0p35.1; None: ``project.settings["localize_min_images"]``, default 0 = off): stations
     (site, drive) with fewer images than this get no waypoint position prior - short stops during a drive, whose
-    waypoint positions can be metres off (Seitah North: four two-image drives 3 m off pulled the block's scale by
+    waypoint positions can be meters off (Seitah North: four two-image drives 3 m off pulled the block's scale by
     8.6 %) - see :func:`unlocalized_stations`.  Their attitude prior stays.
     ``keypoint_map``: a function (image_id, keypoints, camera) ->
     keypoints applied after the scaling (e.g. the rig's temperature
@@ -653,7 +653,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     # quaternion x translation manifold (pyceres cannot build one).  It is created on a
     # COPY of the reconstruction holding one dummy point per frame: removing the
     # adjuster's own 3-D point blocks from the full reconstruction is O(residuals) per
-    # point in Ceres (hours for 10^6 observations).  Poses and intrinsics are optimised
+    # point in Ceres (hours for 10^6 observations).  Poses and intrinsics are optimized
     # in the copy and written back; the 3-D points are the real ones.
     reg = set(rec.reg_image_ids())
     work = copy.deepcopy(rec)
@@ -707,7 +707,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             rig_blocks[(rid, sid.id)] = arr
     # the camera intrinsics, too, are explicit arrays owned here (written back below and checked).  Handing
     # Ceres pycolmap's views (camera.params) was not reliable: in the thermal stage of 4 Oct (Chal Rocks, and
-    # reproduced, intermittently, on Linux) the optimiser refined the temperature-bin cameras but the reconstruction
+    # reproduced, intermittently, on Linux) the optimizer refined the temperature-bin cameras but the reconstruction
     # kept their start values - the poses then fitted cameras the model no longer had (median 0.16 -> 0.37 px)
     cam_blocks: Dict[int, np.ndarray] = {int(cid): np.ascontiguousarray(np.array(c.params, dtype=np.float64))
                                          for cid, c in work.cameras.items()}
@@ -919,7 +919,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             prob.add_residual_block(c, None, [blk])
             n_zaspect += 1
 
-    # waypoint position priors on every frame (the reference camera's centre); not on the frames of
+    # waypoint position priors on every frame (the reference camera's center); not on the frames of
     # stations with fewer than localize_min_images images, if they are tied to the rest of the block
     n_prior = n_att = 0
     if localize_min_images is None:
@@ -962,7 +962,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                 n_prior += 1
             if attitude_prior_deg:
                 # 6-DoF prior: rotation block first (checked), translation effectively free (the position
-                # prior above holds the centre)
+                # prior above holds the center)
                 ref_r = by_name[rec.images[ref[0]].name]
                 T0 = _rigid(ref_r["prior_R_w2c"], ref_r["prior_C"])
                 att = max(float(attitude_prior_deg), att_u) if unsurveyed else float(attitude_prior_deg)
@@ -1001,7 +1001,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                 prob.set_manifold(arr, pyceres.SubsetManifold(7, [3, 4, 5, 6]))
             elif hz_mode == "full" and not weak_h:
                 # 4 Nov 2026 (Christian: "the hazcams might not have correct baselines, so let those refine too"):
-                # rotation and translation, with the Navcam rig's prior on the right centre (rig_translation_sigma_m)
+                # rotation and translation, with the Navcam rig's prior on the right center (rig_translation_sigma_m)
                 q0, t0 = rig_start[key][:4], rig_start[key][4:7]
                 C0 = -Rotation.from_quat(q0 / np.linalg.norm(q0)).as_matrix().T @ t0
                 prob.add_residual_block(cf.AbsolutePosePositionPriorCost(
@@ -1012,7 +1012,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             continue
         if refine_rig is True and rig_translation_sigma_m:
             q0, t0 = rig_start[key][:4], rig_start[key][4:7]
-            C0 = -Rotation.from_quat(q0 / np.linalg.norm(q0)).as_matrix().T @ t0     # right centre in the rig frame
+            C0 = -Rotation.from_quat(q0 / np.linalg.norm(q0)).as_matrix().T @ t0     # right center in the rig frame
             prob.add_residual_block(cf.AbsolutePosePositionPriorCost(np.eye(3) * float(rig_translation_sigma_m) ** 2, C0),
                                     None, [arr])
             n_rig_prior += 1
@@ -1020,7 +1020,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
             # pyceres has no product manifold and takes no Python manifolds.  The rig
             # rotation is small (Navcam L->R ~0.13 deg), so its quaternion is refined in
             # x, y, z with w held: |q|^2 - 1 stays O(1e-6), i.e. a scale error < 0.01 px;
-            # the quaternion is normalised when written back.
+            # the quaternion is normalized when written back.
             held_q = [3, 4, 5, 6] if refine_rig == "rotation" else [3]
             if refine_rig is True and tied and "#" in str(key_of.get(int(key[1]), "")):
                 # a later visit's rig keeps the common baseline - its translation is refined but tied to
@@ -1050,7 +1050,7 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
         elif zmode == "rotation":
             prob.set_manifold(arr, pyceres.SubsetManifold(7, [3, 4, 5, 6]))      # rotation refined, w held
         else:                                                 # rotation and translation (baseline) refined
-            # the prior is on the start rig's right centre (CAHV or the focus model's), not on this call's start
+            # the prior is on the start rig's right center (CAHV or the focus model's), not on this call's start
             R0, t0 = np.asarray(vrig[fam]["R_sensor_from_ref"], float), np.asarray(vrig[fam]["t_sensor_from_ref"], float)
             C0 = -R0.T @ t0
             prob.add_residual_block(cf.AbsolutePosePositionPriorCost(
@@ -1069,8 +1069,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
     so = pyceres.SolverOptions()
     # the linear solver.  The Schur complement has one 6-parameter block per frame plus the cameras, so
     # for the few hundred frames of a scape a dense Schur solve (multi-threaded LAPACK) beats the sparse
-    # Cholesky, whose factorisation is single-threaded; large blocks (thousands of frames) get the iterative
-    # Schur solver with a Schur-Jacobi preconditioner, which parallelises over the observations.
+    # Cholesky, whose factorization is single-threaded; large blocks (thousands of frames) get the iterative
+    # Schur solver with a Schur-Jacobi preconditioner, which parallelizes over the observations.
     n_frames = len(pose_blocks)
     solver = linear_solver if linear_solver != "auto" else ("dense_schur" if n_frames <= 600 else "iterative_schur")
     so.linear_solver_type = {"sparse_schur": pyceres.LinearSolverType.SPARSE_SCHUR,
@@ -1209,8 +1209,8 @@ def bundle_adjust(rec, project: SfmProject, sigma_px: float = 0.5, loss_scale: f
                                    "centre_change_m": (-(R1.T @ arr[4:7]) + R0.T @ rig_start[(rid, cid)][4:7]).tolist(),
                                    "rotation_change_deg": float(np.degrees(np.linalg.norm(
                                        Rotation.from_matrix(R1 @ R0.T).as_rotvec())))}
-    gauge = prior_gauge(rec, prior_frames, recentre=bool(project.settings.get("prior_gauge_recentre",
-                                                                               PRIOR_GAUGE_RECENTRE)))
+    gauge = prior_gauge(rec, prior_frames, recenter=bool(project.settings.get("prior_gauge_recentre",
+                                                                               PRIOR_GAUGE_RECENTER)))
     return {"observations": n_obs, "priors": n_prior, "attitude_priors": n_att, "rig": rig_out, "covariance": cov_out,
             "prior_gauge": gauge, "no_position_prior_at": sorted(flagged),
             "rig_translation_priors": n_rig_prior, "rig_translation_ties": n_rig_tie,
@@ -1250,9 +1250,9 @@ def clamp_k2(rec, limit: float = None) -> Dict[int, float]:
     return out
 
 
-def prior_gauge(rec, prior_frames: Sequence[Tuple[int, Any]], recentre: bool = PRIOR_GAUGE_RECENTRE) -> Optional[Dict[str, Any]]:
-    """the mean residual (prior - refined) of the frame centres that have a position prior, and with
-    ``recentre`` the whole reconstruction (frames and points) moved by it.  With equal Gaussian position priors and
+def prior_gauge(rec, prior_frames: Sequence[Tuple[int, Any]], recenter: bool = PRIOR_GAUGE_RECENTER) -> Optional[Dict[str, Any]]:
+    """the mean residual (prior - refined) of the frame centers that have a position prior, and with
+    ``recenter`` the whole reconstruction (frames and points) moved by it.  With equal Gaussian position priors and
     nothing else holding the block's position, the least-squares solution has a zero mean residual; Ceres stops on a
     relative cost decrease, and moving a block of ~10^6 observations by 0.2 m changes the cost by a few units only,
     so that direction may be left unconverged.  The move does not change any reprojection.  Returns
@@ -1274,9 +1274,9 @@ def prior_gauge(rec, prior_frames: Sequence[Tuple[int, Any]], recentre: bool = P
         return None
     m = np.average(np.asarray(d), axis=0, weights=np.asarray(w))
     out = {"frames": len(d), "mean_residual_m": m.tolist(), "shift_m": [0.0, 0.0, 0.0], "recentred": False}
-    if recentre and np.all(np.isfinite(m)):
+    if recenter and np.all(np.isfinite(m)):
         rec.transform(pycolmap.Sim3d(1.0, pycolmap.Rotation3d(np.eye(3)), m))
-        out.update(shift_m=m.tolist(), recentred=True)
+        out.update({"shift_m": m.tolist(), "recentred": True})          # "recentred": the record's key (rpp.ondisk)
     return out
 
 
@@ -1360,7 +1360,7 @@ def register_stations(rec, project: SfmProject, min_inliers: int = 40, max_error
     Correct each station's pose as one rigid block (its CAHV-relative image poses
     kept), from 2-D/3-D correspondences with stations already placed.
 
-    The waypoint positions put stations metres apart to within decimetres,
+    The waypoint positions put stations meters apart to within decimeters,
     which at Navcam range is tens of pixels - too far for triangulation with
     fixed poses to join tracks across stations.  Within a station, CAHV
     (mast kinematics) is good to a fraction of a pixel.  So: start from the
@@ -1461,7 +1461,7 @@ def register_stations(rec, project: SfmProject, min_inliers: int = 40, max_error
 
 
 def native_residuals(rec, project: SfmProject) -> Dict[str, np.ndarray]:
-    """Per observation: residual in native pixels, image id, point id, 2-D index (vectorised per image)."""
+    """Per observation: residual in native pixels, image id, point id, 2-D index (vectorized per image)."""
     scale = _scales(rec, project)
     iid_l, pid_l, idx_l = [], [], []
     for pid, pt in rec.points3D.items():
@@ -1497,7 +1497,7 @@ def filter_observations(rec, project: SfmProject, max_residual_native_px: float 
     bad = r["residual_native_px"] > max_residual_native_px
     n = 0
     for iid, pid, idx in zip(r["image_id"][bad].tolist(), r["point3D_id"][bad].tolist(), r["point2D_idx"][bad].tolist()):
-        # plain ints: pycolmap's maps do not recognise numpy integers ('np.int64(5) in points3D' is False)
+        # plain ints: pycolmap's maps do not recognize numpy integers ('np.int64(5) in points3D' is False)
         if pid in rec.points3D:
             if rec.points3D[pid].track.length() <= 2:
                 rec.delete_point3D(int(pid))
@@ -1555,12 +1555,12 @@ def drop_isolated_points(rec, factor: float = ISOLATED_POINTS_FACTOR, k: int = I
     Delete the 3-D points far from every other point (0.94.4, Christian 23 Oct: "a few points scattered above and
     below the terrain").  Isolation is the mean distance to the ``k`` nearest points divided by the point's range
     (from the nearest camera that sees it), compared with the median isolation of the points at a similar range
-    (bins of ``range_bin_ratio`` in range; a bin of fewer than ``min_bin_points`` takes its neighbours too): ground
+    (bins of ``range_bin_ratio`` in range; a bin of fewer than ``min_bin_points`` takes its neighbors too): ground
     seen at a grazing angle thins out faster than the range, so one block-wide median deleted a third of the points
     beyond 40 m (Christian's question, 14:36).  A point more than ``factor`` x its range bin's median isolation is
     deleted - only a two-view point with ``two_view_only`` (a point that a third image confirms stays, so no
     Navcam - Mastcam-Z point, which needs three, is ever deleted).  Only points within ``within_radii`` x the radius
-    of the cameras' bounding sphere (centred on the mean camera centre) are judged (Christian, 14:39: the false points
+    of the cameras' bounding sphere (centered on the mean camera center) are judged (Christian, 14:39: the false points
     are near the rover, the far ground is left alone); 0 = everywhere.
 
     The scattered points are false matches at the wrong range along their rays (pose-guided matching above all;
@@ -1576,7 +1576,7 @@ def drop_isolated_points(rec, factor: float = ISOLATED_POINTS_FACTOR, k: int = I
     if not factor or factor <= 0 or len(rec.points3D) < max(int(min_points), k + 2):
         return out
     from scipy.spatial import cKDTree
-    centres = {int(i): np.asarray(im.projection_center(), float) for i, im in rec.images.items() if im.has_pose}
+    centers = {int(i): np.asarray(im.projection_center(), float) for i, im in rec.images.items() if im.has_pose}
     pids = np.fromiter((int(p) for p in rec.points3D), np.int64, len(rec.points3D))
     X = np.empty((len(pids), 3))
     rng = np.empty(len(pids))
@@ -1585,7 +1585,7 @@ def drop_isolated_points(rec, factor: float = ISOLATED_POINTS_FACTOR, k: int = I
         pt = rec.points3D[int(pid)]
         X[n] = pt.xyz
         tl[n] = pt.track.length()
-        cs = [centres[int(e.image_id)] for e in pt.track.elements if int(e.image_id) in centres]
+        cs = [centers[int(e.image_id)] for e in pt.track.elements if int(e.image_id) in centers]
         rng[n] = min(float(np.linalg.norm(pt.xyz - c)) for c in cs) if cs else np.nan
     ok = np.isfinite(rng)
     if ok.sum() < k + 2:
@@ -1602,8 +1602,8 @@ def drop_isolated_points(rec, factor: float = ISOLATED_POINTS_FACTOR, k: int = I
     bad = ok & np.isfinite(med) & (iso > factor * med)
     if two_view_only:
         bad &= tl == 2
-    if within_radii and within_radii > 0 and centres:
-        C = np.array(list(centres.values()))
+    if within_radii and within_radii > 0 and centers:
+        C = np.array(list(centers.values()))
         c0 = C.mean(axis=0)
         radius = float(np.max(np.linalg.norm(C - c0, axis=1)))
         bad &= np.linalg.norm(X - c0, axis=1) <= within_radii * radius
@@ -1632,7 +1632,7 @@ def thin_points(rec, project: SfmProject, cap_per_image: int, grid: Tuple[int, i
     """
     0.95.0 (Christian, 28 Oct, study S2): the 3-D points to leave out of a bundle adjustment so that each image keeps
     at most ``cap_per_image`` of its two-view, same-family, same-station points - the ones that only fix the
-    terrain between two neighbouring frames (4-5 M points at Chal Rocks, mean track 2.8).  Every tie is kept:
+    terrain between two neighboring frames (4-5 M points at Chal Rocks, mean track 2.8).  Every tie is kept:
     a track of three or more images, one that joins two camera families (Navcam-Mastcam-Z, Navcam-Hazcam) or two
     stations.  The cap is filled per image on a ``grid`` of cells, round-robin over the cells in keypoint order, so
     the kept points spread over the frame; a point kept for one of its images counts for the other.  ``cap_per_image``
@@ -1781,7 +1781,7 @@ def reset_cameras_to_start(rec, project: SfmProject, keys) -> List[str]:
 
 
 # a Hazcam frame is fixed to the rover body: in stage 2 its position prior moves with the shift the Navcam block found
-# for its station (the rover's localisation error) and tightens to this sigma per axis.  Rockytop (22 Oct): with the
+# for its station (the rover's localization error) and tightens to this sigma per axis.  Rockytop (22 Oct): with the
 # 1 m waypoint prior, a rear Hazcam pair tied by 48 points slid 1.3 m from its station (0.12 m for the Navcam frames)
 HAZCAM_STATION_PRIOR_SIGMA_M = 0.1
 # 0.94.5 (Christian, 27 Oct: South Arm ZCAM09468, Marble Mountain ZCAM04469 - horizon frames with no strongly
@@ -1801,7 +1801,7 @@ def label_prior_C(r: Dict[str, Any]) -> np.ndarray:
 def hazcam_station_priors(rec, project: SfmProject, sigma_m: float = HAZCAM_STATION_PRIOR_SIGMA_M,
                           zcam_sigma_m: float = 0.0) -> Dict[str, np.ndarray]:
     """Move the position prior of every Hazcam image of ``project`` by its station's median Navcam shift (solved
-    minus prior centre of the registered Navcam images of ``rec``) and give it ``sigma_m`` (``prior_sigma_m``); the
+    minus prior center of the registered Navcam images of ``rec``) and give it ``sigma_m`` (``prior_sigma_m``); the
     label prior stays in ``prior_C_label``.  Stations without registered Navcam images keep the waypoint prior.
     ``zcam_sigma_m`` > 0 (0.94.5, :data:`ZCAM_STATION_PRIOR_SIGMA_M`): the Mastcam-Z images too, with that sigma.
     Returns {station: shift (3,)}."""
@@ -2157,7 +2157,7 @@ def find_mistied_bins(rec, project: SfmProject, focal_pct: float = ZCAM_MISTIE_F
                       small_frames: int = ZCAM_MISTIE_SMALL_FRAMES) -> List[Dict[str, Any]]:
     """The Mastcam-Z bins of ``rec`` that are tied to the wrong range (:data:`ZCAM_MISTIE_FOCAL_PCT`,
     :data:`ZCAM_MISTIE_SHIFT_M`): per bin camera {"camera", "frame_ids", "images", "focal_change_pct", "shift_m",
-    "reasons"}.  A frame's shift is its solved centre minus its label prior, less its station's Navcam shift
+    "reasons"}.  A frame's shift is its solved center minus its label prior, less its station's Navcam shift
     (``station_shifts`` {station: (3,)}, else the images' ``prior_station_shift_m``); the bin's is the median over
     its registered frames.  Bins held at the model are not judged.  0.95.3: a bin of at most ``small_frames`` frames
     (:data:`ZCAM_MISTIE_SMALL_FRAMES`) needs only the focal change ("small-sequence mis-tie")."""
@@ -2309,7 +2309,7 @@ def navcam_network(project: SfmProject, min_stations: int = NETWORK_MIN_STATIONS
     the number of stations with Navcam frames, the span of their prior
     positions, and the verdict ``"strong"`` (refine) or ``"weak"`` (hold the
     cameras at their start values).  A scape whose Navcam images all stand at
-    a few stations a few metres apart cannot separate the principal point
+    a few stations a few meters apart cannot separate the principal point
     from the attitudes nor the distortion from the depths (methods §14).
     """
     st: Dict[str, List[np.ndarray]] = {}
@@ -2405,7 +2405,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
                 zcam_aspect: str = "free", navcam_aspect_sigma: Optional[float] = None,
                 zcam_aspect_sigma: Optional[float] = None):
     """
-    CAHV-initialised triangulation + weighted BA (see module docstring).
+    CAHV-initialized triangulation + weighted BA (see module docstring).
 
     ``round1_hold`` (v0p80, notebook 03 ``ROUND1_HOLD``; the camera-model recipe of 14 Oct 2026): the first round
     (24 px triangulation, loose loss) adjusts poses and points only - every camera and the rig held at their start
@@ -2996,7 +2996,7 @@ def _reconstruct(project: SfmProject, sigma_px: float = 0.5,
             if verbose:
                 logger.info(f"stage 2: {iso['deleted']} isolated two-view points deleted of {iso['points']} (more than "
                             f"{iso['factor']:g} x the median spacing to their {iso['k']} nearest points at their range, within "
-                            f"{iso.get('within_m', float('nan')):.1f} m of the cameras' centre; "
+                            f"{iso.get('within_m', float('nan')):.1f} m of the cameras' center; "
                             f"{iso.get('deleted_beyond_40m', 0)} of {iso.get('points_beyond_40m', 0)} beyond 40 m)"
                             + (f"; {_zcam_terrain_line(iso['zcam_terrain_after'])}" if iso.get("zcam_terrain_after")
                                else ""))

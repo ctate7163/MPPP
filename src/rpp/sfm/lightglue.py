@@ -3,7 +3,7 @@ SIFT + LightGlue matching on ``database.db`` - an optional matcher (``MATCH_MODE
 
 COLMAP's SIFT keypoints and descriptors (``extract_features`` / ``build_database``) are matched with LightGlue
 (Lindenberger et al., ICCV 2023; the ``sift`` weights, through ``kornia``), a learned matcher that is far more
-robust than the nearest-neighbour ratio test to the illumination changes and the convergence angles of rover
+robust than the nearest-neighbor ratio test to the illumination changes and the convergence angles of rover
 image sets.  The matches go into the database like COLMAP's own and are verified geometrically by COLMAP
 (``pycolmap.verify_matches``), so everything downstream (two-view geometries, reconstruction, health) is unchanged.
 

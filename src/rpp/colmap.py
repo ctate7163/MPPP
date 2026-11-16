@@ -10,13 +10,13 @@ copy of).
 * ``read_colmap(path)``: the TEXT reader (``cameras.txt`` / ``images.txt`` /
   ``points3D.txt``) into the plain ``ColmapModel`` dataclasses, which
   the error model (the ``error`` package) analyses without pycolmap.
-* ``project_camera``: COLMAP projection with distortion (vectorised);
+* ``project_camera``: COLMAP projection with distortion (vectorized);
   ``scale_camera_params``: a camera at another resolution.
 
 Conventions: COLMAP poses are world->camera (qvec w,x,y,z + tvec), camera axes
 x right / y down / z forward — identical to RPP's.  COLMAP's pixel origin is
 the image corner, so 0.5 px is added to RPP's principal point.  World = ENU
-metres minus ``offset`` (kept small for numerical conditioning).
+meters minus ``offset`` (kept small for numerical conditioning).
 """
 from __future__ import annotations
 
@@ -120,7 +120,7 @@ def project_camera(model: str, p: Sequence[float], x: np.ndarray) -> np.ndarray:
 def unproject_camera(model: str, p: Sequence[float], uv: np.ndarray, iterations: int = 50,
                      tol: float = 1e-12) -> np.ndarray:
     """
-    Inverse of :func:`project_camera`: pixels (..., 2) -> normalised camera
+    Inverse of :func:`project_camera`: pixels (..., 2) -> normalized camera
     coordinates (..., 2) (x/z, y/z).  Newton iteration with a numerical
     Jacobian from the pinhole start.
     Round-trip error ~1e-9 px where the model is invertible; where it is not
@@ -267,7 +267,7 @@ class ColmapImage:
 
     @property
     def center(self) -> np.ndarray:
-        """Camera perspective centre in world coordinates."""
+        """Camera perspective center in world coordinates."""
         return -self.R.T @ self.tvec
 
 
@@ -312,9 +312,9 @@ class ColmapModel:
         mapping : filename -> station name.  Supply this if you have it (e.g.
                   from the PDS RMC in the filename); it is always better than
                   clustering.
-        Otherwise images are single-linkage clustered by perspective-centre
+        Otherwise images are single-linkage clustered by perspective-center
         proximity, which works because a mast mosaic's exposures all sit within
-        a few tens of cm while stations are metres apart.
+        a few tens of cm while stations are meters apart.
         """
         if mapping:
             for im in self.images.values():
@@ -373,7 +373,7 @@ def read_colmap(path: str) -> ColmapModel:
                                           np.array([float(v) for v in t[4:]]))
 
     # images.txt has TWO lines per image and the second is EMPTY when the image
-    # has no observations.  Filtering blank lines desynchronises the pairing and
+    # has no observations.  Filtering blank lines desynchronizes the pairing and
     # silently mis-assigns every subsequent image, so the raw lines are kept and
     # the header/observation alternation is tracked explicitly.
     images = {}
@@ -420,7 +420,7 @@ def read_colmap(path: str) -> ColmapModel:
             np.array([int(tr[m + 1]) for m in range(0, len(tr), 2)], dtype=np.int64))
 
     # Validate poses.  A non-unit quaternion means a corrupt or hand-written
-    # file; silently propagating it produces NaN camera centres and NaN
+    # file; silently propagating it produces NaN camera centers and NaN
     # residuals hundreds of lines downstream, which is very hard to trace.
     bad = [im.name for im in images.values()
            if not np.isfinite(im.qvec).all()
@@ -441,7 +441,7 @@ def undistort_image(image: np.ndarray, model: str, params: Sequence[float], widt
     Resample ``image`` (the full frame at any downsample scale) through its COLMAP camera (``model``, ``params`` for
     the full frame of ``width`` px) to a pinhole camera of the same size and principal point.  ``fit``: ``"width"``
     keeps the whole horizontal field at the principal point's height (corners are cut), ``"height"`` the vertical
-    one, ``"same"`` keeps the focal length.  The mask is resampled with nearest neighbour.  Returns {"image",
+    one, ``"same"`` keeps the focal length.  The mask is resampled with nearest neighbor.  Returns {"image",
     "mask", "f_px", "f_in_px", "scale", "principal_point_px", "field_deg"}.
     """
     import cv2
@@ -464,7 +464,7 @@ def undistort_image(image: np.ndarray, model: str, params: Sequence[float], widt
     for y0 in range(0, h, 256):                               # in bands: a full frame at once needs GBs
         ys = (np.arange(y0, min(h, y0 + 256)) + 0.5 - cy) / f
         X, Y = np.meshgrid(xs, ys)
-        src = project_camera(model, p, np.stack([X, Y, np.ones_like(X)], axis=-1)) - 0.5   # cv2: centre origin
+        src = project_camera(model, p, np.stack([X, Y, np.ones_like(X)], axis=-1)) - 0.5   # cv2: center origin
         src[~np.isfinite(src)] = -1e4
         mx[y0:y0 + len(ys)], my[y0:y0 + len(ys)] = src[..., 0], src[..., 1]
     out = cv2.remap(image, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)

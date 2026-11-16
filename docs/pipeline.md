@@ -37,14 +37,14 @@ out any Hazcam images in `processed/`, and its run key leaves out the Hazcam set
 
 - **Rules before image work**: Navcam frames pointing more than 20° above the horizon, images outside 06:00-18:00
   local mean solar time, images with more than 20 % saturated valid pixels, Navcam exposures longer than 40 ms, and
-  frames whose centre is bluer than the edge by more than a B/R ratio of 1.2 are not processed.
-- **Radiometry**: radiance from the label scaling, normalised to an overhead Sun at a reference optical depth;
+  frames whose center is bluer than the edge by more than a B/R ratio of 1.2 are not processed.
+- **Radiometry**: radiance from the label scaling, normalized to an overhead Sun at a reference optical depth;
   written as 16-bit linear PNG (and 8-bit previews). The PDS file name is kept.
 - **Masks**: the terrain mask from the released ConvNeXt-tiny model (`rpp_mask_v3`), stored in the PNG alpha
   channel. The model masks rover hardware and rover shadows; the sky is not masked.
 - **Cameras**: the promoted models of `rpp.calib` (Navcam, Mastcam-Z 34 mm) or the label CAHVOR start models;
   every image is padded to the full detector frame so that one camera serves all sub-frames of an eye.
-- **Pose priors**: the label pose (CAHV) placed in East-North-Up metres of the landing-site frame through the
+- **Pose priors**: the label pose (CAHV) placed in East-North-Up meters of the landing-site frame through the
   waypoint table.
 
 Outputs: `images_png16/`, `references.txt` for Metashape, `colmap/sparse_prior/` (cameras, poses, rig),
@@ -112,7 +112,7 @@ The Navcam-only stage is exported as well (`error_input_navcam/`).
 ## 5. Health checks
 
 `health` evaluates the refined block in groups: registration, tie points (track lengths, cross-station fraction,
-tied station blocks), reprojection (residuals per camera, left/right balance, growth towards the image edge, corner
+tied station blocks), reprojection (residuals per camera, left/right balance, growth toward the image edge, corner
 coverage), camera-model changes, the stereo rig, and pose shifts against the priors. Each value has a warn and a fail
 threshold; the verdict is the worst status. The thresholds are provisional. A `fail` verdict means the alignment
 should be fixed before any error analysis. The report is written to `<project>/health/` (`health.json`,
@@ -126,7 +126,7 @@ should be fixed before any error analysis. The report is written to `<project>/h
 |---|---|
 | `native/` | COLMAP text model in each image's native pixels |
 | `stations.csv` | image to station (site/drive), sol, SCLK, LMST, solar elevation, instrument, scale |
-| `poses.csv` | prior versus refined camera centre (ENU, m) and attitude difference (deg) |
+| `poses.csv` | prior versus refined camera center (ENU, m) and attitude difference (deg) |
 | `residuals.npz` | per-observation residuals in native pixels |
 | `summary.json` | cameras and rig before and after, track statistics, epsilon estimates |
 | `camera_shifts.png` | the camera-shift figure |

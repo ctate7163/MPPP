@@ -12,7 +12,7 @@ the one below it, and the last one is the truth.
 
 2. ALGEBRAIC CONNECTIVITY (Fiedler value lambda_2 of L = D - W).  Bounded above
    by vertex and edge connectivity: 0 <= lambda_2 <= kappa_v <= kappa_e <= d_min.
-   lambda_2 = 0 iff disconnected.  Cheap, scale-free when normalised by
+   lambda_2 = 0 iff disconnected.  Cheap, scale-free when normalized by
    lambda_max, and correlates with conditioning.  A proxy, not the answer.
 
 3. TOPOLOGICAL REDUNDANCY.  Articulation stations, bridges, edge-removal
@@ -24,7 +24,7 @@ the one below it, and the last one is the truth.
    Recovering translations from pairwise DIRECTIONS requires the graph to be
    parallel rigid (Ozyesil & Singer 2015), which is strictly stronger than
    connectedness.  A chain of stations each sharing points only with its
-   neighbour is connected but poorly conditioned for translation.
+   neighbor is connected but poorly conditioned for translation.
 
 5. POSE-BLOCK CONDITIONING.  THE ANSWER.  Build the bundle-adjustment normal
    matrix, reduce out the points (Schur complement), apply inner constraints for
@@ -156,7 +156,7 @@ def pose_covariance_from_network(stations: Sequence[Station],
     Free-network pose covariance from the tie geometry.
 
     Every visible grid cell (subsampled to an n_tie x n_tie grid) is treated as
-    a tie point.  For each ray the 2-vector angular observation is linearised
+    a tie point.  For each ray the 2-vector angular observation is linearized
     against the point position and the station pose, the point parameters are
     eliminated by Schur complement, and the reduced 6N x 6N normal matrix is
     pseudo-inverted.
@@ -174,7 +174,7 @@ def pose_covariance_from_network(stations: Sequence[Station],
 
     LIMITATION: cross-station link weighting is applied to whole stations, so a
     station that cannot be tied to the network contributes nothing.  Per-link
-    down-weighting of individual observations is not modelled here.
+    down-weighting of individual observations is not modeled here.
     """
     cfg = config or ModelConfig(store_station_dirs=True)
     Nst = len(stations)

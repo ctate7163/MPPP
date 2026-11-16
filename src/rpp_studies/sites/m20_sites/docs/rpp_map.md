@@ -52,8 +52,8 @@ M20_DPI=450 python rpp_map.py all out/   # higher resolution (default 300 dpi; i
   - From legacy sites.json windows (`ADDED`): Rochette, Three Forks North, Chal Rocks, Airey Hill, Overlook Mountain, Bright Angel, Rio Chiquito, Groloy, Tenby/Berea and Marble Mountain.
   - From user sol windows (`EXTRA_WINDOWS`): Wild Basin Lake 838–853 and Plateau Point 1252–1263.
   - Removed: unnamed cluster 20 (`REMOVED_CLUSTERS`).
-- **Centre:** the mean of the cluster's stations, or the densest stop if they spread more than 40 m. `CENTRE_OFFSETS` shifts Tuxedo Park 20 m west so the sol 905 and 907 stops fall inside.
-- **Block:** a ±30 m square (`HALF = 30`) around the centre. Every waypoint in the square counts, not only cluster members.
+- **Center:** the mean of the cluster's stations, or the densest stop if they spread more than 40 m. `CENTER_OFFSETS` shifts Tuxedo Park 20 m west so the sol 905 and 907 stops fall inside.
+- **Block:** a ±30 m square (`HALF = 30`) around the center. Every waypoint in the square counts, not only cluster members.
 - **Visits:** the sols on which the rover ended inside the square, split into continuous runs. `RUN_EXCLUDE` hides single-sol runs from the listing (sol 413 at Three Forks North) without renumbering.
 - **Numbering:** by first sol of residency (`first_all`, which includes hidden sols), giving blocks 1–34.
 - **Counts:** `N×n` = end-of-drive Navcam 360s in the square; `Z×n` = numbered Mastcam-Z 360s taken in the square.
@@ -90,35 +90,35 @@ All figures are rendered at 300 dpi (set with `M20_DPI`) and use a global font s
 | 6 | `m20_mars_to_rover_sites_no_I.png` | `fig6` = `fig5(out, with_I=False)` | 5400 × 6794 | Same rows 1–2; E–H two over two with the block list on the right (below) |
 | 8 | `m20_ods_traverse_map.png` | `fig8` | 2048 × 1024 | Figure 5's panel D blank (terrain, traverse, 2 km scale bar; no axes or markers) for the panorama viewer's info page, with a `.json` of its extent (0.98.19) |
 
-**Figure 1 panel details:** every waypoint is labelled by sol, the title gives the visits, and the footer gives the counts. "Relative northing [m]" labels the left column, and "Relative easting [m]" labels the bottom panel of each column. The text is enlarged (titles 9.6 pt, sol labels 7.2 pt).
+**Figure 1 panel details:** every waypoint is labeled by sol, the title gives the visits, and the footer gives the counts. "Relative northing [m]" labels the left column, and "Relative easting [m]" labels the bottom panel of each column. The text is enlarged (titles 9.6 pt, sol labels 7.2 pt).
 
 ### Figure 5: Mars to rover sites
 
-Every row ends at the same right edge, where row 2's colour bar ends (W − 0.93 in).
+Every row ends at the same right edge, where row 2's color bar ends (W − 0.93 in).
 
 **Row 1**
 
 - **A, global Mars** (terrain level 4): box B and the landing star.
-- **B, Isidis basin square** (centre 85.5 E, 14 N, ±15°): a small landing star and the Jezero box C (thin line). B merges the z7/z8 terrain tiles around Jezero into the z5/z6 basin tiles; without them Jezero is smoothed away and the box appears to sit on featureless slope.
+- **B, Isidis basin square** (center 85.5 E, 14 N, ±15°): a small landing star and the Jezero box C (thin line). B merges the z7/z8 terrain tiles around Jezero into the z5/z6 basin tiles; without them Jezero is smoothed away and the box appears to sit on featureless slope.
 - In both panels the star is drawn above the black box.
-- A and B share one colour range, clipped at the 1st/99th percentile (about ±5.9 km, with arrows on the colour bar).
+- A and B share one color range, clipped at the 1st/99th percentile (about ±5.9 km, with arrows on the color bar).
 - The shading is the original (exaggeration 0.02× and 0.3×). The images are then scaled so their mean brightness matches C and D (gain about 1.2).
 
 **Row 2**
 
-- **C, Jezero crater**, square (1:1, `BOX_C5`): 77.1–78.1 E, from 18.8 N down to about 17.85 N. The landing star is labelled "Octavia E. Butler Landing Site" and the crater "Jezero crater", both in white with a dark outline (`panel_A(..., names=True)`). The 10 km scale bar is at the bottom right.
+- **C, Jezero crater**, square (1:1, `BOX_C5`): 77.1–78.1 E, from 18.8 N down to about 17.85 N. The landing star is labeled "Octavia E. Butler Landing Site" and the crater "Jezero crater", both in white with a dark outline (`panel_A(..., names=True)`). The 10 km scale bar is at the bottom right.
 - **D, "Blocks of rover stations"**: the traverse at 2:1 (`BOX_B5`), with region boxes E–I and the legend.
 - Block numbering by first sol and the background note are in the footnote.
 
-**Row 3:** four tall panels, 1.5 km wide, widened to fill the row. The gap between neighbouring panels (0.75 in) leaves room for F's and H's y tick labels.
+**Row 3:** four tall panels, 1.5 km wide, widened to fill the row. The gap between neighboring panels (0.75 in) leaves room for F's and H's y tick labels.
 
 - E Crater rim west (blocks 30–34) | F Crater rim (26–29) | G Delta Front (8–13) | H Crater Floor and Séítah (1–7).
-- Panel height is fixed (`sh`), so each shows about 2.0 km; the bottom edge stays where a centred 2 km box would put it.
-- E+F share one colour bar, and G+H share another.
+- Panel height is fixed (`sh`), so each shows about 2.0 km; the bottom edge stays where a centered 2 km box would put it.
+- E+F share one color bar, and G+H share another.
 
 **Row 4:** one wide panel I, Upper Fan, Belva Crater, Margin Unit and Neretva Vallis (blocks 14–25).
 
-- Full row width (about 7.4 km) at the same scale as E–H, about 2.5 km tall, with its own colour bar.
+- Full row width (about 7.4 km) at the same scale as E–H, about 2.5 km tall, with its own color bar.
 - Its box in D overlaps F and G, which is intended.
 
 **Rows 3–4, all panels**
@@ -126,7 +126,7 @@ Every row ends at the same right edge, where row 2's colour bar ends (W − 0.93
 - Block numbers are 10 pt, and tick labels are 7.8×FS pt.
 - Titles are one line, `X. Region, sols a–b, blocks m–n`. They shrink only if they would run into the next panel.
 - Latitude labels appear only on the left-most panels, and longitude labels only on the bottom row.
-- The script asserts that every block centre lies inside its panel.
+- The script asserts that every block center lies inside its panel.
 
 ### Figure 6: compact version with the block list
 
@@ -142,7 +142,7 @@ Every row ends at the same right edge, where row 2's colour bar ends (W − 0.93
 | `FS` | Font scale |
 | `BOX_A`, `BOX_B` | Crater and traverse boxes (figures 2–4) |
 | `BOX_C5`, `BOX_B5` | Square crater box and 2:1 traverse box (figures 5–6) |
-| `sh`, `sh4` | Row 3 and 4 panel heights in inches (`BH`, `BH4` in metres follow from the scale) |
+| `sh`, `sh4` | Row 3 and 4 panel heights in inches (`BH`, `BH4` in meters follow from the scale) |
 | `REGION_KEYS`, `REGION_TITLE` | Region definitions and titles |
 | `scalebar(..., where=)` | Scale-bar side per panel |
 | `panel_B(..., landing_label=True)` | Landing-site label |
@@ -205,7 +205,7 @@ mmap.sites_json(blocks, out="out/sites_blocks.json")
 - The scripts do their work at import time and pass data through `sites_zoom.json`.
 - To port them:
   - Wrap the module-level code in functions that take the waypoints and block list as arguments.
-  - Move the constants (`HALF`, `MANUAL_MERGE`, `ADDED`, `EXTRA_WINDOWS`, `CENTRE_OFFSETS`, `RUN_EXCLUDE`, region lists) into a config dict.
+  - Move the constants (`HALF`, `MANUAL_MERGE`, `ADDED`, `EXTRA_WINDOWS`, `CENTER_OFFSETS`, `RUN_EXCLUDE`, region lists) into a config dict.
 - Keep one process per figure, or call `plt.close('all')` and `gc.collect()` between figures. At 300–450 dpi each figure needs one to a few GB.
 
 ## 8. Known limits and open items

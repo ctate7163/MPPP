@@ -41,10 +41,10 @@ def test_sites_json_holds_the_official_blocks():
     assert ob["4"]["site"] == "artuby_ridge" and ob["21"]["site"] == "hans_amundsen_workspace"
     assert ob["21"]["name"] == "Hans Amundsen Memorial"
     assert all(b["site"] != "seitah_overlook" for b in ob.values())
-    by_centre = {(round(b["centre"]["easting"], 1), round(b["centre"]["northing"], 1)): (int(n), b) for n, b in ob.items()}
+    by_center = {(round(b["centre"]["easting"], 1), round(b["centre"]["northing"], 1)): (int(n), b) for n, b in ob.items()}
     for k, v in sites.items():                                            # the prototype's 36 blocks are all there
         c = v["block"]["centre"]
-        n, b = by_centre[(round(c["easting"], 1), round(c["northing"], 1))]
+        n, b = by_center[(round(c["easting"], 1), round(c["northing"], 1))]
         assert (b["name"] == v["block"]["name"] or k == "blk15_whale_mountain") and sorted(b["visits"]) == sorted(v["sols"])
         assert b["site"] in t["sites"] and n in t["sites"][b["site"]]["official_blocks"]
     for k, v in t["sites"].items():                                       # Christian's v5 rules

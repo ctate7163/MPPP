@@ -9,7 +9,7 @@ the rover navigation frame:
   temperature; its E terms are ~1e-8 m (a central camera in practice).
 
 :class:`CameraModel` projects 3-D points exactly as the JPL ``cmod`` library
-does (Gennery 2006), in pixels whose origin is the CENTRE of the first pixel.
+does (Gennery 2006), in pixels whose origin is the CENTER of the first pixel.
 COLMAP puts the origin at the pixel CORNER, hence the ±0.5 px in the
 conversions below.
 
@@ -41,7 +41,7 @@ def parse_label_model(gcm: Dict[str, Any]) -> Dict[str, Any]:
     """
     The one parser of a PDS ``GEOMETRIC_CAMERA_MODEL`` group: {"model_type", "C", "A", "H", "V" (arrays), "O",
     "R", "E" (arrays or None), "mtype", "mparm"} from MODEL_COMPONENT_1..9, as the label carries them (nothing
-    normalised).  :meth:`CameraModel.from_label` and :meth:`rpp.camera.CAHVOR.from_label` both use it.
+    normalized).  :meth:`CameraModel.from_label` and :meth:`rpp.camera.CAHVOR.from_label` both use it.
     """
     def comp(i):
         v = gcm.get(f"MODEL_COMPONENT_{i}")
@@ -61,7 +61,7 @@ def parse_label_model(gcm: Dict[str, Any]) -> Dict[str, Any]:
 
 @dataclass
 class CameraModel:
-    """A CAHV / CAHVOR / CAHVORE model.  Pixels: centre of the first pixel = (0, 0)."""
+    """A CAHV / CAHVOR / CAHVORE model.  Pixels: center of the first pixel = (0, 0)."""
     C: np.ndarray
     A: np.ndarray
     H: np.ndarray
@@ -175,7 +175,7 @@ class CameraModel:
         -> (R_cam_from_frame, linear intrinsics), as :meth:`rpp.camera.CAHVOR.decompose`
         (Di & Li 2004): z = A, y = V' = (V - vc A)/vs, x = the part of H' = (H - hc A)/hs
         orthogonal to V'.  Intrinsics: hs = |A x H|, vs = |A x V| (focal lengths),
-        hc = A.H, vc = A.V (principal point, pixel-centre origin), the H'/V' angle
+        hc = A.H, vc = A.V (principal point, pixel-center origin), the H'/V' angle
         (90 deg for unskewed pixels).
         """
         A = self.A / np.linalg.norm(self.A)
@@ -188,8 +188,8 @@ class CameraModel:
         return R, {"hs": float(hs), "vs": float(vs), "hc": hc, "vc": vc, "hv_angle_deg": float(np.degrees(np.arccos(c)))}
 
     def in_frame(self, R_new_from_old: np.ndarray, C_new: Optional[np.ndarray] = None) -> "CameraModel":
-        """The same camera expressed in another frame: vectors rotated, centre moved to ``C_new``
-        (default: rotated centre).  ``R_new_from_old`` maps old-frame vectors to the new frame."""
+        """The same camera expressed in another frame: vectors rotated, center moved to ``C_new``
+        (default: rotated center).  ``R_new_from_old`` maps old-frame vectors to the new frame."""
         R = np.asarray(R_new_from_old, float)
         rot = lambda v: None if v is None else R @ v                       # noqa: E731
         C = R @ self.C if C_new is None else np.asarray(C_new, float)
@@ -206,7 +206,7 @@ class CameraModel:
         """
         The model for full-frame pixels: a product downsampled by ``scale`` (0.5 for a
         half-resolution Navcam) whose first pixel is (dx, dy) product pixels from the
-        detector corner.  Pixel-centre origin in and out:  x_full = (x + dx + 0.5)/scale - 0.5.
+        detector corner.  Pixel-center origin in and out:  x_full = (x + dx + 0.5)/scale - 0.5.
         ``width``/``height``: the full-frame size to record.
         """
         s = float(scale)
@@ -258,7 +258,7 @@ def colmap_rays(model: str, params: Sequence[float], uv: np.ndarray) -> np.ndarr
 
 
 def _best_rotation(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """Rotation R minimising sum |R a_i - b_i|^2 (unit vectors, Kabsch)."""
+    """Rotation R minimizing sum |R a_i - b_i|^2 (unit vectors, Kabsch)."""
     U, _, Vt = np.linalg.svd(b.T @ a)
     D = np.diag([1.0, 1.0, np.sign(np.linalg.det(U @ Vt))])
     return U @ D @ Vt
@@ -399,7 +399,7 @@ def fit_to_colmap(model: str, params: Sequence[float], width: int, height: int, 
     the O tilt (2), r1, r2 (r0 = 0, which would only rescale the focal
     lengths), and for CAHVORE type 3 the linearity (``fit_linearity``).  E is 0:
     COLMAP cameras are central.  Returns the model and the fit residuals
-    (pixel-centre origin, full frame).
+    (pixel-center origin, full frame).
     """
     from scipy.optimize import least_squares
     uv = pixel_grid(width, height, step)

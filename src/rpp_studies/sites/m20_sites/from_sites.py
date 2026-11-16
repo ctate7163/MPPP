@@ -3,7 +3,7 @@
     python from_sites.py [SITES_JSON]        -> sites_zoom.json (the block list every figure script reads)
 
 SITES_JSON defaults to $M20_SITES_FILE, then to the package copy (src/rpp/data/sites.json), which is
-where the latest sites information always lives.  Each official block keeps its number, name, region, centre
+where the latest sites information always lives.  Each official block keeps its number, name, region, center
 (waypoint easting/northing), visits, Navcam 360 count, partial-Navcam count and numbered Mastcam-Z 360s, so the
 figures show exactly what sites.json says.  sitesdef.py (re-deriving blocks from waypoints) is still there for when
 the block definitions themselves change."""

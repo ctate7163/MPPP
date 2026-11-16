@@ -4,7 +4,7 @@ them (0.97.4; Christian, 13 Nov 2026: "inject XMP stereoscopic metadata ... so t
 
 What is written, and what it is worth: there is no single standard for a stereo still.  The packet carries
 - ``GPano`` (Google Photo Sphere, the one most 360 viewers read): equirectangular, the whole sphere, the heading of the
-  image centre;
+  image center;
 - ``GSpherical`` (the spherical video fields, read by some players for stills too): ``StereoMode = top-bottom``;
 - ``rpp``: eye order (left on top), the eye's size, the station.
 A viewer that reads GPano alone will treat the square as one mono sphere; the file name's ``_360_3DTD`` is what the
@@ -29,19 +29,19 @@ STACK_GLOBS = ("*_360_3DTD*.jpg", "*_360_3DTD*.png")
 _BLOCK = 1 << 24
 
 
-def stereo_xmp(width: int, height: int, software: str, heading_centre_deg: float = 180.0,
+def stereo_xmp(width: int, height: int, software: str, heading_center_deg: float = 180.0,
                extra: Optional[Dict[str, Any]] = None) -> bytes:
     """The packet for a ``width`` x ``height`` image holding two equirectangular eyes, the left on top."""
     from xml.sax.saxutils import escape
     f = {"GPano:UsePanoramaViewer": "True", "GPano:ProjectionType": "equirectangular",
-         "GPano:StitchingSoftware": software, "GPano:PoseHeadingDegrees": f"{heading_centre_deg % 360.0:.2f}",
+         "GPano:StitchingSoftware": software, "GPano:PoseHeadingDegrees": f"{heading_center_deg % 360.0:.2f}",
          "GPano:CroppedAreaImageWidthPixels": width, "GPano:CroppedAreaImageHeightPixels": height,
          "GPano:FullPanoWidthPixels": width, "GPano:FullPanoHeightPixels": height,
          "GPano:CroppedAreaLeftPixels": 0, "GPano:CroppedAreaTopPixels": 0,
          "GSpherical:Spherical": "true", "GSpherical:Stitched": "true", "GSpherical:StitchingSoftware": software,
          "GSpherical:ProjectionType": "equirectangular", "GSpherical:StereoMode": "top-bottom",
          "rpp:StereoLayout": "top-bottom", "rpp:TopEye": "left", "rpp:EyeWidthPixels": width,
-         "rpp:EyeHeightPixels": height // 2, "rpp:AzimuthOfColumn0Deg": f"{(heading_centre_deg - 180.0) % 360.0:.2f}"}
+         "rpp:EyeHeightPixels": height // 2, "rpp:AzimuthOfColumn0Deg": f"{(heading_center_deg - 180.0) % 360.0:.2f}"}
     for k, v in (extra or {}).items():
         f[f"rpp:{k}"] = v
     body = "\n".join(f"   <{k}>{escape(str(v))}</{k}>" for k, v in f.items())
@@ -163,7 +163,7 @@ def image_size(path: PathLike) -> Tuple[int, int]:
             fh.seek(n - 2, 1)
 
 
-def tag_stereo(path: PathLike, software: Optional[str] = None, heading_centre_deg: float = 180.0,
+def tag_stereo(path: PathLike, software: Optional[str] = None, heading_center_deg: float = 180.0,
                extra: Optional[Dict[str, Any]] = None) -> bool:
     """Write the stereo packet into one stacked product; False for a file that is not a square pair."""
     from .. import __version__
@@ -171,18 +171,18 @@ def tag_stereo(path: PathLike, software: Optional[str] = None, heading_centre_de
     w, h = image_size(path)
     if h != w:                                                           # two w x w/2 eyes make a square
         return False
-    xmp = stereo_xmp(w, h, software or f"RPP {__version__}", heading_centre_deg, extra)
+    xmp = stereo_xmp(w, h, software or f"RPP {__version__}", heading_center_deg, extra)
     (inject_png if path.suffix.lower() == ".png" else inject_jpeg)(path, xmp)
     return True
 
 
-def tag_folder(folder: PathLike, heading_centre_deg: float = 180.0, extra: Optional[Dict[str, Any]] = None) -> List[str]:
+def tag_folder(folder: PathLike, heading_center_deg: float = 180.0, extra: Optional[Dict[str, Any]] = None) -> List[str]:
     """Every ``*_360_3DTD*`` JPEG and PNG of ``folder`` tagged; the names done."""
     done = []
     for g in STACK_GLOBS:
         for f in sorted(Path(folder).glob(g)):
             try:
-                if tag_stereo(f, heading_centre_deg=heading_centre_deg, extra=extra):
+                if tag_stereo(f, heading_center_deg=heading_center_deg, extra=extra):
                     done.append(f.name)
             except (OSError, ValueError, struct.error):
                 continue

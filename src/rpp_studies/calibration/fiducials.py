@@ -20,7 +20,7 @@ stereo pair that sees them, with the block's own refined cameras and the block's
   moment (``rover_in_block``), the link the rover-frame estimator needs.
 
 AFT2 is behind the hexagonal plate from the mast and is not used.  Pixel coordinates in the outputs are
-full-resolution COLMAP pixels (corner origin); detection works on the native (product) image, centre origin.
+full-resolution COLMAP pixels (corner origin); detection works on the native (product) image, center origin.
 Reads only; nothing in the blocks changes.
 """
 from __future__ import annotations
@@ -71,7 +71,7 @@ UNSURVEYED_NAV_MM: Dict[str, Tuple[float, float, float]] = {"TDF4": (335.83, 126
 RAY_MIN_TARGETS = 5              # an image's ray to an unsurveyed target needs a resection on this many surveyed ones
 RAY_MAX_RMS = 1.0                # and at most this rms (full-resolution px)
 UNSURVEYED: Tuple[str, ...] = tuple(UNSURVEYED_NAV_MM)
-DECK_CTE_PPM_PER_DEGC = 23.0                             # aluminium; the survey is taken as a room-temperature one
+DECK_CTE_PPM_PER_DEGC = 23.0                             # aluminum; the survey is taken as a room-temperature one
 
 # ------------------------------------------------------------------------------------------------ detection
 SYM_RADIUS_FULL_PX = 14.0        # half-size of the point-symmetry window (full-resolution px; >= MIN_SYM_RADIUS)
@@ -80,7 +80,7 @@ SEARCH_FULL_PX = 12.0            # first pass: +- around the label prediction (l
 REFINE_SEARCH_FULL_PX = 6.0      # second pass: +- around the block solution's prediction
 MAX_COST = 0.30                  # 1 - correlation of the window with its 180-degree rotation
 MIN_SD = 8.0                     # DN: a flat (saturated) patch is symmetric too
-MAX_CORNER_PX = 0.75             # native px: cv2.cornerSubPix used when it stays this close to the symmetry centre
+MAX_CORNER_PX = 0.75             # native px: cv2.cornerSubPix used when it stays this close to the symmetry center
 EDGE_MARGIN = 20                 # native px: predictions closer to the frame edge are skipped
 BAR_SEARCH_FULL_PX = 40.0        # LDIFF / RDIFF: the differential bar turns them 10-30 px from the label prediction
 BAR_MAX_COST = 0.15              # and a wide search needs a stricter symmetry
@@ -92,14 +92,14 @@ MIN_ROTATION_POINTS = 6          # rigid targets over both eyes (>= 3 in NR) for
 
 
 def survey_nav_m(names: Optional[Sequence[str]] = None) -> Dict[str, np.ndarray]:
-    """Survey positions in RNAV, metres (the unsurveyed targets at their fitted RNAV positions when named)."""
+    """Survey positions in RNAV, meters (the unsurveyed targets at their fitted RNAV positions when named)."""
     names = list(names) if names is not None else list(SURVEY_MECH_MM)
     return {k: (np.asarray(UNSURVEYED_NAV_MM[k], float) if k in UNSURVEYED_NAV_MM
                 else np.asarray(SURVEY_MECH_MM[k], float) + MECH_TO_NAV_MM) / 1000.0 for k in names}
 
 
 def native_to_full(xy, scale: float) -> np.ndarray:
-    """Native (product) pixel, centre origin -> full-resolution COLMAP pixel, corner origin."""
+    """Native (product) pixel, center origin -> full-resolution COLMAP pixel, corner origin."""
     return (np.asarray(xy, float) + 0.5) / float(scale)
 
 
@@ -130,9 +130,9 @@ def _sym_cost(g: np.ndarray, cx: int, cy: int, R: int) -> Tuple[float, float]:
 def detect_target(gray: np.ndarray, x: float, y: float, scale: float = 1.0,
                   search_full_px: float = SEARCH_FULL_PX, max_cost: float = MAX_COST) -> Optional[Dict[str, float]]:
     """
-    The centre of a quadrant target near native pixel (x, y) (centre origin): the window position whose content
+    The center of a quadrant target near native pixel (x, y) (center origin): the window position whose content
     best matches its own 180-degree rotation (point symmetry), to sub-pixel by phase correlation of the window with
-    its rotation, then ``cv2.cornerSubPix`` (the centre is a saddle) where that stays within ``MAX_CORNER_PX``
+    its rotation, then ``cv2.cornerSubPix`` (the center is a saddle) where that stays within ``MAX_CORNER_PX``
     (``method`` "corner", else "symmetry").  None when no symmetric, contrasted window is found or the best one is
     on the search border.
     """
@@ -153,7 +153,7 @@ def detect_target(gray: np.ndarray, x: float, y: float, scale: float = 1.0,
         return None
 
     xi, yi = x0 + i - S, y0 + j - S
-    # sub-pixel: the shift between the window and its 180-degree rotation is twice the offset of the centre
+    # sub-pixel: the shift between the window and its 180-degree rotation is twice the offset of the center
     p = g[yi - R:yi + R + 1, xi - R:xi + R + 1].astype(np.float64)
     win = cv2.createHanningWindow((p.shape[1], p.shape[0]), cv2.CV_64F)
     (sx, sy), _ = cv2.phaseCorrelate(np.ascontiguousarray(p[::-1, ::-1]), p, win)
@@ -163,8 +163,8 @@ def detect_target(gray: np.ndarray, x: float, y: float, scale: float = 1.0,
             return 0.0 if d <= 0 else float(np.clip(0.5 * (a - c) / d, -0.5, 0.5))
         sx, sy = 2 * para(C[j, i - 1], C[j, i], C[j, i + 1]), 2 * para(C[j - 1, i], C[j, i], C[j + 1, i])
     xs, ys = xi + 0.5 * sx, yi + 0.5 * sy
-    # the centre is a saddle: cv2.cornerSubPix is the most precise estimate when it stays at the symmetry centre
-    # (strongly foreshortened targets can pull it onto the ring; then the symmetry centre is kept)
+    # the center is a saddle: cv2.cornerSubPix is the most precise estimate when it stays at the symmetry center
+    # (strongly foreshortened targets can pull it onto the ring; then the symmetry center is kept)
     w = max(3, R // 2)
     cs = cv2.cornerSubPix(g, np.array([[[xs, ys]]], np.float32), (w, w), (-1, -1),
                           (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 50, 0.001))[0, 0]
@@ -212,7 +212,7 @@ def label_pose(cm: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
 
 
 def label_predict(cm: Dict[str, Any], names: Sequence[str], margin: int = EDGE_MARGIN) -> Dict[str, np.ndarray]:
-    """Native pixels (centre origin) of the targets through a label CAHVOR(E); only those inside the frame."""
+    """Native pixels (center origin) of the targets through a label CAHVOR(E); only those inside the frame."""
     from rpp.cmod import CameraModel
     w, h = cm.get("width"), cm.get("height")
     m = CameraModel.from_label(cm, width=w, height=h)
@@ -718,7 +718,7 @@ PDS_COLUMNS = ["block", "pair", "station", "sol", "T_L", "T_R", "scale_native", 
 
 
 def stretch_gray(a: np.ndarray) -> np.ndarray:
-    """A PDS image (H x W or H x W x bands, any number type) as float32 grey 0-255: the band mean stretched between
+    """A PDS image (H x W or H x W x bands, any number type) as float32 gray 0-255: the band mean stretched between
     its 0.5 and 99.5 percentiles over the valid (> 0) pixels - the 8-bit scale the detection thresholds assume."""
     g = np.asarray(a, np.float32)
     if g.ndim == 3:
@@ -965,7 +965,7 @@ def rig_trend(pairs: Sequence[Dict[str, Any]], drift: Optional[Dict[str, Any]] =
     (c) the ``drift`` model's shape plus a constant (the law, its rate as is), and with ``step_sol`` (d) a constant
     with a step there.  Weights 1 / (sd^2 + tau^2), tau the scatter beyond the formal sd (method of moments);
     points whose residual from the line is beyond ``clip`` times its own sigma (at least; the robust scale of the
-    normalised residuals when that is larger) are dropped.  Per fit: the coefficients and se (scaled by
+    normalized residuals when that is larger) are dropped.  Per fit: the coefficients and se (scaled by
     the reduced chi-square when it exceeds 1), chi-square, BIC; ``rate_minus_law`` (mdeg / 1000 sol) and its z.
     """
     from rpp.calib.constrain import drift_offset_mdeg
@@ -1046,7 +1046,7 @@ def write_csv(path: PathLike, rows: List[Dict[str, Any]], columns: Sequence[str]
 
 # ------------------------------------------------------------------------------------------------ figure
 def _cross(img: np.ndarray, x: float, y: float, size: float, color, thick: int = 2, tilted: bool = False) -> None:
-    """A cross centred at sub-pixel (x, y) in the drawing's own pixel-centre coordinates."""
+    """A cross centered at sub-pixel (x, y) in the drawing's own pixel-center coordinates."""
     import cv2
     S = 16                                               # 4 fractional bits
     h = 0.5 * size
@@ -1062,7 +1062,7 @@ def annotate(img: np.ndarray, row: Dict[str, Any], scale: float, pred: Dict[str,
     One image with the label prediction (red x), the measurement (green o) and, in the insets, the block
     solution's reprojection (cyan +) of the six rigid targets with measured - fitted and measured - label in
     full-resolution px.  ``pred``: native pixels; ``det`` and ``fitted``: full-resolution pixels.  Marks are drawn
-    at sub-pixel positions with the pixel-centre mapping of the resampled crops (a pixel centre u of the crop at
+    at sub-pixel positions with the pixel-center mapping of the resampled crops (a pixel center u of the crop at
     zoom z sits at (u + 0.5) z - 0.5).
     """
     import cv2
@@ -1092,7 +1092,7 @@ def annotate(img: np.ndarray, row: Dict[str, Any], scale: float, pred: Dict[str,
     cv2.putText(main, "label: survey (TDF4: prior) through the label CAHVORE", (75, 58), cv2.FONT_HERSHEY_SIMPLEX, 0.95,
                 WHT, 2, cv2.LINE_AA)
     cv2.circle(main, (40, 104), 17, GRN, 3)
-    cv2.putText(main, "measured: point-symmetry / saddle centre", (75, 114), cv2.FONT_HERSHEY_SIMPLEX, 0.95, WHT, 2,
+    cv2.putText(main, "measured: point-symmetry / saddle center", (75, 114), cv2.FONT_HERSHEY_SIMPLEX, 0.95, WHT, 2,
                 cv2.LINE_AA)
     _cross(main, 40, 158, 24, CYN, 2)
     cv2.putText(main, "fit (insets): block cameras + rig, pose from the deck", (75, 168), cv2.FONT_HERSHEY_SIMPLEX, 0.95,
@@ -1288,7 +1288,7 @@ def fit_unsurveyed(pairs: List[Dict[str, Any]]) -> Dict[str, Any]:
 DECK_FRAME_DEFAULT = "NRF_1642_0812712250_112RAD_N0790870NCAM03642_0A0095J01"   # sol 1642, full resolution, -8.6 C:
 #                                                     all six rigid targets, TDF4 and both differential-bar targets
 DECK_INSET_HALF_PX = 16            # 16 Nov (Christian: "Double the window patch"): 32 x 32 px insets (12 Nov: 16 x 16); half-size of a target's inset (full-resolution px)
-MODEL_COLOURS = {"measured": "#ffd400", "label": "#e6007e", "constrained": "#00c8a0"}
+MODEL_COLORS = {"measured": "#ffd400", "label": "#e6007e", "constrained": "#00c8a0"}
 
 
 def resolver_angles(label) -> Tuple[float, float]:
@@ -1301,7 +1301,7 @@ def resolver_angles(label) -> Tuple[float, float]:
 
 
 VF_POINTS_FILE = "vf_points_20261115.json"          # 0.98.11: five VFs replaced (15 Nov); was vf_points_ALL_20261114.json
-VF_COLOURS = {"good": "#3fa9ff", "tag": "#ffffff", "weak": "#ff7a00", "new": "#5cff5c"}
+VF_COLORS = {"good": "#3fa9ff", "tag": "#ffffff", "weak": "#ff7a00", "new": "#5cff5c"}
 
 
 def load_vf_points(path: Optional[PathLike] = None) -> Optional[Dict[str, Any]]:
@@ -1324,7 +1324,7 @@ def deck_frame_models(path: PathLike, chain: Union[PathLike, Dict[str, Any]], cm
       label        the product label's CAHVOR(E), intrinsics and pose
       constrained  the Navcam law at the frame's temperature and sol (:func:`rpp.calib.constrain.camera_at`) with
                    the pose of the deck_joint mast chain at the label's resolver angles - nothing fitted to this frame
-    Returns {"stem", "eye", "sol", "T", "scale", "az", "el", "image" (uint8 RGB or grey), "targets": {name: {"measured",
+    Returns {"stem", "eye", "sol", "T", "scale", "az", "el", "image" (uint8 RGB or gray), "targets": {name: {"measured",
     "label", "constrained", "rigid"}}, "rms_px": {"label", "constrained"} (rigid targets), "mean_px", "scatter_px" (rms about the mean offset)}.
     """
     from rpp.calib.constrain import camera_at
@@ -1389,8 +1389,8 @@ def deck_frame_models(path: PathLike, chain: Union[PathLike, Dict[str, Any]], cm
 def plot_deck_frame(res: Dict[str, Any], out_png: PathLike, dpi: int = 200, inset_half_px: int = DECK_INSET_HALF_PX,
                     show_vf: bool = False) -> Path:
     """The frame of :func:`deck_frame_models` with every target marked, and one inset per target (+-``inset_half_px``
-    full-resolution px about the measured centre): the measured centre (cross), the label model's prediction (circle)
-    and the constrained model's (diamond), with each model's offset from the measured centre in px."""
+    full-resolution px about the measured center): the measured center (cross), the label model's prediction (circle)
+    and the constrained model's (diamond), with each model's offset from the measured center in px."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -1405,7 +1405,7 @@ def plot_deck_frame(res: Dict[str, Any], out_png: PathLike, dpi: int = 200, inse
     kw = {"cmap": "gray"} if img.ndim == 2 else {}
     ext = (0, img.shape[1] / s, img.shape[0] / s, 0)                     # full-resolution px, corner origin
     ax.imshow(img, extent=ext, interpolation="bilinear", **kw)
-    MC = MODEL_COLOURS
+    MC = MODEL_COLORS
     for k in names:
         x, y = T[k]["measured"]
         ax.plot([x], [y], "s", ms=13, mfc="none", mec=MC["measured"], mew=1.3)
@@ -1416,16 +1416,16 @@ def plot_deck_frame(res: Dict[str, Any], out_png: PathLike, dpi: int = 200, inse
     placed = [tuple(T[k]["measured"]) for k in names]   # labels already drawn (the targets')
     for k, v in sorted(vfp.items(), key=lambda kv: kv[1]["constrained"][1]):   # 0.98.10: the VFs where the constrained model puts them
         x, y = v["constrained"]
-        c = VF_COLOURS[v["quality"]]
+        c = VF_COLORS[v["quality"]]
         ax.plot([x], [y], "^", ms=9, mfc="none", mec=c, mew=1.5)
-        if v["quality"] == "tag":                    # 0.98.11: the four tag corners are four VFs, each labelled
+        if v["quality"] == "tag":                    # 0.98.11: the four tag corners are four VFs, each labeled
             ax.annotate(k, (x, y), xytext={"VF01a": (-34, 6), "VF01b": (6, 6), "VF01c": (6, -12), "VF01d": (-34, -12)}.get(k, (6, 6)),
                         textcoords="offset points", color=c, fontsize=6.5, fontweight="bold",
                         bbox=dict(boxstyle="round,pad=0.1", fc="black", ec="none", alpha=0.5))
             placed.append((x, y))
             continue
         near = [p for p in placed if -150 < p[0] - x < 500 and -250 < p[1] - y < 260]   # 0.98.11: a label within ~25 pt
-        off = (7, 6) if not near else (-40, 4) if len(near) == 1 else (7, -16)         # a neighbour: the other side
+        off = (7, 6) if not near else (-40, 4) if len(near) == 1 else (7, -16)         # a neighbor: the other side
         placed.append((x, y))
         ax.annotate(k, (x, y), xytext=off, textcoords="offset points", color=c, fontsize=7.5, fontweight="bold",
                     bbox=dict(boxstyle="round,pad=0.12", fc="black", ec="none", alpha=0.5))
@@ -1451,24 +1451,24 @@ def plot_deck_frame(res: Dict[str, Any], out_png: PathLike, dpi: int = 200, inse
         a.set_xticks([]); a.set_yticks([])
     from matplotlib.lines import Line2D
     r = res["rms_px"]
-    hnd = [Line2D([], [], marker="+", ls="", ms=11, mew=1.4, color=MC["measured"], label="measured centre"),
+    hnd = [Line2D([], [], marker="+", ls="", ms=11, mew=1.4, color=MC["measured"], label="measured center"),
            Line2D([], [], marker="o", ls="", ms=8, mfc="none", mec=MC["label"], mew=1.6,
                   label=f"label CAHVORE (rms {r['label']:.1f} px, {res['scatter_px']['label']:.1f} px about its mean)"),
            Line2D([], [], marker="D", ls="", ms=8, mfc="none", mec=MC["constrained"], mew=1.6,
                   label=f"constrained: Navcam law + mast chain (rms {r['constrained']:.1f} px, "
                         f"{res['scatter_px']['constrained']:.1f} px about its mean)")]
     if vfp:
-        n = {q: sum(v["quality"] == q for v in vfp.values()) for q in VF_COLOURS}
-        hnd += [Line2D([], [], marker="^", ls="", ms=9, mfc="none", mec=VF_COLOURS["good"], mew=1.5,
+        n = {q: sum(v["quality"] == q for v in vfp.values()) for q in VF_COLORS}
+        hnd += [Line2D([], [], marker="^", ls="", ms=9, mfc="none", mec=VF_COLORS["good"], mew=1.5,
                        label=f"vicarious fiducial, constrained model ({n['good']} in view)")]
         if n["weak"]:
-            hnd.append(Line2D([], [], marker="^", ls="", ms=9, mfc="none", mec=VF_COLOURS["weak"], mew=1.5,
+            hnd.append(Line2D([], [], marker="^", ls="", ms=9, mfc="none", mec=VF_COLORS["weak"], mew=1.5,
                               label=f"weak vicarious fiducial ({n['weak']} in view: archive rms > 0.9 px, jackknife > 0.15 mm or rarely found)"))
         if n["new"]:
-            hnd.append(Line2D([], [], marker="^", ls="", ms=9, mfc="none", mec=VF_COLOURS["new"], mew=1.5,
+            hnd.append(Line2D([], [], marker="^", ls="", ms=9, mfc="none", mec=VF_COLORS["new"], mew=1.5,
                               label=f"new vicarious fiducial, 15 Nov ({n['new']} in view: replaces a weak one of the same number)"))
         if n["tag"]:
-            hnd.append(Line2D([], [], marker="^", ls="", ms=9, mfc="none", mec=VF_COLOURS["tag"], mew=1.5,
+            hnd.append(Line2D([], [], marker="^", ls="", ms=9, mfc="none", mec=VF_COLORS["tag"], mew=1.5,
                               label="VF01a-d: the four corners of the AprilTag on the arm-base housing (four VFs)"))
     leg = ax.legend(handles=hnd, loc="lower left", fontsize=9, framealpha=0.75, facecolor="black", edgecolor="none")
     for t in leg.get_texts():

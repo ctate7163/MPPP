@@ -1,8 +1,8 @@
 """
 The 16-bit product is linear and radiometrically traceable to the PDS RAD product.
 
-The chain is  DN --(RADIANCE_SCALING_FACTOR, RADIANCE_OFFSET)--> radiance  --(/ scale_zenith)--> normalised radiance
---(x white balance x brightness)--> colour-processed radiance  --(x scale_rad_to_int16, round)--> uint16, and every
+The chain is  DN --(RADIANCE_SCALING_FACTOR, RADIANCE_OFFSET)--> radiance  --(/ scale_zenith)--> normalized radiance
+--(x white balance x brightness)--> color-processed radiance  --(x scale_rad_to_int16, round)--> uint16, and every
 factor is recorded in the image's ``meta`` (the manifest), so that a user can invert the product back to the
 PDS radiance.  These tests pin that chain on the two test products and on synthetic data.
 """
@@ -23,32 +23,32 @@ def _radiance_from_pds(path):
     return dn.astype(np.float64) * scale + offset, valid, scale, offset
 
 
-def test_quantise_is_linear_and_invertible():
+def test_quantize_is_linear_and_invertible():
     """uint16 = round(rad x s16): slope s16, zero intercept, residual <= half a count, zero reserved for invalid."""
-    from rpp.radiometry import quantise
+    from rpp.radiometry import quantize
     rng = np.random.default_rng(1)
     rad = rng.uniform(0.0, 0.3, size=(40, 50, 3))
     valid = np.ones((40, 50), bool)
     valid[0, :] = False
     cfg = {"scale_rad_to_int16": 2e5, "scale_int8_to_int16": 64, "offset_int8_to_int16": 0.0, "apply_gamma": False}
-    im16, im8 = quantise(rad, valid, cfg)
+    im16, im8 = quantize(rad, valid, cfg)
     assert im16.dtype == np.uint16 and im8.dtype == np.uint8
     assert np.all(im16[0] == 0) and np.all(im16[1:] >= 1)
     back = im16[1:].astype(np.float64) / 2e5
-    assert np.abs(back - rad[1:]).max() <= 0.5 / 2e5 + 1e-12          # one half-count of quantisation
+    assert np.abs(back - rad[1:]).max() <= 0.5 / 2e5 + 1e-12          # one half-count of quantization
     x, y = rad[1:].ravel(), im16[1:].ravel().astype(np.float64)
     slope, intercept = np.polyfit(x, y, 1)
     assert abs(slope - 2e5) / 2e5 < 1e-6 and abs(intercept) < 0.6
     # gamma is only ever applied to the 8-bit product
     cfg_g = {**cfg, "apply_gamma": True, "gamma": 2.0}
-    im16_g, im8_g = quantise(rad, valid, cfg_g)
+    im16_g, im8_g = quantize(rad, valid, cfg_g)
     assert np.array_equal(im16_g, im16) and not np.array_equal(im8_g, im8)
 
 
 @needs_data
 @pytest.mark.parametrize("img", [ZL0, NLF], ids=["ZL0", "NLF"])
 def test_png16_traces_back_to_pds_radiance(img):
-    """With the colour processing at unity (no tau correction, white balance 1, brightness 1) the 16-bit product is
+    """With the color processing at unity (no tau correction, white balance 1, brightness 1) the 16-bit product is
     round(radiance x scale) of the PDS RAD values, pixel for pixel; with the default processing the recorded
     factors invert it back to the PDS radiance within one count."""
     from rpp import RPPImage

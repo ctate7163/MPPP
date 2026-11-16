@@ -1,7 +1,7 @@
 # perseverance_rmech.npz
 
 A model of the Perseverance rover in the rover mechanical frame (RMECH: x forward, y right, z down,
-z = 0 at the deck top; metres), loaded by `rpp.ibr.rover_model`.
+z = 0 at the deck top; meters), loaded by `rpp.ibr.rover_model`.
 
 Derived from NASA's "Mars Perseverance Rover, 3D Model" (file `25042_Perseverance.glb`),
 https://science.nasa.gov/resource/mars-perseverance-rover-3d-model/ . **Credit: NASA/JPL-Caltech.**

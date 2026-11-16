@@ -22,7 +22,7 @@ def fit_fisheye(cam):
     w, h = cam.width, cam.height
     u, v = np.meshgrid(np.linspace(1, w - 1, 64), np.linspace(1, h - 1, 48))
     px = np.stack([u.ravel(), v.ravel()], 1)
-    rays = np.array([cam.cam_from_img(p) for p in px])          # normalised x, y (z = 1)
+    rays = np.array([cam.cam_from_img(p) for p in px])          # normalized x, y (z = 1)
     fx, fy, cx, cy = cam.params[:4]
     def model(q):
         fx, fy, cx, cy, k1, k2, k3, k4 = q

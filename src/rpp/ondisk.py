@@ -56,3 +56,21 @@ PC_FOLDERS = (r"D:\code\MPPP", r"D:\code\MPPP_freeze")   # keep their names thro
 EXAMPLE_ASSET = "mppp_example_m2020_rockytop"   # the GitHub release asset of the example data (example-data-v1)
 XMP_OLD_NS = ("https://github.com/ctate7163/MPPP/ns/1.0/", "https://github.com/ctate7163/MPPP/ns/0.1/")
 XMP_OLD_PREFIX = "mppp"                     # stereo panoramas and processed images written before 0.99
+
+# ---- 0.99.2: British spellings that stay ------------------------------------------------------------------
+# (Christian, 16 Nov 2026: "scrub the code, text, and documentation for `centre` and `colour` and other British-specific
+# spelling. Use center and color.")  The code, the text and the documentation use American spelling since 0.99.2.
+# What a file, a run key or another program reads keeps its spelling, so v0p98 and v0p99 read each other's files
+# and no block runs again: keys in JSON and in the reports (``"centre"`` of a block or a ground plane,
+# ``centre_rms_px``, ``"coloured"`` in ods.json's coverage, ``"recentred"``), file names (``<station>_ods_centre.png``,
+# ``_ods_centre_depth.npz``), the glTF extras the viewer reads (``grey_rgb``, ``grey_shade``,
+# ``text_centre_azimuth_deg``), the processing settings that are part of a run key (``max_centre_tint``,
+# ``prior_gauge_recentre``, the manifest's ``centre_tint``), saved training settings (``grey_prob``) and names from
+# other packages (``colour_demosaicing``, scipy's ``grey_closing``, matplotlib's ``labelleft``, Open3D's
+# ``orient_normals_towards_camera_location``).
+# ``tests/test_spelling.py`` checks that British spelling appears only in such names.
+PIVOT_EYE = "centre"                        # rpp ods --eyes center: the panorama from the pivot, <station>_ods_centre.png
+SPELLING_KEPT_NAMES = ("max_centre_tint", "prior_gauge_recentre", "centre_tint", "grey_prob",   # settings, records
+                       "colour_demosaicing", "grey_closing", "labelleft",                       # other packages
+                       "orient_normals_towards_camera_location",                               # (Open3D)
+                       "centre_mrad", "centre_mast_mm", "centre_pixel_yaw_pitch_mrad", "recentred")  # report keys

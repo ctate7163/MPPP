@@ -79,7 +79,7 @@ DEFAULT_SITE_IMAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "d
 DEFAULT_RMCS = ["3_0", "3_110", "3_1266", "3_1398"]
 
 #: Standard error-metric choices for the four-panel figure.
-#: key -> (display label for suptitle/filename slug, colour-bar unit,
+#: key -> (display label for suptitle/filename slug, color-bar unit,
 #:         display scale factor, colormap, log-scale, stats_box unit suffix)
 #: All four are "lower is better", so the same ref/value improvement ratio
 #: formulation applies uniformly across every entry here.
@@ -90,7 +90,7 @@ ERROR_METRICS = {
                     "inferno_r", True, "x"),
     "sigma_slope": ("slope (differential) error", "slope error [%]", 100.0,
                     "plasma_r", True, "%"),
-    "G_n":         ("normalised precision G_n", "G_n [-]", 1.0,
+    "G_n":         ("normalized precision G_n", "G_n [-]", 1.0,
                     "magma_r", True, ""),
     "sigma_t_max": ("lateral (tangent-plane) precision", "sigma_t [cm]", 100.0,
                     "viridis_r", True, " cm"),
@@ -190,7 +190,7 @@ def main(argv=None):
                          "over itself)")
     ap.add_argument("--site-image-width-m", type=float, default=50.0,
                     help="real-world width/height of the supplied image [m], "
-                         "assumed centred on the anchor and north-up")
+                         "assumed centered on the anchor and north-up")
     ap.add_argument("--no-site-image", action="store_true",
                     help="disable the default bundled site image")
     ap.add_argument("--waypoints", default=None,
@@ -210,7 +210,7 @@ def main(argv=None):
                          "wheels + mast circle) at each station instead of "
                          "the plain rotated-square marker")
     ap.add_argument("--rover-scale", type=float, default=1.0,
-                    help="size multiplier for --rover-icon (metres-ish at "
+                    help="size multiplier for --rover-icon (meters-ish at "
                          "scale=1.0; tune for map extent)")
     ap.add_argument("--site-image-trim-frac", type=float, default=0.25,
                     help="fraction trimmed off EACH side of the raw site "
@@ -332,7 +332,7 @@ def main(argv=None):
                           if np.isfinite(v).any()]
         ihi = max(ihi_candidates) if ihi_candidates else 2.0
 
-        # Narrower than the original 21-inch-wide layout, and colour bars are
+        # Narrower than the original 21-inch-wide layout, and color bars are
         # suppressed on every column except the last ("inner" bars removed) --
         # both free up width, which is where the narrowing mostly comes from.
         fig, ax = plt.subplots(2, 4, figsize=(18.0, 9.2))

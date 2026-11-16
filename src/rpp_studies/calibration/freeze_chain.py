@@ -36,7 +36,7 @@ consuming tests and studies needed to really understand the results"):
    then the tie-point studies on the three tiny blocks in the old root (every finished variant is skipped):
    ``s2``             point thinning (``--s2-root``, default the old root; 14:57: "run that at the end of the freeze
                       run after everything else important has completed") and its verdict - would a cap of 1500 do:
-                      frame centres < 1 cm p95, attitudes < 0.1 mdeg p95, per-bin focal lengths < 0.05 % max;
+                      frame centers < 1 cm p95, attitudes < 0.1 mdeg p95, per-bin focal lengths < 0.05 % max;
    ``s1`` ``s3`` ``s4`` ``s5``  the feature budget, the matcher and verification, pair selection and the pose-guided
                       step, the filters (``--skip-tie-studies`` leaves these four out; ``--skip-s2`` S2).
 

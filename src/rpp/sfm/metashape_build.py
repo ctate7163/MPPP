@@ -19,7 +19,7 @@ RPP -> Agisoft Metashape: build the project of a block from ``metashape_job.json
 5. the region (the tie points' 2-98 % box);
 6. the check: sampled COLMAP observations reprojected by Metashape (pose + calibration + pixel convention) and the
    imported tie points' own reprojection errors (the Bundler conversion) -> ``metashape_check.json``;
-7. the project saved as ``<block>.psx`` (before the check is logged).  Nothing is aligned or optimised.
+7. the project saved as ``<block>.psx`` (before the check is logged).  Nothing is aligned or optimized.
 """
 import json
 import math

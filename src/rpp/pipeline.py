@@ -98,7 +98,7 @@ class Settings:
     variant: str = ""                             # "" -> results in WORK/colmap; "name" -> WORK/colmap_name (starts from colmap/'s features and matches)
     exclude: List[str] = field(default_factory=list)   # images left out, as in WORK/exclude_images.txt: "S032D1184", "sol:658", "seq:NCAM08111", "ZR0_0690_*"
     reuse_matches: bool = True                    # keep the matches of the previous database.db (same features and matching settings)
-    add_nearby_waypoints: float = 10.0            # also every waypoint station within this many metres of a station of the sol range, any sol; 0: off
+    add_nearby_waypoints: float = 10.0            # also every waypoint station within this many meters of a station of the sol range, any sol; 0: off
     nearby_from_first_sol: bool = False           # the nearby stations add no image from before the block's first sol
     sequence_prefixes: Tuple[str, ...] = ("NCAM",)   # Navcam sequences kept (SAPP sun images, SCAM support images dropped); "ZCAM" is added with Mastcam-Z
 
@@ -112,7 +112,7 @@ class Settings:
     subframe_families: Tuple[str, ...] = ("N",)   # the camera families the sub-frame rule applies to
     min_included_fraction: Optional[float] = None  # images whose mask keeps less than this share of the image are left out of the alignment; None: keep all
     max_exposure_ms: Optional[float] = 40.0       # Navcam frames with a longer exposure are not processed (the long member of the exposure brackets)
-    max_centre_tint: Optional[float] = 1.2        # nor frames whose centre is bluer than the edge by more than this (B/R ratio)
+    max_centre_tint: Optional[float] = 1.2        # nor frames whose center is bluer than the edge by more than this (B/R ratio)
     navcam_brightness: float = 0.9                # brightness factor for Navcam
     no_mask_inference_at: List[str] = field(default_factory=list)   # stations (S032D1184) or sequences (NCAM00699; 0.93.8) where the mask model is off (the rover stays in the images); per site in sites.json
     store_mask_in_alpha: Any = 0.5                # the mask in the PNG alpha channel: 1 = masked pixels transparent, 0.5 = half, 0 = no alpha
@@ -133,7 +133,7 @@ class Settings:
     zcam_aspect_sigma: float = 1e-3              # 2 Nov 2026: likewise for the Mastcam-Z bins - room for about 1 px of tangential-like effect per bin, while the 3,000-21,000 ppm sequence outliers are 3-20 sigma
     zcam_aspect: str = "hold"                     # 2 Nov 2026 (Christian): every Mastcam-Z bin camera's fy / fx held at its zoom model's pixel aspect (the eye's detector aspect where the model's is > 0.2 % off it: 110 mm) - "free": fx, fy apart per bin (before 0.95.4)
     round1_hold: bool = True                      # round 1 adjusts poses and points only; the cameras refine from round 2 on
-    rig_translation_sigma_m: float = 0.005        # with navcam_rig_refine "full": the prior on the right camera centre per axis (m)
+    rig_translation_sigma_m: float = 0.005        # with navcam_rig_refine "full": the prior on the right camera center per axis (m)
     tangential: str = "refine"                    # Navcam p1, p2 when the distortion is refined: "refine" or "zero"
     zcam_k3: str = "label"                        # Mastcam-Z k3: "label" (the start camera's, held) or "zero"
     zcam_tangential: Optional[str] = "refine"     # Mastcam-Z p1, p2: "refine" (0.91, zcam-v2: per eye, constant over focus), "zero" (zcam-v1), or None (as tangential)
@@ -201,7 +201,7 @@ class Settings:
     attitude_prior_deg: float = 2.0               # CAHV attitude prior per frame
     localize_min_images: int = 3                  # stations with fewer images get no waypoint position prior
     prior_sigma_m: float = 1.0                    # waypoint position prior, 1-sigma per axis (m)
-    no_position_prior_at: List[str] = field(default_factory=list)   # stations (S###D####) whose position priors are left out (flagged localisations)
+    no_position_prior_at: List[str] = field(default_factory=list)   # stations (S###D####) whose position priors are left out (flagged localizations)
     prior_gauge_recentre: bool = True             # after each adjustment the block is moved onto its position priors (their mean residual)
     exclude_outliers: bool = True                 # drop frames that do not align with the majority, then re-adjust
     outlier_thresholds: Dict[str, Any] = field(default_factory=dict)   # e.g. {"residual_factor": 3.0, "min_shift_m": 0.25}
@@ -212,7 +212,7 @@ class Settings:
     thermal_bins_deg: Optional[float] = 5         # Navcam camera-temperature bins for the final stage (one camera per eye and bin); None: off
     thermal_fine_range: Any = (-25.0, -5.0)       # finer bins in this temperature range
     thermal_fine_deg: Any = 2.5                   # ... this wide; None: uniform bins
-    thermal_min_images: int = 5                   # a bin with fewer images is merged into the nearer neighbouring bin
+    thermal_min_images: int = 5                   # a bin with fewer images is merged into the nearer neighboring bin
     thermal_free: Tuple[str, ...] = ("fx", "fy", "k1")   # refined per bin (unless the Navcam intrinsics are held)
 
     # --- helpers

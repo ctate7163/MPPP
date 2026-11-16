@@ -1,5 +1,5 @@
 @echo off
-REM RPP: the minimised window of run_sites.bat (environment already set up by it).
+REM RPP: the minimized window of run_sites.bat (environment already set up by it).
 title RPP run_sites
 python "%RPP_HOME%\scripts\run_sites.py" %*
 set "RC=%ERRORLEVEL%"

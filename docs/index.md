@@ -13,7 +13,7 @@ the `MPPP_*` variables, `mppp_mask_v3`), and WORK folders keep their file names 
 The Mars 2020 images and their metadata are public in NASA's Planetary Data System (PDS), in a format that common 3D
 reconstruction software cannot read directly. Fixed-baseline stereo gives each rover stop its own range map; RPP lets
 the images from nearby stops triangulate together. A **block** (or **site**) is a set of rover stations within a few
-tens of metres of each other.
+tens of meters of each other.
 
 ## What it does
 
@@ -24,7 +24,7 @@ Five processes take a block from PDS inputs to SfM outputs:
 2. **Masks**: rover hardware and rover shadows (the sky is not masked), from a fine-tuned ConvNeXt-tiny segmentation
    model downloaded on first use.
 3. **Cameras and stations**: the label CAHV/CAHVOR/CAHVORE models converted to COLMAP cameras, or the promoted
-   calibrations of `rpp.calib`; each station placed in a local East-North-Up frame (metres) from the rover
+   calibrations of `rpp.calib`; each station placed in a local East-North-Up frame (meters) from the rover
    waypoints.
 4. **Alignment**: a COLMAP project with stereo rigs, SIFT features, matching, and a prior-weighted bundle adjustment
    on pyceres.

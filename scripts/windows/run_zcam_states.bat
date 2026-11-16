@@ -4,7 +4,7 @@ REM RPP 0.94.4 - run_zcam_states.bat (Christian, 25 Oct 2026): which Mastcam-Z f
 REM
 REM Aligns the Navcam + Mastcam-Z block of each site again as the variant "states" (WORK\colmap_states; the
 REM blocks' own colmap\ is not touched, and its features and matches are reused) with every Mastcam-Z image as a
-REM camera of its own, its focal length free (ZCAM_BIN_BY=image, ZCAM_HOLD_F_IMAGES=0, ZCAM_BIN_REFINE=focal_pp - the right eye's centre free too) and
+REM camera of its own, its focal length free (ZCAM_BIN_BY=image, ZCAM_HOLD_F_IMAGES=0, ZCAM_BIN_REFINE=focal_pp - the right eye's center free too) and
 REM no focus lines (ZCAM_FOCUS_LINE=false), so that each image's f / label f is its own.  The low-state list and the
 REM found list (%RPP_SCAPES%\zcam_low_backlash_found.csv) give only the starting focal lengths.
 REM
@@ -49,6 +49,6 @@ if not defined RPP_THEN (
 )
 if /i "%RPP_THEN%"=="none" set "RPP_THEN="
 start "RPP Mastcam-Z states - %ROOT%" /min cmd /c call "%RPP_WIN%\_run_sites.bat" --root "%ROOT%" --sites %RPP_STATES_SITES% --zcam --variant states --jobs 2 %SETS% %*
-echo RPP Mastcam-Z states run started in a minimised window (variant "states"), then %RPP_THEN%.
+echo RPP Mastcam-Z states run started in a minimized window (variant "states"), then %RPP_THEN%.
 echo Log: "%ROOT%\run_sites_log.txt"; status: check_sites.bat
 timeout /t 10

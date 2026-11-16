@@ -13,7 +13,7 @@ sites = json.load(open('sites_zoom.json')); LF = LocalFrame(P)
 lon = np.array([p['lon'] for p in P]); lat = np.array([p['lat'] for p in P]); isE = F == 'y'
 C1,C2,C3,C4='#2a78d6','#eb6834','#1baf7a','#eda100'; INK='#0b0b0b'; INK2='#52514e'
 COS = np.cos(np.deg2rad(18.45)); R = 3389500.0
-M_LON = np.deg2rad(1)*R*COS; M_LAT = np.deg2rad(1)*R           # metres per degree
+M_LON = np.deg2rad(1)*R*COS; M_LAT = np.deg2rad(1)*R           # meters per degree
 CMAP = plt.get_cmap('gist_earth')
 BOX_A = (77.1, 78.1, 17.9, 18.8)
 BOX_B = (77.205, 77.47, 18.38, 18.515)
@@ -21,7 +21,7 @@ used_all = set(); ortho_used = set()
 BACKGROUND = background_mode()          # M20_BACKGROUND: 'dtm' (default) or 'ortho'
 import os
 FIG6_WIDEN = float(os.environ.get('M20_FIG6_WIDEN', '1.25'))      # 9 Nov 2026: figure 6's E-H panels, x the 1.5 km width
-FIG6_ZOOM = float(os.environ.get('M20_FIG6_ZOOM', '1.2'))        # ... and zoomed in (fewer metres per inch), when the blocks fit
+FIG6_ZOOM = float(os.environ.get('M20_FIG6_ZOOM', '1.2'))        # ... and zoomed in (fewer meters per inch), when the blocks fit
 FIG6_LIST_SHIFT = float(os.environ.get('M20_FIG6_LIST_SHIFT', '0.35'))   # ... the block list moved right (in)
 CONTOURS = os.environ.get('M20_CONTOURS', '1') != '0'   # 9 Nov 2026: 100 m contours on the DTM / tile panels; never on the orthomosaic
 import matplotlib.patheffects as pe
@@ -34,7 +34,7 @@ def box_around(ids, size_m=None, pad_m=150):
     ll = np.array([site_ll(o) for o in sites if o['id'] in ids])
     lo0, lo1, la0, la1 = ll[:,0].min(), ll[:,0].max(), ll[:,1].min(), ll[:,1].max()
     clo, cla = (lo0+lo1)/2, (la0+la1)/2
-    if size_m:  # fixed box in metres: (width, height)
+    if size_m:  # fixed box in meters: (width, height)
         hw, hh = size_m[0]/2/M_LON, size_m[1]/2/M_LAT
     else:
         hw = (lo1-lo0)/2 + pad_m/M_LON; hh = (la1-la0)/2 + pad_m/M_LAT
@@ -51,7 +51,7 @@ def terrain(box, step, tile_levels):
 def draw_terrain(ax, gx, gy, Z, norm, ci, exag=3, alt=40, flat=None, coslat=None, ortho=True):
     """Tinted hillshade. exag = vertical exaggeration. flat: if set, rescale the shading so level ground has this brightness
     (1.0 = as bright as the unshaded tint), which keeps a strongly exaggerated relief from darkening the whole panel.
-    coslat: east-west metres-per-degree factor for this grid (default: Jezero's latitude)."""
+    coslat: east-west meters-per-degree factor for this grid (default: Jezero's latitude)."""
     dx = np.deg2rad(gx[1]-gx[0])*R*(COS if coslat is None else coslat); dy = np.deg2rad(gy[1]-gy[0])*R
     Zf = np.where(np.isnan(Z), np.nanmean(Z), Z)
     hs = LightSource(azdeg=315, altdeg=alt).hillshade(Zf[::-1], vert_exag=exag, dx=dx, dy=dy)[::-1]
@@ -65,10 +65,10 @@ def draw_terrain(ax, gx, gy, Z, norm, ci, exag=3, alt=40, flat=None, coslat=None
         if np.isfinite(G).any():
             ortho_used.update(used); on_ortho = True
             tint = CMAP(norm(Zf))[..., :3]
-            if G.ndim == 3:                                            # a colour mosaic: as it is
+            if G.ndim == 3:                                            # a color mosaic: as it is
                 o3 = np.clip(G, 0, 1)
             else:
-                o3 = np.clip(0.82*G[..., None] + 0.18*tint, 0, 1)        # grey orthomosaic with a light elevation tint
+                o3 = np.clip(0.82*G[..., None] + 0.18*tint, 0, 1)        # gray orthomosaic with a light elevation tint
             G = G if G.ndim == 2 else np.nanmean(G, axis=-1)
             out = np.where(np.isfinite(G)[..., None], o3, out)
     ax.imshow(out, extent=[gx[0], gx[-1], gy[0], gy[-1]], origin='lower', interpolation='bilinear', zorder=0)
@@ -77,8 +77,8 @@ def draw_terrain(ax, gx, gy, Z, norm, ci, exag=3, alt=40, flat=None, coslat=None
     lev = np.arange(np.floor(np.nanmin(Zf)/ci)*ci, np.nanmax(Zf)+ci, ci)
     ax.contour(gx, gy, Zf, levels=lev, colors='k', linewidths=0.3, alpha=0.25, zorder=1)
 
-def scalebar(ax, box, metres, label, where='left'):
-    dl = metres/M_LON; y0 = box[2] + 0.06*(box[3]-box[2])
+def scalebar(ax, box, meters, label, where='left'):
+    dl = meters/M_LON; y0 = box[2] + 0.06*(box[3]-box[2])
     x0 = box[0] + 0.05*(box[1]-box[0]) if where == 'left' else box[1] - 0.05*(box[1]-box[0]) - dl
     ax.plot([x0, x0+dl], [y0, y0], color=INK, lw=3, zorder=9, solid_capstyle='butt')
     ax.text(x0+dl/2, y0 + 0.025*(box[3]-box[2]), label, ha='center', fontsize=8*FS, zorder=9,
@@ -148,7 +148,7 @@ def panel_B(ax, insets=None, letter='B', bbox=None, bg_in_title=True, landing_la
          plt.Line2D([], [], marker='s', mfc='none', mec=C2, mew=2, ls='none', ms=11, label='Block of rover stations')]
     ax.legend(handles=h, loc='lower center', bbox_to_anchor=(0.6, 0.01), fontsize=7.6*FS, framealpha=0.92, facecolor='white', edgecolor='#d6d5d0')
     bg = 'HiRISE DTM where available, coarse HiRISE+MOLA terrain elsewhere' if hasdtm else 'coarse HiRISE-DTM-based terrain, ~70 m grid (HiRISE DTM not yet connected)'
-    if ortho_used: bg += '; HiRISE orthomosaic in grey'
+    if ortho_used: bg += '; HiRISE orthomosaic in gray'
     ax.set_title(f'{letter}. Blocks of rover stations' + (', numbered by first sol. Background: ' + bg if bg_in_title else ''), loc='left', fontsize=9.5*FS, color=INK)
     ax.set_xlabel('Longitude [°E]')
     scalebar(ax, bbox, 1000, '1 km')
@@ -169,7 +169,7 @@ def panel_C(ax, fs=7.2*FS, ncol=3, per=12, title=None):
         ax.text(k/ncol, 1.0, '\n'.join(lines[per*k:per*(k+1)]), va='top', ha='left', family='DejaVu Sans Mono', fontsize=fs, color=INK,
                 transform=ax.transAxes, linespacing=1.25)
     ax.set_title(title or ('C. Blocks of rover stations: number, name, N× = end-of-drive Navcam 360s and Z× = numbered Mastcam-Z 360s '
-                 'within ±30 m of the block centre, and the sols the rover ended inside that square'), loc='left', fontsize=10*FS, color=INK)
+                 'within ±30 m of the block center, and the sols the rover ended inside that square'), loc='left', fontsize=10*FS, color=INK)
 
 def colorbar(fig, rect, norm, label, extend='neither'):
     cax = fig.add_axes(rect); sm = plt.cm.ScalarMappable(norm=norm, cmap=CMAP)
@@ -197,7 +197,7 @@ def fig2(out):
     out = save_figure(fig, out, dpi=DPI, facecolor=fig.get_facecolor()); print('saved', out)
 
 # the GitHub banner (20 Oct; 22 Oct: terrain only): figure 2's traverse panel wider on both sides and shorter at the
-# bottom, with the pipeline name centred on it; no traverse, markers, labels or legend. M20_BANNER_BOX
+# bottom, with the pipeline name centered on it; no traverse, markers, labels or legend. M20_BANNER_BOX
 # "lon0,lon1,lat0,lat1", M20_BANNER_TEXT and M20_BANNER_TEXT_Y (axes fraction) override the frame, the title and its height;
 # M20_BANNER_SCALEBAR=1 adds the 1 km scale bar
 BOX_BANNER = tuple(float(v) for v in os.environ.get('M20_BANNER_BOX', '').split(',')) if os.environ.get('M20_BANNER_BOX') \
@@ -281,7 +281,7 @@ def fig3(out):
     BW, BH = 1000.0, 1500.0                              # skinny boxes: 1 km wide, 1.5 km tall
     W = 18.0
     a0, b0, hA = ab_layout(W, 0, None)
-    gap, cslot = 0.55, 1.45                               # gap between panels; colour-bar slot
+    gap, cslot = 0.55, 1.45                               # gap between panels; color-bar slot
     x0 = 0.85; bR = b0[0] + b0[2]                         # A's left edge, B's right edge
     xF = (x0 + bR + cslot) / 2                            # the wide panels: D from x0, I to bR, the same width
     wW = bR - xF
@@ -317,7 +317,7 @@ def fig3(out):
              'rimw': norm_of(['rimw', 'whh']), 'whh': norm_of(['rimw', 'whh']), 'margin': norm_of(['margin'])}
     ci = {r: (10 if r in wide else 5) for r in order1 + order2}
     bar = {r: ((500, '500 m') if r in wide else (200, '200 m')) for r in order1 + order2}
-    # (region, x, y_top, width, colour-bar label after it or None)
+    # (region, x, y_top, width, color-bar label after it or None)
     layout = [('fan', x0, y1, wW, 'Elevation [m], D'), ('delta', xF, y1, s, None), ('land', xF + s + gap, y1, s, 'Elevation [m], E and F'),
               ('rimw', x0, y2, s, None), ('whh', x0 + s + gap, y2, s, 'Elevation [m], G and H'), ('margin', xF, y2, wW, 'Elevation [m], I')]
     for r, x, yt, w, cl in layout:
@@ -338,7 +338,7 @@ def fig3(out):
 
 def fig4(out):
     """Wide layout: row 1 = A | B | C (one-column list); row 2 = six regional panels in reverse chronological order, D-I
-    left to right, as tall as row 1 (20 Oct: no colour bars on this row - the tint shares row 1's scale per pair)."""
+    left to right, as tall as row 1 (20 Oct: no color bars on this row - the tint shares row 1's scale per pair)."""
     order = ['rimw', 'whh', 'margin', 'fan', 'delta', 'land']           # reverse chronological
     letters = dict(zip(order, 'DEFGHI'))
     skinny = {'rimw', 'whh', 'delta', 'land'}
@@ -348,16 +348,16 @@ def fig4(out):
     wC = 5.6
     a, b, hA = ab_layout(W - wC - 0.4, 0, None)
     km = sum(BW_SK if r in skinny else BW_WIDE for r in order)/1000.0
-    inch_per_km = (W - left - 5*gap - right) / km                        # five gaps, no colour-bar slots (20 Oct)
+    inch_per_km = (W - left - 5*gap - right) / km                        # five gaps, no color-bar slots (20 Oct)
     sh = hA                                                              # the regional row as tall as row 1
-    BH = sh/inch_per_km*1000.0                                           # ... so every regional panel shows this many metres
-    def centred(ids, w, h):
+    BH = sh/inch_per_km*1000.0                                           # ... so every regional panel shows this many meters
+    def centered(ids, w, h):
         hb = box_around(ids, pad_m=0); cl, ca = (hb[0]+hb[1])/2, (hb[2]+hb[3])/2
         return (cl - w/2/M_LON, cl + w/2/M_LON, ca - h/2/M_LAT, ca + h/2/M_LAT)
     boxes = {}
     for r in order:
-        if r in skinny: boxes[r] = centred(RID[r], BW_SK, BH)
-    boxes['margin'] = centred(RID['margin'], BW_WIDE, BH)               # old I: a little narrower (3.3 -> 3.0 km), a little taller
+        if r in skinny: boxes[r] = centered(RID[r], BW_SK, BH)
+    boxes['margin'] = centered(RID['margin'], BW_WIDE, BH)               # old I: a little narrower (3.3 -> 3.0 km), a little taller
     hb = box_around(RID['fan'], pad_m=180)                               # old H: keep its east edge, extend west and up/down to 3.0 x BH km
     fit_w = max((hb[1]-hb[0])*M_LON, (hb[3]-hb[2])*M_LAT*1.45)
     east = (hb[0]+hb[1])/2 + fit_w/2/M_LON; ca = (hb[2]+hb[3])/2
@@ -417,19 +417,19 @@ def box_2to1(b):
 BOX_B5 = box_2to1(BOX_B)
 BOX_C5 = (BOX_A[0], BOX_A[1], BOX_A[3] - (BOX_A[1]-BOX_A[0])*COS, BOX_A[3])     # crater panel square (1:1): y max 18.8 kept, bottom extended to ~17.85
 def fig5(out, with_I=True):
-    """A global Mars | B Isidis (one colour range, clipped at the 1st/99th percentile); C crater (square) | D traverse (2:1);
+    """A global Mars | B Isidis (one color range, clipped at the 1st/99th percentile); C crater (square) | D traverse (2:1);
     E-H tall regional panels; I one wide panel (upper fan, Belva, margin unit, Neretva Vallis) at the same scale.
     with_I=False drops row 4 (figure 6: E F over G H, with the block list as panel I).
-    Every row spans the same width: its last colour bar ends where row 2's does."""
+    Every row spans the same width: its last color bar ends where row 2's does."""
     W = 18.0; left, right, gapC = 0.85, 0.2, 0.95
     # ---- row 1 geometry ----
     rI = (ISIDIS[1]-ISIDIS[0])*np.cos(np.deg2rad(ISIDIS_LATC))/(ISIDIS[3]-ISIDIS[2])   # = 1 (square)
-    h1 = (W - left - gapC - 1.05 - right)/(2.0 + rI)          # colour bar ends at W - 0.93, like row 2's
+    h1 = (W - left - gapC - 1.05 - right)/(2.0 + rI)          # color bar ends at W - 0.93, like row 2's
     # ---- row 2 geometry (same as the other figures) ----
     a2, b2, h2 = ab_layout(W, 0, None, bbox=BOX_B5, crater=BOX_C5)
     # ---- rows 3-4 geometry: [wide][cb][skinny g skinny][cb] / [skinny g skinny][cb][wide][cb] ----
-    g, cslot, cbw = 0.75, 1.65, 0.27                 # gap between skinny panels (room for F's and H's y tick labels), middle colour-bar slot, colour bar + its pad
-    R = W - 0.93                                     # right edge of the row-2 colour bar; rows 1, 3 and 4 end there too
+    g, cslot, cbw = 0.75, 1.65, 0.27                 # gap between skinny panels (room for F's and H's y tick labels), middle color-bar slot, color bar + its pad
+    R = W - 0.93                                     # right edge of the row-2 color bar; rows 1, 3 and 4 end there too
     s_in = (R - left - 2*g - cslot - cbw)/4          # E-H: 1.5 km wide panels filling the row
     inch_per_km = s_in/1.5
     sh, sh4 = 4.23, 5.29                             # panel heights (in) kept from the previous layout ...
@@ -470,13 +470,13 @@ def fig5(out, with_I=True):
     letters = dict(zip(order3 + order4, 'EFGHI'))
     RID['mfan'] = sorted(RID['margin'] + RID['fan'])
     skinny = {'rimw', 'whh', 'delta', 'land'}
-    def centred(ids, w, h, h_ref):
-        """box w x h metres, x centred on the blocks; bottom edge where an h_ref-tall centred box would put it (only the top moves)"""
+    def centered(ids, w, h, h_ref):
+        """box w x h meters, x centered on the blocks; bottom edge where an h_ref-tall centered box would put it (only the top moves)"""
         hb = box_around(ids, pad_m=0); cl, ca = (hb[0]+hb[1])/2, (hb[2]+hb[3])/2
         y0 = ca - h_ref/2/M_LAT
         return (cl - w/2/M_LON, cl + w/2/M_LON, y0, y0 + h/M_LAT)
     # 9 Nov 2026 (figure 6, Christian): E-H wider (FIG6_WIDEN x the 1.5 km panel width) and zoomed in (FIG6_ZOOM x
-    # fewer metres per inch), the block list moved right - the zoom is lowered where the blocks of a region would not
+    # fewer meters per inch), the block list moved right - the zoom is lowered where the blocks of a region would not
     # fit the smaller box, so E-H still share one scale
     if not with_I:
         s_in6 = s_in * FIG6_WIDEN
@@ -489,10 +489,10 @@ def fig5(out, with_I=True):
         inch_per_km *= zoom
         BH = sh / inch_per_km * 1000
         print(f'figure 6: E-H {s_in6:.2f} in wide, zoom {zoom:.2f} -> {s_in6 / inch_per_km * 1000:.0f} x {BH:.0f} m')
-        boxes = {r: centred(RID[r], s_in6 / inch_per_km * 1000, BH, BH) for r in skinny}
+        boxes = {r: centered(RID[r], s_in6 / inch_per_km * 1000, BH, BH) for r in skinny}
     else:
-        boxes = {r: centred(RID[r], 1500.0, BH, 2000.0) for r in skinny}
-    if with_I: boxes['mfan'] = centred(RID['mfan'], w4_m, BH4, 2500.0)    # I: margin unit + upper fan in one panel; may overlap F and G
+        boxes = {r: centered(RID[r], 1500.0, BH, 2000.0) for r in skinny}
+    if with_I: boxes['mfan'] = centered(RID['mfan'], w4_m, BH4, 2500.0)    # I: margin unit + upper fan in one panel; may overlap F and G
     for r in boxes:
         for i in RID[r]:
             o = next(q for q in sites if q['id'] == i); lo, la = site_ll(o); bb = boxes[r]
@@ -500,7 +500,7 @@ def fig5(out, with_I=True):
     panel_A(axA, letter='C', box_label='D', bbox=BOX_B5, crater=BOX_C5, scalebar_right=True, names=True)
     nB = panel_B(axB, insets={letters[r]: boxes[r] for r in boxes}, letter='D', bbox=BOX_B5, bg_in_title=False)
     colorbar(fig, rect(b[0]+b[2]+0.12, b[1], 0.2, b[3]), nB, 'Elevation [m] (tint)')
-    # brighten A and B (same colours and shading) so their mean brightness matches C and D
+    # brighten A and B (same colors and shading) so their mean brightness matches C and D
     lum = lambda im: np.asarray(im.get_array())[..., :3].mean()
     target = np.mean([lum(axA.images[0]), lum(axB.images[0])])
     for ax_ in (axG, axI):
@@ -565,7 +565,7 @@ def fig5(out, with_I=True):
                   else f'E–H share one scale ({BH/1000:.2f} km tall, {s_in6 / inch_per_km:.2f} km wide).')
     bg_note = (' Background C–I: coarse HiRISE-DTM-based terrain, ~70 m grid (HiRISE DTM not yet connected).' if not used_all
                else ' Background C–I: 1 m HiRISE DTM (' + ', '.join(sorted(used_all)) + ') where available, ~70 m terrain elsewhere.')
-    if ortho_used: bg_note += ' HiRISE orthomosaic (' + ', '.join(sorted(ortho_used)) + ') in grey where available.'
+    if ortho_used: bg_note += ' HiRISE orthomosaic (' + ', '.join(sorted(ortho_used)) + ') in gray where available.'
     fig.text(left/W, 0.1/Htot, scale_note + bg_note + '\nSquares = blocks of rover stations (±30 m, numbered by first sol); dots = end-of-drive Navcam 360; '
              'small squares = mid-drive partial Navcam; triangles = Mastcam-Z 360°s; diamonds = sample cores acquired.', fontsize=8.5*FS, color=INK2)
     out = save_figure(fig, out, dpi=dpi5, facecolor=fig.get_facecolor()); print('saved', out, dpi5, 'dpi')

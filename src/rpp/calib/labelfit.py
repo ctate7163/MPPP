@@ -80,7 +80,7 @@ def fisheye_from_cahvore(cm, width: int = 5120, height: int = 3840, depths: Opti
                          step: float = FIT_STEP_PX) -> Tuple[List[float], Dict[str, Any]]:
     """
     The ``THIN_PRISM_FISHEYE`` parameters (12, COLMAP order, corner pixel origin) that reproduce the CAHV-family model
-    ``cm`` (:class:`rpp.cmod.CameraModel` in full-frame pixels, centre origin; any frame) over a ``width`` x
+    ``cm`` (:class:`rpp.cmod.CameraModel` in full-frame pixels, center origin; any frame) over a ``width`` x
     ``height`` frame.  The model is taken in its own camera frame; points along the rays of a pixel grid (every
     ``step`` px) at the ranges ``depths`` (default: :data:`CENTRAL_DEPTH_M` for a central model,
     :data:`NONCENTRAL_DEPTHS_M` otherwise) are projected by the model, and the fisheye is fitted to them.  Returns
@@ -139,7 +139,7 @@ def fisheye_from_cahvore(cm, width: int = 5120, height: int = 3840, depths: Opti
 
 def full_frame_model(label_model: Dict[str, Any], downsample_scale: float, first_sample: float = 0.0,
                      first_line: float = 0.0, family: str = "N"):
-    """The label model of a product (``MODEL_COMPONENT_*`` dict, product pixels, centre origin) in full-frame
+    """The label model of a product (``MODEL_COMPONENT_*`` dict, product pixels, center origin) in full-frame
     detector pixels: ``first_sample`` / ``first_line`` are the product pixels between the detector corner and the
     product's first pixel (the padding an RPP image records), ``downsample_scale`` the product's scale."""
     from ..cmod import CameraModel

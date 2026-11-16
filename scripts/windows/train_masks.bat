@@ -7,7 +7,7 @@ REM   train_masks.bat [more train_mask.py options]        e.g.   train_masks.bat
 REM   train_masks.bat --recipe A --epochs 30 --tag v9A     0.96 (9 Nov 2026): the online augmentations of the mask
 REM   train_masks.bat --recipe B --epochs 30 --tag v9B     plan (rpp_studies.mask_training.augment): A lighting + LMST
 REM   train_masks.bat --recipe C --epochs 30 --tag v9C     sampler; B + angular scale, defocus, quad split; C + copy-
-REM                                                        paste, colour matrix, family batches.  A later --tag wins
+REM                                                        paste, color matrix, family batches.  A later --tag wins
 REM                                                        over the default v%VER%; --recipe turns the tone curve off.
 REM   Add --test-list D:\masks\frozen_test_list.txt to every run so they are scored on the same held-out frames
 REM   (make it once: python -m rpp_studies.mask_training.train_mask --write-test-list D:\masks\frozen_test_list.txt --from-checkpoint <v4.2 .pt>).

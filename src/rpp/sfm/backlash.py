@@ -10,7 +10,7 @@ next to the WORK folders, or its own focal fit says otherwise (:func:`rpp.calib.
 mosaics.  A focus-bin camera that holds images of both states is forced to split the difference, so:
 
 1. :func:`image_focal_fits` - after the alignment, each Mastcam-Z image's focal length is measured on its own: its
-   rotation and a focal scale free, its centre, the 3-D points and the rest of the camera held (Cauchy loss);
+   rotation and a focal scale free, its center, the 3-D points and the rest of the camera held (Cauchy loss);
 2. :func:`classify_groups` - images of one focus setting (a *focus group*: eye, sol, sequence and focus count;
    :func:`focus_groups`) share a state; the group's ratio of fitted to label focal length is compared with the
    midpoint between the two states (1 and the measured backlash ratio) - clearly below: regular, clearly above:
@@ -430,7 +430,7 @@ def focus_groups(images: Iterable[Dict[str, Any]]) -> Dict[str, List[Dict[str, A
 
 
 def station_shifts(rec, project) -> Dict[str, np.ndarray]:
-    """{station: median of (solved - prior) centre over its registered Navcam images}: how far the alignment moved
+    """{station: median of (solved - prior) center over its registered Navcam images}: how far the alignment moved
     the station's CAHV positions (the Mastcam-Z label positions of the station share that error)."""
     by_name = {r["name"]: r for r in project.images}
     d: Dict[str, List[np.ndarray]] = {}
@@ -452,10 +452,10 @@ def image_focal_fits(rec, project, min_observations: int = 20, loss_px: float = 
     {image name: fit} for every registered Mastcam-Z image with at least ``min_observations`` triangulated
     observations: the focal scale s (fx, fy x (1 + s)) and a small rotation that best fit its observations with its
     points and the rest of its camera held (scipy least squares, Cauchy loss at ``loss_px`` native pixels).  The
-    centre: the adjustment can trade a focal-length error for a shift along the axis (1 % at 10 m range is 10 cm, well
-    inside the 1 m position prior), so with ``center_sigma_m`` the centre is free with a prior of that sigma at the
-    image's label position moved by its station's Navcam shift (:func:`station_shifts`; the solved centre where the
-    station has no Navcam image, ``center_source``); None holds the solved centre.  Each fit: ``f_px`` (the fitted mean of fx, fy), ``f_camera_px``, ``label_f_px``, ``ratio_label``
+    center: the adjustment can trade a focal-length error for a shift along the axis (1 % at 10 m range is 10 cm, well
+    inside the 1 m position prior), so with ``center_sigma_m`` the center is free with a prior of that sigma at the
+    image's label position moved by its station's Navcam shift (:func:`station_shifts`; the solved center where the
+    station has no Navcam image, ``center_source``); None holds the solved center.  Each fit: ``f_px`` (the fitted mean of fx, fy), ``f_camera_px``, ``label_f_px``, ``ratio_label``
     (fitted f / label f), ``sd_ratio``, ``observations``, ``rms_px`` (full-frame, after the fit).
     """
     from scipy.optimize import least_squares
@@ -483,7 +483,7 @@ def image_focal_fits(rec, project, min_observations: int = 20, loss_px: float = 
         fs = loss_px / s_nat                                  # Cauchy scale in full-frame pixels
         free_c = bool(center_sigma_m) and r.get("station") in shifts and r.get("prior_C") is not None
         Cp = (np.asarray(r["prior_C"], float) + shifts[r["station"]]) if free_c else C
-        sig_px = 0.5 / s_nat                                  # nominal keypoint sigma: weighs the centre prior
+        sig_px = 0.5 / s_nat                                  # nominal keypoint sigma: weighs the center prior
         npar = 7 if free_c else 4
 
         def proj_res(p):
@@ -704,7 +704,7 @@ def classify_groups(project, fits: Dict[str, Dict[str, Any]], model: Optional[Di
     """
     One row per focus group (:func:`focus_groups`): the observation-weighted median of its images' ratio of fitted to
     label focal length, its standard error (the images' formal errors, at least ``floor`` in the ratio, i.e. 0.1 %,
-    for the scatter between images and the held centre) and the state: ``regular`` below the midpoint between the
+    for the scatter between images and the held center) and the state: ``regular`` below the midpoint between the
     regular state (ratio 1) and the backlash state by more than ``z_min`` standard errors, ``backlash`` above it by as
     much, otherwise ``undecided`` (treated as backlash, the dominant state).  Groups without a fit (too few
     observations, no label f) are ``undecided`` too, and so are groups whose ratio lies more than ``tolerance`` (0.6 %)

@@ -1,8 +1,8 @@
 """
 rpp.ibr - image-based rendering products of an aligned block (0.96.0, the prototypes of the 31 Oct and 29 Oct plans):
 
-* :mod:`.station` - one station (site, drive) of a finished block and the pivot of its mast 360 (the centre the
-  camera centres turn about, fitted by least squares);
+* :mod:`.station` - one station (site, drive) of a finished block and the pivot of its mast 360 (the center the
+  camera centers turn about, fitted by least squares);
 * :mod:`.mesh` - the fused dense cloud of the station's Navcam frames made a clean mesh (Poisson, or COLMAP's
   Delaunay mesher when the executable is at hand), cleaned (floaters, rubber sheets across occlusion edges, surface
   without support, the radius clip, decimation, smoothing) and a far-field sphere behind it;
@@ -13,7 +13,7 @@ rpp.ibr - image-based rendering products of an aligned block (0.96.0, the protot
 * :mod:`.ods` - the stereoscopic panorama of the station: two equirectangular eye images from the mesh and the
   station's own frames (the omnidirectional stereo of a 64 mm IPD circle about the pivot), with a provenance map.
 
-Everything is in the block frame (metres) of the model the block ended with (``gui_native/sparse``); nothing is
+Everything is in the block frame (meters) of the model the block ended with (``gui_native/sparse``); nothing is
 re-aligned.  The optional dependency set is ``rover-photogrammetry-pipeline[ibr]`` (open3d); the CLI is ``rpp mesh``,
 ``rpp depthmaps`` and ``rpp ods``.
 """

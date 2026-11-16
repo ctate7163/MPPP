@@ -23,7 +23,7 @@ Z63 = [8627.12, 8636.17, 900.98, 664.32, 0.469, 0.6, 0.0028, 0.0015, 0.0, 0.0, 0
 
 
 def _look(R_yaw_deg: float, pitch_deg: float = 0.0) -> np.ndarray:
-    """World-to-camera rotation of a camera looking along azimuth ``yaw`` (from +y north towards +x east), tilted
+    """World-to-camera rotation of a camera looking along azimuth ``yaw`` (from +y north toward +x east), tilted
     ``pitch`` degrees down; camera z forward, x right, y down; world z up."""
     base = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]], float)          # looks along +y, z up -> camera y down
     tilt = Rotation.from_euler("x", pitch_deg, degrees=True).as_matrix()
@@ -191,7 +191,7 @@ def test_photometric_angles_on_a_plane_and_a_shadow():
     cam = pycolmap.Camera(camera_id=1, model="SIMPLE_PINHOLE", width=120, height=80, params=np.array([100.0, 60.0, 40.0]))
     R, C = _look(0.0, 40.0), np.array([0.0, 0.0, 2.0])
     V, F = _plane(0.0, 50.0)
-    # a wall north of the camera casting a shadow towards it when the Sun is low in the north
+    # a wall north of the camera casting a shadow toward it when the Sun is low in the north
     wall = np.array([[-3.0, 6.0, 0.0], [3.0, 6.0, 0.0], [3.0, 6.0, 3.0], [-3.0, 6.0, 3.0]])
     V = np.vstack([V, wall]); F = np.vstack([F, [[4, 5, 6], [4, 6, 7]]])
     scene = RC.Scene((V, F))
@@ -244,7 +244,7 @@ class _Proj:
         self.root, self.images = Path(root), rows
 
 
-def _station_scene(tmp_path, colour_by_yaw=True):
+def _station_scene(tmp_path, color_by_yaw=True):
     """A synthetic station: a pinhole camera at the pivot looking north, east, south, west (four frames, red,
     green, blue, white), the ground plane and the far sphere."""
     import cv2
@@ -259,8 +259,8 @@ def _station_scene(tmp_path, colour_by_yaw=True):
     (root / "masks").mkdir()
     P = np.array([5.0, 5.0, 1.8])
     rows = []
-    colours = {0: (255, 0, 0), 90: (0, 255, 0), 180: (0, 0, 255), 270: (255, 255, 255)}
-    for k, yaw in enumerate(colours, 1):
+    colors = {0: (255, 0, 0), 90: (0, 255, 0), 180: (0, 0, 255), 270: (255, 255, 255)}
+    for k, yaw in enumerate(colors, 1):
         R = _look(yaw, 15.0)
         Ck = P + R.T @ np.array([0.0, 0.0, 0.3])           # the camera 30 cm ahead of the pivot along its own axis
         fr = pycolmap.Frame(frame_id=k, rig_id=1)
@@ -272,7 +272,7 @@ def _station_scene(tmp_path, colour_by_yaw=True):
         im.frame_id = k
         rec.add_image(im)
         img = np.zeros((300, 400, 3), np.uint8)
-        img[:] = colours[yaw][::-1]
+        img[:] = colors[yaw][::-1]
         cv2.imwrite(str(root / "images" / name), img)
         rows.append({"name": name, "site": 3, "drive": 10, "sol": 91, "camera_group": "NL", "sun_enu": [0.0, 0.5, 0.8]})
     for fid in list(rec.frames):
@@ -281,7 +281,7 @@ def _station_scene(tmp_path, colour_by_yaw=True):
     (root / "project.json").write_text(json.dumps({"images": rows, "cameras": {}, "rig": {}, "offset": [0, 0, 0]}), encoding="utf-8")
     st = select_station(proj, rec, "3_10", families="N")
     scene = RC.Scene(_plane(0.0, 300.0), M.sphere_arrays(st.pivot, 100.0, 5.0))
-    return proj, rec, st, scene, P, colours
+    return proj, rec, st, scene, P, colors
 
 
 def test_ods_rays_geometry():
@@ -298,21 +298,21 @@ def test_ods_rays_geometry():
     assert np.allclose(sep[0], [0.064, 0, 0], atol=1e-3)                    # looking north, the right eye is east
 
 
-def test_ods_render_colours_each_direction_from_its_frame(tmp_path):
+def test_ods_render_colors_each_direction_from_its_frame(tmp_path):
     import cv2
-    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
-    assert st.label == "Sol0091_S003D0010" and len(st.images) == 4 and st.pivot_fit["fallback"]   # four frames: the mean centre, flagged
+    proj, rec, st, scene, P, colors = _station_scene(tmp_path)
+    assert st.label == "Sol0091_S003D0010" and len(st.images) == 4 and st.pivot_fit["fallback"]   # four frames: the mean center, flagged
     out = tmp_path / "ods"
     O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32)
     L = cv2.imread(str(out / "Sol0091_S003D0010_ods_left.png"))[..., ::-1]
     Rr = cv2.imread(str(out / "Sol0091_S003D0010_ods_right.png"))[..., ::-1]
     assert L.shape == (128, 256, 3) and Rr.shape == L.shape and (out / "provenance.png").is_file()
-    # looking north along the horizon (row 64 ~ elevation 0, column 0 azimuth 0): the north frame (red) colours it
+    # looking north along the horizon (row 64 ~ elevation 0, column 0 azimuth 0): the north frame (red) colors it
     def at(img, az_deg, el_deg):
         u = int(az_deg / 360 * 256) % 256
         v = int((90 - el_deg) / 180 * 128)
         return img[v, u]
-    for yaw, col in colours.items():
+    for yaw, col in colors.items():
         px = at(L, yaw + 1.0, -20.0)                                         # 20 degrees below the horizon: the ground
         assert np.all(np.abs(px.astype(int) - np.array(col)) < 40), (yaw, px)
         pr = at(Rr, yaw + 1.0, -20.0)
@@ -454,7 +454,7 @@ def test_cli_mesh_depthmaps_ods_on_a_saved_block(tmp_path):
 
 # ----------------------------------------------------------------------------- 9 Nov evening: what the Rockytop run found
 def _world_texture(X):
-    """A texture fixed to the ground (random grey per 10 cm cell): every source frame shows the same pattern where it
+    """A texture fixed to the ground (random gray per 10 cm cell): every source frame shows the same pattern where it
     sees the same ground, so the two eyes' images differ only by their parallax."""
     i = np.floor(X[..., 0] / 0.10).astype(np.int64)
     j = np.floor(X[..., 1] / 0.10).astype(np.int64)
@@ -462,11 +462,11 @@ def _world_texture(X):
 
 
 def test_ods_eyes_differ_by_the_parallax_of_the_baseline(tmp_path):
-    """The stereo itself (the Rockytop sandbox run, 9 Nov: a test with one colour per frame cannot see it - the
+    """The stereo itself (the Rockytop sandbox run, 9 Nov: a test with one color per frame cannot see it - the
     seams between frames are fixed in direction): with a texture fixed to the ground, the left eye's image is the
     right eye's shifted by 2 asin(IPD / 2D) at horizontal distance D, and not at all vertically."""
     import cv2
-    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    proj, rec, st, scene, P, colors = _station_scene(tmp_path)
     for im in rec.images.values():
         cam = rec.cameras[im.camera_id]
         R = np.asarray(im.cam_from_world().rotation.matrix())
@@ -511,9 +511,9 @@ def test_dense_subset_prepare_and_fusion_write_fused_ply(tmp_path, monkeypatch):
     from rpp.sfm.dense import prepare_dense, run_dense, subset_images, subset_label
     from rpp.sfm.project import SfmProject
     from rpp.ibr.photometry import write_colmap_array
-    proj0, rec, st, scene, P, colours = _station_scene(tmp_path)
+    proj0, rec, st, scene, P, colors = _station_scene(tmp_path)
     root = proj0.root
-    for im in rec.images.values():                                      # textured, so the fusion has colours
+    for im in rec.images.values():                                      # textured, so the fusion has colors
         cam = rec.cameras[im.camera_id]
         R = np.asarray(im.cam_from_world().rotation.matrix())
         m = RC.cast_image(scene, cam, R, np.asarray(im.projection_center()), scale=1.0)
@@ -563,7 +563,7 @@ def test_dense_stereo_goes_to_the_pipelines_gpu_python(tmp_path, monkeypatch):
     import rpp.sfm.gpu as G
     from rpp.cli import main as rpp_main
     from rpp.sfm.project import SfmProject
-    proj0, rec, st, scene, P, colours = _station_scene(tmp_path)
+    proj0, rec, st, scene, P, colors = _station_scene(tmp_path)
     root = proj0.root
     (root / "gui_native" / "sparse").mkdir(parents=True)
     rec.write(str(root / "gui_native" / "sparse"))
@@ -628,7 +628,7 @@ def test_ground_plane_follows_the_regional_slope_and_ignores_outliers():
     xy = rng.uniform(-100, 100, (60_000, 2))
     xy = xy[np.hypot(*xy.T) <= 100]
     slope = np.tan(np.radians(8.0))
-    z = slope * xy[:, 0] + 0.15 * rng.standard_normal(len(xy))                 # uphill towards +x
+    z = slope * xy[:, 0] + 0.15 * rng.standard_normal(len(xy))                 # uphill toward +x
     rocks = rng.random(len(xy)) < 0.05
     z[rocks] += rng.uniform(0.2, 1.5, rocks.sum())
     pts = np.c_[xy, z]
@@ -706,10 +706,10 @@ def test_horizontal_radius_clip_is_from_the_mast_axis():
 
 def test_ods_on_the_plane_and_sky_scene_the_sky_has_no_disparity(tmp_path):
     """With the plane and the sky: every pixel has a surface; the rays above the horizon that a frame sees are
-    coloured, and identically in both eyes (at infinity); below the horizon beyond the mesh the plane gives the
+    colored, and identically in both eyes (at infinity); below the horizon beyond the mesh the plane gives the
     eyes their parallax."""
     import cv2
-    proj, rec, st, _, P, colours = _station_scene(tmp_path)
+    proj, rec, st, _, P, colors = _station_scene(tmp_path)
     Vm, Fm = _plane(0.0, 14.0)                                                  # a 'mesh' only to 14 m
     plane = M.fit_ground_plane(np.c_[np.random.default_rng(0).uniform(-90, 90, (20000, 2)) + P[:2], np.zeros(20000)], st.pivot)
     scene = RC.Scene((Vm, Fm), plane=plane, sky=True)
@@ -762,14 +762,14 @@ def test_two_view_terrain_is_fused_with_the_station_options(tmp_path):
     # tie points on the ground seen by both eyes: COLMAP's fusion takes which images overlap from them
     g = np.random.default_rng(2)
     T = np.c_[g.uniform(-6, 6, 400), g.uniform(4, 30, 400), np.zeros(400)]
-    centres = {1: P + np.array([-0.212, 0.0, 0.0]), 2: P + np.array([0.212, 0.0, 0.0])}
+    centers = {1: P + np.array([-0.212, 0.0, 0.0]), 2: P + np.array([0.212, 0.0, 0.0])}
     kps = {}
-    for k, Ck in centres.items():
+    for k, Ck in centers.items():
         Xc = (T - Ck) @ R.T
         kps[k] = np.asarray(cam.img_from_cam(Xc), float)
     vis = np.all([(kp[:, 0] > 0) & (kp[:, 0] < 640) & (kp[:, 1] > 0) & (kp[:, 1] < 480) for kp in kps.values()], axis=0)
     T, kps = T[vis], {k: v[vis] for k, v in kps.items()}
-    for k, Ck in centres.items():
+    for k, Ck in centers.items():
         fr = pycolmap.Frame(frame_id=k, rig_id=1)
         fr.add_data_id(pycolmap.data_t(sensor_id=pycolmap.sensor_t(type=pycolmap.SensorType.CAMERA, id=1), id=k))
         fr.rig_from_world = pycolmap.Rigid3d(pycolmap.Rotation3d(R), -R @ Ck)
@@ -983,13 +983,13 @@ def test_zoned_poisson_is_finer_near_the_mast_and_uses_the_given_normals():
         az = np.degrees(np.arctan2(cen[band, 1], cen[band, 0])) % 360
         assert len(np.unique((az // 10).astype(int))) == 36
     _, _, how2 = M.poisson_arrays(pts[:5000], None, depth=6, viewpoint=P)
-    assert how2["normals"] == "estimated, towards the mast head"
+    assert how2["normals"] == "estimated, toward the mast head"
 
 
 def test_a_point_hidden_from_every_source_takes_the_best_hidden_view(tmp_path):
     """The black cracks of the Van Zyl run: the eye's ray through a gap in the mesh ends on the ground, which the mesh
-    hides from the camera 30 cm ahead.  Now the hidden view colours it (marked), instead of black."""
-    proj, rec, st, scene0, P, colours = _station_scene(tmp_path)
+    hides from the camera 30 cm ahead.  Now the hidden view colors it (marked), instead of black."""
+    proj, rec, st, scene0, P, colors = _station_scene(tmp_path)
     Vg, Fg = _plane(0.0, 300.0)
     # a plate at z = 1 m north of the station with a 6 cm hole where the eye's ray (north, 45 deg down) crosses it
     Q = np.asarray(st.pivot, float)
@@ -1070,7 +1070,7 @@ def test_sky_fill_carries_the_sky_up_without_black_or_sawtooth():
     changed = O.fill_sky(rgb, source, label)
     up = rgb[:150].astype(int)
     assert changed[:100].all() and up.min() > 120                                  # no black carried up
-    assert np.abs(up - np.array([180, 170, 200])).max() < 12                       # the sky's colour
+    assert np.abs(up - np.array([180, 170, 200])).max() < 12                       # the sky's color
     assert np.abs(np.diff(rgb[100].astype(int), axis=0)).max() <= 2                # no sawtooth left in a row
     assert np.all(rgb[300] == (110, 80, 60))                                       # below the horizon: untouched
 
@@ -1109,7 +1109,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert len(zm) == 4 and {c["variant"] for c in z} == {"masked", "rover"}
     assert "--context-images" in zm[-1]["argv"] and zm[-1]["argv"][-9:] == ["--cameras", "Z", "--sols", "690", "692", "--zcam-scale", "0.5", "--fill-cameras", "NF"]   # 0.98.30: + the sol 692 deck pan
     rs = [c for c in SS.plan(cfg, tmp_path, labels=["Sol0052_S003D2046"], rover_surface=True)[0]["commands"] if c["step"] == "ods"]
-    assert [c["argv"][-4:] == ["--eyes", "left", "right", "centre"] for c in rs] == [c["variant"] == "rover" for c in rs]
+    assert [c["argv"][-4:] == ["--eyes", "left", "right", "center"] for c in rs] == [c["variant"] == "rover" for c in rs]
     new98p6 = {"Sol0009_S003D0000", "Sol0180_S007D0000", "Sol0204_S007D1836", "Sol0248_S008D0000", "Sol0361_S011D0000", "Sol0565_S029D0000", "Sol1955_S091D0124", "Sol1965_S091D0806", "Sol1189_S054D1152"}      # 0.98.6, 0.98.7: eight more stations (Christian, 14 Nov 2026)
     assert new98p6 <= set(cfg["stations"]) and all(cfg["stations"][k]["frames"]["images"] and cfg["stations"][k]["context"] for k in new98p6)
     assert len(cfg["stations"]["Sol0474_S026D0850"]["context"]) == 68   # 0.98.19
@@ -1219,13 +1219,13 @@ def test_ods_first_column_azimuth():
     _, d1 = O.ods_rays(360, 180, (90, 91), P, 0.064, "centre", azimuth0_deg=90.0)
     assert np.allclose(d1[0], [1, 0, 0], atol=0.02)                                                    # east first
     _, d2 = O.ods_rays(360, 180, (90, 91), P, 0.064, "centre", azimuth0_deg=-180.0)
-    assert np.allclose(d2[180], [0, 1, 0], atol=0.02) and np.allclose(d2[0], [0, -1, 0], atol=0.02)    # north centred
+    assert np.allclose(d2[180], [0, 1, 0], atol=0.02) and np.allclose(d2[0], [0, -1, 0], atol=0.02)    # north centered
 
 
 def test_full_fov_undistortion_keeps_the_fisheye_corners(tmp_path):
     """Christian, 10 Nov: "the undistorted images throw away the edges of the fov leading to less deck coverage".
     The default undistortion crops a Navcam fisheye to the rectangle of valid pixels (the corners go); --full-fov
-    keeps them, at a size scaled so the centre keeps the default's focal length; a change of the setting redoes
+    keeps them, at a size scaled so the center keeps the default's focal length; a change of the setting redoes
     the workspace, and the stereo record carries it (old maps cleared)."""
     import cv2
     from rpp.sfm.dense import prepare_dense, stereo_outputs_ready
@@ -1258,7 +1258,7 @@ def test_full_fov_undistortion_keeps_the_fisheye_corners(tmp_path):
     r1 = prepare_dense(proj, ws, max_image_size=1000, masks=False, full_fov=True)
     c1 = list(pycolmap.Reconstruction(str(ws / "sparse")).cameras.values())[0]
     assert not r0["full_fov"] and r1["full_fov"] and r1["max_image_size_used"] > 1000
-    assert abs(c1.params[0] - c0.params[0]) / c0.params[0] < 0.01                    # the centre keeps its focal length
+    assert abs(c1.params[0] - c0.params[0]) / c0.params[0] < 0.01                    # the center keeps its focal length
 
     def corner_deg(c):
         xy = np.asarray(c.cam_from_img(np.array([[0.5, 0.5]])))[0]
@@ -1452,7 +1452,7 @@ def test_linear16_of_a_real_product_and_the_archive_lookup(tmp_path):
 
 def test_ods_16bit_keeps_what_8bit_clips(tmp_path):
     import cv2
-    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    proj, rec, st, scene, P, colors = _station_scene(tmp_path)
     d16 = Path(proj.root) / "images16"
     d16.mkdir()
     for n in st.images:                                           # the frames 3x brighter than the 8-bit range holds
@@ -1498,7 +1498,7 @@ def test_ground_fill_and_levels():
     rgb[32:48] = (120.0, 80.0, 60.0)                              # terrain below the horizon, rows 32-47
     source[32:48] = 0
     donors[32:48] = True
-    rgb[44:48, 40:60] = (900.0, 900.0, 900.0)                     # the white deck: coloured, not a donor
+    rgb[44:48, 40:60] = (900.0, 900.0, 900.0)                     # the white deck: colored, not a donor
     donors[44:48, 40:60] = False
     f = O.fill_ground(rgb, source, donors)
     assert f[48:].all() and not f[:48].any() and (source[48:] == -4).all()
@@ -1597,7 +1597,7 @@ def test_mast_mask_from_the_rover_model():
 
 def test_pivot_at_mastcamz_height_and_shared_tone_levels(tmp_path):
     """0.97.0 (Christian, 12 Nov 2026): the pivot on the azimuth axis at the Mastcam-Z height whatever cameras are
-    rendered; one 16-to-8-bit scaling for the rover-shown and the rover-masked panorama; the centre depth files; the
+    rendered; one 16-to-8-bit scaling for the rover-shown and the rover-masked panorama; the center depth files; the
     jpg pictures with linear and log depth."""
     from scipy.spatial.transform import Rotation
     from rpp.ibr import linear16 as L16
@@ -1629,11 +1629,11 @@ def test_pivot_at_mastcamz_height_and_shared_tone_levels(tmp_path):
     assert src2 == "file" and lv2 == (2.0, 50.0)
     lv3, _ = L16.shared_levels(f, lambda: (0.0, 0.0), scale=32.0)              # the 16-bit files at exposure 0.5
     assert lv3 == (64.0, 1600.0)
-    # the centre depth and the jpg pictures
+    # the center depth and the jpg pictures
     rng = np.full((8, 16), 4.0, np.float32); lab = np.full((8, 16), RC.LABEL_MESH, np.uint8)
     rng[0], lab[0] = RC.SKY_RANGE_M, RC.LABEL_FAR
     rng[7], lab[7] = 0.0, RC.LABEL_NONE
-    d = O.write_centre_depth(tmp_path, "S1_rover", rng, lab)
+    d = O.write_center_depth(tmp_path, "S1_rover", rng, lab)
     z = np.load(d["files"]["npz"])
     assert np.isinf(z["range"][0]).all() and (z["range"][7] == 0).all() and np.allclose(z["range"][3], 4.0)
     import cv2
@@ -1753,7 +1753,7 @@ def test_surface_check_keeps_rover_pixels_on_the_rover_and_terrain_on_terrain(tm
 
 
 def test_ods_pole_merging():
-    """0.97.0 (12 Nov): the eye separation falls towards the poles.  0.97.13: as cos(elevation) above and below the
+    """0.97.0 (12 Nov): the eye separation falls toward the poles.  0.97.13: as cos(elevation) above and below the
     horizon, and nothing else scales it (no near-surface limit, no fade with range): true disparity x cos(elevation)."""
     from rpp.ibr import ods as O
     P = np.zeros(3)
@@ -1916,7 +1916,7 @@ def test_far_underlay_and_apron():
 
 
 def test_nearby_stations_and_width(tmp_path):
-    """0.97.0 (12 Nov): the neighbours' frames for the dense step; the single-site panorama width for one run."""
+    """0.97.0 (12 Nov): the neighbors' frames for the dense step; the single-site panorama width for one run."""
     import types
     from rpp.sfm.dense import nearby_station_images
     rows = []
@@ -2000,7 +2000,7 @@ def test_single_sites_skips_steps_that_are_up_to_date(tmp_path, monkeypatch):
 
 def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
     """0.97.3: `rpp single-sites --publish`: the variants' _360_3DTD.jpg into panos/ (reduced), panos.json for the
-    page, entries of earlier runs kept; the labelled test pair is a square with the left eye on top."""
+    page, entries of earlier runs kept; the labeled test pair is a square with the left eye on top."""
     import cv2
     from rpp.ibr import web
     r = tmp_path / "out"
@@ -2029,7 +2029,7 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
     assert xy and min(abs(xy[0] - a) + abs(xy[1] - b) for a, b in tr["xy"]) < 30 and web.station_on_map("nothing", wp) is None
     assert cv2.imread(str(w / "panos" / "S1_360_3DTD.jpg")).shape == (128, 128, 3)
     assert not (w / "panos" / "S1_enh_360_3DTD.jpg").exists() and web.DEFAULT_VIEWS == ("standard", "enhanced local", "normal map", "distance map")
-    # 0.98.12: the range and normal views at most GEOMETRY_WIDTH wide, whatever the colour width
+    # 0.98.12: the range and normal views at most GEOMETRY_WIDTH wide, whatever the color width
     for nm in ("S1_normal_360_3DTD.jpg", "S1_range_log_360_3DTD.jpg"):
         cv2.imwrite(str(r / "S1" / nm), np.full((256, 256, 3), 90, np.uint8))
     old, web.GEOMETRY_WIDTH = web.GEOMETRY_WIDTH, 64
@@ -2055,7 +2055,7 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
 
 
 def test_even_sky_lifts_a_dark_patch_and_leaves_the_far_hills():
-    """0.97.4: a dark patch in the sky (a frame that clipped towards the sun) is lifted to the sky around it; a far
+    """0.97.4: a dark patch in the sky (a frame that clipped toward the sun) is lifted to the sky around it; a far
     hill (also "far", but with a sharp skyline) and the ground are not touched."""
     from rpp.ibr import ods
     H, W = 512, 1024
@@ -2064,7 +2064,7 @@ def test_even_sky_lifts_a_dark_patch_and_leaves_the_far_hills():
     img = np.repeat(sky[..., None], 3, axis=2).astype(np.float32)
     yy, xx = np.mgrid[0:H, 0:W]
     patch = np.exp(-(((xx - 600) / 60.0) ** 2 + ((yy - 120) / 40.0) ** 2))
-    img *= (1.0 - 0.35 * patch)[..., None]                                 # 35 % dark at its centre, soft edges
+    img *= (1.0 - 0.35 * patch)[..., None]                                 # 35 % dark at its center, soft edges
     label = np.full((H, W), ods.LABEL_MESH, np.uint8)
     label[el > 0] = ods.LABEL_FAR
     hill = (yy > 236) & (yy < 256) & (xx > 200) & (xx < 400)               # a far hill: no mesh there, a sharp edge
@@ -2163,7 +2163,7 @@ def test_nadir_mark_lines_credit_and_disc():
     assert nadir.mark_lines(["NLF_0686_a", "NLF_0688_a"])[1] == "Sols 686, 688"
     assert nadir.mark_lines(["NLF_0686_a", "NLF_0687_a"])[1] == "Sols 686-687"
     W, H = 4096, 2048
-    m = nadir.make_mark(W, H, lines, centre_azimuth_deg=90.0)          # the rover's front to the east
+    m = nadir.make_mark(W, H, lines, center_azimuth_deg=90.0)          # the rover's front to the east
     band = H - m["row0"]
     assert nadir.NADIR_MARK_DEG == 10.0 and m["row0"] == int(np.ceil(H * 170 / 180)) and m["alpha"].shape == (band, W)   # 0.97.24: half the size
     # 0.98.7: three rows - the rover and the credit, the sol and the site (the tallest), the author
@@ -2175,7 +2175,7 @@ def test_nadir_mark_lines_credit_and_disc():
     cols = np.flatnonzero(ink.any(axis=0))
     rows = np.flatnonzero(ink.any(axis=1))
     assert (cols.max() - cols.min()) <= 0.6 * W + 2                    # the first row half the circle at most, the second 0.6
-    assert abs(0.5 * (cols.max() + cols.min()) - W / 4) < 0.02 * W     # centred on the rover's front (east = a quarter)
+    assert abs(0.5 * (cols.max() + cols.min()) - W / 4) < 0.02 * W     # centered on the rover's front (east = a quarter)
     assert rows.min() >= 1
     assert m["rows"][0]["span_deg"] <= 180.5 and m["rows"][1]["span_deg"] <= 216.5
     assert m["rows"][1]["height_px"] >= 0.7 * m["rows"][0]["height_px"]            # 0.97.24: the second row larger (0.45 before)
@@ -2206,14 +2206,14 @@ def test_nadir_mark_lines_credit_and_disc():
     assert i16[m["row0"]:, :, 0].max() == 50000 and i16[m["row0"]:].min() < 2000
     with pytest.raises(ValueError):
         nadir.apply_mark(np.zeros((H, W // 2, 3), np.uint8), m, 255)
-    m90 = nadir.make_mark(W, H, lines, azimuth0_deg=90.0, centre_azimuth_deg=90.0)     # column 0 looks east
+    m90 = nadir.make_mark(W, H, lines, azimuth0_deg=90.0, center_azimuth_deg=90.0)     # column 0 looks east
     assert np.abs(np.roll(m90["alpha"], W // 4, axis=1) - m["alpha"]).mean() < 0.01
     assert abs(nadir.forward_azimuth_deg({"R_block_from_rnav": np.array([[0.0, 1, 0], [1.0, 0, 0], [0, 0, -1.0]])},
                                          north=(0, 1, 0), east=(1, 0, 0)) - 0.0) < 1e-9          # RNAV x along block y = north
     assert nadir.forward_azimuth_deg(None, (0, 1, 0), (1, 0, 0)) == 0.0
 
 
-def test_fill_only_source_colours_only_what_the_others_do_not_see(tmp_path):
+def test_fill_only_source_colors_only_what_the_others_do_not_see(tmp_path):
     """0.97.7: a fill-only source (a Hazcam frame) has no weight where a regular source sees the surface well, and
     full weight where none does."""
     import cv2
@@ -2225,7 +2225,7 @@ def test_fill_only_source_colours_only_what_the_others_do_not_see(tmp_path):
     cam = pycolmap.Camera(model="PINHOLE", width=400, height=400, params=[400.0, 400.0, 200.0, 200.0])
     Rdown = np.array([[1.0, 0, 0], [0, -1.0, 0], [0, 0, -1.0]])        # looking straight down from z = 2
     srcs = []
-    for i, (cx, fill) in enumerate(((0.0, False), (0.5, True))):       # the fill frame half a metre to the side
+    for i, (cx, fill) in enumerate(((0.0, False), (0.5, True))):       # the fill frame half a meter to the side
         f = tmp_path / f"s{i}.png"
         cv2.imwrite(str(f), np.full((400, 400, 3), 100 + 100 * i, np.uint8))
         srcs.append(SourceImage(f.name, cam, Rdown, np.array([cx, 0.0, 2.0]), f, None, 1.0))
@@ -2289,12 +2289,12 @@ def test_picture_scales_are_attached_and_read_back(tmp_path):
         SC.decode(tmp_path / "photometry_jpg" / "NLF_x_shadow.jpg", scale=SC.scales()["rad"])
 
 
-def test_fill_frames_are_colour_matched_to_the_regular_ones(tmp_path):
+def test_fill_frames_are_color_matched_to_the_regular_ones(tmp_path):
     """0.97.7: per fill camera one factor per channel from the surface it shares with the regular frames; the
     regular frames keep their gain."""
     import cv2
     import pycolmap
-    from rpp.ibr.ods import SourceImage, estimate_fill_colour
+    from rpp.ibr.ods import SourceImage, estimate_fill_color
     from rpp.ibr.raycast import Scene
     g = np.linspace(-6.0, 6.0, 25)                                     # a level ground of small triangles
     xx, yy = np.meshgrid(g, g)
@@ -2314,14 +2314,14 @@ def test_fill_frames_are_colour_matched_to_the_regular_ones(tmp_path):
         srcs.append(SourceImage(name, cam, Rdown, np.array([cx, 0.0, 2.0]), f, None, 1.0))
         srcs[-1].fill_only = fill
     srcs[0].gain = 1.1
-    rep = estimate_fill_colour(scene, srcs, n_points=20000)
+    rep = estimate_fill_color(scene, srcs, n_points=20000)
     fl = rep["cameras"]["FL"]
     assert fl["samples"] > 300 and np.allclose(fl["factor_rgb"], [1.1 * 100 / 125, 1.1, 1.1 * 100 / 80], rtol=0.01)
     assert np.allclose(fl["white_balance_ratio_rgb"], [0.8, 1.0, 1.25], rtol=0.01) and abs(fl["brightness"] - 1.1) < 0.02
     assert max(fl["scatter_rgb"]) < 0.01
     assert "FR" not in rep["cameras"]                                 # no regular frame within half an hour of it
     assert srcs[0].gain == 1.1 and np.allclose(srcs[1].gain, fl["factor_rgb"], rtol=1e-3) and srcs[2].gain == 1.0
-    assert estimate_fill_colour(scene, srcs[:1])["cameras"] == {}
+    assert estimate_fill_color(scene, srcs[:1])["cameras"] == {}
 
 
 def test_shadow_is_sharp_and_takes_grazing_incidence():
@@ -2363,11 +2363,11 @@ def test_shadow_is_sharp_and_takes_grazing_incidence():
     assert 0.05 < (old == PH.SHADOW_SHADOW).mean() < 0.95
 
 
-def test_depth_without_the_centre_panorama_and_fill_frames_within_two_hours(tmp_path):
-    """0.97.11: the pivot's depth products are made from rays alone when the centre eye is not rendered; a fill
+def test_depth_without_the_center_panorama_and_fill_frames_within_two_hours(tmp_path):
+    """0.97.11: the pivot's depth products are made from rays alone when the center eye is not rendered; a fill
     frame (a Hazcam) is taken only when it is within two hours of one of the panorama's own frames."""
     from types import SimpleNamespace as NS
-    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    proj, rec, st, scene, P, colors = _station_scene(tmp_path)
     out = tmp_path / "ods"
     rep = O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32)
     assert set(rep["eyes"]) == {"left", "right"} and not list(out.glob("*_ods_centre.png"))
@@ -2376,7 +2376,7 @@ def test_depth_without_the_centre_panorama_and_fill_frames_within_two_hours(tmp_
     z = np.load(next(out.glob("*_ods_centre_depth.npz")))
     assert z["range"].shape == (128, 256) and np.isfinite(z["range"][100]).all() and z["range"][100].max() > 0.5
     rep2 = O.render_station(proj, rec, st, scene, tmp_path / "nodepth", width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32,
-                            centre_depth=False)
+                            center_depth=False)
     assert "centre_depth" not in rep2
     # fill frames by the spacecraft clock
     own = ["NLF_0100_0700000000_000RAD_N0030010NCAM00100_0A0195J01.png"]
@@ -2400,7 +2400,7 @@ def test_far_field_takes_the_radius_at_which_the_frames_agree(tmp_path):
     cam = rec.cameras[1]
     P = np.asarray(st.pivot, float)
 
-    def tex(v):                                                              # a random grey per 2 deg cell of direction
+    def tex(v):                                                              # a random gray per 2 deg cell of direction
         az = np.degrees(np.arctan2(v[..., 0], v[..., 1])) % 360.0
         el = np.degrees(np.arcsin(np.clip(v[..., 2] / np.linalg.norm(v, axis=-1), -1, 1)))
         i, j = np.floor(az / 2.0).astype(np.int64), np.floor((el + 90.0) / 2.0).astype(np.int64)
@@ -2453,7 +2453,7 @@ def test_far_field_takes_the_radius_at_which_the_frames_agree(tmp_path):
 
 def test_near_blend_is_gradual_and_the_provenance_is_a_mix(tmp_path):
     """0.97.13: the near rule comes in gradually with range (no switch at 3 m), and provenance.png shows the frames'
-    shares: between two frames' areas the colours run into each other."""
+    shares: between two frames' areas the colors run into each other."""
     import cv2
     r = np.array([0.5, 2.0, 3.0, 4.0, 10.0, np.inf])
     n = O.near_share(r)
@@ -2464,15 +2464,15 @@ def test_near_blend_is_gradual_and_the_provenance_is_a_mix(tmp_path):
     out = tmp_path / "prov"
     O.render_station(proj, rec, st, scene, out, width=720, ipd_m=0.064, scale=1.0, rows_per_chunk=60, eyes=("left",))
     p = cv2.imread(str(out / "provenance.png"))
-    pure = {tuple(int(x) for x in np.clip(np.rint(O._source_colour(k)), 0, 255)) for k in range(6)}
+    pure = {tuple(int(x) for x in np.clip(np.rint(O._source_color(k)), 0, 255)) for k in range(6)}
     v = int((90 + 35) / 180 * 360)                                           # 35 deg below the horizon: every frame's band
     row = [tuple(int(x) for x in c) for c in p[v]]
     assert sum(c in pure for c in row) > 0.2 * len(row)                      # a frame alone in its middle ...
     mixed = [c for c in row if c not in pure and max(c) > 0]
     assert len(mixed) > 0.2 * len(row)                                       # ... and a mix where two overlap
-    assert np.abs(np.diff(p[v].astype(int), axis=0)).max() < 60              # no jump from one frame's colour to the next
+    assert np.abs(np.diff(p[v].astype(int), axis=0)).max() < 60              # no jump from one frame's color to the next
     hard = np.zeros((4, 6), np.int16); hard[:, 3:] = 1; hard[0, 0] = -2
-    O.provenance_png(hard, tmp_path / "hard.png", 2)                          # without the mix: the strongest frame's colour
+    O.provenance_png(hard, tmp_path / "hard.png", 2)                          # without the mix: the strongest frame's color
     q = cv2.imread(str(tmp_path / "hard.png"))
     assert tuple(int(x) for x in q[1, 0]) in pure and tuple(q[0, 0]) == (128, 128, 128)
 
@@ -2483,7 +2483,7 @@ def test_nadir_mark_lies_on_the_ground_and_its_first_row_is_larger(tmp_path):
     import cv2
     from rpp.ibr import nadir
     W, H = 4096, 2048
-    m = nadir.make_mark(W, H, nadir.mark_lines(["NLF_0052_a"], "Van Zyl Overlook"), centre_azimuth_deg=180.0)
+    m = nadir.make_mark(W, H, nadir.mark_lines(["NLF_0052_a"], "Van Zyl Overlook"), center_azimuth_deg=180.0)
     assert m["rows"][1]["height_px"] >= m["rows"][0]["height_px"] and m["rows"][0]["span_deg"] <= 180.5    # 0.98.14: no longer the larger
     P, depth = np.array([1.0, 2.0, 3.0]), 0.9
     m0 = m["row0"] - 46
@@ -2501,7 +2501,7 @@ def test_nadir_mark_lies_on_the_ground_and_its_first_row_is_larger(tmp_path):
     img = np.full((H - m0, W, 3), 90, np.uint8)
     nadir.apply_mark(img, dict(m, row0=0, alpha=got["left"][0], inside=got["left"][1]), (238, 212, 176))
     assert (img[~got["left"][1]] == 90).all() and (img[got["left"][1]] != 90).any()
-    proj, rec, st, scene, Pp, colours = _station_scene(tmp_path)
+    proj, rec, st, scene, Pp, colors = _station_scene(tmp_path)
     rep = O.render_station(proj, rec, st, scene, tmp_path / "ods_mark", width=1024, ipd_m=0.064, scale=1.0, rows_per_chunk=64)
     assert abs(rep["nadir_mark"]["depth_below_pivot_m"] - Pp[2]) < 0.05       # the plane z = 0 under the pivot
     L = cv2.imread(str(tmp_path / "ods_mark" / "Sol0091_S003D0010_ods_left.png"))
@@ -2628,11 +2628,11 @@ def test_block_settings_reach_the_16bit_frames_and_the_terrain_is_reused(tmp_pat
 
 def test_context_frames_are_masked_fill_only_and_stay_off_the_rover(tmp_path):
     """0.97.15: a context frame (another place or sol) is a fill-only source whose rover mask is applied with the
-    rover shown too, it never colours the rover model, it is not one of the station's own frames, and the station
+    rover shown too, it never colors the rover model, it is not one of the station's own frames, and the station
     list passes it to the dense step and to the panorama."""
     import cv2
     from rpp.ibr import single_sites as SS
-    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    proj, rec, st, scene, P, colors = _station_scene(tmp_path)
     for n in st.images:
         cv2.imwrite(str(proj.root / "masks" / (n + ".png")), np.full((300, 400), 255, np.uint8))
     ctx = st.images[3]
@@ -2684,7 +2684,7 @@ def test_geometry_panoramas_masked_black_and_image_copies(tmp_path):
     """0.97.20 (Christian, 13 Nov 2026): the range and normal panoramas of the model through the panorama's rays;
     masked pixels black in the depth pictures; the frame's copy next to them."""
     import cv2
-    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    proj, rec, st, scene, P, colors = _station_scene(tmp_path)
     out = tmp_path / "ods"
     rep = O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32)
     files = rep["geometry"]["files"]
@@ -2768,7 +2768,7 @@ def test_ground_mark_published_and_upload_keeps_a_failed_push_for_the_next_one(t
     default, never waits at a prompt, tries a failed push again and leaves a marker when it did not go through."""
     import subprocess
     from rpp.ibr import web, single_sites as SS
-    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    proj, rec, st, scene, P, colors = _station_scene(tmp_path)
     out = tmp_path / "sites" / "Sol0091_S003D0010"
     rep = O.render_station(proj, rec, st, scene, out, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, geometry=False)
     nm = rep["nadir_mark"]
@@ -2800,7 +2800,7 @@ def test_ground_mark_published_and_upload_keeps_a_failed_push_for_the_next_one(t
     assert a is None or a.no_upload
 
 
-def test_colour_0p98_pipeline_view_enhanced_without_clipping_radiance_record_and_frames_worth(tmp_path):
+def test_color_0p98_pipeline_view_enhanced_without_clipping_radiance_record_and_frames_worth(tmp_path):
     """0.98.0 (Christian, 14 Nov 2026): the standard 8-bit view is the 16-bit image on the pipeline's 8-bit scale; the
     enhanced curve clips at neither end; the 16-bit scale is one for every station and ods.json says how to get back
     to radiance; the blend records how many frames' worth each terrain pixel has."""
@@ -2818,7 +2818,7 @@ def test_colour_0p98_pipeline_view_enhanced_without_clipping_radiance_record_and
     inside = (span >= 0.18) & (span <= 0.52)
     assert abs(e[inside].min() - 255 * L.ENH_OUT_LOW) < 2 and abs(e[inside].max() - 255 * L.ENH_OUT_HIGH) < 2
     import cv2
-    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    proj, rec, st, scene, P, colors = _station_scene(tmp_path)
     d16 = Path(proj.root) / "images16"
     d16.mkdir()
     for n in st.images:                                              # 16-bit frames twice as bright as 8 bits hold
@@ -2839,11 +2839,11 @@ def test_colour_0p98_pipeline_view_enhanced_without_clipping_radiance_record_and
     band = slice(20, 100)                                            # above the nadir mark
     want = np.rint(L.tone_pipeline(L16[band].astype(np.float32) / 64.0))
     assert np.abs(want - L8[band].astype(np.float32)).max() <= 1.0   # the view is the 16-bit image / 64, rolled off
-def test_rover_surface_is_the_model_coloured_from_the_pivot(tmp_path):
+def test_rover_surface_is_the_model_colored_from_the_pivot(tmp_path):
     """0.98.14 (Christian, 15 Nov 2026: "The 3d model of the rover still has many occluded surfaces ... the edges look
     pixelated. the rover should not have a hole visible from any where within the 0.15 m radius"): the surface is the
     rover model of mesh.ply with all its triangles; the panorama from the pivot and its range go with it, and a point
-    of the model is coloured when it is the surface the pivot sees - a hidden one is grey."""
+    of the model is colored when it is the surface the pivot sees - a hidden one is gray."""
     import json, numpy as np, cv2, open3d as o3d
     from rpp.ibr import rover_surface as RS, web
     from rpp.ibr.mesh import write_mesh
@@ -2950,7 +2950,7 @@ def test_rover_surface_bias_on_the_perseverance_model():
 
 def test_heal_sky_replaces_a_frame_shaped_patch_and_leaves_a_clean_sky():
     """0.98.4 (Christian, 14 Nov 2026: "The sky needs an extra check at the end to heal over any dark bands or other
-    artifacts"): a brighter rectangle in a sky that brightens towards the horizon is brought to the sky around it,
+    artifacts"): a brighter rectangle in a sky that brightens toward the horizon is brought to the sky around it,
     the horizon's own gradient stays, and a clean sky is not touched."""
     import numpy as np
     from rpp.ibr import ods
@@ -2977,7 +2977,7 @@ def test_heal_sky_replaces_a_frame_shaped_patch_and_leaves_a_clean_sky():
 
 def test_normal_panorama_leaves_out_the_ground_plane(tmp_path):
     """0.98.12 (Christian, 15 Nov 2026: "The normal map should not include the flat plane"): plane pixels are black
-    in the normal panorama and keep their colours in the range one."""
+    in the normal panorama and keep their colors in the range one."""
     import cv2
     from types import SimpleNamespace
 
@@ -3041,7 +3041,7 @@ def test_block_terrain_station_plan():
     assert sum("N0062666NCAM0" in n and n.startswith(("NLF_0178", "NRF_0178")) for n in r) == 10
 
 
-def test_welcome_picture_keeps_its_colour_and_the_map_gets_an_orthomosaic(tmp_path, monkeypatch):
+def test_welcome_picture_keeps_its_color_and_the_map_gets_an_orthomosaic(tmp_path, monkeypatch):
     """0.98.14 (Christian, 15 Nov 2026: "the welcome screen should have color, just be a little more muted" and "Add low
     res ortho to the info map")."""
     import cv2
@@ -3049,7 +3049,7 @@ def test_welcome_picture_keeps_its_colour_and_the_map_gets_an_orthomosaic(tmp_pa
     w = tmp_path / "web"; (w / "panos").mkdir(parents=True)
     img = np.zeros((64, 64, 3), np.uint8); img[:] = (40, 90, 200)              # BGR: an orange
     cv2.imwrite(str(w / "panos" / "S_360_3DTD.jpg"), img, [cv2.IMWRITE_JPEG_QUALITY, 98])
-    (w / "panos" / f"{web.WELCOME_ID}{web.STACK}").write_bytes(b"old grey one")
+    (w / "panos" / f"{web.WELCOME_ID}{web.STACK}").write_bytes(b"old gray one")
     e = web.welcome_pano(w, {"variants": [{"views": {"standard": "panos/S_360_3DTD.jpg"}}]})
     f = w / e["variants"][0]["views"]["standard"]
     m = cv2.imread(str(f)).reshape(-1, 3).mean(axis=0)
@@ -3098,7 +3098,7 @@ def test_rover_variant_gets_a_turning_disc_and_the_page_faces(tmp_path):
     view opens west under its new title; the page has the N E S W O cross and its keys."""
     import shutil
     from rpp.ibr import web, single_sites as SS
-    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    proj, rec, st, scene, P, colors = _station_scene(tmp_path)
     base = tmp_path / "sites" / "Sol0091_S003D0010"
     O.render_station(proj, rec, st, scene, base, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, geometry=False)
     rov = base / "with_rover"
@@ -3125,7 +3125,7 @@ def test_o_looks_along_the_rover_x_and_y_b_home_buttons(tmp_path):
     The station's ods.json records the rover's +x azimuth; publish passes it on; an older record gives it as the
     text's middle less 135 deg (the page took the text's middle itself until 0.98.27: 135 deg off)."""
     from rpp.ibr import web, nadir, single_sites as SS
-    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    proj, rec, st, scene, P, colors = _station_scene(tmp_path)
     base = tmp_path / "sites" / "Sol0091_S003D0010"
     rep = O.render_station(proj, rec, st, scene, base, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, geometry=False)
     nm = rep["nadir_mark"]
@@ -3175,7 +3175,7 @@ def test_info_map_is_the_blank_panel_d_and_the_menu_says_sol_then_name(tmp_path,
     ... put the site and drive numbers in the info window.  The map in the info tab should be the same background as
     m20_mars_to_rover_sites_dtm figure D ... with the traverse and 2 km scale bar.  Put an orange x over the ods'
     particular location" - mapplot3 figure 8 is that picture (its extent beside it); publish takes the newest, puts its
-    extent into the traverse map's metres, and the page draws the x on it."""
+    extent into the traverse map's meters, and the page draws the x on it."""
     import cv2
     from rpp.ibr import web, single_sites as SS
     wp, tr = web.traverse_map()

@@ -24,7 +24,7 @@ jobs:
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[all]"
       - name: Static check
-        run: python -m flake8 --select F src/rpp scripts        # pyflakes rules; flake8 honours the re-exports' noqa
+        run: python -m flake8 --select F src/rpp scripts        # pyflakes rules; flake8 honors the re-exports' noqa
       - name: Unit and pipeline tests (two PDS products, no model downloads)
         env:
           RPP_CACHE: ${{ runner.temp }}/rpp_cache

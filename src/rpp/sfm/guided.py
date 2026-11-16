@@ -10,12 +10,12 @@ curve, between the images of the nearest and the farthest ground A sees - a few 
 the ratio test runs among those only.  The new matches are added (as verified two-view geometry inliers) to a copy of
 the database, the block is triangulated from it and adjusted once more.
 
-For a keypoint ray ``a`` of A (world frame, from centre ``C_A``) and a ray ``b`` of B (from ``C_B``): ``b`` is on the
-epipolar plane when ``|n . b| < sin(tol)`` with ``n = a x (C_B - C_A)`` (normalised), and the two rays meet at range
+For a keypoint ray ``a`` of A (world frame, from center ``C_A``) and a ray ``b`` of B (from ``C_B``): ``b`` is on the
+epipolar plane when ``|n . b| < sin(tol)`` with ``n = a x (C_B - C_A)`` (normalized), and the two rays meet at range
 ``t`` along ``a`` and ``s > 0`` along ``b`` (closest approach), with ``d_min <= t <= d_max`` (A's depth range from its
 triangulated points).  by default the depth window is local - for each keypoint of A, the depths of its
 ``local_k`` nearest triangulated keypoints of A (within ``local_radius`` of the frame diagonal), widened by
-``local_factor`` either way; keypoints with fewer than ``local_min`` such neighbours are not matched
+``local_factor`` either way; keypoints with fewer than ``local_min`` such neighbors are not matched
 (``local_fallback`` "skip") or use the image's whole range ("global").  A window spanning the whole scene lets a
 repeated texture match along the epipolar line at the wrong range (COLMAP's guided matching at Three Forks South put a
 quarter of the points 10-15 x beyond the ground).  ``tol`` is ``max_px`` native pixels of either image as an angle.  Camera models of any kind
@@ -76,12 +76,12 @@ def _depth_range(rec, iid: int, margin=(0.5, 3.0), default=(0.5, 1000.0)) -> Tup
     return max(0.1, margin[0] * float(np.percentile(d, 2))), min(5000.0, margin[1] * float(np.percentile(d, 98)))
 
 
-def local_depths(rec, iid: int, xy: np.ndarray, k: int = 8, min_neighbours: int = 3, radius: float = 0.08,
+def local_depths(rec, iid: int, xy: np.ndarray, k: int = 8, min_neighbors: int = 3, radius: float = 0.08,
                  factor: float = 1.4) -> Tuple[np.ndarray, np.ndarray]:
     """
-    (dmin, dmax) for each keypoint ``xy`` of image ``iid`` from the depths (distance from the camera centre)
+    (dmin, dmax) for each keypoint ``xy`` of image ``iid`` from the depths (distance from the camera center)
     of its ``k`` nearest triangulated keypoints within ``radius`` x the frame diagonal: [min / factor, max x factor];
-    NaN with fewer than ``min_neighbours``.
+    NaN with fewer than ``min_neighbors``.
     """
     from scipy.spatial import cKDTree
     im = rec.images[iid]
@@ -89,7 +89,7 @@ def local_depths(rec, iid: int, xy: np.ndarray, k: int = 8, min_neighbours: int 
     n = len(xy)
     lo, hi = np.full(n, np.nan), np.full(n, np.nan)
     pts = [(p.xy, rec.points3D[p.point3D_id].xyz) for p in im.points2D if p.has_point3D()]
-    if len(pts) < min_neighbours or not n:
+    if len(pts) < min_neighbors or not n:
         return lo, hi
     uv = np.array([q[0] for q in pts], float)
     _, C = _pose(im)
@@ -100,7 +100,7 @@ def local_depths(rec, iid: int, xy: np.ndarray, k: int = 8, min_neighbours: int 
     ok = np.isfinite(dist)
     cnt = ok.sum(1)
     dd = np.where(ok, d[np.minimum(idx, len(d) - 1)], np.nan)
-    good = cnt >= min_neighbours
+    good = cnt >= min_neighbors
     if good.any():
         lo[good] = np.nanmin(dd[good], axis=1) / factor
         hi[good] = np.nanmax(dd[good], axis=1) * factor
@@ -145,7 +145,7 @@ def select_pairs(rec, project, families: Sequence[str] = ("Z",), max_pairs: int 
     """
     (A, B, overlap) for every registered image A of ``families`` (``only``: these image ids of them) and the
     ``max_pairs`` registered images B whose frame sees the most of A's triangulated points (at least ``min_points``
-    of a sample of ``sample``), centres at most ``max_baseline_m`` apart.  A pair of two such images is listed once.
+    of a sample of ``sample``), centers at most ``max_baseline_m`` apart.  A pair of two such images is listed once.
     0.95.0: an A with fewer than ``min_points`` points of its own (a frame no match reached, posed from its label)
     is scored the other way round - by B's points that fall in A's frame - so the frames with no tie points get
     their pairs too.

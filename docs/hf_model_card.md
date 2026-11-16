@@ -35,8 +35,8 @@ the same bytes, with the same SHA-256.
 |---|---|
 | file | `rpp_mask_convnext_tiny_s4_v4.safetensors` (124,827,092 bytes) |
 | SHA-256 | `9ecb3dd5fb25fa4f21df0034c575a66d46a8a49b6f500129409bc2cf3ec8a467` |
-| architecture | ConvNeXt-tiny backbone (ImageNet-22k initialisation) + FPN (256) + light ASPP + stride-4 decoder skip, one logit (31.2 M parameters) |
-| input | linear 8-bit-equivalent RGB as produced by RPP, letterboxed to a 1664 × 1248 canvas (long side ≤ 1648), ImageNet normalisation |
+| architecture | ConvNeXt-tiny backbone (ImageNet-22k initialization) + FPN (256) + light ASPP + stride-4 decoder skip, one logit (31.2 M parameters) |
+| input | linear 8-bit-equivalent RGB as produced by RPP, letterboxed to a 1664 × 1248 canvas (long side ≤ 1648), ImageNet normalization |
 | output | sigmoid > 0.5 = include; RPP dilates the include region by 3 × 3 |
 | training data | 4,095 hand-edited masks of Mars 2020 frames, sols 9–2022: Navcam 1,925, Mastcam-Z 1,983, Front Hazcam 82, Rear Hazcam 31, SHERLOC WATSON 74. The images come from the standard RPP pipeline only (no brightness-varied copies). |
 | split | 3,685 training / 410 held-out frames, grouped by mask (seed 42) |

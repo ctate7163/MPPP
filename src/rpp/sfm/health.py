@@ -1,5 +1,5 @@
 """
-Alignment health: is the COLMAP alignment good enough to analyse?
+Alignment health: is the COLMAP alignment good enough to analyze?
 
 Run it after :func:`rpp.sfm.reconstruct` (and before any error analysis on the
 result).  Each check has a value, provisional warn/fail thresholds and a
@@ -12,13 +12,13 @@ tie points        points, observations, track-length population (incl. two-view 
                   observations per image (5th percentile), cross-station fraction, tied station blocks
 reprojection      native-pixel residuals: median, RMS, 95th percentile; per camera and resolution;
                   left/right balance; images whose median residual is far above the rest;
-                  residual growth towards the image edge (distortion-model misfit);
-                  tie-point coverage in rings of image radius, and the corners vs the centre
+                  residual growth toward the image edge (distortion-model misfit);
+                  tie-point coverage in rings of image radius, and the corners vs the center
 camera model      per camera: change in f, principal point and k1-k4, p1, p2 from the calibration, and the
                   resulting image displacement of the same ray (max / RMS over the frame)
 stereo rig        rotation of the right camera relative to the CAHV rig; baseline (held);
                   spread of the CAHV pairs the rig was built from
-poses             refined minus prior camera centre and attitude: per station median, and
+poses             refined minus prior camera center and attitude: per station median, and
                   the spread within a station (frames of one station should move together);
                   similarity (scale, rotation) between refined and prior station positions
 
@@ -26,7 +26,7 @@ The thresholds (``DEFAULT_THRESHOLDS``) are provisional values set a priori,
 not validated limits; pass your own to tighten or relax them.  On the Belva
 Navcam test (sols 748-815, prior-pair matching) they flag 55 frames held at
 their prior (11.5 %), a 0.13 deg rotation of the refined right camera relative
-to the CAHV rig, residuals growing towards the image edge, and 6 of 13
+to the CAHV rig, residuals growing toward the image edge, and 6 of 13
 stations outside the main tied block.
 
     report = assess_alignment(project, rec)
@@ -211,15 +211,15 @@ def beyond_ground(rec, camera_height_m: float = GROUND_CAMERA_HEIGHT_M, min_depr
     sel = np.arange(n)
     if sample and n > sample:
         sel = np.sort(np.random.default_rng(seed).choice(n, sample, replace=False))
-    centre: Dict[int, np.ndarray] = {}
+    center: Dict[int, np.ndarray] = {}
     for iid, im in rec.images.items():
         if im.has_pose:
-            centre[int(iid)] = np.asarray(im.projection_center(), float)
+            center[int(iid)] = np.asarray(im.projection_center(), float)
     flagged = considered = 0
     sin_min = np.sin(np.radians(min_depression_deg))
     for i in sel:
         pt = rec.points3D[ids[i]]
-        cs = [centre[e.image_id] for e in pt.track.elements if e.image_id in centre]
+        cs = [center[e.image_id] for e in pt.track.elements if e.image_id in center]
         if not cs:
             continue
         v = np.asarray(xyz[i], float) - np.asarray(cs)
@@ -254,13 +254,13 @@ def zcam_terrain(rec, cell_m: float = ZCAM_TERRAIN_CELL_M, tol_m: float = ZCAM_T
     are counted as ``off_grid``.  The world frame is East-North-Up.
     """
     fam: Dict[int, str] = {}
-    centres_n = []
+    centers_n = []
     for iid, im in rec.images.items():
         if not im.has_pose:
             continue
         fam[int(iid)] = im.name[:1]
         if im.name[:1] == "N":
-            centres_n.append(np.asarray(im.projection_center(), float))
+            centers_n.append(np.asarray(im.projection_center(), float))
     out: Dict[str, Any] = {"cell_m": cell_m, "tol_m": tol_m, "tol_frac": tol_frac}
     pts = list(rec.points3D.values())
     if sample and len(pts) > sample:
@@ -274,7 +274,7 @@ def zcam_terrain(rec, cell_m: float = ZCAM_TERRAIN_CELL_M, tol_m: float = ZCAM_T
         elif fs == {"N"}:
             nav.append(pt.xyz)
     out.update({"navcam_points": len(nav), "zcam_points": len(zc)})
-    if not nav or not zc or not centres_n:
+    if not nav or not zc or not centers_n:
         out["note"] = "no Navcam terrain or no Mastcam-Z points"
         return out
     N = np.asarray(nav, float); Z = np.asarray(zc, float); mixed = np.asarray(mixed, bool)
@@ -294,7 +294,7 @@ def zcam_terrain(rec, cell_m: float = ZCAM_TERRAIN_CELL_M, tol_m: float = ZCAM_T
         if sum(n_ for _, n_ in hs) >= min_cell_points:
             return float(np.median([h_ for h_, _ in hs]))
         return None
-    C = np.asarray(centres_n, float)
+    C = np.asarray(centers_n, float)
     zij = np.floor(Z[:, :2] / cell_m).astype(np.int64)
     dz = np.full(len(Z), np.nan)
     for k, (i, j) in enumerate(zij):
@@ -349,7 +349,7 @@ def coverage_by_radius(rec, project: SfmProject, edges: Sequence[float] = RADIUS
     Per camera (``NL``, ``NR``, ``ZL034`` ...): keypoints, the fraction of them
     that became tie points, and the median residual, in rings of radius from
     the principal point (1 = the farthest frame corner).  A distortion model
-    that cannot be inverted towards the corners shows up as keypoints there
+    that cannot be inverted toward the corners shows up as keypoints there
     that are never triangulated (the three-term Navcam polynomial lost
     everything beyond ~0.88).
     """
@@ -677,7 +677,7 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
             one = cam.model.name in ("SIMPLE_PINHOLE", "SIMPLE_RADIAL", "RADIAL")
             cx, cy = (p[1], p[2]) if one else (p[2], p[3])
             xy = np.array([im.points2D[int(k)].xy for k in idx_o[sel]], float)
-            # radius relative to the farthest frame corner (as coverage_by_radius), so an off-centre
+            # radius relative to the farthest frame corner (as coverage_by_radius), so an off-center
             # principal point (Mastcam-Z) no longer pushes the outermost keypoints past the last bin
             rad = np.hypot(xy[:, 0] - cx, xy[:, 1] - cy) / np.hypot(max(cx, cam.width - cx), max(cy, cam.height - cy))
             edge.append(np.c_[rad, r[sel]])
@@ -995,7 +995,7 @@ def plot_health(report: Dict[str, Any], rec, project: SfmProject, path: PathLike
     ax[1, 1].set_xticklabels([v.get("label", k) for k, v in st.items()], rotation=90, fontsize=7)
     ax[1, 1].set_ylabel("|refined - prior| [m]")
     ax[1, 1].set_ylim(bottom=0)
-    ax[1, 1].set_title("camera centre vs prior, by station")
+    ax[1, 1].set_title("camera center vs prior, by station")
     fig.suptitle(f"alignment health: {report['verdict'].upper()}")
     from ..calib.constrain import panel_letters
     panel_letters(ax)                       # 27 Oct (Christian): "A. title", left-justified, as the maps

@@ -4,7 +4,7 @@ REM RPP 0.95.3 - zcam_backlash_rerun.bat (Christian, 31 Oct 2026: "Before the fi
 REM joint to capture all of the problematic backlash anomalies. Prepare the rerun of these three blocks with all
 REM zooms including z110. Allow more joint iterations for convergence.")
 REM
-REM In one minimised window, one step after the other (about a day):
+REM In one minimized window, one step after the other (about a day):
 REM   1. the backlash states run of the three blocks (variant "states": every Mastcam-Z image its own focal
 REM      length; run_zcam_states.bat's settings; variant states_1031) - Chal Rocks, Seitah Overlook, Rockytop (never had one);
 REM   2. the states report of those blocks and the found list updated from it (--apply: a dated backup first;
@@ -51,7 +51,7 @@ if exist "%ROOT%\camera_analysis\zcam_joints.lock" (
   exit /b 1
 )
 start "RPP Mastcam-Z backlash rerun - %ROOT%" /min cmd /c call "%~f0" --chain
-echo RPP Mastcam-Z backlash rerun started in a minimised window: %RPP_RERUN_SITES% (from step %RPP_RERUN_FROM%).
+echo RPP Mastcam-Z backlash rerun started in a minimized window: %RPP_RERUN_SITES% (from step %RPP_RERUN_FROM%).
 echo Log: "%LOG%"; status: check_sites.bat; stop: stop_rpp.bat
 timeout /t 10
 exit /b 0

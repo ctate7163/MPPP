@@ -1,15 +1,15 @@
 """
 The Navcam stereo baseline from the large blocks (RPP v0p80; the camera-model recipe of 14 Oct 2026, section 4).
 
-Over tens of metres the waypoint priors fix a block's scale independently of the 0.42 m baseline, so a block with
-stations spread over >= 40 m in more than one direction can measure the baseline length against the localisations.
+Over tens of meters the waypoint priors fix a block's scale independently of the 0.42 m baseline, so a block with
+stations spread over >= 40 m in more than one direction can measure the baseline length against the localizations.
 Each such block is aligned once more as a variant (``<WORK>/colmap_baseline``; the production alignment is not
 touched), with:
 
 - the Navcam cameras, distortion and thermal model held at the promoted consensus (``NAVCAM_INTRINSICS = "hold"``;
   the temperature bins held at the thermal model);
 - the rig rotation free per epoch and the rig translation free (``NAVCAM_RIG_REFINE = "full"``, a weak prior of
-  ``RIG_TRANSLATION_SIGMA_M`` per axis on the right centre; the epochs of a block share one translation);
+  ``RIG_TRANSLATION_SIGMA_M`` per axis on the right center; the epochs of a block share one translation);
 - the station priors as in production (1 m per axis).
 
 The final Navcam adjustment estimates the rig covariance; ``project.json`` ``settings.reconstruction.rig_fit`` holds
@@ -25,7 +25,7 @@ the baseline and its sd, and ``error_input/summary.json`` the block's scale agai
 v0p82 (17 Oct 2026, Christian): the blocks are the ``navcam_baseline`` group's sites with more than 4 waypoints over
 more than 30 m (sites.json ``n_waypoints``, ``max_waypoint_separation_m``; others are left out with a note); the
 stations flagged by the waypoint check (``--flags``) run without their position prior; the priors at 0.5 m per axis
-(``--prior-sigma``; the localisations are good to ~0.3-0.5 m).  ``combine`` also measures the block scale agreement:
+(``--prior-sigma``; the localizations are good to ~0.3-0.5 m).  ``combine`` also measures the block scale agreement:
 the robust similarity scale between the refined stations and their waypoints (rpp.sfm.waypoint_check) in the
 production run (baseline held) and in the baseline run (free), the scale predicted with the combined baseline, and
 an east/north scale test (a map-projection error of the waypoints would show east-west only).  Adopted only if the
@@ -39,7 +39,7 @@ baseline, its sd, scale_refined_over_prior, temperature and sol; the weighted me
 combined estimate differs from the baseline in use by more than 3 sigma AND the blocks agree (chi2/dof <= 2); then
 ``--write-rig DIR`` writes a candidate ``M2020_N_rig.json`` with the translation scaled to it (direction kept) for
 ``promote_cmods.py`` - and the joint consensus is refitted once (run_pipeline --redo navcam_consensus_2).
-Caveat: this measures stereo scale against the waypoint scale; a systematic scale error of the localisations goes
+Caveat: this measures stereo scale against the waypoint scale; a systematic scale error of the localizations goes
 straight into it.
 """
 from __future__ import annotations
@@ -66,7 +66,7 @@ SETS = ["NAVCAM_INTRINSICS=hold", "NAVCAM_RIG_REFINE=full", "RIG_TRANSLATION_SIG
 ADOPT_Z = 3.0
 MAX_CHI2_DOF = 2.0
 MIN_WAYPOINTS = 4                              # v0p82: more than this many waypoints ...
-MIN_SEPARATION_M = 30.0                        # ... over more than this many metres (sites.json waypoint fields)
+MIN_SEPARATION_M = 30.0                        # ... over more than this many meters (sites.json waypoint fields)
 PRIOR_SIGMA_M = 0.5                            # v0p82: the baseline runs' waypoint prior (production: 1 m)
 ISOTROPY_Z = 3.0                               # east and north block scales must agree within this many sigma
 
@@ -123,7 +123,7 @@ def run(a, variant: str = VARIANT, sets=None) -> int:
            "--source", a.source, "--sites", *sites]
     sets = list(SETS if sets is None else sets) + [f"PRIOR_SIGMA_M={float(a.prior_sigma)}"]
     fl = flagged_stations(getattr(a, "flags", None))
-    if fl:                                         # v0p82: flagged localisations run without their prior
+    if fl:                                         # v0p82: flagged localizations run without their prior
         sets.append("NO_POSITION_PRIOR_AT=" + json.dumps(fl))
     for s_ in sets:
         cmd += ["--set", s_]
@@ -332,7 +332,7 @@ def combine(a) -> int:
             v = res.get(k) or {}
             if v.get("slope") is not None:
                 lines.append(f"- {k.split('_')[1]}: {v['slope']:+.4f} ± {v['se']:.4f} {u} (z {v['z']:+.1f})")
-        lines.append("- expected thermal change of an aluminium bar (23 ppm/°C): 0.0098 mm/°C")
+        lines.append("- expected thermal change of an aluminum bar (23 ppm/°C): 0.0098 mm/°C")
     sa = res.get("scale_agreement") or {}
     if sa.get("rms_held_ppm") is not None:
         lines += ["", "## Block scale against the waypoints (robust similarity, ppm)", "",

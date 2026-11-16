@@ -581,7 +581,7 @@ def difference_maps_figure(rows: Sequence[Dict[str, Any]], title: str, vmax: Opt
                            cols: int = 4, arrows: bool = True):
     """
     v0p62: one panel per row of :func:`consensus_differences` / :func:`label_differences` /
-    :func:`reference_differences`: |difference| in px as an image on one colour scale for all panels (``vmax``,
+    :func:`reference_differences`: |difference| in px as an image on one color scale for all panels (``vmax``,
     default the 98th percentile over all panels), with the difference vectors as arrows on a coarse grid
     (``arrows``; one scale for all panels: a difference of ``vmax`` is 8 % of the frame width).  Returns the figure.
     """
@@ -599,7 +599,7 @@ def difference_maps_figure(rows: Sequence[Dict[str, Any]], title: str, vmax: Opt
     for ax, r in zip(axes.ravel(), rows):
         d = r["_diff"]
         uv = np.asarray(d["uv"], float)
-        W, H = float(uv[:, 0].max() + uv[:, 0].min()), float(uv[:, 1].max() + uv[:, 1].min())   # the grid is centred
+        W, H = float(uv[:, 0].max() + uv[:, 0].min()), float(uv[:, 1].max() + uv[:, 1].min())   # the grid is centered
         G, ext = _grid_image(uv, np.asarray(d["norm_px"], float))
         im = ax.imshow(G, extent=ext, origin="upper", cmap="viridis", vmin=0.0, vmax=vmax, interpolation="bilinear")
         if arrows:
@@ -614,7 +614,7 @@ def difference_maps_figure(rows: Sequence[Dict[str, Any]], title: str, vmax: Opt
         ax.set_xlim(0, W); ax.set_ylim(H, 0); ax.set_aspect("equal")
         T = r.get("T_degC")
         ax.set_title(f"{r['scape']} {r['camera']}" + (f" ({T:.0f} °C)" if T is not None else "")
-                     + f"\nrms {r['rms_px']:.2f} px, centre {r['centre_rms_px']:.2f}, corners {r['corner_rms_px']:.2f}",
+                     + f"\nrms {r['rms_px']:.2f} px, center {r['centre_rms_px']:.2f}, corners {r['corner_rms_px']:.2f}",
                      fontsize=8)
         ax.set_xticks([]); ax.set_yticks([])
     for ax in axes.ravel()[n:]:
@@ -627,21 +627,21 @@ def difference_maps_figure(rows: Sequence[Dict[str, Any]], title: str, vmax: Opt
     return fig
 
 
-def radial_profile(cam: Camera, n: int = 200, towards: str = "corner") -> Dict[str, np.ndarray]:
-    """Image radius [px] against field angle along the ray towards the far corner (or the
+def radial_profile(cam: Camera, n: int = 200, toward: str = "corner") -> Dict[str, np.ndarray]:
+    """Image radius [px] against field angle along the ray toward the far corner (or the
     horizontal edge), and the departure from a pinhole (f tan theta) and an equidistant
     fisheye (f theta), with f = sqrt(fx fy)."""
     from rpp.colmap import project_camera
     p = cam.params
     f = float(np.sqrt(p[0] * p[1]))
-    tx = np.array([cam.width, cam.height if towards == "corner" else p[3]]) - p[2:4]
+    tx = np.array([cam.width, cam.height if toward == "corner" else p[3]]) - p[2:4]
     tx = tx / np.linalg.norm(tx)
     th = np.linspace(0, np.radians(75), n)
     X = np.c_[np.sin(th) * tx[0], np.sin(th) * tx[1], np.cos(th)]
     uv = project_camera(cam.model, p, X)
     r = np.linalg.norm(uv - p[2:4], axis=1)
     # the frame limit along this direction
-    lim = np.linalg.norm(np.array([cam.width, cam.height]) - p[2:4]) if towards == "corner" else cam.width - p[2]
+    lim = np.linalg.norm(np.array([cam.width, cam.height]) - p[2:4]) if toward == "corner" else cam.width - p[2]
     ok = np.r_[True, np.diff(r) > 0] & (r <= lim * 1.02)
     ok = np.cumprod(ok).astype(bool)                       # stop at the first turning point
     return {"theta_deg": np.degrees(th[ok]), "r_px": r[ok], "pinhole_px": (f * np.tan(th))[ok],
@@ -712,7 +712,7 @@ def stereo_effect(left_a: PixelCamera, right_a: PixelCamera, rel_a: Tuple[np.nda
     both geometries; the rotation of the left camera that a pose absorbs is
     removed first.  Returns per range the disparity error (disparity
     d = x_left - x_right; error = d_a - d_b; mean = bias, and spread), the
-    vertical parallax (y), and the resulting range error at the image centre,
+    vertical parallax (y), and the resulting range error at the image center,
     dZ/Z = Z (d_a - d_b) / (f B): positive = processing with ``a`` puts points
     too far away.  Pixels where any of the
     four projections is untrustworthy (outside the frame, or a polynomial past
@@ -810,7 +810,7 @@ def zcam_pair_effects(sol: Solution, ranges_m: Sequence[float] = (5, 10, 20, 50)
                       reference: str = "label") -> List[Dict[str, Any]]:
     """
     Per Mastcam-Z stereo pair with at least ``min_observations`` in each image:
-    the disparity error at the image centre (and its range error) of processing
+    the disparity error at the image center (and its range error) of processing
     the pair with ``reference`` geometry when the refined one is the truth.
     ``reference``: ``"label"`` (the bin's start cameras = label median, and the
     label relative pose) or ``"median"`` (the pair's refined cameras with the
@@ -901,7 +901,7 @@ def navcam_focal_scale(sol: Solution) -> Optional[float]:
 def fit_focus_model(rows: List[Dict[str, Any]], group: str, min_observations: int = 2000,
                     per_scape_offset: bool = True, min_focus: Optional[float] = -2000.0,
                     state: Optional[str] = "backlash", thermal: bool = False, trend: bool = False,
-                    navcam_normalise: bool = False, T0: float = -15.0, sol0: float = 700.0,
+                    navcam_normalize: bool = False, T0: float = -15.0, sol0: float = 700.0,
                     reference_focus: Optional[float] = None) -> Optional[Dict[str, Any]]:
     """
     f = f0 + a (focus - ref) [+ a constant per scape] fitted to the refined bins of
@@ -911,11 +911,11 @@ def fit_focus_model(rows: List[Dict[str, Any]], group: str, min_observations: in
     Bins below ``min_focus`` motor counts (default -2000) are left out, of the label fit too:
     there are few of them and they scatter far from the line.  ``state`` (v0p40): only the bins of that focus
     state (``"backlash"``, the dominant state; the regular-state ``<bin>_reg`` cameras sit about 1 % lower, at the
-    label, and are summarised in ``regular_state``); None: all bins.
+    label, and are summarized in ``regular_state``); None: all bins.
 
     v0p42: ``thermal`` adds b (T - ``T0``) with the bin's focal-plane temperature (HEAD_FPA, ``temperature_degC``;
     bins without one are left out), ``trend`` adds c (sol - ``sol0``) (use without ``per_scape_offset``: one scape's
-    offset is its sol), ``navcam_normalise`` divides each bin's focal length by its block's Navcam focal scale
+    offset is its sol), ``navcam_normalize`` divides each bin's focal length by its block's Navcam focal scale
     (``navcam_scale``) first, ``reference_focus`` fixes ref (default: the weighted mean focus).  The result then
     carries ``thermal`` and ``trend`` dicts in the layout of the shipped focus model.
     """
@@ -933,7 +933,7 @@ def fit_focus_model(rows: List[Dict[str, Any]], group: str, min_observations: in
         return None
     x = np.array([r["focus"] for r in use], float)
     y = np.array([r["f_refined_px"] for r in use], float)
-    if navcam_normalise:
+    if navcam_normalize:
         y = y / np.array([float(r.get("navcam_scale") or 1.0) for r in use])
     w = np.array([r["observations"] for r in use], float)
     ref = float(np.average(x, weights=w)) if reference_focus is None else float(reference_focus)
@@ -986,7 +986,7 @@ def fit_focus_model(rows: List[Dict[str, Any]], group: str, min_observations: in
         lab_fit = {"f0_px": float(bl[1]), "slope_px_per_count": float(bl[0])}
     return {"group": group, "reference_focus": ref, "f0_px": float(beta[0] + mean_off),
             "slope_px_per_count": float(beta[1]), "slope_sd_px_per_count": float(se[1]),
-            "slope_pct_per_1000": float(1e5 * beta[1] / beta[0]), **terms, "navcam_normalised": bool(navcam_normalise),
+            "slope_pct_per_1000": float(1e5 * beta[1] / beta[0]), **terms, "navcam_normalised": bool(navcam_normalize),
             "aspect": (float(np.average([r["fy_refined_px"] / r["fx_refined_px"] for r in use], weights=w))
                        if all(r.get("fx_refined_px") and r.get("fy_refined_px") for r in use) else 1.0),
             "rms_px": float(np.sqrt(np.sum(W * res ** 2))), "scape_offsets_px": offsets,
@@ -1503,7 +1503,7 @@ def updated_navcam_models(left: Camera, right: Camera, rig: Tuple[np.ndarray, np
     mr = mr_cam.in_frame(R.T, -R.T @ t)                 # right camera in the left camera frame
     return {"left": ml, "right": mr, "fit_left": fl, "fit_right": fr,
             "text": "\n".join([f"/* {left.key}: CAHVORE type {ml.mtype}, left-camera frame, full-frame pixels "
-                                f"(5120 x 3840, pixel-centre origin); fit rms {fl['rms_px']:.2f} px */", ml.label_text(9),
+                                f"(5120 x 3840, pixel-center origin); fit rms {fl['rms_px']:.2f} px */", ml.label_text(9),
                                 f"/* {right.key}: CAHVORE type {mr.mtype}, left-camera frame; fit rms {fr['rms_px']:.2f} px */",
                                 mr.label_text(9)])}
 
@@ -1590,7 +1590,7 @@ def load_example(sol: Solution, name: str, image_path: Optional[PathLike] = None
 
 def radial_limit(cam: Camera, rho_max: float = 6.0) -> float:
     """
-    Largest normalised radius rho = tan(field angle) up to which the lens model's
+    Largest normalized radius rho = tan(field angle) up to which the lens model's
     radial mapping still increases (``inf`` if it does over 0..``rho_max``).  A
     polynomial model folds back beyond it: rays farther out would be drawn from
     pixels that belong to smaller angles.
@@ -1620,7 +1620,7 @@ def undistort(image: np.ndarray, cam: Camera, mask: Optional[np.ndarray] = None,
     the whole horizontal field (the left and right edges at the principal
     point's height stay in the frame; corners are cut), ``"height"`` the
     vertical one, ``"same"`` keeps the focal length (a strong fisheye then
-    loses its edges).  The mask is resampled with nearest neighbour.
+    loses its edges).  The mask is resampled with nearest neighbor.
     """
     import cv2
     from rpp.colmap import project_camera, scale_camera_params, unproject_camera
@@ -1647,7 +1647,7 @@ def undistort(image: np.ndarray, cam: Camera, mask: Optional[np.ndarray] = None,
     for y0 in range(0, h, 256):                           # in bands: a full Navcam frame at once needs GBs
         ys = (np.arange(y0, min(h, y0 + 256)) + 0.5 - cy) / f
         X, Y = np.meshgrid(xs, ys)
-        src = project_camera(cam.model, p, np.stack([X, Y, np.ones_like(X)], axis=-1)) - 0.5  # cv2: centre origin
+        src = project_camera(cam.model, p, np.stack([X, Y, np.ones_like(X)], axis=-1)) - 0.5  # cv2: center origin
         src[np.hypot(X, Y) >= 0.999 * lim] = -1e4        # beyond the model's fold-over: no data
         mx[y0:y0 + len(ys)], my[y0:y0 + len(ys)] = src[..., 0], src[..., 1]
     out = cv2.remap(image, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
@@ -1715,7 +1715,7 @@ def example_figure(image: np.ndarray, mask: Optional[np.ndarray], cam: Camera, t
                 ok = np.all(np.isfinite(uv), axis=1) & (uv[:, 0] > -w * 0.05) & (uv[:, 0] < w * 1.05) & \
                     (uv[:, 1] > -h * 0.05) & (uv[:, 1] < h * 1.05)
                 uv[~ok] = np.nan
-                ax[0].plot(uv[:, 0] - 0.5, uv[:, 1] - 0.5, color="#00e5ff", lw=0.6, alpha=0.7)   # imshow: centre origin
+                ax[0].plot(uv[:, 0] - 0.5, uv[:, 1] - 0.5, color="#00e5ff", lw=0.6, alpha=0.7)   # imshow: center origin
     lim_txt = (f"; the model folds back beyond {und['valid_field_deg']:.1f} deg off-axis (black in the undistorted image)"
                if und["valid_field_deg"] is not None and und["valid_field_deg"] < 75 else "")
     ax[0].set_title(f"{title}\noriginal ({cam.distortion} lens model {cam.key}, f = {und['f_in_px']:.0f} px{lim_txt})",

@@ -23,7 +23,7 @@ Inside the footprint nothing seen from the mast can be below the deck top, so th
 2. clamped: mesh vertices inside the footprint up to 10 cm below the top are lifted onto it (Poisson's sagging
    bubbles under the holes of the deck); faces with a vertex deeper than that are dropped;
 3. floored: a grid of triangles at the deck top over the footprint is added to the mesh, so a ray through a hole in
-   the reconstructed deck lands on the deck (coloured from the deck's own pixels) instead of the ground 1.1 m below.
+   the reconstructed deck lands on the deck (colored from the deck's own pixels) instead of the ground 1.1 m below.
 
 **The rover in the block** (:func:`rover_pose`): every registered Navcam frame of the station has its label CAHVORE in
 RNAV (the manifest's ``camera_model_label``) and its solved pose in the block, so each gives ``T_block_from_rnav``;

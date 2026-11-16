@@ -5,11 +5,11 @@ A **station** is one (site, drive) waypoint of the block (``project.json`` rows 
 ``station`` = ``S<site>D<drive>``).  Its images are the frames taken there; nothing is re-aligned - the poses and
 cameras stay those of the block's model, so everything made from the station sits in the block frame.
 
-The **pivot** of a mast 360: each camera centre is ``C_i = P + R_i^T d_g``, with ``R_i`` the world-to-camera
+The **pivot** of a mast 360: each camera center is ``C_i = P + R_i^T d_g``, with ``R_i`` the world-to-camera
 rotation, ``P`` the pivot in the world and ``d_g`` the camera's fixed offset from the pivot in its own frame, one
 ``d_g`` per camera group (NL, NR, ZL034 ...).  ``P`` and the ``d_g`` are solved by linear least squares; the
-residual RMS should be millimetres and the NL-NR offset about the Navcam baseline.  Fewer than six frames or no
-azimuth spread: ``P`` falls back to the mean of the centres and the fit is flagged.
+residual RMS should be millimeters and the NL-NR offset about the Navcam baseline.  Fewer than six frames or no
+azimuth spread: ``P`` falls back to the mean of the centers and the fit is flagged.
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ import numpy as np
 
 PathLike = Union[str, Path]
 
-MIN_PIVOT_FRAMES = 6            # fewer: the pivot is the mean of the centres (flagged)
+MIN_PIVOT_FRAMES = 6            # fewer: the pivot is the mean of the centers (flagged)
 MIN_AZIMUTH_SPREAD_DEG = 60.0   # less: the pivot is poorly determined along the view direction (flagged)
 
 
@@ -34,7 +34,7 @@ class Station:
     drive: int
     sols: List[int]
     images: List[str]                           # image names of the frames at this station (in the model)
-    pivot: np.ndarray                           # (3,) block frame, metres
+    pivot: np.ndarray                           # (3,) block frame, meters
     pivot_fit: Dict[str, Any] = field(default_factory=dict)
     R_block_from_enu: Optional[np.ndarray] = None   # (3, 3) or None: the block frame against label ENU
     up: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0, 1.0]))      # ENU up in the block frame
@@ -57,21 +57,21 @@ class Station:
 
 # 0.97.0 (Christian, 12 Nov 2026: "The vertical height on the axis of azimuth rotations should be at the Mastcam-Z height
 # even when rendering navcam.  This will give consistency."): the cameras on the mast head, in the mast frame of the
-# 8 Nov note (origin: the elevation axis on the azimuth axis; forward along the level boresight, up) - metres
+# 8 Nov note (origin: the elevation axis on the azimuth axis; forward along the level boresight, up) - meters
 HEAD_FORWARD_UP_M = {"N": (0.1269, 0.05745), "Z": (0.0238, 0.06125)}     # Navcam (chain), Mastcam-Z 34 mm (5 stations)
-ZCAM_HEIGHT_M = HEAD_FORWARD_UP_M["Z"][1]                                 # the Mastcam-Z centres above the elevation axis, level
+ZCAM_HEIGHT_M = HEAD_FORWARD_UP_M["Z"][1]                                 # the Mastcam-Z centers above the elevation axis, level
 PIVOT_HEIGHTS = ("zcam", "fit")
 
 
-def mastcamz_height_pivot(pivot: np.ndarray, centres: np.ndarray, rotations: np.ndarray, groups: Sequence[str],
+def mastcamz_height_pivot(pivot: np.ndarray, centers: np.ndarray, rotations: np.ndarray, groups: Sequence[str],
                           up: Sequence[float]) -> Tuple[np.ndarray, Dict[str, Any]]:
-    """The pivot moved along ``up`` to the height of the Mastcam-Z centres with the head level: each frame's centre
+    """The pivot moved along ``up`` to the height of the Mastcam-Z centers with the head level: each frame's center
     gives the height of the elevation axis (its own height less the camera's rise above the axis at its elevation,
     ``up_c cos(el) + forward_c sin(el)``); the pivot goes ZCAM_HEIGHT_M above their median.  The same point whether
     the station is rendered from Navcam or Mastcam-Z frames.  Returns (pivot, record)."""
     u = np.asarray(up, float)
     u = u / np.linalg.norm(u)
-    C = np.asarray(centres, float).reshape(-1, 3)
+    C = np.asarray(centers, float).reshape(-1, 3)
     R = np.asarray(rotations, float).reshape(-1, 3, 3)
     h = []
     for Ci, Ri, g in zip(C, R, groups):
@@ -153,11 +153,11 @@ def _group_of(name: str, row: Optional[Dict[str, Any]] = None) -> str:
     return n[:3] if n.startswith("Z") else n[:2]
 
 
-def fit_pivot(centres: np.ndarray, rotations: np.ndarray, groups: Sequence[str]) -> Dict[str, Any]:
+def fit_pivot(centers: np.ndarray, rotations: np.ndarray, groups: Sequence[str]) -> Dict[str, Any]:
     """Least squares for the pivot ``P`` and one offset ``d_g`` per group from ``C_i = P + R_i^T d_g``.
     ``centres`` (n, 3), ``rotations`` (n, 3, 3) world-to-camera, ``groups`` (n,).  Returns {"pivot", "offsets"
     {group: d_g}, "rms_m", "n", "azimuth_spread_deg", "fallback" (None or the reason), "baselines_m" {pair: |d_a - d_b|}}."""
-    C = np.asarray(centres, float).reshape(-1, 3)
+    C = np.asarray(centers, float).reshape(-1, 3)
     R = np.asarray(rotations, float).reshape(-1, 3, 3)
     groups = [str(g) for g in groups]
     n = len(C)

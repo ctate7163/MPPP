@@ -179,7 +179,7 @@ def test_variable_refuses_empty_images_and_leaves_existing_untouched(tmp_path):
 
 
 def test_regen_keeps_the_frames_the_alignment_would_skip():
-    """30 Oct (v8): 208 Navcam frames (sky-pointing, dark blue centre, saturated, outside the LMST window) were not
+    """30 Oct (v8): 208 Navcam frames (sky-pointing, dark blue center, saturated, outside the LMST window) were not
     regenerated - the pipeline's frame selection is off for training images."""
     from rpp_studies.mask_training.dataset import regen_config
     sel = regen_config()["selection"]

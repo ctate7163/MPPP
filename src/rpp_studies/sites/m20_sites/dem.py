@@ -2,7 +2,7 @@
 Order of preference: MSR TRN HiRISE DTM (Bland et al. 2024/25, 77.057-77.380E) then Mars 2020 TRN HiRISE DTM (Fergason et al. 2020).
 Set M20_DEMS to a os.pathsep-separated list of GeoTIFF paths, or drop the files into ./dem/.
 Orthomosaics (optional background): M20_ORTHOS (same form) or files with ORTHO in the name under ./dem/.
-M20_BACKGROUND chooses the background: "dtm" (default: elevation tint + hillshade) or "ortho" (orthomosaic in grey,
+M20_BACKGROUND chooses the background: "dtm" (default: elevation tint + hillshade) or "ortho" (orthomosaic in gray,
 light elevation tint, no contour lines; falls back to the DTM/tiles where no orthomosaic covers the panel).
 Waypoint easting/northing (lat_ts ~18.47 deg) are converted through lon/lat, never used directly against the DEM grid."""
 import os, glob, json, numpy as np
@@ -96,14 +96,14 @@ def sample_dem(lon, lat):
     return _sample(dem_paths(), lon, lat)
 
 def ortho_bands():
-    """3 when the first orthomosaic is a colour (RGB) raster, else 1."""
+    """3 when the first orthomosaic is a color (RGB) raster, else 1."""
     paths = ortho_paths()
     if rasterio is None or not paths: return 1
     with rasterio.open(paths[0]) as src:
         return 3 if src.count >= 3 else 1
 
 def sample_ortho(lon, lat, max_px=4000, stretch='auto'):
-    """Orthomosaic brightness at lon/lat arrays: a 2-D array (grey) or, for a colour mosaic, (..., 3).  ``stretch``:
+    """Orthomosaic brightness at lon/lat arrays: a 2-D array (gray) or, for a color mosaic, (..., 3).  ``stretch``:
     'auto' - to 0-1 by the 0.5th-99.5th percentile of these samples; None - raw values; (lo, hi) - a fixed linear
     stretch (one for every panel: :func:`ortho_stretch`).  Returns (img, source_names); NaN where no orthomosaic
     covers the point (0 = no data in the USGS mosaics)."""

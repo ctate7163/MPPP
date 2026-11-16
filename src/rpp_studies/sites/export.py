@@ -107,7 +107,7 @@ def merge_into_sites_file(path: PathLike, sites: Dict[str, Any], groups: Dict[st
 
 def compare_blocks(a: Dict[str, Any], b: Dict[str, Any]) -> List[str]:
     """Lines: where two block site sets (e.g. :func:`blocks_to_sites` here and the waypoint-map work's
-    ``sites_blocks.json``) differ - keys, visits, Navcam 360 counts, centres (m)."""
+    ``sites_blocks.json``) differ - keys, visits, Navcam 360 counts, centers (m)."""
     out = []
     for k in sorted(set(a) | set(b)):
         if k not in a or k not in b:
@@ -127,5 +127,5 @@ def compare_blocks(a: Dict[str, Any], b: Dict[str, Any]) -> List[str]:
         if None not in ex + ey:
             d = ((ex[0] - ey[0]) ** 2 + (ex[1] - ey[1]) ** 2) ** 0.5
             if d > 1.0:
-                out.append(f"{k}: centres {d:.1f} m apart")
-    return out or ["the same keys, visits, counts and centres (within 1 m)"]
+                out.append(f"{k}: centers {d:.1f} m apart")
+    return out or ["the same keys, visits, counts and centers (within 1 m)"]

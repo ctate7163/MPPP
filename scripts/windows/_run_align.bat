@@ -1,5 +1,5 @@
 @echo off
-REM RPP: the minimised window of align_here.bat (environment already set up by it).
+REM RPP: the minimized window of align_here.bat (environment already set up by it).
 title RPP align - %~1
 python "%RPP_HOME%\scripts\align_scape.py" %*
 if errorlevel 1 (

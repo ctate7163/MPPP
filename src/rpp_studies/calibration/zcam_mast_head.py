@@ -6,22 +6,22 @@ pointing with zoom in the mast frame.").
 Every Mastcam-Z block's frames go through the deck_joint mast chain (``deck_joint_mast_model.json``, resolver angles):
   1. per station, the block <- RNAV similarity from the station's Navcam frames (their chain poses against their BA
      poses; badly held frames - horizon views - dropped by a 3 x median cut);
-  2. every Z frame's BA pose into RNAV and back through the chain into the head frame: its centre c (from the
+  2. every Z frame's BA pose into RNAV and back through the chain into the head frame: its center c (from the
      elevation axis) and rotation Q, as the chain's own Navcam c_L / Q_L;
   3. the level mast frame: origin the elevation axis on the azimuth axis, x the NL boresight with the head level,
-     y right, z down.  The image-centre pixel's ray and the optical axis as yaw (+ right) / pitch (+ up) there.
+     y right, z down.  The image-center pixel's ray and the optical axis as yaw (+ right) / pitch (+ up) there.
 
 Chain (the deck_joint symbols; symbols and definitions in the chain file):
   R_cam<-RNAV = Rot(Q) . Ry(el)^T . Rz(az)^T . Rot(W);   C = [P_x, P_y, 0] + Rot(G) . Rz(az) . (h + Ry(-el) . c)
 
 Writes into --out (with --tag in the names):
-  zcam<zoom>_navcam_on_mast_head_<tag>.png   2 x 2 per zoom: top view, side view, pair centre / height against sol
-                                             and temperature, centre along the boresight against focus
-  zcam_mast_head_vs_zoom_<tag>.png           change from 34 mm of the centre (y, z) and the image-centre pointing
+  zcam<zoom>_navcam_on_mast_head_<tag>.png   2 x 2 per zoom: top view, side view, pair center / height against sol
+                                             and temperature, center along the boresight against focus
+  zcam_mast_head_vs_zoom_<tag>.png           change from 34 mm of the center (y, z) and the image-center pointing
                                              (yaw, pitch); a station with every zoom joined
   zcam_mast_head_<tag>.json                  station table and the mount per zoom (Q_Z per zoom and eye; c_Z per eye
                                              from the 34 mm across the boresight, along the boresight held at its
-                                             near-focus median - the along-axis centre trades with the focal law)
+                                             near-focus median - the along-axis center trades with the focal law)
 
 Frames need RSM resolver angles in the rover-frame label table (``rover_frame_labels.json`` of the rover_frame stage).
 
@@ -130,7 +130,7 @@ def read_block(folder: Path):
 
 def block_rows(folder: Path, labels, mast: Mast, min_nav=6):
     """Per frame (Z and Navcam) at every station with >= min_nav Navcam frames and a Z frame: head-frame c, Q, the
-    mast-frame centre, optical axis and image-centre ray; and the per-station fit."""
+    mast-frame center, optical axis and image-center ray; and the per-station fit."""
     from scipy.spatial.transform import Rotation as Rot
     proj = json.loads((folder / "colmap" / "project.json").read_text(encoding="utf-8"))
     info = {i["stem"]: i for i in proj["images"]}
@@ -285,7 +285,7 @@ def fig_zoom_head(zoom, S, rows, nav, mast, out, tag, dpi=200, label=""):
             ax.legend(fontsize=6.3, loc="lower center")
         else:
             ax.set_xlabel("x forward (mm)"); ax.set_ylabel("z down (mm)"); ax.invert_yaxis()
-            ax.set_title("Side view: Z centres along their boresight scatter with the focal law", fontsize=10)
+            ax.set_title("Side view: Z centers along their boresight scatter with the focal law", fontsize=10)
     sm = plt.cm.ScalarMappable(cmap=cm, norm=plt.Normalize(0, 2000)); cb = fig.colorbar(sm, ax=axs[0][1], fraction=0.04); cb.set_label("sol (station points)")
     ax = axs[1][0]
     pairs = sorted({(s["blk"], s["st"]) for s in SZ if sum(q["st"] == s["st"] and q["blk"] == s["blk"] for q in SZ) == 2},
@@ -299,9 +299,9 @@ def fig_zoom_head(zoom, S, rows, nav, mast, out, tag, dpi=200, label=""):
         nm = key[0].split("_sol_")[-1][5:].replace("_zcam", "").replace("_", " ")
         ax.annotate(f"{nm}\n{T:.0f} °C", (s0["sol"], (zl[2] + zr[2]) / 2), xytext=(4, -24 if k_ % 2 == 0 else 10),
                     textcoords="offset points", fontsize=6.5, color="0.3")
-    ax.axhline((nav["NL"][1] + nav["NR"][1]) / 2, color="#6a3d9a", ls=":", lw=1.2, label=f"Navcam pair centre y {(nav['NL'][1] + nav['NR'][1]) / 2:+.1f} mm")
+    ax.axhline((nav["NL"][1] + nav["NR"][1]) / 2, color="#6a3d9a", ls=":", lw=1.2, label=f"Navcam pair center y {(nav['NL'][1] + nav['NR'][1]) / 2:+.1f} mm")
     ax.axhline((nav["NL"][2] + nav["NR"][2]) / 2, color="#33a02c", ls=":", lw=1.2, label=f"Navcam height z {(nav['NL'][2] + nav['NR'][2]) / 2:.1f} mm")
-    ax.scatter([], [], color="#6a3d9a", s=60, label=f"Z{zoom} pair centre y"); ax.scatter([], [], color="#33a02c", marker="D", s=60, label=f"Z{zoom} pair height z")
+    ax.scatter([], [], color="#6a3d9a", s=60, label=f"Z{zoom} pair center y"); ax.scatter([], [], color="#33a02c", marker="D", s=60, label=f"Z{zoom} pair height z")
     ax.set_xlim(0, 2000); ax.set_xlabel("sol"); ax.set_ylabel("mm (mast frame)"); ax.set_ylim(-85, 5); ax.grid(alpha=0.3)
     ax.legend(fontsize=6.3, loc="center right")
     ax.set_title(f"Sol and temperature ({len(pairs)} station{'s' if len(pairs) != 1 else ''} at {zoom} mm)", fontsize=10)
@@ -322,8 +322,8 @@ def fig_zoom_head(zoom, S, rows, nav, mast, out, tag, dpi=200, label=""):
             ax.scatter(f, a, s=10, marker=mks[k_ % len(mks)], color=COL[c], alpha=0.5, label=lab); allA.extend(a)
     if allA:
         lo, hi = np.percentile(allA, [4, 96]); ax.set_ylim(lo - 25, hi + 25); ax.legend(fontsize=6.3, loc="best")
-    ax.set_xlabel(f"Z{zoom} focus motor count"); ax.set_ylabel("centre along the Z boresight (mm, mast frame)"); ax.grid(alpha=0.3)
-    ax.set_title("Focus: the along-axis centre trades with the focal law", fontsize=10)
+    ax.set_xlabel(f"Z{zoom} focus motor count"); ax.set_ylabel("center along the Z boresight (mm, mast frame)"); ax.grid(alpha=0.3)
+    ax.set_title("Focus: the along-axis center trades with the focal law", fontsize=10)
     panel_letters(axs.ravel())
     fig.suptitle(f"Mastcam-Z {zoom} mm and Navcam on the mast head{', ' + label if label else ''}: Z frames through the deck_joint chain "
                  f"(resolver angles); {len(rz)} frames at {len({(s['blk'], s['st']) for s in SZ})} stations\n"
@@ -349,10 +349,10 @@ def fig_vs_zoom(S, out, tag, dpi=200, label=""):
     ref_st = max(full, key=lambda k: (len(full[k]), -min(s["sol"] for s in S if (s["blk"], s["st"]) == k)))
     mk = {"ZL": "o", "ZR": "s"}; dz = {"ZL": -1.2, "ZR": 1.2}
     get = lambda s, key, i: None if s[key] is None else s[key][i]
-    specs = [("xyz", 1, "y change from 34 mm (mm, + right)", "Centre across the boresight, y", "mm"),
-             ("xyz", 2, "z change from 34 mm (mm, + down)", "Centre height z", "mm"),
-             ("centre_mrad", 0, "image-centre yaw change from 34 mm (mrad, + right)", "Pointing of the image-centre pixel: yaw", "mrad"),
-             ("centre_mrad", 1, "image-centre pitch change from 34 mm (mrad, + up)", "Pointing of the image-centre pixel: pitch", "mrad")]
+    specs = [("xyz", 1, "y change from 34 mm (mm, + right)", "Center across the boresight, y", "mm"),
+             ("xyz", 2, "z change from 34 mm (mm, + down)", "Center height z", "mm"),
+             ("centre_mrad", 0, "image-center yaw change from 34 mm (mrad, + right)", "Pointing of the image-center pixel: yaw", "mrad"),
+             ("centre_mrad", 1, "image-center pitch change from 34 mm (mrad, + up)", "Pointing of the image-center pixel: pitch", "mrad")]
     fig, axs = plt.subplots(2, 2, figsize=(12.5, 9.0))
     nm = ref_st[0].split("_sol_")[-1][5:].replace("_zcam", "").replace("_", " ")
     for ax, (key, i, yl, tt, un) in zip(axs.ravel(), specs):
@@ -379,7 +379,7 @@ def fig_vs_zoom(S, out, tag, dpi=200, label=""):
     panel_letters(axs.ravel())
     fig.suptitle(f"Mastcam-Z on the mast head against zoom{', ' + label if label else ''}: Z blocks through the deck_joint chain (resolver angles); "
                  "points: medians of the other stations (size ~ sqrt frames)\nlevel mast frame (x the NL boresight, y right, z down); "
-                 "far-field-only stations do not hold the centre (the 110 mm one)", fontsize=9.5)
+                 "far-field-only stations do not hold the center (the 110 mm one)", fontsize=9.5)
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     path = Path(out) / f"zcam_mast_head_vs_zoom_{tag}.png"
     fig.savefig(path, dpi=dpi); plt.close(fig)
@@ -422,7 +422,7 @@ def run(root, chain, labels=None, blocks=None, out=None, tag="run", dpi=200, lab
     model = mount_model(S, rows, mast)
     rec = dict(chain=str(chain), labels=str(labels), el_level_deg=float(np.degrees(mast.el_level)), navcam_mast_mm=nav,
                station_fits=fits, stations=S, mount=model,
-               symbols={"c": "camera centre from the elevation axis, head frame (m)", "Q": "camera <- head rotation (rotvec rad)",
+               symbols={"c": "camera center from the elevation axis, head frame (m)", "Q": "camera <- head rotation (rotvec rad)",
                         "mast frame": "origin the elevation axis on the azimuth axis, x the level NL boresight, y right, z down (mm)",
                         "yaw / pitch": "mrad, + right / + up of the NL boresight in the level mast frame"})
     (out / f"zcam_mast_head_{tag}.json").write_text(json.dumps(rec, indent=1, default=float), encoding="utf-8")

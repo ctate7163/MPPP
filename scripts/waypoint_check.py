@@ -1,11 +1,11 @@
 """
-Waypoint localisation check (rpp.sfm.waypoint_check): which rover stations' waypoint positions disagree
+Waypoint localization check (rpp.sfm.waypoint_check): which rover stations' waypoint positions disagree
 with the bundle adjustments, over finished blocks.
 
     python scripts\\waypoint_check.py [--root <scapes root>] [--groups ecam_consensus navcam_baseline]
                                       [--variant ""] [--out DIR] [--folders WORK ...]
 
-Each block's refined camera centres against its waypoint priors, station by station, after a robust similarity
+Each block's refined camera centers against its waypoint priors, station by station, after a robust similarity
 (scale, rotation, translation; translation only for blocks under 30 m or with fewer than 5 stations).  Flagged:
 horizontal residual > 1 m, or > 0.5 m and > 3 x the block's scatter.  Writes ``waypoint_flags.json`` / ``.csv`` /
 ``.md`` (default ``<root>/camera_analysis/waypoint_flags_<date>``); ``flagged`` there is the list for notebook 03

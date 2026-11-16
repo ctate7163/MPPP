@@ -103,7 +103,7 @@ def test_the_export_resamples_exactly_and_the_poses_reproject(tmp_path):
             us, vs = np.asarray(cam.img_from_cam((im.cam_from_world() * X).reshape(1, 3)), float)[0]
             if mask[int(v), int(u)] == 0:
                 continue
-            # the resampled value at (u, v) is the source ramp at COLMAP's projection (bilinear: within 1 grey level)
+            # the resampled value at (u, v) is the source ramp at COLMAP's projection (bilinear: within 1 gray level)
             want = (np.floor(us - 0.5) * 0.17 + np.floor(vs - 0.5) * 0.11) % 251
             got = float(img[int(v), int(u)])
             assert abs(got - want) < 2.0 or abs(abs(got - want) - 251) < 2.0, (fr["file_path"], got, want)

@@ -20,7 +20,7 @@ PathLike = Union[str, Path]
 
 _DEFAULTS: Dict[str, Any] = {
     "camera_model": {
-        # World frame of the pose priors: local East-North-Up, metres, origin
+        # World frame of the pose priors: local East-North-Up, meters, origin
         # at the M2020 landing site frame (site 3, drive 0).
         "extrinsics_from_waypoints": True,
         # The COLMAP prior camera of every image comes from the promoted camera models (rpp.calib: the Navcam /
@@ -42,7 +42,7 @@ _DEFAULTS: Dict[str, Any] = {
         "white_balance_ecam": [1.1, 1.4, 1.8],
         # 0.97.15 (Christian, 13 Nov 2026: "I believe the Hazcam white balance. multiply those values by the white
         # balance used in the pipeline processing and update as default"): the Hazcams (families F and R) - the
-        # Navcam balance x (1.004, 1, 1.113), what makes the front Hazcam pair's terrain the colour of the Navcam
+        # Navcam balance x (1.004, 1, 1.113), what makes the front Hazcam pair's terrain the color of the Navcam
         # frames taken within the half hour at Van Zyl (sol 52, S003D2046: FL x (1.008, 1, 1.113), FR x (0.999, 1,
         # 1.113) over 45,000 and 50,000 shared terrain points; rpp ods, fill_colour_match).  Measured on the front
         # pair only; the rear pair has the same cameras and takes the same values.  None: the Navcam balance (as
@@ -86,12 +86,12 @@ _DEFAULTS: Dict[str, Any] = {
         # saturated (DN at the product's maximum; None: no limit).  Both are listed under "skipped".
         "lmst_window_h": [6.0, 18.0],
         "max_saturated_fraction": 0.2,
-        # Navcam frames labelled with an exposure above this [ms] are not processed (None: no limit).  In the
+        # Navcam frames labeled with an exposure above this [ms] are not processed (None: no limit).  In the
         # NCAM08111 exposure brackets (sols 654-693: ~2, ~18 and ~50-65 ms of the same view) the long member shows a
-        # dark blue disk in the centre - its radiance is about half the others' there, as if it was exposed much
-        # shorter than labelled; ordinary Navcam frames stay below ~30 ms at Three Forks.
+        # dark blue disk in the center - its radiance is about half the others' there, as if it was exposed much
+        # shorter than labeled; ordinary Navcam frames stay below ~30 ms at Three Forks.
         "max_exposure_ms": 40.0,
-        # ... and frames whose centre is tinted against the edge: (B/R in the centre) / (B/R at the edge)
+        # ... and frames whose center is tinted against the edge: (B/R in the center) / (B/R at the edge)
         # of the radiance above this (the blue disk at sol 658: 1.74; the 2 and 18 ms frames 1.01, 1.00).  None: not checked.
         "max_centre_tint": 1.2,
         "exposure_filter_families": ["N"],
@@ -252,7 +252,7 @@ def load_config(config: Optional[Union[PathLike, Dict[str, Any]]] = None) -> Dic
 def save_config_snapshot(cfg: Dict[str, Any], out_dir: PathLike,
                          extra: Optional[Dict[str, Any]] = None) -> Path:
     """
-    Write ``mppp_config_<version>.json``: the exact configuration (colour,
+    Write ``mppp_config_<version>.json``: the exact configuration (color,
     atmospheric, models) plus code version and run provenance.
     """
     from . import VERSION_TAG, __version__

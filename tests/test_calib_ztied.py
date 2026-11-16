@@ -638,7 +638,7 @@ def test_thin_bins_left_out_of_the_lines():
 
 
 def test_right_eye_low_state_principal_point_without_mixed_exposures(tmp_path, monkeypatch):
-    """0.95.0 (Christian, 27 Oct: "the right eye's regular principal-point offset - the state shows in the centre"):
+    """0.95.0 (Christian, 27 Oct: "the right eye's regular principal-point offset - the state shows in the center"):
     both eyes low at the same focus in every exposure (no mixed exposures at all), ZR's low-state principal point
     -5, +3 px from its high state's.  0.93.2's mixed rule held both offsets and the rig took the shift up; now ZR's
     offset is fitted relative to ZL's (held, the reference eye) from the paired exposures, and the rig stays."""
@@ -755,7 +755,7 @@ def test_eye_slope_tests_find_a_rig_translation_error_along_the_boresight(tmp_pa
     0.0351 px/count in every block).  Blocks made with the right camera 6 mm further along the left boresight than
     the rig the joint holds, each focus looking at a scene at its own distance (8, 4, 2 m): the joint gives ZR a
     steeper focus slope than ZL although both are 0.04 px/count; the eye-slope tests free the rig translation (the
-    right centre moves forward and the slopes come together), and one slope for both eyes then costs little against
+    right center moves forward and the slopes come together), and one slope for both eyes then costs little against
     the free rig but much against the held one."""
     from rpp.calib import forms
     from rpp_studies.calibration import ztied as Z
@@ -793,7 +793,7 @@ def test_eye_slope_tests_find_a_rig_translation_error_along_the_boresight(tmp_pa
 def test_zjoint_refines_the_rig_translation_and_reports_its_significance(tmp_path, monkeypatch):
     """0.95.1 (Christian, 29 Oct: "the z34 rig translation should not be held ... let these rig parameters change and
     optimize while keeping a close eye on their significance").  The blocks of the eye-slope test (the right camera
-    6 mm along the left boresight from the start rig): the joint's default refines the translation - the centre moves
+    6 mm along the left boresight from the start rig): the joint's default refines the translation - the center moves
     forward by about 6 mm with a z well beyond 3, the eye slopes agree; the eye-slope tests are then "rig
     translation held" (much worse) and "one slope for both eyes" (costs little)."""
     from rpp.calib import forms
@@ -823,7 +823,7 @@ def test_zjoint_refines_the_rig_translation_and_reports_its_significance(tmp_pat
     assert held["delta_chi2"] > 0 and held["significant"] and held["dof"] == 3
     assert one["delta_chi2"] < 0.1 * held["delta_chi2"]
     lines = Z.describe(res)
-    assert any(x.startswith("rig translation refined: the right centre moved") for x in lines)
+    assert any(x.startswith("rig translation refined: the right center moved") for x in lines)
     assert any("(z +" in x and "significant" in x for x in lines)
     new = Z.candidate_model(res, model)
     assert new["rig"]["translation_change_mm"] == r["translation_change_mm"] and "translation refined" in new["rig"]["note"]
@@ -1079,8 +1079,8 @@ def test_block_aspect_pooled_rows_visits_and_sequences():
 
 def test_opposite_state_flags_and_the_warning():
     """0.96, item C (Z63 ZCAM08038, sol 78: ZL's bins -3,450 / -3,760 ppm against a low-state step of -4,170, ZR
-    within +900 of 0 - ZL in the low state, labelled high): the flag fires on that case, not when the eyes move
-    together, nor when fx and fy part; the mirror case (an eye labelled low at +step) flags a possible high state;
+    within +900 of 0 - ZL in the low state, labeled high): the flag fires on that case, not when the eyes move
+    together, nor when fx and fy part; the mirror case (an eye labeled low at +step) flags a possible high state;
     a warning in the checks, never a failure; without pools the per-bin means serve."""
     from rpp_studies.calibration import ztied as Z
     eyes = {"ZL063": {"terms": {"a_fx_backlash": 8615.5, "a_fx_regular": 8579.6, "a_fy_backlash": 8613.0}, "held": []},
@@ -1106,7 +1106,7 @@ def test_opposite_state_flags_and_the_warning():
     assert f["step_ppm"] == pytest.approx(step) and f["labelled"] == ["backlash"] and f["sol"] == 78
     assert fl[("ZCAM08042", "ZL063")]["flag"] == "possible high state, eye ZL063"
     lines = Z.opposite_state_lines(os_)
-    assert "2 flagged (WARNING" in lines[0] and lines[1].startswith("  chal ZCAM08038 sol 78: possible low state, eye ZL063 (labelled backlash)")
+    assert "2 flagged (WARNING" in lines[0] and lines[1].startswith("  chal ZCAM08038 sol 78: possible low state, eye ZL063 (labeled backlash)")
     chk = Z.joint_checks(dict(res, opposite_states=os_, zcam={"zcam_median_px": 0.3, "zcam_nonfinite_share": 0.0}), {"checks": []})
     c = next(x for x in chk["checks"] if x["check"] == "opposite backlash states between the eyes")
     assert c["ok"] and c["warning"] and "ZCAM08038 possible low state, eye ZL063" in c["note"] and Z.check_label(c) == "WARN"
@@ -1130,7 +1130,7 @@ def test_opposite_state_flags_and_the_warning():
 def test_residual_directions_see_an_fy_scale_error(tmp_path):
     """0.96, item B (ZCAM08401 at 1.9-2.5 px rms in the 4 Nov joint, 0.17-0.25 px alone): per sequence and eye,
     from the final pass, the rms of x and y apart and the scale left in fx, fy.  On a synthetic block at its truth
-    nothing is left; with one sequence's ZL fy made 2000 ppm too large the y residuals grow away from the centre
+    nothing is left; with one sequence's ZL fy made 2000 ppm too large the y residuals grow away from the center
     and the row says the frames want fy 2000 ppm smaller, x untouched."""
     from rpp_studies.calibration import ztied as Z
     rng = np.random.default_rng(29)

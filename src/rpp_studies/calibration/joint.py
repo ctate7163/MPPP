@@ -696,7 +696,7 @@ def pycolmap_camera(model: str, params: Sequence[float], width: int = 5120, heig
 
 def compare(a, b, step: float = 64.0, rotation_radius: float = 0.85) -> Dict[str, float]:
     """Where camera ``b`` puts the rays of a grid of ``a``'s pixels (pycolmap cameras, any model), after the best
-    rotation (fitted inside ``rotation_radius`` of the half-diagonal) is removed: rms / centre / corner pixels."""
+    rotation (fitted inside ``rotation_radius`` of the half-diagonal) is removed: rms / center / corner pixels."""
     w, h = a.width, a.height
     u, v = np.meshgrid(np.arange(step / 2, w, step), np.arange(step / 2, h, step))
     uv = np.c_[u.ravel(), v.ravel()]

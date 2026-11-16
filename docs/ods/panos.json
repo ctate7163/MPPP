@@ -7,7 +7,7 @@
    "variants": [
     {
      "key": "test",
-     "label": "labelled pair",
+     "label": "labeled pair",
      "views": {
       "standard": "panos/orientation_test_360_3DTD.jpg"
      }

@@ -1,7 +1,7 @@
 """
 ``RPPImage`` — one PDS image product taken through the RPP pre-processing:
 
-    PDS IMG -> radiance -> RGB -> opacity/illumination normalisation -> white
+    PDS IMG -> radiance -> RGB -> opacity/illumination normalization -> white
     balance -> mask -> full-detector-frame padding -> (optional) undistortion
     -> 16-bit linear / 8-bit products, with intrinsics, pose prior and metadata.
 
@@ -59,7 +59,7 @@ class SaturatedImage(SkippedImage):
 
 
 class ExposureImage(SkippedImage):
-    """A Navcam frame labelled with an exposure above ``selection.max_exposure_ms``, or whose centre is tinted
+    """A Navcam frame labeled with an exposure above ``selection.max_exposure_ms``, or whose center is tinted
     against its edge by more than ``selection.max_centre_tint`` (the blue-disk frames of the exposure brackets)."""
 
 
@@ -106,7 +106,7 @@ class RPPImage:
         self._check_saturation(dn)
 
         rad, self.mask_valid = self._radiance_rgb(dn)
-        self._check_centre_tint(rad, self.mask_valid)
+        self._check_center_tint(rad, self.mask_valid)
         if cfg["radiometry"]["apply_tau_correction"]:
             rad /= self.scale_zenith
         rad *= self.white_balance.reshape(1, 1, 3) * self.brightness
@@ -140,7 +140,7 @@ class RPPImage:
             rad = self._undistort(rad)
 
         self.image_rad = rad.astype(np.float32)
-        self.image_int16, self.image_int8 = radiometry.quantise(rad, self.mask_valid > 0, cfg["color"])
+        self.image_int16, self.image_int8 = radiometry.quantize(rad, self.mask_valid > 0, cfg["color"])
         self.height, self.width = self.image_int16.shape[:2]
         assert (self.width, self.height) == (self.intrinsics.width, self.intrinsics.height)
 
@@ -172,17 +172,17 @@ class RPPImage:
         return self.fn.stem[:1].upper() in {str(f).upper() for f in fams}
 
     def _check_exposure(self) -> None:
-        """Refuse Navcam frames labelled with an exposure above ``selection.max_exposure_ms``."""
+        """Refuse Navcam frames labeled with an exposure above ``selection.max_exposure_ms``."""
         self.exposure_ms = label_float(self.label, "INSTRUMENT_STATE_PARMS.EXPOSURE_DURATION")
         lim = (self.config.get("selection") or {}).get("max_exposure_ms")
         if lim is None or self.exposure_ms is None or not self._exposure_family():
             return
         if float(self.exposure_ms) > float(lim):
             raise ExposureImage(f"exposure {self.exposure_ms:.1f} ms > {float(lim):g} ms (selection.max_exposure_ms): "
-                                f"the long member of an exposure bracket (dark blue centre), not processed")
+                                f"the long member of an exposure bracket (dark blue center), not processed")
 
-    def _check_centre_tint(self, rad: np.ndarray, valid: np.ndarray) -> None:
-        """(B/R in the centre, r < 0.35 of the half-diagonal) / (B/R at the edge, 0.6-0.9) of the radiance;
+    def _check_center_tint(self, rad: np.ndarray, valid: np.ndarray) -> None:
+        """(B/R in the center, r < 0.35 of the half-diagonal) / (B/R at the edge, 0.6-0.9) of the radiance;
         refuse the frame above ``selection.max_centre_tint`` (the blue-disk frames)."""
         self.centre_tint = None
         if rad.ndim != 3 or rad.shape[2] < 3 or not self._exposure_family():
@@ -200,8 +200,8 @@ class RPPImage:
         self.centre_tint = br(c) / max(br(o), 1e-12)
         lim = (self.config.get("selection") or {}).get("max_centre_tint")
         if lim is not None and self.centre_tint > float(lim):
-            raise ExposureImage(f"centre tint {self.centre_tint:.2f} > {float(lim):g} (selection.max_centre_tint): "
-                                f"dark blue centre, not processed")
+            raise ExposureImage(f"center tint {self.centre_tint:.2f} > {float(lim):g} (selection.max_centre_tint): "
+                                f"dark blue center, not processed")
 
     def _check_saturation(self, dn: np.ndarray) -> None:
         """The fraction of valid pixels at the product's maximum DN; refuse the frame above the limit."""

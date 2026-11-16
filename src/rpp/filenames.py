@@ -11,11 +11,11 @@ Fixed-width layout (M2020 Camera SIS), e.g.::
     012345678901234567890123456789012345678901234567890123
 
     [0:2]   instrument   NL NR FL FR RL RR ZL ZR SC ...
-    [2]     colour/filter (F = RGB, M = mono/VCE, 0-7 = Mastcam-Z filter)
+    [2]     color/filter (F = RGB, M = mono/VCE, 0-7 = Mastcam-Z filter)
     [4:8]   sol
     [9:19]  SCLK seconds        [20:23] SCLK milliseconds
     [23:26] product type (RAD, IOF, EDR, FDR ...)
-    [26]    geometry  (_ raw, L linearised)      [27] thumbnail flag
+    [26]    geometry  (_ raw, L linearized)      [27] thumbnail flag
     [28:31] site      [31:35] drive
     [35:44] sequence id
     [44:48] camera specific: '_034' = Mastcam-Z focal length in mm

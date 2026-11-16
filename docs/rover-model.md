@@ -22,7 +22,7 @@ NASA/JPL-Caltech when you use the model, and say that it was modified.
 
 ## Frame and parts
 
-Metres, in the rover mechanical frame **RMECH**: x forward, y right, z down, z = 0 at the deck top. (glTF viewers
+Meters, in the rover mechanical frame **RMECH**: x forward, y right, z down, z = 0 at the deck top. (glTF viewers
 assume y up, so the file opens lying on its side; that is the frame, not an error.) The rover navigation frame's
 origin is at (0.09002, 0, −1.13338) m in it. Parts: `body`, `arm`, `arm_base`, `suspension`, `wheels`, `antenna` (the
 high-gain antenna) - these go into the station mesh - and `mast` (the fixed mast tube with the two wind-sensor
@@ -37,7 +37,7 @@ camera model.
 1. **Not simplified.** NASA's triangles are kept as they are (197,539). Versions 0.96.1 to 0.97.6 decimated every
    part (71,331 triangles in all); the arm's plate and the wheels lost their shape, so that was undone.
 2. **Left out:** the parts under the belly. The camera head is in the file at NASA's pose: looking forward, level.
-3. **Placed by the deck fiducials.** Seven of the fiducial discs modelled on NASA's deck (TDF1–4, LDIFF, RDIFF, AFT1)
+3. **Placed by the deck fiducials.** Seven of the fiducial discs modeled on NASA's deck (TDF1–4, LDIFF, RDIFF, AFT1)
    were fitted rigidly to their surveyed positions; they agree to 2.2 mm rms. (RPFA1, RPFA2 and AFT2 are 8–18 mm off
    in NASA's model and were not used.) Drawn through a Navcam label camera, the model then lies 2.8 px from the
    image (8.8 px with the earlier fit to a point cloud).
@@ -49,10 +49,10 @@ camera model.
    inside the rim (the real can is open; the 5 cm is not measured). Its width is NASA's.
 8. **Dark block at the front right under the arm** moved 5 cm back and 2 cm to the right, to where the Navcam
    pair of sol 52 shows it (good to about 2 cm), and 4 mm down, from the right front Hazcam's frame of that sol.
-9. **Front Hazcam lenses and housings** taken out of their own view: the Hazcams' optical centres lie inside
+9. **Front Hazcam lenses and housings** taken out of their own view: the Hazcams' optical centers lie inside
    NASA's camera bodies, so every Hazcam ray met the model within 5 cm. Whatever a front Hazcam would see nearer
-   than 10 cm anywhere in its field of view, and everything within 6 cm of its optical centre, is removed (5,186
-   triangles). The real camera hood that darkens the top of a Hazcam frame is not modelled.
+   than 10 cm anywhere in its field of view, and everything within 6 cm of its optical center, is removed (5,186
+   triangles). The real camera hood that darkens the top of a Hazcam frame is not modeled.
 
 ## Articulation from the image labels
 
@@ -61,7 +61,7 @@ Every PDS image label records the rover's joint angles when the image was taken.
 - **Mast (pan and tilt).** Only the head turns; the mast tube and its booms are fixed to the deck. The label's
   azimuth az and elevation el **resolver** angles place a point x of the head (in the head's own frame) at
 
-      X = P + Rot(G) Rz(az) (h + Ry(-el) x)        (rover navigation frame, metres)
+      X = P + Rot(G) Rz(az) (h + Ry(-el) x)        (rover navigation frame, meters)
 
   with P = (0.8012, 0.5569, 0) m where the azimuth axis meets z = 0, h = (-0.0004, 0, -1.9177) m the elevation
   axis from P (0.784 m above the deck top), G the axis' tilt (0.16 degrees) and azimuth zero, Rz and Ry
@@ -69,7 +69,7 @@ Every PDS image label records the rover's joint angles when the image was taken.
   is level (el = 0 looks straight down). These numbers come from the mast chain fitted to the solved camera poses
   of 32 stations: the resolver angles fit them to 9 mdeg, the encoder angles (which equal the commanded angles)
   only to 57 mdeg, so the resolvers are used. NASA's model has the head at az = 180, el = 90; at that pose its
-  Navcam housings sit within 2 cm of the fitted camera centres and its mast tube 5 mm from the fitted azimuth
+  Navcam housings sit within 2 cm of the fitted camera centers and its mast tube 5 mm from the fitted azimuth
   axis. `rover_model.head_in_mech(az, el)` gives the head at any angles; `rover_model.head_angles_deg(R)` gives
   the angles back from a camera's rotation, which is how the shadow maps place the head for each image without
   reading the label again.

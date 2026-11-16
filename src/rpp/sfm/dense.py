@@ -99,7 +99,7 @@ def subset_images(project: SfmProject, station: Optional[str] = None, families: 
 def nearby_station_images(project: SfmProject, station: str, radius_m: float, families: str = "N",
                           scale: Optional[float] = None) -> Dict[str, Any]:
     """0.97.0 (Christian, 12 Nov 2026: "constrain the terrain from the masked images of several nearby stations"):
-    the frames of the block's other stations whose position (the mean of their frames' prior centres) is within
+    the frames of the block's other stations whose position (the mean of their frames' prior centers) is within
     ``radius_m`` of ``station``'s - they see the ground this station's rover stands on, the rover being elsewhere.
     Returns {"names": [...], "stations": {label: {"distance_m", "images"}}}."""
     from ..ibr.station import parse_station
@@ -177,7 +177,7 @@ def prepare_dense(project: SfmProject, out_dir: Optional[PathLike] = None,
     deck coverage"): COLMAP's undistortion crops the pinhole image to the rectangle of valid pixels, which drops the
     fisheye's corners - 10 % of a Navcam frame (corner half-angle 60.9 -> 53.5 deg) and 11 % of the rover's pixels at
     Van Zyl S003D2046 (up to 17 % in a frame).  ``full_fov`` keeps the whole field of view (``blank_pixels`` 1; the
-    corners outside the fisheye are black and unused) at a working size scaled up so that the centre keeps the
+    corners outside the fisheye are black and unused) at a working size scaled up so that the center keeps the
     default's focal length (2000 -> ~2550 px for the half-resolution frames: ~1.8x the patch-match time)."""
     import numpy as np
     import pycolmap
@@ -236,7 +236,7 @@ def prepare_dense(project: SfmProject, out_dir: Optional[PathLike] = None,
         if names:
             # the masks undistorted with the same cameras: a folder in which each mask carries its image's name,
             # undistorted into a workspace of its own, then moved to masks/<image name>.png (what the fusion reads),
-            # thresholded back to 0 / 255 (the resampling makes grey edges)
+            # thresholded back to 0 / 255 (the resampling makes gray edges)
             tmp_in, tmp_out = out / "_masks_in", out / "_masks_out"
             for d in (tmp_in, tmp_out):
                 if d.exists():
@@ -437,7 +437,7 @@ MAPS_MAX_DEPTH_M = 100.0           # 0.95.1 (Christian, 29 Oct): depth beyond th
 
 def _map_mask(ws: Path, image_name: str, shape) -> Optional[Any]:
     """The rover mask of an image in the workspace (``masks/<image>.png``, 0 = rover: not fused) at ``shape``
-    (nearest neighbour when the map's resolution differs); True where the terrain is.  None without a mask."""
+    (nearest neighbor when the map's resolution differs); True where the terrain is.  None without a mask."""
     import numpy as np
     from PIL import Image
     f = ws / "masks" / (image_name + ".png")
@@ -453,7 +453,7 @@ def export_dense_maps(workspace: PathLike, kind: str = "geometric", out_dir: Opt
                       fmt: str = "png", lo_hi: tuple = (2.0, 98.0), max_depth_m: float = MAPS_MAX_DEPTH_M,
                       masks: bool = True) -> Dict[str, Any]:
     """0.95.1 (Christian, 29 Oct: "how can I view those in jpeg or png?"): the depth and normal maps of a dense
-    workspace as images in ``<workspace>/stereo/maps_png/`` - a depth map in a colour scale over its own 2-98th
+    workspace as images in ``<workspace>/stereo/maps_png/`` - a depth map in a color scale over its own 2-98th
     percentile (near blue, far red) with the range in the file name, a normal map as RGB = (n + 1) / 2 in the camera
     frame (x right, y down, z forward).  No value ("NaN": transparent in a PNG, black in a JPEG) where there is no
     depth, where the depth is beyond ``max_depth_m`` (100 m) and inside the rover mask (``masks/``, when ``masks``);

@@ -142,7 +142,7 @@ def test_rig_drift_fit_free_knot(tmp_path):
     assert a1["pitch_mdeg"] - a0["pitch_mdeg"] == pytest.approx(0.006 * 1000 + 0.014 * 400, abs=1.0)
 
 
-def test_panel_letters_limits_and_unlabelled_versions(tmp_path, monkeypatch):
+def test_panel_letters_limits_and_unlabeled_versions(tmp_path, monkeypatch):
     """22 Oct (Christian): every Navcam and Mastcam-Z subplot lettered A, B ...; rig trends pitch -10..30, yaw and
     roll -20..20 mdeg, the stereo cx panel -20..-16 px (27 Oct); make_figures also writes the plots without point labels."""
     from rpp.calib import models as M

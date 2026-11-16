@@ -12,8 +12,8 @@ and returns:
   camera temperature, images;
 - ``residuals``: per-axis rms (= epsilon) of the observations of tie points seen within one station, across stations
   of one visit, and across visits; per eye; per camera-temperature bin of 5 degC;
-- ``registration``: per visit the median offset of the refined camera centres from their waypoint priors (dE, dN,
-  dU, |d|) - a visit whose localisation is off moves as a whole;
+- ``registration``: per visit the median offset of the refined camera centers from their waypoint priors (dE, dN,
+  dU, |d|) - a visit whose localization is off moves as a whole;
 - ``rig``: the rig rotation per epoch after the run against its start (``reconstruction.rig_fit``, RPP >= 0.80) and
   the thermal bins (fx, fy, k1 changes);
 - ``settings``: the camera-model settings the run used.
@@ -172,7 +172,7 @@ def diagnose_block(project_dir: PathLike, max_residual_px: float = 2.0) -> Dict[
                     res["by_temperature"].append({"bin_degC": [float(a), float(a + T_BIN_DEG)], "eye": e,
                                                   "observations": int(m.sum()), "eps_px": _rms_axis(R[m])})
     out["residuals"] = res
-    # registration per visit (poses.csv: refined minus prior camera centre, m)
+    # registration per visit (poses.csv: refined minus prior camera center, m)
     reg: Dict[str, Any] = {}
     pcsv = pdir / "error_input" / "poses.csv"
     pose_rows = list(csv.DictReader(open(pcsv, encoding="utf-8"))) if pcsv.is_file() else []
@@ -202,7 +202,7 @@ def diagnose_block(project_dir: PathLike, max_residual_px: float = 2.0) -> Dict[
         reg["between_first_two_visits_m"] = float(np.linalg.norm([a["median_dE_m"] - b["median_dE_m"],
                                                                   a["median_dN_m"] - b["median_dN_m"],
                                                                   a["median_dU_m"] - b["median_dU_m"]]))
-    # v0p80: by rover site (the localisation frame: a site change re-zeroes the rover frame - a whole site's priors
+    # v0p80: by rover site (the localization frame: a site change re-zeroes the rover frame - a whole site's priors
     # can be off together; only stations that kept their prior)
     by_site: Dict[str, Any] = {}
     for r in stations:
@@ -292,7 +292,7 @@ def report_lines(d: Dict[str, Any]) -> List[str]:
     out += ["", "| T bin °C | eye | observations | ε px |", "|---|---|---|---|"]
     for r in res["by_temperature"]:
         out.append(f"| {r['bin_degC'][0]:.0f}..{r['bin_degC'][1]:.0f} | {r['eye']} | {r['observations']} | {fmt(r['eps_px'])} |")
-    out += ["", "## Registration to the waypoints (refined − prior camera centres, images with ≥ 30 observations)", "",
+    out += ["", "## Registration to the waypoints (refined − prior camera centers, images with ≥ 30 observations)", "",
             "| visit | images | median dE | dN | dU | median |d| | p90 |d| |", "|---|---|---|---|---|---|---|"]
     for v, r in d["registration"].items():
         if isinstance(r, dict) and "median_dE_m" in r:
@@ -300,7 +300,7 @@ def report_lines(d: Dict[str, Any]) -> List[str]:
                        f"{r['median_dC_m']:.3f} | {r['p90_dC_m']:.3f} |")
     bs = d["registration"].get("by_rover_site") or {}
     if bs:
-        out += ["", "By rover site (localisation frame; stations with a position prior, image-weighted):", "",
+        out += ["", "By rover site (localization frame; stations with a position prior, image-weighted):", "",
                 "| site | stations | images | dE | dN | dU |", "|---|---|---|---|---|---|"]
         for k, r in bs.items():
             out.append(f"| {k} | {r['stations']} | {r['images']} | {r['dE_m']:+.3f} | {r['dN_m']:+.3f} | {r['dU_m']:+.3f} |")
@@ -381,7 +381,7 @@ def plot(d: Dict[str, Any], others: Sequence[Dict[str, Any]] = (), out_png: Opti
     ax.set_aspect("equal")
     ax.set_xlabel("easting (m)")
     ax.set_ylabel("northing (m)")
-    ax.set_title(f"refined − prior camera centre, mean per station (arrows x{ARROW:g})", fontsize=10)
+    ax.set_title(f"refined − prior camera center, mean per station (arrows x{ARROW:g})", fontsize=10)
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3)
     ax = axs[1][1]

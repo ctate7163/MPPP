@@ -5,7 +5,7 @@ For every pixel with a surface: the **incidence** i = acos(n . s) (the surface a
 e = acos(n . -r) (the surface and the camera; geometry only, the same at any time of day) and the **phase**
 g = acos(-r . s) (the view ray and the Sun; it needs no normal), all in degrees in the image's camera frame, with
 r the unit pixel ray, n the unit normal facing the camera and s the unit vector to the Sun.  **Shadow**: a ray from
-the surface point towards the Sun that meets the mesh - i < 90 degrees alone does not mean lit.
+the surface point toward the Sun that meets the mesh - i < 90 degrees alone does not mean lit.
 
 The Sun per image comes from the project rows (``sun_enu`` from the label's SOLAR_AZIMUTH / ELEVATION), turned into
 the block frame with the block's rotation away from label ENU (``R_block_from_enu`` of the station, from
@@ -66,7 +66,7 @@ def occluder(V: np.ndarray, F: np.ndarray):
 
 def shadow_map(scene: Scene, X_world: np.ndarray, sun_world: Sequence[float], valid: np.ndarray, lift_m: float = SHADOW_LIFT_M,
                extra=None, normal_world: Optional[np.ndarray] = None) -> np.ndarray:
-    """0 unknown / 1 lit / 2 shadow per pixel: a ray from the surface point towards the Sun that hits the mesh means
+    """0 unknown / 1 lit / 2 shadow per pixel: a ray from the surface point toward the Sun that hits the mesh means
     shadow.  The ray starts ``lift_m`` off the surface along ``normal_world`` (the unit normals, on the side the
     surface is seen from; 0.97.11) - without normals, along the Sun's direction as before.  ``extra`` (0.97.7): a
     scene of :func:`occluder` - what casts a shadow and is not in the mesh (the rover's mast, booms and camera head)."""
@@ -129,7 +129,7 @@ def finish_shadow(shadow: np.ndarray, incidence: np.ndarray, grow_px: int = SHAD
 def photometric_maps(scene: Scene, maps: Dict[str, np.ndarray], R: np.ndarray, C: np.ndarray, sun_world: Sequence[float],
                      with_shadow: bool = True, extra=None) -> Dict[str, np.ndarray]:
     """The i / e / g (and shadow) maps of one image from its cast ``maps`` (:func:`rpp.ibr.raycast.cast_image`:
-    ``dirs_cam``, ``normal``, ``range``, ``label``), the world-to-camera rotation ``R``, the centre ``C`` and the
+    ``dirs_cam``, ``normal``, ``range``, ``label``), the world-to-camera rotation ``R``, the center ``C`` and the
     Sun in the block frame."""
     R = np.asarray(R, float)
     valid = maps["label"] == LABEL_MESH

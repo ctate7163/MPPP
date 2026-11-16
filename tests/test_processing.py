@@ -52,15 +52,15 @@ def test_tau_table_and_zenith_scale(tmp_path):
     assert zenith_scale(2.0, 0.3, 0.3, 0.2)[1] == 0.2                # floor near the horizon
 
 
-def test_quantise_reserves_zero_for_invalid():
+def test_quantize_reserves_zero_for_invalid():
     from rpp import default_config
-    from rpp.radiometry import quantise
+    from rpp.radiometry import quantize
     rad = np.zeros((2, 2, 3))
     rad[0, 0] = 0.05
     rad[0, 1] = 1e-9          # valid but darker than one count
     rad[1, 0] = 10.0          # saturates
     valid = np.array([[True, True], [True, False]])
-    i16, i8 = quantise(rad, valid, default_config()["color"])
+    i16, i8 = quantize(rad, valid, default_config()["color"])
     assert i16.dtype == np.uint16 and i8.dtype == np.uint8
     assert i16[0, 0, 0] == 10000 and i8[0, 0, 0] == round(10000 / 64)
     assert i16[0, 1, 0] == 1 and i8[0, 1, 0] == 1                    # valid never 0
@@ -416,16 +416,16 @@ def test_exposure_rules():
     im.label = {"INSTRUMENT_STATE_PARMS": {"EXPOSURE_DURATION": 54.061}}
     with pytest.raises(ExposureImage):
         im._check_exposure()
-    # the blue disk: the centre bluer than the edge
+    # the blue disk: the center bluer than the edge
     h, w = 480, 640
     yy, xx = np.mgrid[0:h, 0:w]
     r = np.hypot((xx - w / 2) / (w / 2), (yy - h / 2) / (h / 2)) / np.sqrt(2)
     rad = np.ones((h, w, 3), np.float32)
     rad[..., 2] = np.where(r < 0.5, 1.8, 1.0)
     with pytest.raises(ExposureImage):
-        im._check_centre_tint(rad, np.ones((h, w), np.uint8))
+        im._check_center_tint(rad, np.ones((h, w), np.uint8))
     rad[..., 2] = 1.0
-    im._check_centre_tint(rad, np.ones((h, w), np.uint8))
+    im._check_center_tint(rad, np.ones((h, w), np.uint8))
     assert abs(im.centre_tint - 1.0) < 1e-6
 
 

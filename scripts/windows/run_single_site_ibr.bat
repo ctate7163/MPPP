@@ -5,7 +5,7 @@ REM    when both have commits of their own (0.97.21); left alone when it already
 REM 2. python -m rpp single-sites with the arguments given: the stations of src\rpp\data\single_sites.json
 REM    0.97.0: the Perseverance model in the rover mesh, the panorama blended in 16 bits, ONE 16-to-8-bit scaling per
 REM    station for the rover-shown and rover-masked versions (<station>\tone_levels.json), the per-image pictures as
-REM    jpg in photometry_jpg (rad, depth linear / log, normal, incidence, emission, phase, shadow), a centre panorama
+REM    jpg in photometry_jpg (rad, depth linear / log, normal, incidence, emission, phase, shadow), a center panorama
 REM    with its depth, the viewpoint on the azimuth axis at the Mastcam-Z height
 REM    examples:  run_single_site_ibr.bat Sol0052_S003D2046            one station
 REM               run_single_site_ibr.bat --steps ods          the panoramas again (mesh and maps kept)
@@ -18,7 +18,7 @@ REM    the commit goes up with the next run: see "NOT uploaded" at the end and d
 REM set RPP_NO_PAUSE=1 before it: no pause at the end, and the exit code is the run's (for unattended chains)
 REM Nothing in this file names a version, so it never needs replacing.
 REM It also lives in scripts\windows of the repository (0.97.0): there it works on the tree it is in.  Everything
-REM after the settings is one parenthesised block, read whole before it runs - the merge may replace this file.
+REM after the settings is one parenthesized block, read whole before it runs - the merge may replace this file.
 REM A copy put into scripts\windows by hand (untracked) is removed before the merge, which brings the tracked one.
 setlocal EnableDelayedExpansion
 set "REPO=%RPP_HOME%"

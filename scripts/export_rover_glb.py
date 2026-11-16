@@ -4,7 +4,7 @@ Write the rover model of rpp.ibr.rover_model as a binary glTF file, one mesh per
 
     python scripts/export_rover_glb.py [--out docs/rover/perseverance_rmech.glb]
 
-The file is in the rover mechanical frame RMECH (x forward, y right, z down, z 0 = the deck top), metres - not in
+The file is in the rover mechanical frame RMECH (x forward, y right, z down, z 0 = the deck top), meters - not in
 glTF's y-up convention: a glTF viewer shows it lying on its side.  Needs trimesh.  The model is derived from NASA's
 "Mars Perseverance Rover, 3D Model" (credit NASA/JPL-Caltech); see docs/rover-model.md for the changes.
 """

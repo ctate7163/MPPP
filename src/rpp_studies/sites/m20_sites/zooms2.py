@@ -8,7 +8,7 @@ out_png = sys.argv[1] if len(sys.argv) > 1 else '/mnt/user-data/outputs/m20_clus
 sites = json.load(open('sites_zoom.json'))
 LF = LocalFrame(P)
 C1,C2,C3,C4='#2a78d6','#eb6834','#1baf7a','#eda100'; INK='#0b0b0b'; INK2='#52514e'; MUT='#898781'
-OUTG = '#9d9b96'     # 20 Oct: waypoints that are not the block's (not in its sols or within 10 m of them): grey
+OUTG = '#9d9b96'     # 20 Oct: waypoints that are not the block's (not in its sols or within 10 m of them): gray
 last_sol = int(S.max())
 def posi(s):
     w = np.where(S <= s)[0]; return w[-1] if len(w) else 0
@@ -20,9 +20,9 @@ fig, axs = plt.subplots(nrow, ncol, figsize=(3.45*ncol, 3.6*nrow), facecolor='#f
 dem_used = set(); ortho_used = set(); BACKGROUND = background_mode()   # M20_BACKGROUND: 'dtm' (default) or 'ortho'
 if BACKGROUND == 'white':
     fig.set_facecolor('white')
-# 20 Oct: ONE gentle stretch for the whole traverse (was 0.5-99.5 % per panel).  A colour mosaic (3 bands, e.g. a
-# HiRISE IRB colour orthomosaic listed first in M20_ORTHOS) is shown in colour; a grey one (the TRN mosaic) in grey -
-# M20_ZOOM_TINT_M > 0 tints it by the DTM height about the block's median (gist_earth over +-that many metres).
+# 20 Oct: ONE gentle stretch for the whole traverse (was 0.5-99.5 % per panel).  A color mosaic (3 bands, e.g. a
+# HiRISE IRB color orthomosaic listed first in M20_ORTHOS) is shown in color; a gray one (the TRN mosaic) in gray -
+# M20_ZOOM_TINT_M > 0 tints it by the DTM height about the block's median (gist_earth over +-that many meters).
 ZOOM_TINT_M = float(__import__('os').environ.get('M20_ZOOM_TINT_M', 0.0))
 TINT = plt.get_cmap('gist_earth')
 g = np.linspace(-HALF, HALF, 121); GE, GN = np.meshgrid(g, g)
@@ -36,7 +36,7 @@ if BACKGROUND == 'ortho':          # orthomosaic at ~0.25 m: sample a finer grid
 STRETCH = ortho_stretch(list(raw.values())) if raw else None
 for k, (ax, o) in enumerate(zip(axs.flat, sites)):
     cx, cy = o['cx'], o['cy']
-    # ---- DEM background (local metres, via lon/lat) ----
+    # ---- DEM background (local meters, via lon/lat) ----
     lon, lat = LF.to_lonlat(GE + cx, GN + cy)
     z, used = sample_dem(lon, lat)
     shown = False
@@ -52,7 +52,7 @@ for k, (ax, o) in enumerate(zip(axs.flat, sites)):
                 zi = zr_[np.clip(np.round((GNo + HALF) / (g[1] - g[0])).astype(int), 0, len(g) - 1),
                          np.clip(np.round((GEo + HALF) / (g[1] - g[0])).astype(int), 0, len(g) - 1)]
                 tint = TINT(np.clip(0.15 + 0.7 * (np.nan_to_num(zi) + ZOOM_TINT_M) / (2 * ZOOM_TINT_M), 0, 1))[..., :3]
-                hue = tint / np.maximum(tint.mean(axis=-1, keepdims=True), 1e-3)   # the tint's colour at unit brightness
+                hue = tint / np.maximum(tint.mean(axis=-1, keepdims=True), 1e-3)   # the tint's color at unit brightness
                 rgb = np.clip(gimg[..., None] * (0.6 + 0.4 * hue), 0, 1)
             else:
                 rgb = np.repeat(gimg[..., None], 3, axis=-1)
@@ -70,7 +70,7 @@ for k, (ax, o) in enumerate(zip(axs.flat, sites)):
     # ---- waypoints in the square ----
     inb = np.where((np.abs(X - cx) <= HALF) & (np.abs(Y - cy) <= HALF))[0]
     # 20 Oct: the block's own waypoints (its primary sols + every waypoint within 10 m, from_sites.block_members) in
-    # colour; the other waypoints in the square in grey - not in the block, nor in its N and Z counts
+    # color; the other waypoints in the square in gray - not in the block, nor in its N and Z counts
     mem = set(o.get('members') or inb.tolist())
     own = np.array([i for i in inb if i in mem], int); oth = np.array([i for i in inb if i not in mem], int)
     # traverse polyline (all waypoints, clipped by axes), blue with a white casing as in the maps
@@ -132,7 +132,7 @@ if ortho_used:
     bg = ('HiRISE orthomosaic'
           + (f', tinted by the DTM height about each block\'s median (±{ZOOM_TINT_M:g} m)' if ZOOM_TINT_M > 0 and dem_used and raw and next(iter(raw.values())).ndim == 2 else '')
           + ('; 0.5 m DTM contours' if dem_used and CONTOURS else ''))
-fig.suptitle_text = (f'M2020 blocks of rover stations, ordered by first sol, ±30 m around each block centre: the block\'s waypoints (its sols and every waypoint within 10 m of them) in colour, other waypoints in grey; N× Navcam 360s and Z× Mastcam-Z 360s of the block (local metres, north up; '
+fig.suptitle_text = (f'M2020 blocks of rover stations, ordered by first sol, ±30 m around each block center: the block\'s waypoints (its sols and every waypoint within 10 m of them) in color, other waypoints in gray; N× Navcam 360s and Z× Mastcam-Z 360s of the block (local meters, north up; '
              f'labels = sol; title sols = the block\'s sols). {bg}.')
 FIG_H = fig.get_size_inches()[1]
 top = 1.0 - 1.0 / FIG_H                                   # the title band: four lines of title, the legend beside it

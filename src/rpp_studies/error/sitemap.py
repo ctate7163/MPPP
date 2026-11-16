@@ -10,8 +10,8 @@ ALIGNMENT ASSUMPTIONS -- READ BEFORE TRUSTING PIXEL POSITIONS
 ---------------------------------------------------------------
 This module assumes the supplied image is:
   1. North-up (image +x = East, image top = North).
-  2. Square, of known real-world width `width_m`, in metres.
-  3. Centred on the SAME point that the working frame's anchor is centred on.
+  2. Square, of known real-world width `width_m`, in meters.
+  3. Centered on the SAME point that the working frame's anchor is centered on.
 
 None of these are verified against the image itself -- there is no embedded
 georeferencing read here, only what you assert via `width_m`.  If the source
@@ -66,14 +66,14 @@ class SiteImageError(RuntimeError):
 
 def trim_border_fraction(image: np.ndarray, frac: float = 0.25) -> np.ndarray:
     """
-    Trim `frac` off EACH side of a square image, keeping the centre
+    Trim `frac` off EACH side of a square image, keeping the center
     (1 - 2*frac) fraction in both width and height.
 
     Use this when the nominal footprint printed in a product's filename (e.g.
     "...50m.jpg") is smaller than the actual pixel canvas -- some vertical
     mosaic products carry a wider rendered margin than their stated footprint,
     so treating the raw file as if it were exactly that footprint stretches
-    ground features to the wrong scale. frac=0.25 keeps the centre 50% of the
+    ground features to the wrong scale. frac=0.25 keeps the center 50% of the
     canvas in each dimension, i.e. assumes the raw file's true footprint is
     width_m / (1 - 2*frac) = 2x the nominal value when frac=0.25.
 
@@ -144,16 +144,16 @@ def crop_to_extent(image: np.ndarray, image_width_m: float,
     Crop a north-up, square overhead image to a target map extent.
 
     image           : (H,W,3) array, assumed square in real-world coverage
-                      (image_width_m x image_width_m), north-up, centred on
+                      (image_width_m x image_width_m), north-up, centered on
                       image_center_xy in the SAME relative-easting/northing
                       frame the caller's grid uses.
     image_width_m   : real-world width AND height of the full input image.
     extent          : (xmin, xmax, ymin, ymax) target extent, e.g. from
                       Grid.extent_edges().
-    image_center_xy : where the image's centre pixel sits in that frame.
-                      Default (0,0) assumes the image is already centred on the
+    image_center_xy : where the image's center pixel sits in that frame.
+                      Default (0,0) assumes the image is already centered on the
                       grid's own origin (e.g. anchor='first' with the image
-                      centred on the first waypoint).
+                      centered on the first waypoint).
 
     Returns an RGB array cropped (and padded with white if the extent exceeds
     the source image) to match `extent`, suitable for
@@ -189,7 +189,7 @@ def crop_to_extent(image: np.ndarray, image_width_m: float,
     if out_w <= 0 or out_h <= 0:
         raise SiteImageError(
             f"requested extent {extent} does not overlap the image "
-            f"(width {image_width_m} m centred at {image_center_xy})")
+            f"(width {image_width_m} m centered at {image_center_xy})")
 
     canvas = np.full((out_h, out_w, 3), 255, dtype=np.uint8)
     sc0, sc1 = max(c0, 0), min(c1, W)

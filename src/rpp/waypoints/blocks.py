@@ -5,7 +5,7 @@ Version 4 carried the 34 blocks of :mod:`rpp.maps` as extra sites ``blk01_...`` 
 duplicated the named sites.  Version 5 (17 Oct 2026, Christian's layout):
 
 - no ``blk..`` sites: the blocks are a top-level table ``"official_blocks"``, ``{"1": {...}, ..., "36": {...}}``, one
-  record per block (name, the site that runs it, region, kind, centre, half size, visits, end-of-drive sols, Navcam and
+  record per block (name, the site that runs it, region, kind, center, half size, visits, end-of-drive sols, Navcam and
   Mastcam-Z 360 counts, waypoint statistics);
 - every site has ``"official_blocks"``: the numbers of the blocks it includes or is part of (``[]`` for none) - when
   at least half of block N's end-of-drive stations (inside its +-30 m square, during its visits) fall in the site's
@@ -15,7 +15,7 @@ duplicated the named sites.  Version 5 (17 Oct 2026, Christian's layout):
 - every ``"sols"`` is a list of ranges, ``[[first, last]]`` for one visit;
 - every site and every block records ``"max_waypoint_separation_m"`` - the largest horizontal distance between two
   waypoints (any kind: end-of-drive, mid-drive, interpolated) on its sols - with ``"n_waypoints"`` and
-  ``"rover_sites"`` (the rover localisation sites among them: each site is one localisation, so offsets of the
+  ``"rover_sites"`` (the rover localization sites among them: each site is one localization, so offsets of the
   waypoints are shared within a site and average out only over several sites).
 
 :func:`restructure` turns a version-4 table into version 5; :func:`update_waypoint_stats` recomputes the waypoint
@@ -70,7 +70,7 @@ def waypoint_points(waypoints: Union[PathLike, Dict[str, Any]]) -> np.ndarray:
 
 
 NEARBY_RADIUS_M = 10.0      # the block-building rule (Settings.add_nearby_waypoints): every waypoint within this many
-                            # metres of a waypoint of the sol ranges joins the block, whatever its sol
+                            # meters of a waypoint of the sol ranges joins the block, whatever its sol
 
 
 def waypoint_stats(ranges: Sequence[Sequence[int]], W: np.ndarray, radius_m: float = NEARBY_RADIUS_M,
@@ -323,7 +323,7 @@ def official_block_from_site(table: Dict[str, Any], site: str, waypoints: Union[
                              panos: Sequence[Sequence[Any]] = (), half_size_m: float = 30.0,
                              region: Optional[str] = None, name: Optional[str] = None) -> Dict[str, Any]:
     """
-    An ``official_blocks`` record for a site of the table, by the figures' block rule: the centre is the mean of
+    An ``official_blocks`` record for a site of the table, by the figures' block rule: the center is the mean of
     the site's end-of-drive waypoints (all of its waypoints when it has none), every waypoint within ±``half_size_m``
     of it belongs to the block; the visits run from the first waypoint inside to the sol before the next one
     outside; N× = the end-of-drive waypoints inside, the partial count = the mid-drive ones; the numbered
@@ -370,7 +370,7 @@ def official_block_from_site(table: Dict[str, Any], site: str, waypoints: Union[
            "centre": {"lon": round(float(np.mean([r["lon"] for r in eod])), 7), "lat": round(float(np.mean([r["lat"] for r in eod])), 7),
                       "easting": round(ce, 2), "northing": round(cn, 2), "frame": "M20_waypoints easting/northing"},
            "half_size_m": float(half_size_m),
-           "notes": f"(N×{len(eod_sols)}, Z×{len(zp)}): from sites.json {site!r}; centre ±{half_size_m:g} m; visits "
+           "notes": f"(N×{len(eod_sols)}, Z×{len(zp)}): from sites.json {site!r}; center ±{half_size_m:g} m; visits "
                     + ", ".join(f"{a}–{b}" for a, b in sorted(visits))}
     rec.update(waypoint_stats(rec["visits"], waypoint_points(waypoints)))
     return rec

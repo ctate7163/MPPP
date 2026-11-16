@@ -1,6 +1,6 @@
 """
 Time of day (LMST) of the processed images, per site: one histogram panel per site plus one for all sites, Navcam and
-Mastcam-Z 34 mm each normalised to unit area, and a table per site.
+Mastcam-Z 34 mm each normalized to unit area, and a table per site.
 
     python studies/analyses/lmst_histogram.py                           # RPP_SCAPES
     python studies/analyses/lmst_histogram.py --roots ROOT --sites rockytop sid threeforks_south

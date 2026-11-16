@@ -35,7 +35,7 @@ def _look_at(C, target, up=(0, 0, -1)):
 
 def _scene():
     P = F.survey_nav_m()
-    C = np.array([0.55, 0.60, -1.90])                    # the NL centre seen on sol 203 (rover frame, m)
+    C = np.array([0.55, 0.60, -1.90])                    # the NL center seen on sol 203 (rover frame, m)
     R, t = _look_at(C, np.mean([P[k] for k in F.RIGID], 0))
     return P, R, t
 
@@ -51,7 +51,7 @@ def test_survey_nav():
 def test_pixel_conventions():
     xy = np.array([10.0, 20.0])
     assert np.allclose(F.full_to_native(F.native_to_full(xy, 0.5), 0.5), xy)
-    assert np.allclose(F.native_to_full([0.0, 0.0], 0.25), [2.0, 2.0])       # centre of the first native pixel
+    assert np.allclose(F.native_to_full([0.0, 0.0], 0.25), [2.0, 2.0])       # center of the first native pixel
 
 
 def _render(cx, cy, r=18.0, shape=(120, 120), aspect=0.6, angle=0.4, ss=6):

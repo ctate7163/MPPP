@@ -231,7 +231,7 @@ def expand_quads(items: Sequence[Item], quad_split_above: Optional[int], overlap
 def read_pair(it: Item) -> Tuple[np.ndarray, np.ndarray]:
     """
     (BGR image, mask) for one training item.  The image is read as 3-channel
-    colour, so any alpha channel is discarded (not composited: RGB is unchanged);
+    color, so any alpha channel is discarded (not composited: RGB is unchanged);
     the mask is the separate ``masks/`` file.  Used by training and the audit.
     """
     im = cv2.imread(it.image, cv2.IMREAD_COLOR)
@@ -306,8 +306,8 @@ class MaskDataset(Dataset):
         self.items, self.size, self.hflip, self.canvas = list(items), int(size), hflip, canvas
         self.tone_prob = float(tone_prob)
         # 0.96 (mask run of 9 Nov 2026): the online augmentations of training/augment.py - photometric (lighting),
-        # angular-scale normalisation (replaces the letterbox and the pixel zooms when it applies), mask-conditioned
-        # defocus, cross-camera copy-paste and the fitted colour transfer.  None = the 0.95.5 behaviour.
+        # angular-scale normalization (replaces the letterbox and the pixel zooms when it applies), mask-conditioned
+        # defocus, cross-camera copy-paste and the fitted color transfer.  None = the 0.95.5 behavior.
         self.aug = aug
         self.augment: Optional["Augment"] = None
         # copy-paste donors: the whole frames with a known angular scale (their hardware cutouts are read on demand)
@@ -388,7 +388,7 @@ class MaskDataset(Dataset):
 
 class Collate:
     """
-    Batch -> normalised NCHW tensor.  A module-level class, not a closure, so it
+    Batch -> normalized NCHW tensor.  A module-level class, not a closure, so it
     pickles: with ``num_workers > 0`` on Windows the DataLoader starts worker
     processes by *spawn* and must pickle it (v0p6 failed there with
     "Can't get local object 'make_collate.<locals>.collate'").
@@ -506,8 +506,8 @@ class TrainConfig:
     tone_prob: float = 0.0
     # 0.96 (mask run of 9 Nov 2026, `mask-next-run-2026-11-09`): the online augmentations of training/augment.py.
     # Recipes (rpp_studies.mask_training.train_mask --recipe): A = photometric + lmst_sampler; B = A + angular_scale + defocus +
-    # quad_split_above 4000; C = B + copy_paste + color_matrix + family_batches.  All off = the 0.95.5 behaviour.
-    photometric: bool = False             # exposure, gamma, channel gains, black level, noise, shadow, haze, grey
+    # quad_split_above 4000; C = B + copy_paste + color_matrix + family_batches.  All off = the 0.95.5 behavior.
+    photometric: bool = False             # exposure, gamma, channel gains, black level, noise, shadow, haze, gray
     photometric_prob: float = 0.5         # 10 Nov: 0.9 in v4.4
     photometric_strength: str = "mild"    # 10 Nov: augment.PHOTOMETRIC_PRESETS - "mild" (default) or "strong" (v4.4)
     lmst_sampler: bool = False            # frames before 09:00 / after 16:00 LMST drawn lmst_upweight x more often

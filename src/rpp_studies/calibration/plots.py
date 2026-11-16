@@ -272,9 +272,9 @@ def plot_intrinsics_vs_temperature(consensus: Dict[str, Any], inuse: Dict[str, D
     Intrinsics against temperature 2 x 2 (fig_intr.py, 12.5 x 8.6 in, sharex): columns NL (cool) / NR (warm), rows
     focal length and principal point as the change from T0; left/right share y range and ticks.  Points: the
     per-temperature-bin cameras of the block runs (``bins`` rows {eye, block, T, n, fx, fy}, size ~ sqrt images,
-    blocks before ``early_sol`` hollow), solid lines the ``consensus`` model, dotted grey the model ``inuse``
+    blocks before ``early_sol`` hollow), solid lines the ``consensus`` model, dotted gray the model ``inuse``
     ({"NL": model, "NR": model}, what the block runs started from); the stereo cx of the rig epochs on the NR
-    principal-point panel.  Secondary axes in ppm of f and pointing mdeg; T0 dashed; grey band = bin temperatures.
+    principal-point panel.  Secondary axes in ppm of f and pointing mdeg; T0 dashed; gray band = bin temperatures.
     """
     plt = _plt()
     cons, rr = consensus, rig_residuals
@@ -297,7 +297,7 @@ def plot_intrinsics_vs_temperature(consensus: Dict[str, Any], inuse: Dict[str, D
             ax.plot(tt, f2[p] * (1 + 1e-6 * ppm2 * (tt - T0)), ls, color=col, lw=1.4,
                     label=f"{p} {model_label}: {f2[p]:.2f} px at {T0:.0f} °C, {ppm2:+.1f} ppm/°C ({f2[p] * 1e-6 * ppm2:+.4f} px/°C)")
             # 3 Nov 2026 (Christian: "Is the starting model the black dashed line for both fx and fy?"): the model in
-            # use for fx (dotted) and fy (dash-dot), both grey
+            # use for fx (dotted) and fy (dash-dot), both gray
             ax.plot(tt, p_iu[k] * (1 + 1e-6 * ppm_iu * (tt - T0)), linestyle=":" if k == 0 else (0, (5, 2, 1, 2)),
                     color="0.4", lw=1.1, label=f"{p} in use for the block runs: {p_iu[k]:.2f} px, {ppm_iu:+.1f} ppm/°C")
             for early, mfc in ((False, None), (True, "white")):
@@ -363,7 +363,7 @@ def plot_intrinsics_vs_temperature(consensus: Dict[str, Any], inuse: Dict[str, D
         a.axvspan(Tb_all.min(), Tb_all.max(), color="0.85", alpha=0.35, lw=0, zorder=0); a.grid(alpha=0.3); a.set_xlim(-60, 0)
     panel_letters(axs)
     nb = len(sols)
-    fig.suptitle(f"Navcam intrinsic temperature dependence{(' ' + label) if label else ''} ({nb} blocks; T0 = {T0:.0f} °C; grey band: temperatures of the bins)", fontsize=10)
+    fig.suptitle(f"Navcam intrinsic temperature dependence{(' ' + label) if label else ''} ({nb} blocks; T0 = {T0:.0f} °C; gray band: temperatures of the bins)", fontsize=10)
     fig.tight_layout(rect=(0, 0, 1, 0.97)); fig.savefig(path, dpi=dpi)
     plt.close(fig)
     return Path(path)
@@ -646,7 +646,7 @@ def zoom_ladder_rows(images_csv: PathLike, block: str = ZOOM_LADDER["block"], so
     """The frames of a zoom ladder from a states study's ``images.csv`` (per-image focal fits, f / label f): one row
     per frame with its zoom, eye, clock, ratio, observations and ``state`` - "low" in a sweep that steps the zoom UP,
     "high" in one that steps it DOWN (the zoom-history rule).  The frames are grouped into sweeps by time (:data:`ZOOM_SWEEP_GAP_S`): a frame can be
-    missing from the study (too few ties) and 110 mm is not in it, so neighbouring zooms alone would misread a
+    missing from the study (too few ties) and 110 mm is not in it, so neighboring zooms alone would misread a
     sweep that turned at 110 mm."""
     import csv
     rows = []

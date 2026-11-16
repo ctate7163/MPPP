@@ -56,9 +56,9 @@ def _synthetic(tmp_path, noise_native_px=0.3, seed=0):
 
 def test_keypoint_scaling_is_exact_for_binned_padded_frames():
     from rpp.sfm.database import scale_keypoints
-    kp = np.array([[0.5, 0.5, 2, 0, 0, 2], [1279.5, 959.5, 1, 0, 0, 1]], np.float32)   # quarter-res pixel centres
+    kp = np.array([[0.5, 0.5, 2, 0, 0, 2], [1279.5, 959.5, 1, 0, 0, 1]], np.float32)   # quarter-res pixel centers
     full = scale_keypoints(kp, 4.0)
-    assert np.allclose(full[:, :2], [[2.0, 2.0], [5118.0, 3838.0]])                  # centre of the 4x4 bin
+    assert np.allclose(full[:, :2], [[2.0, 2.0], [5118.0, 3838.0]])                  # center of the 4x4 bin
     assert np.allclose(full[0, 2:], [8, 0, 0, 8])
     kp4 = np.array([[10.0, 20.0, 3.0, 0.7]], np.float32)
     assert np.allclose(scale_keypoints(kp4, 2.0), [[20, 40, 6, 0.7]])

@@ -12,7 +12,7 @@ observations under several lens models:
   k4k5k6 p=0  both changes
 
 Reported per variant: the robust cost (whitened, so 2 x cost difference ~ chi-square), BIC difference
-(ln N per added parameter), residual rms / median overall and in rings of image radius (centre < 0.5,
+(ln N per added parameter), residual rms / median overall and in rings of image radius (center < 0.5,
 edge 0.5-0.85, corner > 0.85 of the corner radius), the rms of the mean residual field (median residual
 vector in 8 x 6 cells: a lens misfit shows here), the refined k4-k6, p1, p2, how far the camera moved
 from the default variant's camera (rms over the frame after the best rotation, and in the corners),
@@ -40,7 +40,7 @@ IP1, IP2 = FULL_OPENCV_NAMES.index("p1"), FULL_OPENCV_NAMES.index("p2")
 
 
 def observations(rec, project):
-    """Per observation: residual vector (native px), keypoint (full-res px), normalised radius, camera key, cell."""
+    """Per observation: residual vector (native px), keypoint (full-res px), normalized radius, camera key, cell."""
     scale = _scales(rec, project)
     key_of = {int(v): k for k, v in project.settings["database"]["cameras"].items()}
     out = {k: [] for k in ("dx", "dy", "rad", "cam", "cx", "cy")}
@@ -97,7 +97,7 @@ def residual_stats(o):
 
 
 def monotonic_to(params, width, height, factor=1.1):
-    """Is the radial mapping r_d(r) increasing out to factor x the corner radius (normalised coordinates)?"""
+    """Is the radial mapping r_d(r) increasing out to factor x the corner radius (normalized coordinates)?"""
     fx, fy, cx, cy = params[:4]
     k1, k2, p1, p2, k3, k4, k5, k6 = params[4:12]
     rc = np.max(np.hypot(np.array([0, width]) - cx, np.array([0, height])[:, None] - cy)) / fx

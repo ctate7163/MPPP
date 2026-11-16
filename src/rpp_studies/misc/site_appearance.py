@@ -6,7 +6,7 @@ working notes §14).  The measures are chosen to describe what the matcher sees,
   band_contrast_sN    std of a difference of Gaussians (sigma N and 1.6 N native px) / local mean: texture contrast
                       in the octave SIFT detects at scale N (N = 1, 2, 4, 8)
   spectral_slope      beta of the radially averaged power spectrum P(k) ~ k^-beta over 4-64 px wavelengths, on
-                      masked tiles: how fast texture fades towards fine scales (roughness / blur)
+                      masked tiles: how fast texture fades toward fine scales (roughness / blur)
   sift_per_mpix       SIFT keypoints (OpenCV defaults) per megapixel of mask, on the 8-bit image the pipeline uses
   sift_response_med   median DoG response of those keypoints
   repeat_frac         fraction of keypoints that have a look-alike in the same image: the nearest other keypoint's
@@ -128,7 +128,7 @@ def measures(img16, img8, mask):
     if des is not None and len(des) > 10:
         idx = np.random.default_rng(0).choice(len(des), min(3000, len(des)), replace=False)
         bf = cv2.BFMatcher(cv2.NORM_L2)
-        mm = bf.knnMatch(des[idx], des, k=3)                 # the first neighbour is the keypoint itself
+        mm = bf.knnMatch(des[idx], des, k=3)                 # the first neighbor is the keypoint itself
         ratio = [a[1].distance / max(a[2].distance, 1e-6) for a in mm if len(a) == 3]
         out["repeat_frac"] = float(np.mean(np.array(ratio) < 0.8))
     return out

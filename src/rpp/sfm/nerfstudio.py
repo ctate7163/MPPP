@@ -7,18 +7,18 @@ downsample it further. Zcam frames can be clipped 22 columns on the left and 16 
 
 * ``images/<stem>.png`` - every registered frame resampled through COLMAP's exact camera model (the native-pixel
   model ``gui_native/sparse``, so the cameras fit the image files) into a PINHOLE frame of one size (default
-  2048 x 1536).  Each frame keeps its own focal length and principal point: the centre resolution of the camera
+  2048 x 1536).  Each frame keeps its own focal length and principal point: the center resolution of the camera
   scaled by the frame's width (Navcam and Hazcam: 2048 / width; full-resolution frames are reduced 2.5 x, the
   quarter-resolution ones enlarged 1.6 x) - the pinhole frame then spans about 82 deg of a Navcam and 100 deg of
   a Hazcam (the fisheye edges beyond are left out); Mastcam-Z: the 1648-column frame without its first 22 and last
   16 columns, scaled by 1536 / 1200 (square pixels; the 1610 columns are 2061 px at that scale, so 6-7 px are
   trimmed on each side).
-* ``masks/<stem>.png`` - the rover masks resampled the same way (nearest neighbour), 0 where the frame has no
+* ``masks/<stem>.png`` - the rover masks resampled the same way (nearest neighbor), 0 where the frame has no
   source pixel (outside the fisheye's pinhole window, the clipped Mastcam-Z columns): Nerfstudio ignores pixels
   at 0.
 * ``transforms.json`` - Nerfstudio's format: ``camera_model`` OPENCV with no distortion, per frame ``fl_x``,
   ``fl_y``, ``cx``, ``cy``, ``w``, ``h`` and ``transform_matrix`` (camera to world, OpenGL camera axes: x right,
-  y up, z back - COLMAP's with y and z flipped) in RPP's world frame of the block (x east, y north, z up, metres;
+  y up, z back - COLMAP's with y and z flipped) in RPP's world frame of the block (x east, y north, z up, meters;
   the block offset in ``rpp``); ``ply_file_path`` the tie points (``sparse_pc.ply``) for splatfacto's start.
 * ``images_2/``, ``masks_2/`` - the same frames at half size (1024 x 768; a small-mask pixel is valid only where its
   four source pixels are), which Nerfstudio reads with ``--downscale-factor 2``.
@@ -27,8 +27,8 @@ downsample it further. Zcam frames can be clipped 22 columns on the left and 16 
 
     ns-train splatfacto --data <project>/nerfstudio nerfstudio-data --load-3D-points True
 
-Nerfstudio's dataparser orients, centres and scales the scene itself (``--orientation-method``,
-``--center-method``, ``--auto-scale-poses``); the files are left in metres.
+Nerfstudio's dataparser orients, centers and scales the scene itself (``--orientation-method``,
+``--center-method``, ``--auto-scale-poses``); the files are left in meters.
 """
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ def _fxfycxcy(model: str, p: Sequence[float]) -> Tuple[float, float, float, floa
 def target_camera(model: str, params: Sequence[float], width: int, height: int, family: str,
                   size: Tuple[int, int] = NS_SIZE, zcam_clip: Tuple[int, int] = ZCAM_CLIP) -> Dict[str, Any]:
     """The pinhole camera of one source camera in the common frame: {"fl_x", "fl_y", "cx", "cy", "w", "h", "scale",
-    "window": [x0, y0, x1, y1] - the source pixels used}.  ``family``: N, F, R (centre resolution, the frame's
+    "window": [x0, y0, x1, y1] - the source pixels used}.  ``family``: N, F, R (center resolution, the frame's
     principal point kept) or Z (the clipped window fitted by height)."""
     W, H = int(size[0]), int(size[1])
     fx, fy, cx, cy = _fxfycxcy(model, params)
@@ -79,8 +79,8 @@ def target_camera(model: str, params: Sequence[float], width: int, height: int, 
 
 
 def remap_tables(cam, tgt: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """For every target pixel (centre at +0.5, COLMAP's convention) its source position for ``cv2.remap`` (pixel
-    centres at integers) and whether it falls in the source window."""
+    """For every target pixel (center at +0.5, COLMAP's convention) its source position for ``cv2.remap`` (pixel
+    centers at integers) and whether it falls in the source window."""
     W, H = tgt["w"], tgt["h"]
     u, v = np.meshgrid(np.arange(W, dtype=np.float64) + 0.5, np.arange(H, dtype=np.float64) + 0.5)
     rays = np.stack([(u - tgt["cx"]) / tgt["fl_x"], (v - tgt["cy"]) / tgt["fl_y"], np.ones_like(u)], -1).reshape(-1, 3)
@@ -98,7 +98,7 @@ def _family(name: str, row: Dict[str, Any]) -> str:
 
 
 def write_ply(path: PathLike, xyz: np.ndarray, rgb: np.ndarray) -> None:
-    """A binary PLY of points with colours (Nerfstudio's ``ply_file_path``)."""
+    """A binary PLY of points with colors (Nerfstudio's ``ply_file_path``)."""
     xyz = np.asarray(xyz, np.float32).reshape(-1, 3)
     rgb = np.asarray(rgb, np.uint8).reshape(-1, 3)
     head = ("ply\nformat binary_little_endian 1.0\n"
@@ -216,7 +216,7 @@ def write_nerfstudio(project: SfmProject, out_dir: Optional[PathLike] = None, mo
             "mppp": {"version": _version(), "block": _block_name(project), "model": str(mdir),
                      "world_frame": project.settings.get("world_frame"),
                      "offset_m": [float(v) for v in (project.offset or [0, 0, 0])],
-                     "axes": "world x east, y north, z up (metres, the block offset removed); cameras OpenGL "
+                     "axes": "world x east, y north, z up (meters, the block offset removed); cameras OpenGL "
                              "(x right, y up, z back)",
                      "size": list(size), "zcam_clip_columns": list(zcam_clip),
                      "cameras": {f"{k[0]}{k[1]}": v for k, v in targets.items()}}}
@@ -254,7 +254,7 @@ def write_train_ns_bat(out_dir: PathLike, block: str) -> Path:
     lines = ["@echo off",
              "rem RPP (0.95.2): a small splatfacto run of this block - from the tie points (sparse_pc.ply), on the frames",
              "rem downsampled by 2 (images_2\\, masks_2\\: 1024 x 768), RPP's poses held, floaters pruned (opacity reset",
-             "rem every 1500 steps and culled below 0.2, large blobs culled, scale regularisation). 15000 steps.",
+             "rem every 1500 steps and culled below 0.2, large blobs culled, scale regularization). 15000 steps.",
              "rem Run it from a prompt where ns-train works (the nerfstudio environment), or set RPP_NS_TRAIN to ns-train.exe.",
              "rem   train-ns.bat [more splatfacto options, e.g. --max-num-iterations 30000]      results: outputs\\",
              "setlocal",

@@ -71,7 +71,7 @@ def test_zcam_is_demosaiced_and_keeps_label_model(zl0):
     assert zl0.intrinsics.fx == pytest.approx(4705.62, abs=0.1)     # 34 mm / 7.4 um ~ 4600 px
     assert zl0.fn.zoom_mm == 34 and zl0.meta["focus_position_count"] == 1128
     rgb = zl0.image_int16[zl0.mask_valid > 0].astype(float).mean(axis=0)
-    assert rgb.min() > 1000 and rgb.max() / rgb.min() < 2.0         # three plausible colour channels
+    assert rgb.min() > 1000 and rgb.max() / rgb.min() < 2.0         # three plausible color channels
     assert zl0.cahvor.o_a_angle_deg() < 0.5                          # O ~= A assumption holds
 
 
@@ -149,7 +149,7 @@ def test_mask_inference(waypoints):
     assert set(np.unique(im.mask)) <= {0, 255}
     assert not im.mask[im.mask_valid == 0].any()                    # invalid pixels never included
     assert im.mask_probability.shape == (1200, 1648) and 0 <= im.mask_probability.min() <= im.mask_probability.max() <= 1
-    # this frame looks 11 deg above the horizon towards the Rockytop scarp: terrain below, sky above
+    # this frame looks 11 deg above the horizon toward the Rockytop scarp: terrain below, sky above
     frac = (im.mask > 0).sum() / (im.mask_valid > 0).sum()
     assert 0.3 < frac < 1.0
     assert (im.mask[-200:] > 0).mean() >= (im.mask[:200] > 0).mean()   # more terrain at the bottom than at the top
@@ -187,7 +187,7 @@ def test_two_positioning_routes_agree(cfg_nomask):
     """
     Independent check on real waypoints: exact (site 26, drive 630) waypoint vs
     (site 26, drive 0) waypoint + label ORIGIN_OFFSET_VECTOR.  They differ only by
-    localisation updates between the two (0.4 m E, 1.1 m N here).
+    localization updates between the two (0.4 m E, 1.1 m N here).
     """
     from rpp import RPPImage, load_waypoints
     from rpp.waypoints import waypoint_for_site_drive

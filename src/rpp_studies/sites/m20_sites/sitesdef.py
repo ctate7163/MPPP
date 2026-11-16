@@ -16,7 +16,7 @@ EXTRA_WINDOWS={'wild_basin_lake':(838,853),'plateau_point':(1252,1263),
  'observation_mountain':(592,600),'whale_mountain':(606,610)}   # user-defined sol windows (17 Oct: Observation and Whale Mountain, Hidden Harbor)
 REMOVED_CLUSTERS={20}      # 20 unnamed 1756-1761 dropped
 RUN_EXCLUDE={'threeforks_north':(413,)}   # single-sol pass-throughs dropped from the listed sol ranges
-CENTRE_OFFSETS={'cluster12':(-20.0,0.0)}   # Tuxedo Park shifted 20 m (west: the sol 905 and 907 stops lie 33-36 m west of the cluster mean) so they fall inside the square
+CENTER_OFFSETS={'cluster12':(-20.0,0.0)}   # Tuxedo Park shifted 20 m (west: the sol 905 and 907 stops lie 33-36 m west of the cluster mean) so they fall inside the square
 ADDED={'tenby_berea':'Tenby / Berea','wild_basin_lake':'Wild Basin Lake','plateau_point':'Plateau Point','rochette':'Rochette','threeforks_north':'Three Forks North','chal_rocks_large':'Chal Rocks','airey_hill':'Airey Hill',
  'overlook_mountain':'Overlook Mountain','bright_angle':'Bright Angel','rio_chiquito':'Rio Chiquito','groloy':'Groloy',
 'marble_mountain':'Marble Mountain','observation_mountain':'Observation Mountain','whale_mountain':'Whale Mountain'}
@@ -46,12 +46,12 @@ def build():
     for c in big:
         if c['id'] in REMOVED_CLUSTERS: continue
         m=[rmc[r] for r in c['rmc']]
-        dx,dy=CENTRE_OFFSETS.get(f"cluster{c['id']}",(0.0,0.0))
+        dx,dy=CENTER_OFFSETS.get(f"cluster{c['id']}",(0.0,0.0))
         out.append(dict(key=f"cluster{c['id']}",old_id=c['id'],name=CLUSTER_NAMES[c['id']],cx=float(X[m].mean()+dx),cy=float(Y[m].mean()+dy),kind='cluster'))
     for k,nm in ADDED.items():
         a,b=EXTRA_WINDOWS.get(k) or _first_range(sites[k]['sols']); idx=[i for i in E if a<=S[i]<=b]
         xs,ys=X[idx],Y[idx]
-        if max(np.hypot(xs[:,None]-xs,ys[:,None]-ys).ravel())>40:   # spread too wide for one 60 m panel: centre on the densest stop
+        if max(np.hypot(xs[:,None]-xs,ys[:,None]-ys).ravel())>40:   # spread too wide for one 60 m panel: center on the densest stop
             dens=[np.sum(np.hypot(X[E]-X[i],Y[E]-Y[i])<=30) for i in idx]; i0=idx[int(np.argmax(dens))]
             sel=[i for i in idx if np.hypot(X[i]-X[i0],Y[i]-Y[i0])<=30]; xs,ys=X[sel],Y[sel]
         out.append(dict(key=k,old_id=None,name=nm,cx=float(xs.mean()),cy=float(ys.mean()),kind='site'))

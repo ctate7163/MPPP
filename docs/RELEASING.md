@@ -167,7 +167,7 @@ automated from the repository.
 2. **Enable GitHub Pages.** GitHub: *Settings > Pages > Build and deployment > Source: GitHub Actions*. The next push
    to `main` runs the `docs` workflow and publishes <https://ctate7163.github.io/RPP/>. Check the run under
    *Actions > docs*.
-3. **Log in to Zenodo with GitHub.** Open <https://zenodo.org>, *Log in > Log in with GitHub*, and authorise the
+3. **Log in to Zenodo with GitHub.** Open <https://zenodo.org>, *Log in > Log in with GitHub*, and authorize the
    Zenodo application.
 4. **Enable the repository in Zenodo.** In Zenodo, profile menu > *GitHub*, click *Sync now*, find
    `ctate7163/RPP` and switch it on. From then on every GitHub release is archived automatically [2].

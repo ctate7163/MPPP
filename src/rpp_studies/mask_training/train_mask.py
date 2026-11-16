@@ -11,7 +11,7 @@ Writes checkpoints\\convnext_tiny_s4_seg_<yyyymmdd>[_tag].pt + .json card, <stem
 val\\, batch\\, frame_audit.csv, worst_frames_NN.png); --paper also the JOSS outputs (scripts\\windows\\train_masks.bat
 does it all).  Augmentation: horizontal flips, and large Navcam/Hazcam frames zoomed in up to 2x (--zoom-max);
 0.96 (9 Nov 2026): --recipe A|B|C turns on the online augmentations of rpp_studies.mask_training.augment (lighting,
-LMST sampler, angular-scale normalisation, mask-conditioned defocus, cross-camera copy-paste, colour matrix,
+LMST sampler, angular-scale normalization, mask-conditioned defocus, cross-camera copy-paste, color matrix,
 family-stratified batches), e.g.  python -m rpp_studies.mask_training.train_mask --recipe A --epochs 30 --tag v5A
 Never promotes or releases: do that after looking.
 --smoke runs a tiny CPU training on synthetic data (checks the script, nothing else).
@@ -94,7 +94,7 @@ def _parser() -> argparse.ArgumentParser:
     # 0.96 (mask run of 9 Nov 2026): the online augmentations of rpp_studies.mask_training.augment, as recipes or one by one
     ap.add_argument("--recipe", choices=["A", "B", "C"], default=None,
                     help="9 Nov plan: A = photometric + LMST sampler; B = A + angular scale + defocus + quad split 4000; "
-                         "C = B + copy-paste + colour matrix + family batches (the single flags below add to it)")
+                         "C = B + copy-paste + color matrix + family batches (the single flags below add to it)")
     ap.add_argument("--photometric", action="store_true", help="online lighting augmentation (replaces --tone-prob)")
     ap.add_argument("--photometric-strength", choices=["mild", "strong"], default="mild",
                     help="10 Nov: mild (default: exposure x0.7-1.15 on half the samples, gamma 0.85-1.2) or strong "
@@ -107,7 +107,7 @@ def _parser() -> argparse.ArgumentParser:
     ap.add_argument("--defocus", action="store_true", help="the hardware region blurred 2-12 px, p 0.3")
     ap.add_argument("--copy-paste", action="store_true", help="another frame's hardware pasted at the matched scale, p 0.3")
     ap.add_argument("--color-matrix", default=None, metavar="JSON",
-                    help="fitted Navcam -> Mastcam-Z colour matrix (augment.ColorMatrix); 'auto' = "
+                    help="fitted Navcam -> Mastcam-Z color matrix (augment.ColorMatrix); 'auto' = "
                          "<data>\\color_matrix.json when it exists, else off")
     ap.add_argument("--family-batches", action="store_true", help="half Mastcam-Z, half other cameras per batch")
     ap.add_argument("--train-families", default=None, metavar="LETTERS",
@@ -211,7 +211,7 @@ def _main(ap: argparse.ArgumentParser, a) -> int:
         if cm == "auto":
             cm = str(data / "color_matrix.json") if (data / "color_matrix.json").is_file() else None
             if cm is None:
-                print("color matrix: no color_matrix.json in the data root - colour transfer off (fit one from "
+                print("color matrix: no color_matrix.json in the data root - color transfer off (fit one from "
                       "co-registered Navcam / Mastcam-Z terrain: rpp_studies.mask_training.augment.ColorMatrix)")
         cfg = TrainConfig(epochs=a.epochs, quad_split_above=a.quad_split_above, init_from=a.init_from,
                           hflip=not a.no_hflip, zoom_max=a.zoom_max, zoom_prob=0.0 if a.zoom_pairs else a.zoom_prob,

@@ -7,7 +7,7 @@ Straight down a panorama from the mast shows no terrain: the mast itself (masked
 that was filled in.  The pixels within ``NADIR_MARK_DEG`` of the nadir become a light blue disc with two rows of black
 text near its rim, ahead of the rover (:func:`make_mark`).  0.97.13: the disc lies on the surface below the mast
 (:func:`on_ground`) - each eye sees it with that surface's disparity (until 0.97.12 it was the same picture in both
-eyes: at infinity).  It goes into every colour panorama (8-bit and 16-bit, eyes, centre, stacked,
+eyes: at infinity).  It goes into every color panorama (8-bit and 16-bit, eyes, center, stacked,
 enhanced), not into the depth products; ``ods.json`` records it ("nadir_mark"), ``rpp ods --no-nadir-mark`` leaves
 it out.
 
@@ -27,8 +27,8 @@ AUTHOR = "made by C. Tate"
 CREDIT_NAVCAM = "NASA/JPL-Caltech/MSSS"
 CREDIT_ZCAM = "NASA/JPL-Caltech/MSSS/ASU"
 BACKGROUND_RGB = (176.0, 212.0, 238.0)       # 8-bit units: light blue (Christian, 13 Nov 2026: "the water mark background
-#                                              should be light blue"; before: the panorama's sky colour, and black at first)
-BACKGROUND_LINEAR_FACTOR = 0.8               # in a linear 16-bit panorama: this x the 8-bit colour, in 8-bit linear units
+#                                              should be light blue"; before: the panorama's sky color, and black at first)
+BACKGROUND_LINEAR_FACTOR = 0.8               # in a linear 16-bit panorama: this x the 8-bit color, in 8-bit linear units
 TEXT_SEPARATOR = "   -   "
 TEXT_SPAN_OF_CIRCLE = 0.5                    # (kept: the first row's share; see TEXT_SPAN_OF_ROW)
 TEXT_ROWS_IN_BAND = (0.10, 0.27, 0.43)       # the rows' middles, as shares of the disc's radius from its rim (outer first).
@@ -39,14 +39,14 @@ TEXT_MAX_HEIGHT_IN_BAND = (0.13, 0.125, 0.09)  # a row is at most this share of 
 #                                              in 0.98.8-0.98.13 - Christian, 15 Nov 2026: "for the blue circle, make the
 #                                              middle line a little smaller font" -, 0.20 in 0.98.7, 0.16 in 0.97.24)
 TEXT_SPAN_OF_ROW = (0.5, 0.60, 0.30)         # a row takes at most this share of the full circle
-TEXT_INNER_EDGE_IN_DISC = 1.0 - (TEXT_ROWS_IN_BAND[-1] + 0.5 * TEXT_MAX_HEIGHT_IN_BAND[-1])     # where the text ends, towards the middle
+TEXT_INNER_EDGE_IN_DISC = 1.0 - (TEXT_ROWS_IN_BAND[-1] + 0.5 * TEXT_MAX_HEIGHT_IN_BAND[-1])     # where the text ends, toward the middle
 TEXT_AZIMUTH_FROM_FORWARD_DEG = 135.0        # 0.98.7 (Christian: "the blue circle with the blue text needs to rotate
 #                                              clockwise by 135 degrees"): the text's middle is this far clockwise (seen
-#                                              from above: north towards east) from the rover's forward direction
+#                                              from above: north toward east) from the rover's forward direction
 COMPASS_RADIUS_IN_DISC = 0.45                # 0.97.24 (Christian: "Put a compass graphic ... in the center of the circle
 #                                              aligned with the true directions in the ods"); 0.50 until 0.98.6
 COMPASS_PX = 768
-SKY_FALLBACK_RGB = BACKGROUND_RGB            # (kept for callers of sky_colour)
+SKY_FALLBACK_RGB = BACKGROUND_RGB            # (kept for callers of sky_color)
 SKY_MIN_VALUE_8BIT = 150.0
 DISC_PX = 1024                        # the text is drawn on a square of this side, then turned into the panorama's rows
 FONTS = ("arialbd.ttf", "arial.ttf", "segoeui.ttf", "DejaVuSans-Bold.ttf", "DejaVuSans.ttf",
@@ -149,7 +149,7 @@ def compass_rose(size: int = COMPASS_PX) -> np.ndarray:
     r_out = 0.485 * S
     lw = max(2, S // 110)
     d.ellipse([c - r_out, c - r_out, c + r_out, c + r_out], outline=255, width=lw)
-    w = 0.075 * S                                              # half the width of a star point at the centre
+    w = 0.075 * S                                              # half the width of a star point at the center
     for k, (dx, dy) in enumerate(((0, -1), (1, 0), (0, 1), (-1, 0))):       # N, E, S, W (image y down)
         length = (0.44 if k == 0 else 0.33) * S
         tip = (c + dx * length, c + dy * length)
@@ -164,19 +164,19 @@ def compass_rose(size: int = COMPASS_PX) -> np.ndarray:
 
 
 def _band_angles(band: int, width: int, radius_deg: float, azimuth0_deg: float):
-    """(angle from the nadir (band,), azimuth east of north (width,)), degrees, of the mark's pixel centres."""
+    """(angle from the nadir (band,), azimuth east of north (width,)), degrees, of the mark's pixel centers."""
     rho = radius_deg * (1.0 - (np.arange(band) + 0.5) / band)
     az = float(azimuth0_deg) + (np.arange(width) + 0.5) / width * 360.0
     return rho, az
 
 
 def make_mark(width: int, height: int, lines: Sequence[str], radius_deg: Optional[float] = None,
-              azimuth0_deg: float = 0.0, centre_azimuth_deg: float = 0.0, stretch_power: float = 0.5) -> Dict[str, Any]:
+              azimuth0_deg: float = 0.0, center_azimuth_deg: float = 0.0, stretch_power: float = 0.5) -> Dict[str, Any]:
     """The mark for an equirectangular image of ``width`` x ``height`` whose column 0 looks at ``azimuth0_deg``
     (east of north): {"row0": the first row of the disc, "alpha": (height - row0, width) float32, 1 = text,
     "radius_deg", "lines", "text" (the two rows), "stretch", ...}.
 
-    The text is two rows near the disc's rim, each over at most half the circle, centred on ``centre_azimuth_deg``
+    The text is two rows near the disc's rim, each over at most half the circle, centered on ``centre_azimuth_deg``
     - the rover's forward direction (Christian, 13 Nov 2026: "two lines covering no more than half the circle ...
     rotated to be read with the viewer facing the front of the rover and looking down").  The first row (the rover,
     the sol and the site) is the outer one.  In the equirectangular image they are two straight lines along the
@@ -198,9 +198,9 @@ def make_mark(width: int, height: int, lines: Sequence[str], radius_deg: Optiona
         rows_text = [TEXT_SEPARATOR.join(lines[:k]), TEXT_SEPARATOR.join(lines[k:])]
     rows_text = [t for t in rows_text if t]
     info = []
-    for text, centre, tall, share in zip(rows_text, TEXT_ROWS_IN_BAND, TEXT_MAX_HEIGHT_IN_BAND, TEXT_SPAN_OF_ROW):
+    for text, center, tall, share in zip(rows_text, TEXT_ROWS_IN_BAND, TEXT_MAX_HEIGHT_IN_BAND, TEXT_SPAN_OF_ROW):
         strip = text_strip(text)
-        el_text = -(90.0 - (1.0 - centre) * radius_deg)                        # the elevation of the row's middle
+        el_text = -(90.0 - (1.0 - center) * radius_deg)                        # the elevation of the row's middle
         stretch = float((1.0 / max(np.cos(np.radians(el_text)), 1e-3)) ** float(stretch_power))
         span = int(round(width * share))                                       # at most this many columns
         h = int(round(span * strip.shape[0] / (strip.shape[1] * stretch)))     # its height for that span
@@ -210,8 +210,8 @@ def make_mark(width: int, height: int, lines: Sequence[str], radius_deg: Optiona
             span = min(span, int(round(h * stretch * strip.shape[1] / strip.shape[0])))
         h = max(4, h)
         t = cv2.resize(strip, (max(8, span), h), interpolation=cv2.INTER_AREA)
-        y0 = int(np.clip(round(centre * band - 0.5 * h), 1, max(1, band - h - 1)))
-        x_mid = ((float(centre_azimuth_deg) - float(azimuth0_deg)) % 360.0) / 360.0 * width
+        y0 = int(np.clip(round(center * band - 0.5 * h), 1, max(1, band - h - 1)))
+        x_mid = ((float(center_azimuth_deg) - float(azimuth0_deg)) % 360.0) / 360.0 * width
         cols = (int(round(x_mid - 0.5 * t.shape[1])) + np.arange(t.shape[1])) % width
         alpha[y0:y0 + t.shape[0], cols] = np.maximum(alpha[y0:y0 + t.shape[0], cols], t[:band - y0])
         info.append({"text": text, "stretch": stretch, "height_px": int(h), "elevation_deg": float(el_text),
@@ -237,7 +237,7 @@ def make_mark(width: int, height: int, lines: Sequence[str], radius_deg: Optiona
                    "note": "the solid point is the panorama's north (the station frame's); no letters"}
     return {"row0": row0, "alpha": alpha, "radius_deg": radius_deg, "lines": list(lines), "text": rows_text,
             "azimuth0_deg": float(azimuth0_deg), "compass": compass, "size": (int(width), int(height)),
-            "rows": info, "stretch": info[0]["stretch"] if info else 1.0, "centre_azimuth_deg": float(centre_azimuth_deg) % 360.0}
+            "rows": info, "stretch": info[0]["stretch"] if info else 1.0, "centre_azimuth_deg": float(center_azimuth_deg) % 360.0}
 
 
 TEXTURE_PX = 1024
@@ -297,10 +297,10 @@ def forward_azimuth_deg(pose: Optional[Dict[str, Any]], north, east) -> float:
     return float(np.degrees(np.arctan2(f @ np.asarray(east, float), f @ np.asarray(north, float))) % 360.0)
 
 
-def sky_colour(img: np.ndarray, sky: Optional[np.ndarray], fallback, light: Optional[float] = None) -> np.ndarray:
-    """The disc's colour for ``img`` (H, W, C; any units and channel order): the median of its sky pixels (``sky``:
+def sky_color(img: np.ndarray, sky: Optional[np.ndarray], fallback, light: Optional[float] = None) -> np.ndarray:
+    """The disc's color for ``img`` (H, W, C; any units and channel order): the median of its sky pixels (``sky``:
     bool (H, W); the upper half only), else ``fallback`` (in the image's units and channel order).  ``light``: the
-    brightest channel is at least this (the colour scaled up, its hue kept)."""
+    brightest channel is at least this (the color scaled up, its hue kept)."""
     c = None
     if sky is not None:
         m = np.asarray(sky, bool).copy()
@@ -356,7 +356,7 @@ def on_ground(mark: Dict[str, Any], height: int, origins: np.ndarray, dirs: np.n
 
 def apply_mark(img: np.ndarray, mark: Optional[Dict[str, Any]], background) -> np.ndarray:
     """The disc into ``img`` (H, W[, C]; in place): ``background`` (a number or one per channel, in the image's units
-    and channel order - :func:`sky_colour`) with the text in black.  A mark with "inside" (an eye's mark from
+    and channel order - :func:`sky_color`) with the text in black.  A mark with "inside" (an eye's mark from
     :func:`on_ground`; "row0" its first row) covers the pixels inside only."""
     if mark is None:
         return img

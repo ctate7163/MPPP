@@ -265,7 +265,7 @@ def _project(im: Dict[str, Any], p: np.ndarray, Xc: np.ndarray) -> np.ndarray:
 
 
 def image_system(im: Dict[str, Any], law: Law) -> Dict[str, Any]:
-    """Residuals (normalised), the pose Jacobian (2n, 6) and the global Jacobian (2n, G) of one image."""
+    """Residuals (normalized), the pose Jacobian (2n, 6) and the global Jacobian (2n, G) of one image."""
     early = im["sol"] < EARLY_SOL
     p = law.params(im["eye"], im["T"], early)
     Xc = im["X"] @ im["R"].T + im["t"]

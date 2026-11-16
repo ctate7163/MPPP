@@ -84,7 +84,7 @@ import { VRButton } from './vendor/VRButton.js';
 const $ = id => document.getElementById(id);
 const msg = t => { $('msg').textContent = t || ''; };
 
-// ---------------------------------------------------------------- scene: one sphere per eye, the viewer at its centre
+// ---------------------------------------------------------------- scene: one sphere per eye, the viewer at its center
 const renderer = new THREE.WebGLRenderer({ antialias: true });   // 0.98.14: the rover model's edges (false until then)
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -116,7 +116,7 @@ renderer.xr.addEventListener('sessionend', () => { setEye(screenEye); });
 const world = new THREE.Group();               // turned about the vertical for the start heading
 scene.add(world);
 
-// The equirect grid as a sphere seen from inside: azimuth az from north (-z) towards east (+x), elevation el up (+y).
+// The equirect grid as a sphere seen from inside: azimuth az from north (-z) toward east (+x), elevation el up (+y).
 // u = az / 2 pi; the texture's upper half is the left eye (v 0.5-1 with three's flipped y), the lower half the right.
 function eyeSphere(eye, texel) {
   const W = 128, H = 64, R = 50, pos = [], uv = [], idx = [];
@@ -151,7 +151,7 @@ for (const [eye, layer] of [['left', 1], ['right', 2]]) {      // three.js: the 
 }
 
 // ---------------------------------------------------------------- the nadir mark as a surface on the ground (0.97.24)
-// In the panorama the mark's two eyes come from an omnidirectional pair whose separation shrinks towards the nadir, so
+// In the panorama the mark's two eyes come from an omnidirectional pair whose separation shrinks toward the nadir, so
 // straight down it sits at no sensible distance and its text is hard to read.  Here it is a real disc: a little wider
 // than the mark in the panorama (which it covers), lying depth_m below the eyes, drawn by both eye cameras of the
 // headset from where they are - its disparity is that of a thing on the ground.  panos.json gives each variant's
@@ -210,11 +210,11 @@ async function showMark(gm) {
 
 // ---------------------------------------------------------------- the rover as a 3D model (0.98.14)
 // panos.json may give a variant a "rover_surface": {file}: a binary glTF written by rpp.ibr.rover_surface - the
-// Perseverance model where it stands at this station, in metres about the eyes' pivot (x east, y up, z south: this
+// Perseverance model where it stands at this station, in meters about the eyes' pivot (x east, y up, z south: this
 // page's frame), with two images: the panorama from the pivot (the rows that hold the rover) and its range.
-// A point of the model takes the panorama's colour in its direction when it is the surface the pivot sees there
+// A point of the model takes the panorama's color in its direction when it is the surface the pivot sees there
 // (its distance against the range image, weighted over the four range pixels around it: a smooth border); what the
-// pivot does not see - no camera saw it - is the rover grey, shaded a little by its slope.  The model is a real
+// pivot does not see - no camera saw it - is the rover gray, shaded a little by its slope.  The model is a real
 // surface with all its sides, so it shifts against the terrain when the head moves and has no holes.  R shows and
 // hides it.  It hangs in "fixed", a group that stays where the head was when it appeared (the spheres follow the head).
 // (A file of 0.98.2-0.98.13 - a grid mesh with its own texture coordinates - is still shown, as it was.)
@@ -228,11 +228,11 @@ const ROVER_VERT = `
 const ROVER_FRAG = `
   precision highp float;
   varying vec3 vP;
-  uniform sampler2D colourMap, rangeMap;
+  uniform sampler2D colorMap, rangeMap;
   uniform vec2 panoSize, rangeSize;      // the panorama (px); the range image (px)
   uniform vec2 rows;                     // the first panorama row of the images, and their number of rows
-  uniform float az0, rangeStep, rangeOffset, unitsPerM, biasM, biasRel, greyShade;
-  uniform vec3 grey;
+  uniform float az0, rangeStep, rangeOffset, unitsPerM, biasM, biasRel, grayShade;
+  uniform vec3 gray;
   float seen(vec2 ij, float dist) {      // one range pixel: is the point the surface the pivot sees there?
     if (ij.y < 0.0 || ij.y > rangeSize.y - 1.0) return 0.0;
     vec4 t = texture2D(rangeMap, vec2(fract((ij.x + 0.5) / rangeSize.x), (ij.y + 0.5) / rangeSize.y));
@@ -246,13 +246,13 @@ const ROVER_FRAG = `
     float u1 = fract(ua), u2 = fract(ua + 0.5) - 0.5;                 // two ways round: the one without the jump here
     float u = fwidth(u1) <= fwidth(u2) ? u1 : u2;
     float row = (0.5 - asin(clamp(d.y, -1.0, 1.0)) / 3.141592653589793) * panoSize.y;
-    vec3 c = texture2D(colourMap, vec2(u, (row - rows.x) / rows.y)).rgb;
+    vec3 c = texture2D(colorMap, vec2(u, (row - rows.x) / rows.y)).rgb;
     vec2 q = vec2((fract(ua) * panoSize.x - 0.5 - rangeOffset) / rangeStep, (row - 0.5 - rows.x - rangeOffset) / rangeStep);
     vec2 i0 = floor(q), f = q - i0;
     float lit = mix(mix(seen(i0, dist), seen(i0 + vec2(1.0, 0.0), dist), f.x),
                     mix(seen(i0 + vec2(0.0, 1.0), dist), seen(i0 + vec2(1.0, 1.0), dist), f.x), f.y);
     vec3 n = normalize(cross(dFdx(vP), dFdy(vP)));
-    vec3 g = grey * (1.0 - greyShade * (1.0 - abs(n.y)));
+    vec3 g = gray * (1.0 - grayShade * (1.0 - abs(n.y)));
     gl_FragColor = vec4(mix(g, c, lit), 1.0);
   }`;
 function dropRover() {
@@ -282,7 +282,7 @@ async function showRover(rs) {
       g.setAttribute('position', new THREE.BufferAttribute(arr(prim.attributes.POSITION, Float32Array, 3), 3));
       g.setIndex(new THREE.BufferAttribute(arr(prim.indices, Uint32Array, 1), 1));
       let mat, textures;
-      if (pr) {                                                  // 0.98.14: the model, coloured from the pivot
+      if (pr) {                                                  // 0.98.14: the model, colored from the pivot
         const col = new THREE.Texture(await image(0));
         col.flipY = false; col.colorSpace = THREE.NoColorSpace; col.wrapS = THREE.RepeatWrapping; col.generateMipmaps = true;
         col.minFilter = THREE.LinearMipmapLinearFilter; col.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
@@ -291,12 +291,12 @@ async function showRover(rs) {
         rng.flipY = false; rng.colorSpace = THREE.NoColorSpace; rng.wrapS = THREE.RepeatWrapping; rng.generateMipmaps = false;
         rng.minFilter = THREE.NearestFilter; rng.magFilter = THREE.NearestFilter; rng.needsUpdate = true;
         mat = new THREE.ShaderMaterial({ vertexShader: ROVER_VERT, fragmentShader: ROVER_FRAG, side: THREE.DoubleSide, uniforms: {
-          colourMap: { value: col }, rangeMap: { value: rng },
+          colorMap: { value: col }, rangeMap: { value: rng },
           panoSize: { value: new THREE.Vector2(pr.width, pr.height) }, rangeSize: { value: new THREE.Vector2(pr.depth_px[0], pr.depth_px[1]) },
           rows: { value: new THREE.Vector2(pr.rows[0], pr.rows[1] - pr.rows[0]) }, az0: { value: THREE.MathUtils.degToRad(pr.azimuth0_deg || 0) },
           rangeStep: { value: pr.depth_step }, rangeOffset: { value: pr.depth_offset_px || 0 }, unitsPerM: { value: pr.depth_units_per_m },
-          biasM: { value: pr.bias_m }, biasRel: { value: pr.bias_rel }, greyShade: { value: pr.grey_shade || 0 },
-          grey: { value: new THREE.Vector3(pr.grey_rgb[0] / 255, pr.grey_rgb[1] / 255, pr.grey_rgb[2] / 255) } } });
+          biasM: { value: pr.bias_m }, biasRel: { value: pr.bias_rel }, grayShade: { value: pr.grey_shade || 0 },
+          gray: { value: new THREE.Vector3(pr.grey_rgb[0] / 255, pr.grey_rgb[1] / 255, pr.grey_rgb[2] / 255) } } });
         textures = [col, rng];
       } else {                                                   // a file of before 0.98.14
         g.setAttribute('uv', new THREE.BufferAttribute(arr(prim.attributes.TEXCOORD_0, Float32Array, 2), 2));
@@ -360,8 +360,8 @@ function place(m, azDeg, elDeg, dist, width) {                   // in the page'
   return m;
 }
 
-// The welcome view (panos.json: an entry with "welcome": true; its picture is Van Zyl Overlook, its colours muted a little): the four
-// directions in the sky in white, 40 m away, and the title a few metres ahead.  The words hang in "world", so they
+// The welcome view (panos.json: an entry with "welcome": true; its picture is Van Zyl Overlook, its colors muted a little): the four
+// directions in the sky in white, 40 m away, and the title a few meters ahead.  The words hang in "world", so they
 // keep their directions as the viewer turns.
 const WELCOME_AZ_DEG = 270;                     // 0.98.19: the welcome view opens looking west, its title there
 // 0.98.27 (Christian, 16 Nov 2026: 'the ods welcome page should read Rover Photogrammetry Viewer (RPV) followed by a line
@@ -402,7 +402,7 @@ function showWelcome(on) {
 
 // X (key I): a small page with the site, the sol and a map of the traverse (over a low-resolution orbital picture,
 // 0.98.14) with an x at this station.  In a headset
-// it is attached to the left hand, above the controller and tilted towards the eyes; without a left controller, and
+// it is attached to the left hand, above the controller and tilted toward the eyes; without a left controller, and
 // on a screen, it hangs 2 m ahead of where the viewer looks.  A again puts it away.  (0.98.5)
 const infoPanel = new THREE.Group();
 infoPanel.visible = false;
@@ -432,7 +432,7 @@ function menuLabel(p) {
 function infoLines() {
   const p = panos[cur.s] || {};
   const sols = solsOf(p);
-  const sol = sols.length ? (sols.length > 1 ? `Sols ${sols[0]}-${sols[sols.length - 1]}` : `Sol ${sols[0]}`) : '';   // 0.98.28: capitalised
+  const sol = sols.length ? (sols.length > 1 ? `Sols ${sols[0]}-${sols[sols.length - 1]}` : `Sol ${sols[0]}`) : '';   // 0.98.28: capitalized
   const sd = /S(\d{3})D(\d{4})/.exec(p.id || '');
   return [p.welcome ? (p.site_name || '') : siteName(p), sol,
           p.welcome || !sd ? '' : `Site ${parseInt(sd[1], 10)}, Drive ${parseInt(sd[2], 10)}`];
@@ -455,10 +455,10 @@ function drawInfo() {
   };
   text(name, 100, 96, 800); text(sol, 215, 84, 700); text(id, 320, 56, 600, '#bcd');
   const cross = (mx, my) => {              // 0.98.19 (Christian, 16 Nov 2026: "instead of an orange x, make it square"):
-    const r = 20;                          // an orange open square with a dark edge, the station at its centre
+    const r = 20;                          // an orange open square with a dark edge, the station at its center
     g.lineJoin = 'miter';
-    for (const [colour, w] of [['rgba(0,0,0,0.75)', 17], [MAP_ORANGE, 9]]) {
-      g.strokeStyle = colour; g.lineWidth = w; g.strokeRect(mx - r, my - r, 2 * r, 2 * r);
+    for (const [color, w] of [['rgba(0,0,0,0.75)', 17], [MAP_ORANGE, 9]]) {
+      g.strokeStyle = color; g.lineWidth = w; g.strokeRect(mx - r, my - r, 2 * r, 2 * r);
     }
   };
   if (onDtm) {                     // the traverse and the 2 km scale bar are in the picture; its edges are dm.extent
@@ -482,8 +482,8 @@ function drawInfo() {
       g.drawImage(orthoImage, X(o.extent[0]), Y(o.extent[3]), k * (o.extent[2] - o.extent[0]), k * (o.extent[3] - o.extent[1]));
       g.restore();
     }
-    const line = (colour, width) => {
-      g.strokeStyle = colour; g.lineWidth = width; g.lineJoin = 'round'; g.beginPath();
+    const line = (color, width) => {
+      g.strokeStyle = color; g.lineWidth = width; g.lineJoin = 'round'; g.beginPath();
       xy.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y))));
       g.stroke();
     };
@@ -598,12 +598,12 @@ async function show() {
   } catch (e) { if (id === loadId) msg(`could not load ${url}: ${e.message || e}`); }
 }
 
-const colour = k => /^(standard|enhanced)/.test(k);
+const color = k => /^(standard|enhanced)/.test(k);
 function step(what, d) {
   const p = panos[cur.s];
-  if (what === 'c') {                                            // X: the next colour view (not the range or normal views)
+  if (what === 'c') {                                            // X: the next color view (not the range or normal views)
     const names = views(p, cur.v);
-    for (let i = 1; i <= names.length; i++) { const j = (cur.w + i) % names.length; if (colour(names[j])) { cur.w = j; break; } }
+    for (let i = 1; i <= names.length; i++) { const j = (cur.w + i) % names.length; if (color(names[j])) { cur.w = j; break; } }
     show(); return;
   }
   if (what === 's') cur.s = (cur.s + d + panos.length) % panos.length;
@@ -642,14 +642,14 @@ function terrainOnly() {
   const i = variants(p).findIndex(q => q.key === 'masked');
   if (i < 0) return;
   const names = views(p, i);
-  const cols = names.map((k, j) => j).filter(j => colour(names[j]));
+  const cols = names.map((k, j) => j).filter(j => color(names[j]));
   if (!cols.length) return;
-  if (i === cur.v && colour(names[cur.w] || '')) {
+  if (i === cur.v && color(names[cur.w] || '')) {
     if (cols.length < 2) return;
     cur.w = cols[(cols.indexOf(cur.w) + 1) % cols.length];
   } else {
     const now = views(p, cur.v)[cur.w] || '';
-    const j = colour(now) ? names.indexOf(now) : -1;
+    const j = color(now) ? names.indexOf(now) : -1;
     cur.v = i; cur.w = j < 0 ? (names.indexOf('standard') >= 0 ? names.indexOf('standard') : cols[0]) : j;
   }
   show();
@@ -693,7 +693,7 @@ window.addEventListener('keydown', e => {
 let yaw = 0, pitch = 0, drag = null;
 function look() {
   pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
-  camera.rotation.set(pitch, -yaw, 0, 'YXZ');                    // yaw: azimuth, positive towards the east
+  camera.rotation.set(pitch, -yaw, 0, 'YXZ');                    // yaw: azimuth, positive toward the east
 }
 const el = renderer.domElement;
 el.style.touchAction = 'none';
@@ -800,7 +800,7 @@ renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
   lookByKeys(dt);
   turnMarkText();
-  if (renderer.xr.isPresenting) {                                // the spheres stay centred on the head: an omnidirectional
+  if (renderer.xr.isPresenting) {                                // the spheres stay centered on the head: an omnidirectional
     renderer.xr.getCamera().getWorldPosition(head);              // stereo pair has no parallax to give for head movement
     world.position.copy(head);
     if (!anchored) { fixed.position.copy(head); anchored = true; }   // the rover surface stays there: it has parallax

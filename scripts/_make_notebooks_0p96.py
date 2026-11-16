@@ -79,7 +79,7 @@ settings = Settings(
     pds_dir=rpp_env.get("RPP_PDS", "/data/m2020"),       # the local PDS archive (searched recursively)
     scapes_root=rpp_env.get("RPP_SCAPES", "/scapes"),    # one WORK folder per site below it
     include_zcam=False,                   # True: the Navcam + Mastcam-Z block (the site's zooms; folder ..._zcam)
-    add_nearby_waypoints=10,              # also the stations within this many metres of the site's stations; 0: off
+    add_nearby_waypoints=10,              # also the stations within this many meters of the site's stations; 0: off
     reprocess_all=False,                  # True: process every image again (new masks, radiometry, poses)
     workers=4,                            # image-processing worker processes
     variant="",                           # "" -> WORK/colmap; "name" -> WORK/colmap_name (other settings side by side)
@@ -94,7 +94,7 @@ STATION = None                            # the station of the 0.96 products: "S
     md('''
 ## 2  Select and process the products — `rpp process SITE`
 One product per exposure (the largest sub-frame, the highest version) into `<WORK>/processed`: radiometrically
-normalised 8-bit PNGs (PDS names kept), the terrain masks (the released `rpp_mask` model), CAHV intrinsics and the
+normalized 8-bit PNGs (PDS names kept), the terrain masks (the released `rpp_mask` model), CAHV intrinsics and the
 waypoint poses, and the manifest the alignment reads.  Images pointing above `sky_elevation_deg`, taken outside
 `lmst_window_h`, or too saturated are skipped (the manifest lists them).  Images already processed with the same
 configuration are reused; a changed configuration (another mask model, say) processes everything again.
@@ -131,7 +131,7 @@ matching, a triangulation from the rover poses and a weighted bundle adjustment 
 (frames that do not align with the majority are excluded; with Mastcam-Z the Navcam block is solved first and
 held), the health report with a top-down station map, and `error_input/` for the error analysis.
 
-**Frame.** The block lives in East-North-Up metres of the landing site frame minus a rounded offset
+**Frame.** The block lives in East-North-Up meters of the landing site frame minus a rounded offset
 (`project.json`, `error_input/summary.json`).  **Reruns** reuse the features while the images are the same and the
 matches while the features and matching settings are the same.
 '''),
@@ -203,7 +203,7 @@ print("fused clouds:", [str(f) for f in fused] or "none yet")'''),
     md('''
 ## 7  The station mesh — `rpp mesh WORK --station S026D0392`
 0.96.  One station (a site and drive of the rover) of the block: its frames by camera family, the mast pivot fitted
-from their centres and rotations, and the surface over the fused cloud — Poisson (COLMAP's Delaunay mesher when the
+from their centers and rotations, and the surface over the fused cloud — Poisson (COLMAP's Delaunay mesher when the
 executable is given), then the cleanup: components under 1 %, rubber sheets, surface no fused point supports within
 τ(z) = max(5 cm, 2 % z, 3 σz), everything farther than 30 m from the mast axis; decimation, Taubin smoothing.  Beyond
 the mesh the ground plane (fitted to the fused and tie points to 100 m, following the regional slope) and beyond
@@ -258,9 +258,9 @@ if (out / "mesh.ply").is_file():
     md('''
 ## 9  The stereoscopic panorama — `rpp ods WORK --station ...`
 0.96 prototype: an omni-directional stereo pair (equirectangular, 8192 × 4096, 64 mm between the eyes) of the
-station — each eye's rays cast into the scene, every hit coloured from the source frame that sees it best (the
+station — each eye's rays cast into the scene, every hit colored from the source frame that sees it best (the
 smallest angle to the frame's axis, inside the frame and its mask).  Two images, `ods_left.png` and `ods_right.png`,
-a `provenance.png` (which frame coloured what) and `ods.json` with the coverage.  Views in any VR photo viewer that
+a `provenance.png` (which frame colored what) and `ods.json` with the coverage.  Views in any VR photo viewer that
 takes a top-bottom or side-by-side equirectangular pair.  The viewer itself is future work.
 '''),
     code('''
@@ -269,7 +269,7 @@ if (out / "mesh.ply").is_file():
     orep = render_station(proj, rec, st, scene, out, width=4096, ipd_m=0.064, families="N", scale=1.0)
     for eye, e in orep["eyes"].items():
         c = e["coverage"]
-        print(f"{eye}: coloured {100 * c['coloured']:.1f}%, mesh {100 * c['mesh']:.1f}%, far {100 * c['far']:.1f}%, no surface {100 * c['no_surface']:.1f}%")
+        print(f"{eye}: colored {100 * c['coloured']:.1f}%, mesh {100 * c['mesh']:.1f}%, far {100 * c['far']:.1f}%, no surface {100 * c['no_surface']:.1f}%")
     fig, ax = plt.subplots(2, 1, figsize=(16, 8))
     ax[0].imshow(Image.open(out / "ods_left.png")); ax[0].set_title("left eye")
     ax[1].imshow(Image.open(out / "ods_right.png")); ax[1].set_title("right eye")

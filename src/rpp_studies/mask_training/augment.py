@@ -8,7 +8,7 @@ parameters for every sample.  No torch in this module; :mod:`.train` wires it in
 1. **Lighting invariance** (:func:`photometric`): exposure (log-uniform), gamma after the exposure, per-channel
    gains (white-balance jitter), a black-level offset, Poisson-Gaussian noise with sigma proportional to the square
    root of the signal, a synthetic soft-edged shadow (the label is unchanged: shadow is terrain), a haze veil and a
-   grey <-> colour swap.  Applied in linear space and clipped to 8 bits at the end; invalid pixels stay 0, valid
+   gray <-> color swap.  Applied in linear space and clipped to 8 bits at the end; invalid pixels stay 0, valid
    ones never become 0.  It replaces v3's one fixed tone-curve copy per file (``images_variable/``), which was 2x
    data, not invariance, and v4.1's :func:`..dataset.random_tone` (the same recipe drawn online).
 2. **LMST weighting** (:func:`lmst_hours_from_stem`, :func:`lmst_weights`): 87 % of the frames are at 11-16 LMST;
@@ -16,7 +16,7 @@ parameters for every sample.  No torch in this module; :mod:`.train` wires it in
    product name (sol 0 midnight at SCLK :data:`SCLK_SOL0_MIDNIGHT`, the Mars sol :data:`SOL_SECONDS`): within about
    two minutes of the label's LOCAL_MEAN_SOLAR_TIME over the mission (calibrated on 39,446 Mastcam-Z frames of the
    9 Nov frame list), enough for one-hour bins.
-3. **Angular-scale normalisation** (:func:`native_mrad_per_px`, :func:`angular_scale`): the hardware is 5x / 16x
+3. **Angular-scale normalization** (:func:`native_mrad_per_px`, :func:`angular_scale`): the hardware is 5x / 16x
    larger in Mastcam-Z 34 / 110 mm than in a Navcam frame on the 1664 px canvas (Navcam about 1.0 mrad/px at the
    canvas, Z34 0.2, Z110 0.06).  Each sample is resampled to one target angular scale drawn log-uniform from a
    shared range, so the network sees the same hardware at the same size whatever the camera: Navcam gets zoomed in
@@ -26,8 +26,8 @@ parameters for every sample.  No torch in this module; :mod:`.train` wires it in
    v4.2 audit are there.
 5. **Cross-camera copy-paste** (:func:`paste_hardware`): a hardware cutout of another frame, scaled to the sample's
    angular scale, pasted onto terrain; the mask gets the cutout's hardware.
-6. **Fitted colour transfer** (:func:`color_transfer`): a 3x3 matrix plus offset (Navcam -> Mastcam-Z, fitted from
-   co-registered terrain) applied forwards or inverted, so each family also sees the other's colour balance.  The
+6. **Fitted color transfer** (:func:`color_transfer`): a 3x3 matrix plus offset (Navcam -> Mastcam-Z, fitted from
+   co-registered terrain) applied forwards or inverted, so each family also sees the other's color balance.  The
    matrix is a data product (``color_matrix.json``) - the identity until one is fitted.
 """
 from __future__ import annotations
@@ -82,7 +82,7 @@ def lmst_weights(stems: Sequence[str], early_h: float = 9.0, late_h: float = 16.
 # 1000 / f mrad at the frame's native width, scaled by (native width / frame width) for downsampled products
 NATIVE_FOCAL_PX: Dict[str, Tuple[float, int]] = {
     "N": (2956.0, 5120),                    # Navcam NL / NR, 5120 x 3840 full frame
-    "F": (2142.0, 5120), "R": (2142.0, 5120),   # front / rear Hazcams (fisheye: the centre value)
+    "F": (2142.0, 5120), "R": (2142.0, 5120),   # front / rear Hazcams (fisheye: the center value)
     "Z34": (4720.0, 1648), "Z48": (6700.0, 1648), "Z63": (8615.0, 1648), "Z79": (10763.0, 1648),
     "Z100": (14758.0, 1648), "Z110": (14758.0, 1648),
 }
@@ -182,7 +182,7 @@ class PhotometricConfig:
     shadow_edge_px: Tuple[int, int] = (8, 80)           # soft edge width
     haze_alpha: Tuple[float, float] = (0.0, 0.15)
     haze_prob: float = 0.5
-    grey_prob: float = 0.25                             # grey <-> colour swap (covers mono VCE frames too)
+    grey_prob: float = 0.25                             # gray <-> color swap (covers mono VCE frames too)
 
 
 PHOTOMETRIC_STRONG = PhotometricConfig(exposure_range=(0.4, 2.5), exposure_prob=0.8, gamma_range=(0.6, 1.8),
@@ -245,8 +245,8 @@ def photometric(rgb: np.ndarray, valid: np.ndarray, rng, cfg: PhotometricConfig 
     if rng.random() < cfg.grey_prob:
         # elementwise, not a BLAS matmul: on the PC a (H, W, 3) @ (3,) through MKL aborted the process (9 Nov, with
         # torch's OpenMP loaded in the same test session)
-        grey = 0.299 * x[..., 0] + 0.587 * x[..., 1] + 0.114 * x[..., 2]
-        x = np.repeat(grey[..., None], 3, axis=2)
+        gray = 0.299 * x[..., 0] + 0.587 * x[..., 1] + 0.114 * x[..., 2]
+        x = np.repeat(gray[..., None], 3, axis=2)
         p["grey"] = True
     out = np.clip(np.rint(np.clip(x, 0.0, 1.0) * 255.0), 1, 255).astype(np.uint8)
     out[~valid] = 0
@@ -335,7 +335,7 @@ def paste_hardware(rgb: np.ndarray, ms: np.ndarray, cutout: Tuple[np.ndarray, np
     return out, om, {"scale": float(scale * f), "box": [y0, x0, ch, cw]}
 
 
-# ------------------------------------------------------------------------------------------------- colour transfer
+# ------------------------------------------------------------------------------------------------- color transfer
 @dataclass
 class ColorMatrix:
     """``rgb_other = M @ rgb + b`` on the [0, 1] scale, fitted Navcam -> Mastcam-Z from co-registered terrain.
@@ -369,7 +369,7 @@ class ColorMatrix:
 
 def color_transfer(rgb: np.ndarray, valid: np.ndarray, family: str, cm: ColorMatrix, rng, prob: float = 0.3
                    ) -> Tuple[np.ndarray, Dict[str, Any]]:
-    """With probability ``prob``, move a ``cm.src`` frame's colours to ``cm.dst`` and a ``cm.dst`` frame's the other
+    """With probability ``prob``, move a ``cm.src`` frame's colors to ``cm.dst`` and a ``cm.dst`` frame's the other
     way; other families untouched."""
     if cm.is_identity() or rng.random() >= prob:
         return rgb, {}
@@ -384,7 +384,7 @@ def color_transfer(rgb: np.ndarray, valid: np.ndarray, family: str, cm: ColorMat
 @dataclass
 class AugmentConfig:
     """What :class:`..train.MaskDataset` applies to a training sample, in this order: angular scale (or the letterbox),
-    copy-paste, defocus, colour transfer, photometric.  The flip stays in the dataset."""
+    copy-paste, defocus, color transfer, photometric.  The flip stays in the dataset."""
     photometric: bool = False
     photometric_prob: float = 0.5                       # 10 Nov: was 0.9 (v4.4)
     photo: PhotometricConfig = field(default_factory=PhotometricConfig)
@@ -438,7 +438,7 @@ class Augment:
     """The augmentation pipeline of one training sample (0.96): a geometry step that puts the frame on the canvas
     (:func:`angular_scale` when the camera is known and ``cfg.angular_scale`` is on, else the caller's letterbox),
     then ``stages`` in order - each ``(name, fn)`` with ``fn(sample, rng) -> sample``.  :meth:`from_config` builds
-    the stages the config turns on (copy-paste, defocus, colour transfer, photometric); a later run adds one with
+    the stages the config turns on (copy-paste, defocus, color transfer, photometric); a later run adds one with
     :meth:`add_stage` and never touches the dataset's ``__getitem__``.
 
     ``letterbox(im, ms)``: the inference resize (``train.letterbox`` with the run's size and canvas).  ``donor(rng)``:

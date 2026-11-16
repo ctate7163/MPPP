@@ -10,7 +10,7 @@ Metashape reads no COLMAP model, so the conversion has two halves:
   - ``metashape_job.json`` - one Metashape sensor per COLMAP camera (calibration converted exactly, see
     :func:`metashape_calibration`), each image's pose (world from camera, 4 x 4), its file and mask, the region
     (the tie points' 2-98 % box), the block offset and frame, and a sample of tie-point observations for the check;
-  - ``<block>.bundler.out`` and ``<block>.bundler_images.txt`` - COLMAP's tie points (3-D points, colours and every
+  - ``<block>.bundler.out`` and ``<block>.bundler_images.txt`` - COLMAP's tie points (3-D points, colors and every
     observation) in Bundler v0.3, the one tie-point format Metashape imports;
   - ``build_metashape_project.py`` (a copy of :mod:`rpp.sfm.metashape_build`) and ``make_metashape_project.bat``.
 
@@ -18,7 +18,7 @@ Metashape reads no COLMAP model, so the conversion has two halves:
   photos linked (not copied) from ``images/``, the Bundler import (tie points, provisional poses), then the sensors
   and poses set from the job and the calibration fixed, the masks from ``masks/``, the region, a local metric
   coordinate system (RPP's world frame plus the block offset), and a check: every sampled observation reprojected
-  by Metashape against COLMAP's (``metashape_check.json``).  No alignment and no optimisation: the geometry stays
+  by Metashape against COLMAP's (``metashape_check.json``).  No alignment and no optimization: the geometry stays
   RPP's.
 
 Camera models (checked against pycolmap's projection to 1e-11 px, ``tests/test_metashape.py``):
@@ -35,7 +35,7 @@ OPENCV, OPENCV_FISHEYE,   exact (Frame / Fisheye)
 RADIAL, PINHOLE, ...
 ========================  ==========================================================================================
 
-Both programs put the pixel origin at the top-left corner of the image (pixel centres at +0.5); the check in
+Both programs put the pixel origin at the top-left corner of the image (pixel centers at +0.5); the check in
 Metashape measures it (a convention off by half a pixel shows as a 0.5 px mean offset).
 """
 from __future__ import annotations
@@ -60,7 +60,7 @@ REGION_MARGIN = 0.10
 REGION_Z_PERCENTILES = (0.5, 99.5)  # up and down (see _region)
 DEFAULT_METASHAPE = r"C:\Program Files\Agisoft\Metashape Pro\metashape.exe"
 REFERENCE_SIGMA_M = 1.0            # the prior's position sigma when the project records none
-REFERENCE_ROTATION_SIGMA_DEG = 2.0  # the label attitude's sigma in the Reference pane (display only: nothing is optimised)
+REFERENCE_ROTATION_SIGMA_DEG = 2.0  # the label attitude's sigma in the Reference pane (display only: nothing is optimized)
 
 # COLMAP model -> (Metashape sensor type, {Metashape term: COLMAP parameter name}), the terms not listed are 0
 _FISHEYE_MODELS = {"SIMPLE_RADIAL_FISHEYE", "RADIAL_FISHEYE", "OPENCV_FISHEYE", "THIN_PRISM_FISHEYE", "FOV"}
@@ -180,7 +180,7 @@ def metashape_ypr(R_w2c: np.ndarray) -> List[float]:
 def camera_reference(row: Dict[str, Any], offset: np.ndarray, sigma_m: Sequence[float],
                      R_w2c_refined: Optional[np.ndarray] = None) -> Optional[Dict[str, Any]]:
     """A camera's reference (Christian, 30 Oct: "the camera references are not ported over"): the PDS label prior
-    RPP aligned to - its centre in the chunk's coordinates (``prior_C`` + the block offset) with the prior sigma,
+    RPP aligned to - its center in the chunk's coordinates (``prior_C`` + the block offset) with the prior sigma,
     its attitude as yaw, pitch, roll - and the yaw, pitch, roll of the refined pose (for the check)."""
     C, R = row.get("prior_C"), row.get("prior_R_w2c")
     if C is None:
@@ -218,8 +218,8 @@ def _sensor_labels(rec, project: SfmProject) -> Dict[int, str]:
 def write_bundler(rec, path_out: PathLike, path_list: PathLike, order: Sequence[int],
                   max_points: Optional[int] = None, seed: int = 0) -> Dict[str, int]:
     """COLMAP's tie points as Bundler v0.3 (cameras in ``order`` - image ids - with their poses, f = fx and no
-    distortion: the job's sensors replace them in Metashape; each 3-D point with its colour and every observation
-    in Bundler's image coordinates: origin at the frame centre, y up).  ``max_points``: a random subset of points."""
+    distortion: the job's sensors replace them in Metashape; each 3-D point with its color and every observation
+    in Bundler's image coordinates: origin at the frame center, y up).  ``max_points``: a random subset of points."""
     pos = {int(iid): k for k, iid in enumerate(order)}
     flip = np.diag([1.0, -1.0, -1.0])
     lines: List[str] = ["# Bundle file v0.3", ""]
@@ -362,7 +362,7 @@ def write_metashape_job(project: SfmProject, out_dir: Optional[PathLike] = None,
            "psx": str(out / f"{name}.psx"), "bundler": str(bund), "bundler_images": str(blist),
            "world_frame": frame, "offset": [float(v) for v in (project.offset or [0.0, 0.0, 0.0])],
            "crs_wkt": f'LOCAL_CS["RPP {frame} (m)",LOCAL_DATUM["Local Datum",0],UNIT["metre",1,AUTHORITY["EPSG","9001"]]]',
-           "note": ("internal (chunk) coordinates = RPP's world frame of the block, x east, y north, z up, metres; "
+           "note": ("internal (chunk) coordinates = RPP's world frame of the block, x east, y north, z up, meters; "
                     "the chunk transform adds the block offset, so the chunk's coordinates are the frame's"),
            "sensors": sensors, "images": images, "region": _region(xyz) if len(xyz) else None,
            "tie_points": tie, "conversion_max_error_px": worst,

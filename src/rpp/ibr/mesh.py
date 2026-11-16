@@ -72,7 +72,7 @@ COMPONENT_FRACTION = 0.01
 
 
 def sigma_z(z) -> np.ndarray:
-    """The single-pair Navcam depth error at half resolution (metres) at range ``z``."""
+    """The single-pair Navcam depth error at half resolution (meters) at range ``z``."""
     z = np.asarray(z, float)
     return 0.5 * NAVCAM_HALF_IFOV_RAD * z ** 2 / NAVCAM_BASELINE_M
 
@@ -357,7 +357,7 @@ def poisson_arrays(points: np.ndarray, normals: Optional[np.ndarray] = None, dep
                    density_quantile: float = 0.02, viewpoint: Optional[Sequence[float]] = None) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
     """Open3D Poisson over the points, the lowest ``density_quantile`` of the vertices (the skin Poisson stretches
     over gaps) trimmed.  Normals: the given ones (the fused cloud's, oriented to the cameras by COLMAP); else
-    estimated and turned towards ``viewpoint`` (the mast head) - 10 Nov: before, a cloud of more than 200,000
+    estimated and turned toward ``viewpoint`` (the mast head) - 10 Nov: before, a cloud of more than 200,000
     points got unoriented normals, which Poisson turns into lumps and holes."""
     o3d = _o3d()
     pcd = o3d.geometry.PointCloud()
@@ -369,7 +369,7 @@ def poisson_arrays(points: np.ndarray, normals: Optional[np.ndarray] = None, dep
         pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.5, max_nn=30))
         if viewpoint is not None:
             pcd.orient_normals_towards_camera_location(np.asarray(viewpoint, float))
-            nsrc = "estimated, towards the mast head"
+            nsrc = "estimated, toward the mast head"
         elif len(points) < 200_000:
             pcd.orient_normals_consistent_tangent_plane(10)
             nsrc = "estimated, tangent-plane orientation"
@@ -528,7 +528,7 @@ def local_ground(points: np.ndarray, pivot: Sequence[float], up: Sequence[float]
 
 def ground_height(X: np.ndarray, pivot: Sequence[float], ground: Dict[str, Any]) -> np.ndarray:
     """The local ground (height above the plane, m) under points ``X``; 0 (the plane) where the grid has none in
-    the point's cell or its eight neighbours."""
+    the point's cell or its eight neighbors."""
     d = np.asarray(X, float) - np.asarray(pivot, float)
     c, R, g = ground["cell_m"], ground["half_m"], ground["grid"]
     m = g.shape[0]
@@ -642,7 +642,7 @@ def fill_terrain(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], up: Seque
     With ``rover`` (the rover pose) the triangles over the rover's footprint are removed first, so that ground is
     interpolated, not meshed from what the masks left.  The heights of the grid's nodes are interpolated linearly
     over the covered cells (nearest beyond their hull) - flat between the edges of a hole - and every cell that is
-    not covered, and its neighbours, get two triangles.  Returns (V, F, {"cells", "covered", "filled", "triangles",
+    not covered, and its neighbors, get two triangles.  Returns (V, F, {"cells", "covered", "filled", "triangles",
     "under_rover_triangles_removed", "filled_by_ring"}).
     """
     from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
@@ -656,7 +656,7 @@ def fill_terrain(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], up: Seque
         cen, _, _ = triangle_geometry(V, F)
         drop = under_rover(cen, rover)
         if rover_keep_m and drop.any():
-            # 0.97.0: with the neighbours' frames in the cloud the ground under the rover is measured - what lies
+            # 0.97.0: with the neighbors' frames in the cloud the ground under the rover is measured - what lies
             # within rover_keep_m of the ground's height around the footprint stays; what is higher (deck, belly,
             # mask leaks) or lower goes
             h = height_above_plane(cen, plane, up)
@@ -993,7 +993,7 @@ PREVIEW_HALF_WIDTH_M = 75.0          # the views from above of mesh_preview.png:
 
 def mesh_preview(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], out_png: PathLike, sphere: Optional[Tuple[np.ndarray, np.ndarray]] = None,
                  radius_m: float = DEFAULT_RADIUS_M, scene=None, up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0)) -> Path:
-    """``mesh_preview.png``: two views from above - the vertices coloured by height (left) and by range from the pivot
+    """``mesh_preview.png``: two views from above - the vertices colored by height (left) and by range from the pivot
     (right), both linear, east to the right and north up, +/- ``PREVIEW_HALF_WIDTH_M`` - and under them the range
     panorama from the pivot (0.97.8, Christian 13 Nov 2026: "two subplots in the top looking down ... height linear
     on the left and range on the right.  The x and y limits should be +/- 50 meters")."""

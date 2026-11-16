@@ -20,7 +20,7 @@ own settings decide what is refined (Navcam / Hazcam rig, held cameras); a trans
 (``navcam_rig_refine="full"``) is what lets the deck move the baseline.
 
 Detections come from :func:`rpp_studies.calibration.fiducials.check_block` (the block's Navcam images); start ``T_j`` from the
-label poses, refined on the deck pixels with the poses held.  The adjustment's prior gauge recentre (a shift of the
+label poses, refined on the deck pixels with the poses held.  The adjustment's prior gauge recenter (a shift of the
 whole block, :func:`rpp.sfm.reconstruction.prior_gauge`) is applied to ``T_j`` too.
 """
 from __future__ import annotations
@@ -35,11 +35,11 @@ import numpy as np
 log = logging.getLogger(__name__)
 
 DECK_SIGMA_PX = 0.35          # a deck target's pixel sigma, native px (the fiducial check's detection noise)
-SURVEY_SIGMA_MM = 0.05        # the survey per axis: rigid (the deck is one aluminium body)
+SURVEY_SIGMA_MM = 0.05        # the survey per axis: rigid (the deck is one aluminum body)
 TDF4_SIGMA_MM = 0.4           # TDF4: our own ray fit (4 Nov: known to about +-0.4 mm by method)
 DECK_LOSS_SCALE = 3.0         # Huber scale in units of the deck sigma
 DECK_REJECT_PX = 3.0          # full-res px: a target this far (and > 4 x the median) from the start fit is dropped
-                              # (Three Forks north sol 684: one AFT1 found 11 px off, a false symmetry centre)
+                              # (Three Forks north sol 684: one AFT1 found 11 px off, a false symmetry center)
 TARGETS = ("TDF1", "TDF2", "TDF3", "AFT1", "RPFA1", "RPFA2", "TDF4")
 
 
@@ -107,7 +107,7 @@ def detections(work: Path, rec, names: Sequence[str] = TARGETS) -> List[Dict[str
 
 
 Z_SEARCH_PX = 12.0            # Mastcam-Z: search around the prediction through the block and a Navcam interval's T
-                              # (Three Forks north sol 692: found 1-3 px from it; a wide search finds false centres)
+                              # (Three Forks north sol 692: found 1-3 px from it; a wide search finds false centers)
 
 
 def z_detections(root: Path, rec, rows: Dict[str, Dict[str, Any]], T: Dict[str, np.ndarray], split: str,
@@ -378,7 +378,7 @@ def adjust(work, model: str = "cahv_ba", out_model: Optional[str] = "cahv_ba_dec
                        refine_zcam_rig=zcam_rig or (proj.settings.get("zcam_rig_fit")
                                                     if proj.settings.get("zcam_rig_fit") in ("rotation", "full") else None))
     shift = np.asarray(((ba.get("prior_gauge") or {}).get("shift_m")) or [0.0, 0.0, 0.0], float)
-    for t in T.values():                                  # the block was recentred after the solve: T with it
+    for t in T.values():                                  # the block was recentered after the solve: T with it
         t[3:6] += shift
     e = deck_residuals(obs, rec, T, scale_free)
     b1 = _baselines(rec, key_of, proj)

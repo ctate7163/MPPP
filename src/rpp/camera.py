@@ -8,12 +8,12 @@ Conventions used throughout RPP
 * Camera axes: x right (increasing sample), y down (increasing line), z forward
   (OpenCV / COLMAP convention).  This is what CAHV gives directly:
   H' -> x, V' -> y, A -> z.
-* Pixel coordinates (INTERNAL): the centre of the first pixel is (0, 0) — the
+* Pixel coordinates (INTERNAL): the center of the first pixel is (0, 0) — the
   CAHVOR and OpenCV convention.  Metashape and COLMAP put the *corner* of the
   first pixel at (0, 0); exporters add 0.5 px (``K_corner_origin``).
 * Distortion (INTERNAL): OpenCV ordering and meaning,
   ``x' = x(1 + k1 r^2 + k2 r^4 + k3 r^6) + 2 p1 x y + p2 (r^2 + 2 x^2)``.
-* World frame: local East-North-Up (ENU), metres.  PDS site and rover-nav
+* World frame: local East-North-Up (ENU), meters.  PDS site and rover-nav
   frames are North-East-Down (NED); ``P_NED_ENU`` converts (it is its own inverse).
 * Rotations are world->camera matrices (rows = camera axes in world coords).
 """
@@ -43,7 +43,7 @@ def quat_wxyz_to_rotation(q_wxyz) -> Rotation:
 class Intrinsics:
     width: int
     height: int
-    K: np.ndarray                                   # 3x3, pixel-centre-origin convention
+    K: np.ndarray                                   # 3x3, pixel-center-origin convention
     dist: Dict[str, float] = field(default_factory=lambda: {k: 0.0 for k in DIST_KEYS})
     source: str = "unknown"
 
@@ -147,7 +147,7 @@ class CAHVOR:
 class Pose:
     """Camera pose in the ENU world frame."""
     R_w2c: np.ndarray                 # 3x3 world(ENU) -> camera
-    C: np.ndarray                     # camera centre, ENU metres
+    C: np.ndarray                     # camera center, ENU meters
     frame: str                        # e.g. 'site3_enu' (landing frame) or 'site33_enu'
     position_source: str
 
@@ -187,7 +187,7 @@ def pose_from_label(R_cam_rnav: np.ndarray, C_rnav: np.ndarray,
                     frame: str, position_source: str) -> Pose:
     """
     ``rover_origin_ned``: position of the rover-nav origin in the world frame
-    expressed as (north, east, down) metres.
+    expressed as (north, east, down) meters.
     """
     R_rnav2site = quat_wxyz_to_rotation(q_rnav2site_wxyz).as_matrix()
     R_cam_ned = R_cam_rnav @ R_rnav2site.T                   # rows: camera axes in site NED

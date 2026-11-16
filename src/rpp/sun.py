@@ -7,7 +7,7 @@ freeze reruns are the one moment the per-image sun facts are free).
 * :func:`mars_sun_distance_au` - the Sun-Mars distance from the areocentric solar longitude L_s (Mars' orbit as an
   ellipse: a = 1.52368 au, e = 0.09340, perihelion at L_s = 251 deg; good to ~0.1 %), or from SPICE when
   ``spiceypy`` and the planetary kernels are at hand (:func:`mars_sun_distance_spice`; ``RPP_KERNELS``); the
-  ``source`` says which.  The d^2 factor of every I/F conversion and of the ECAM -> Mastcam-Z colour transform.
+  ``source`` says which.  The d^2 factor of every I/F conversion and of the ECAM -> Mastcam-Z color transform.
 * :func:`block_rotation` - a solved block's rotation away from the label ENU frame (the median over its registered
   images of the world-frame rotation taking the prior attitude to the refined one, as the health check
   ``block_rotation_deg``) and :func:`sun_in_block` - the sun vector in that frame (at i = 60 deg a 1 deg block tilt
@@ -32,7 +32,7 @@ AU_KM = 149597870.7
 
 
 def sun_vector_enu(solar_azimuth_deg: Optional[float], solar_elevation_deg: Optional[float]) -> Optional[np.ndarray]:
-    """The unit vector towards the sun in East-North-Up from the label's azimuth (clockwise from north) and
+    """The unit vector toward the sun in East-North-Up from the label's azimuth (clockwise from north) and
     elevation; None without them."""
     if solar_azimuth_deg is None or solar_elevation_deg is None:
         return None

@@ -39,7 +39,7 @@ R_NL_HEAD = R_FWD                                              # NL in the head 
 C_NL_HEAD = np.array([0.05, -0.21, -0.1])
 O_HEAD = np.array([0.80, 0.56, -1.92])
 DROOP = 3.0 / MDEG                                             # 3 mdeg x cos(el) about the head y axis
-LEVER = np.array([0.004, -0.002, 0.003])                       # m, NL's centre in the head frame vs the label's
+LEVER = np.array([0.004, -0.002, 0.003])                       # m, NL's center in the head frame vs the label's
 
 
 def head_R(az, el):
@@ -367,7 +367,7 @@ def test_label_sclk_encoding():
 
 def test_site_roles_and_heading_by_role():
     """Christian 24 Oct: the last waypoint before a site index change is the more likely to have a rotation error -
-    the stations are tagged and the heading error is summarised by tag."""
+    the stations are tagged and the heading error is summarized by tag."""
     last = {71: 1076, 72: 542, 73: 0}                  # {site: its last drive}
     assert analysis.site_role("S071D1076", last) == "last_before_site_change"
     assert analysis.site_role("S072D0000", last) == "site_start"

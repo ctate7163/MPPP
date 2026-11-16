@@ -18,7 +18,7 @@ What the finished blocks say about the rover body, the mast and the camera mount
   frame (the label kinematics removed), is a constant mount plus the RSM pointing error and flexure. It is fitted
   against cos/sin el, cos/sin az and T. A frame at another rover pose of the station gets the station's measured
   body error carried over to its own telemetry attitude ("propagated").
-- **Positions**: the camera centres in the body frame (Hazcams, relative to the front-left Hazcam's origin) and in
+- **Positions**: the camera centers in the body frame (Hazcams, relative to the front-left Hazcam's origin) and in
   the head frame (mast cameras) are constants. Their scatter is the measurement.
 - **Body changes**: consecutive Hazcam poses of one station, giving the adjusted rotation and origin move, the
   telemetry change, and what the telemetry missed, with the POSE / ARM counters and the bogie and arm angle changes

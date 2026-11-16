@@ -1,5 +1,5 @@
 """
-The rover as a 3D model coloured by the Navcam images, for the viewer.
+The rover as a 3D model colored by the Navcam images, for the viewer.
 
 0.98.14 (Christian, 15 Nov 2026: "The 3d model of the rover still has many occluded surfaces. The resolution of it
 looks good, but the edges look pixelated. the rover should not have a hole visible from any where within the 0.15 m
@@ -7,16 +7,16 @@ radius"): the surface is the Perseverance model itself - the triangles ``rpp mes
 (``mesh.ply``, the last ones: ``mesh_report.json`` "rover_triangles") - not a grid cut out of the panorama's depth.
 So every surface of the rover is there from every viewpoint, and its edges are the model's own.
 
-The colour is the panorama from the pivot (``rpp ods --eyes left right centre``: ``_ods_centre.png``), which holds
-the Navcam frames projected onto that same model.  The viewer colours a point X of the model (metres about the pivot)
+The color is the panorama from the pivot (``rpp ods --eyes left right center``: ``_ods_centre.png``), which holds
+the Navcam frames projected onto that same model.  The viewer colors a point X of the model (meters about the pivot)
 with the panorama's pixel in the direction of X, when X is the surface the pivot sees in that direction: its distance
 |X| is within ``BIAS_M + BIAS_REL * |X|`` of the panorama's range there (``_ods_centre_depth.npz``).  A point hidden
 from the pivot - behind another part, a far side, an underside - was seen by no camera of the station and is the
-rover grey of the panorama (:data:`rpp.ibr.ods.ROVER_GREY_REL`), shaded a little by its slope.  The test is made per
-pixel of the display, on four neighbouring depth values, so the border between coloured and grey is smooth.
+rover gray of the panorama (:data:`rpp.ibr.ods.ROVER_GRAY_REL`), shaded a little by its slope.  The test is made per
+pixel of the display, on four neighboring depth values, so the border between colored and gray is smooth.
 
-The file is a binary glTF (``.glb``): one mesh in metres about the pivot (x east, y up, z south: the viewer page's
-frame; right-handed), an unlit grey material, and two images - the panorama's rows that hold the rover (JPEG) and
+The file is a binary glTF (``.glb``): one mesh in meters about the pivot (x east, y up, z south: the viewer page's
+frame; right-handed), an unlit gray material, and two images - the panorama's rows that hold the rover (JPEG) and
 their range (PNG: red x 256 + green = range x ``DEPTH_UNITS_PER_M``; 0 = not the rover).  ``asset.extras.projection``
 tells the viewer how the two are laid out.  (0.98.2-0.98.13: a grid mesh of the panorama's depth with a second layer
 behind its edges; what the pivot did not see was missing, and the grid's edges were steps.)
@@ -46,7 +46,7 @@ BIAS_REL = 0.012              # of the range image's value (a surface seen at a 
 #                               from one range pixel to the next; checked on the model: tests/test_ibr.py)
 MARGIN_ROWS = 4               # panorama rows kept above and below the rover
 TEXTURE_QUALITY = 90
-GREY_SHADE = 0.25             # the grey of unseen surfaces: 1 - this on a vertical face, 1 on a level one
+GRAY_SHADE = 0.25             # the gray of unseen surfaces: 1 - this on a vertical face, 1 on a level one
 
 
 def directions(cols: np.ndarray, rows: np.ndarray, width: int, height: int, azimuth0_deg: float = 0.0) -> np.ndarray:
@@ -60,7 +60,7 @@ def directions(cols: np.ndarray, rows: np.ndarray, width: int, height: int, azim
 
 def pixel_of(points: np.ndarray, width: int, height: int, azimuth0_deg: float = 0.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """The inverse of :func:`directions`, as the viewer's shader does it: (column, row, distance) of points (n, 3) in
-    the page's frame; a pixel's centre is at (column + 0.5, row + 0.5)."""
+    the page's frame; a pixel's center is at (column + 0.5, row + 0.5)."""
     P = np.asarray(points, float)
     r = np.linalg.norm(P, axis=1)
     az = np.arctan2(P[:, 0], -P[:, 2]) - np.radians(float(azimuth0_deg))
@@ -91,7 +91,7 @@ def model_in_page(folder: PathLike, station: Dict[str, Any]) -> Optional[Tuple[n
 
 
 def encode_range(rng: np.ndarray) -> np.ndarray:
-    """(h, w) metres -> (h, w, 3) uint8 BGR for a PNG: red x 256 + green = range x DEPTH_UNITS_PER_M (0: none)."""
+    """(h, w) meters -> (h, w, 3) uint8 BGR for a PNG: red x 256 + green = range x DEPTH_UNITS_PER_M (0: none)."""
     q = np.clip(np.rint(np.nan_to_num(np.asarray(rng, np.float64), nan=0.0, posinf=0.0) * DEPTH_UNITS_PER_M), 0, 65535).astype(np.uint16)
     return np.stack([np.zeros(q.shape, np.uint8), (q & 255).astype(np.uint8), (q >> 8).astype(np.uint8)], axis=2)
 
@@ -103,7 +103,7 @@ def decode_range(bgr: np.ndarray) -> np.ndarray:
 def seen_from_pivot(points: np.ndarray, depth: np.ndarray, proj: Dict[str, Any]) -> np.ndarray:
     """What the viewer's shader computes, here for tests and reports: for points (n, 3) in the page's frame, the share
     (0..1) of the four range pixels around their direction that say "this is the surface the pivot sees".  ``depth``:
-    the range image (metres; :func:`decode_range`), ``proj``: the file's ``asset.extras.projection``."""
+    the range image (meters; :func:`decode_range`), ``proj``: the file's ``asset.extras.projection``."""
     c, r, dist = pixel_of(points, proj["width"], proj["height"], proj["azimuth0_deg"])
     h, w = depth.shape
     x = (c - 0.5 - proj["depth_offset_px"]) / proj["depth_step"]            # the range image's pixel index, continuous
@@ -120,9 +120,9 @@ def seen_from_pivot(points: np.ndarray, depth: np.ndarray, proj: Dict[str, Any])
     return out
 
 
-def glb_bytes(vertices: np.ndarray, triangles: np.ndarray, jpeg: bytes, depth_png: bytes, grey_rgb,
+def glb_bytes(vertices: np.ndarray, triangles: np.ndarray, jpeg: bytes, depth_png: bytes, gray_rgb,
               extras: Optional[Dict[str, Any]] = None) -> bytes:
-    """A binary glTF 2.0 file: one mesh (positions, 32-bit indices) with an unlit, double-sided material of the colour
+    """A binary glTF 2.0 file: one mesh (positions, 32-bit indices) with an unlit, double-sided material of the color
     ``grey_rgb`` (0-255, sRGB) - what a general glTF viewer shows - and the two images of the projection (0: the
     panorama's rows as JPEG, 1: their range as PNG), which this module's viewer page uses (``extras``: asset.extras)."""
     parts, views = [], []
@@ -139,7 +139,7 @@ def glb_bytes(vertices: np.ndarray, triangles: np.ndarray, jpeg: bytes, depth_pn
     V = np.ascontiguousarray(vertices, "<f4")
     F = np.ascontiguousarray(triangles, "<u4").reshape(-1)
     bv_v, bv_f, bv_c, bv_d = add(V.tobytes(), 34962), add(F.tobytes(), 34963), add(bytes(jpeg)), add(bytes(depth_png))
-    lin = [float(((c / 255.0 + 0.055) / 1.055) ** 2.4 if c / 255.0 > 0.04045 else c / 255.0 / 12.92) for c in grey_rgb]
+    lin = [float(((c / 255.0 + 0.055) / 1.055) ** 2.4 if c / 255.0 > 0.04045 else c / 255.0 / 12.92) for c in gray_rgb]
     doc = {
         "asset": {"version": "2.0", "generator": "rpp.ibr.rover_surface"},
         "extensionsUsed": ["KHR_materials_unlit"],
@@ -148,7 +148,7 @@ def glb_bytes(vertices: np.ndarray, triangles: np.ndarray, jpeg: bytes, depth_pn
         "accessors": [{"bufferView": bv_v, "componentType": 5126, "count": int(len(V)), "type": "VEC3",
                        "min": [float(x) for x in V.min(axis=0)], "max": [float(x) for x in V.max(axis=0)]},
                       {"bufferView": bv_f, "componentType": 5125, "count": int(len(F)), "type": "SCALAR"}],
-        "materials": [{"name": "rover grey", "doubleSided": True, "extensions": {"KHR_materials_unlit": {}},
+        "materials": [{"name": "rover gray", "doubleSided": True, "extensions": {"KHR_materials_unlit": {}},
                        "pbrMetallicRoughness": {"baseColorFactor": lin + [1.0], "metallicFactor": 0.0, "roughnessFactor": 1.0}}],
         "images": [{"bufferView": bv_c, "mimeType": "image/jpeg", "name": "panorama rows"},
                    {"bufferView": bv_d, "mimeType": "image/png", "name": "range"}],
@@ -175,13 +175,13 @@ def read_glb(data: bytes) -> Tuple[Dict[str, Any], bytes]:
     return doc, data[28 + n:28 + n + m]
 
 
-def grey_unseen(img: np.ndarray, unseen: np.ndarray, rover: Optional[np.ndarray] = None) -> int:
+def gray_unseen(img: np.ndarray, unseen: np.ndarray, rover: Optional[np.ndarray] = None) -> int:
     """0.98.12 (Christian, 15 Nov 2026: "The 3d rover models should not interpolate colors across the rover especially at
-    the bottom pole. Make in images mars rover grey"): the rover pixels no frame coloured take, in place, one flat
-    neutral grey (:data:`rpp.ibr.ods.ROVER_GREY_REL` x the ground's mean level below the horizon), as the panorama
-    paints them from 0.98.12 on - nothing is carried in from neighbouring pixels.  (0.98.4-0.98.11 filled them with the
-    nearest coloured pixel, smoothed: colours smeared across the rover, worst at the bottom pole.)  Returns their count."""
-    from .ods import ROVER_GREY_REL
+    the bottom pole. Make in images mars rover gray"): the rover pixels no frame colored take, in place, one flat
+    neutral gray (:data:`rpp.ibr.ods.ROVER_GRAY_REL` x the ground's mean level below the horizon), as the panorama
+    paints them from 0.98.12 on - nothing is carried in from neighboring pixels.  (0.98.4-0.98.11 filled them with the
+    nearest colored pixel, smoothed: colors smeared across the rover, worst at the bottom pole.)  Returns their count."""
+    from .ods import ROVER_GRAY_REL
     u = np.asarray(unseen, bool)
     n = int(u.sum())
     if not n:
@@ -191,21 +191,21 @@ def grey_unseen(img: np.ndarray, unseen: np.ndarray, rover: Optional[np.ndarray]
     low[H // 2:] = True
     don = low & ~u & (~np.asarray(rover, bool) if rover is not None else True)
     lev = float(np.median(img[don].astype(np.float32))) if don.sum() >= 50 else 110.0
-    img[u] = np.clip(ROVER_GREY_REL * lev, 0, 255)
+    img[u] = np.clip(ROVER_GRAY_REL * lev, 0, 255)
     return n
 
 
-def rover_grey(img: np.ndarray, unseen: Optional[np.ndarray], rover: np.ndarray) -> Tuple[int, int, int]:
-    """The grey (R, G, B; 0-255) of rover surfaces no camera saw: the panorama's own where it painted some
-    (:func:`grey_unseen`), else ROVER_GREY_REL x the ground's median level below the horizon."""
-    from .ods import ROVER_GREY_REL
+def rover_gray(img: np.ndarray, unseen: Optional[np.ndarray], rover: np.ndarray) -> Tuple[int, int, int]:
+    """The gray (R, G, B; 0-255) of rover surfaces no camera saw: the panorama's own where it painted some
+    (:func:`gray_unseen`), else ROVER_GRAY_REL x the ground's median level below the horizon."""
+    from .ods import ROVER_GRAY_REL
     if unseen is not None and np.asarray(unseen, bool).any():
         v = float(np.median(img[np.asarray(unseen, bool)].astype(np.float32)))
     else:
         low = np.zeros(rover.shape, bool)
         low[rover.shape[0] // 2:] = True
         don = low & ~np.asarray(rover, bool)
-        v = ROVER_GREY_REL * (float(np.median(img[don].astype(np.float32))) if don.sum() >= 50 else 110.0)
+        v = ROVER_GRAY_REL * (float(np.median(img[don].astype(np.float32))) if don.sum() >= 50 else 110.0)
     g = int(np.clip(round(v), 0, 255))
     return g, g, g
 
@@ -221,13 +221,13 @@ def from_folder(folder: PathLike, out: Optional[PathLike] = None, texture_width:
     d = Path(folder)
     npz = next(iter(sorted(d.glob("*ods_centre_depth.npz"))), None)
     if npz is None:
-        log.warning("rover surface: no *_ods_centre_depth.npz in %s (rpp ods --eyes left right centre)", d)
+        log.warning("rover surface: no *_ods_centre_depth.npz in %s (rpp ods --eyes left right center)", d)
         return None
     stem = npz.name[:-len("ods_centre_depth.npz")]
     img_f = d / (stem + "ods_centre.png")
     with np.load(npz) as z:
         if "rover" not in z.files:
-            log.warning("rover surface: %s has no rover array (render the centre panorama with 0.98.2 or later)", npz.name)
+            log.warning("rover surface: %s has no rover array (render the center panorama with 0.98.2 or later)", npz.name)
             return None
         rng, rover = z["range"], z["rover"].astype(bool)
         unseen = z["unseen"].astype(bool) if "unseen" in z.files else None
@@ -260,8 +260,8 @@ def from_folder(folder: PathLike, out: Optional[PathLike] = None, texture_width:
     if not ok.any():
         log.warning("rover surface: the rover is not in %s", npz.name)
         return None
-    grey_px = grey_unseen(img, unseen, rover) if unseen is not None else 0
-    grey = rover_grey(img, unseen, rover)
+    gray_px = gray_unseen(img, unseen, rover) if unseen is not None else 0
+    gray = rover_gray(img, unseen, rover)
     rr = np.flatnonzero(ok.any(axis=1))
     step = max(1, int(depth_step))
     r0 = max(0, (int(rr[0]) - MARGIN_ROWS) // step * step)
@@ -277,24 +277,24 @@ def from_folder(folder: PathLike, out: Optional[PathLike] = None, texture_width:
         raise RuntimeError("the textures could not be encoded")
     proj = {"width": int(W), "height": int(H), "rows": [int(r0), int(r1)], "azimuth0_deg": float(az0),
             "depth_step": step, "depth_px": [int(depth.shape[1]), int(depth.shape[0])], "depth_units_per_m": DEPTH_UNITS_PER_M,
-            "depth_offset_px": step // 2, "bias_m": BIAS_M, "bias_rel": BIAS_REL, "grey_rgb": list(grey), "grey_shade": GREY_SHADE,
-            "note": "a point X (m about the pivot; x east, y up, z south) takes the colour of image 0 at its direction - "
+            "depth_offset_px": step // 2, "bias_m": BIAS_M, "bias_rel": BIAS_REL, "grey_rgb": list(gray), "grey_shade": GRAY_SHADE,
+            "note": "a point X (m about the pivot; x east, y up, z south) takes the color of image 0 at its direction - "
                     "column = fract((atan2(x, -z) - azimuth0) / 2 pi) x width, row = (0.5 - asin(y / |X|) / pi) x height, rows[0] "
                     "being the image's first row - when |X| <= range x (1 + bias_rel) + bias_m, the range (image 1: "
-                    "(red x 256 + green) / depth_units_per_m metres, every depth_step-th pixel from depth_offset_px) "
+                    "(red x 256 + green) / depth_units_per_m meters, every depth_step-th pixel from depth_offset_px) "
                     "weighted over the four pixels around the direction; else grey_rgb"}
-    # how much of the model the pivot sees: the centres of its triangles through the same test, weighted by area
+    # how much of the model the pivot sees: the centers of its triangles through the same test, weighted by area
     a, b, c = V[F[:, 0]].astype(float), V[F[:, 1]].astype(float), V[F[:, 2]].astype(float)
     area = 0.5 * np.linalg.norm(np.cross(b - a, c - a), axis=1)
     seen = seen_from_pivot((a + b + c) / 3.0, depth.astype(np.float32), proj)
-    rec = {"model": "the Perseverance model of mesh.ply (rpp.ibr.rover_model), coloured from the pivot's panorama",
+    rec = {"model": "the Perseverance model of mesh.ply (rpp.ibr.rover_model), colored from the pivot's panorama",
            "vertices": int(len(V)), "triangles": int(len(F)), "area_m2": round(float(area.sum()), 2),
            "area_seen_from_pivot": round(float((area * seen).sum() / max(area.sum(), 1e-9)), 3),
            "texture_px": [int(tex.shape[1]), int(tex.shape[0])], "projection": proj,
-           "frame": "metres about the pivot: x east, y up, z south", "unseen_pixels_grey": int(grey_px),
+           "frame": "meters about the pivot: x east, y up, z south", "unseen_pixels_grey": int(gray_px),
            "rover_pixels": int(rover.sum()), "from": [npz.name, img_f.name, "mesh.ply"]}
     glb = Path(out) if out else d / (stem + SUFFIX)
-    glb.write_bytes(glb_bytes(V, F, enc.tobytes(), encd.tobytes(), grey, extras={"projection": proj}))
+    glb.write_bytes(glb_bytes(V, F, enc.tobytes(), encd.tobytes(), gray, extras={"projection": proj}))
     rec.update(file=glb.name, bytes=glb.stat().st_size, seconds=round(time.time() - t0, 1))
     glb.with_suffix(".json").write_text(json.dumps(rec, indent=1), encoding="utf-8")
     log.info("rover surface: %s - the model's %d triangles (%.0f %% of its area seen from the pivot), texture %d x %d, "
@@ -308,7 +308,7 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="python -m rpp.ibr.rover_surface", description=__doc__.split("\n\n")[0])
     p.add_argument("folder", help="the with_rover folder of a station run (*_ods_centre.png, *_ods_centre_depth.npz, mesh.ply)")
     p.add_argument("--depth-step", type=int, default=DEPTH_STEP, help=f"the range image keeps every n-th panorama pixel (default {DEPTH_STEP})")
-    p.add_argument("--texture-width", type=int, default=None, metavar="PX", help="reduce the colour image to this width")
+    p.add_argument("--texture-width", type=int, default=None, metavar="PX", help="reduce the color image to this width")
     p.add_argument("--out", default=None, help="the .glb file (default <prefix>_rover_surface.glb in the folder)")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")

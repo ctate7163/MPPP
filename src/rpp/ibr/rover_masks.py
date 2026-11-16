@@ -17,7 +17,7 @@ The panorama therefore runs the mask model on those frames itself and keeps the 
 without touching ``masks/`` - the block's alignment, its run key and the deck-fiducial work see nothing of it.  The
 readers of the IBR (:func:`mask_file`) take ``masks_ibr`` first.  The input is the block's 8-bit image: the 16-bit
 linear product / 64, clipped at 255 - the model's own input during processing (``RPPImage._infer_mask``), the same
-clipping included; a block made with ``color.apply_gamma`` is linearised first.
+clipping included; a block made with ``color.apply_gamma`` is linearized first.
 """
 from __future__ import annotations
 

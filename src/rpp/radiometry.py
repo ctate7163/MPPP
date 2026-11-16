@@ -1,6 +1,6 @@
 """
 Radiometric steps: DN -> radiance, first-order illumination/opacity
-normalisation, white balance, and integer quantisation.
+normalization, white balance, and integer quantization.
 """
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def zenith_scale(solar_elevation_deg: float, tau: float, tau_ref: float, mu_min:
     """
     s = mu * exp(-(tau - tau_ref) / (6 mu)),   mu = max(sin(elevation), mu_min).
 
-    Dividing radiance by ``s`` normalises scene brightness to an overhead Sun
+    Dividing radiance by ``s`` normalizes scene brightness to an overhead Sun
     at the reference opacity.  The factor 6 is the empirical attenuation of
     *total* (direct + diffuse) surface irradiance with optical depth.
     Returns (s, mu).
@@ -54,7 +54,7 @@ def dn_to_radiance(dn: np.ndarray, scale: float, offset: float) -> np.ndarray:
     return dn.astype(np.float64) * scale + offset
 
 
-def quantise(rad: np.ndarray, valid: np.ndarray, cfg_color: dict) -> Tuple[np.ndarray, np.ndarray]:
+def quantize(rad: np.ndarray, valid: np.ndarray, cfg_color: dict) -> Tuple[np.ndarray, np.ndarray]:
     """
     radiance (H,W,3, float) -> (uint16 linear, uint8) images.
 

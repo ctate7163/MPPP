@@ -8,7 +8,7 @@ Output layout::
     <out>/images_tiff16/ ...              if "TIFF16" in export.formats
     <out>/masks/<PDS stem>.png            if export.write_mask_files
     <out>/references.txt                  Metashape reference import (offset removed)
-    <out>/references_absolute.txt         same, landing-frame ENU metres
+    <out>/references_absolute.txt         same, landing-frame ENU meters
     <out>/colmap/sparse_prior/...         COLMAP text model with pose priors
     <out>/mppp_manifest_<version>.json     per-image metadata
     <out>/mppp_config_<version>.json       config + code version snapshot
@@ -199,7 +199,7 @@ def _exposure_rule(cfg: Dict[str, Any], m: Dict[str, Any]) -> Optional[str]:
         return f"exposure {float(e):.1f} ms > {float(lim):g} ms"
     t, tl = m.get("centre_tint"), sel.get("max_centre_tint")
     if t is not None and tl is not None and float(t) > float(tl):
-        return f"centre tint {float(t):.2f} > {float(tl):g}"
+        return f"center tint {float(t):.2f} > {float(tl):g}"
     return None
 
 

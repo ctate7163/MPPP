@@ -126,7 +126,7 @@ def test_the_job_and_the_bundler_tie_points_line_up_with_colmap(tmp_path):
         T = np.array(ims[name]["world_from_camera"])
         Xc = (np.linalg.inv(T) @ np.r_[X, Y, Z, 1.0])[:3]
         assert np.allclose(MS.metashape_project_px(sens[ims[name]["sensor_id"]], Xc[None])[0], [u, v], atol=1e-6)
-    # Bundler: the cameras in the image list's order, y and z flipped; keypoints from the centre, y up
+    # Bundler: the cameras in the image list's order, y and z flipped; keypoints from the center, y up
     lines = (out / "mars2020_sol_0091_test.bundler.out").read_text().splitlines()
     names = (out / "mars2020_sol_0091_test.bundler_images.txt").read_text().split()
     nc, npt = map(int, lines[1].split())

@@ -1,6 +1,6 @@
 """
 Physics checks of the error model (rpp_studies.error): every test compares the
-vectorised implementation against a closed-form result or an independently
+vectorized implementation against a closed-form result or an independently
 written naive reference.  A failure here means the physics is wrong, not that
 a plot looks odd.  (v0p90: the former ``rpp_studies.error.selftest``, as pytest tests.)
 """
@@ -413,7 +413,7 @@ def test_pose_far_field():
 
 
 # --------------------------------------------------------------------------
-# 10. vectorised solver vs. an independent naive reference
+# 10. vectorized solver vs. an independent naive reference
 # --------------------------------------------------------------------------
 
 def _naive_reference(grid, stations, cfg):
@@ -451,7 +451,7 @@ def _naive_reference(grid, stations, cfg):
     return Sig
 
 
-def test_vectorised_matches_reference():
+def test_vectorized_matches_reference():
     inst = _plain_instrument()
     sts = [Station(xyz=[-9, 1, 2.0], az_deg=75.0, instrument=inst, is_anchor=True),
            Station(xyz=[5, -6, 1.8], az_deg=310.0, instrument=inst),
@@ -463,7 +463,7 @@ def test_vectorised_matches_reference():
     num = np.abs(fast - slow)
     den = np.maximum(np.abs(slow), 1e-12)
     err = np.max(num / den)
-    _check("vectorised == naive reference", err < 1e-9,
+    _check("vectorized == naive reference", err < 1e-9,
            f"max relative difference {err:.3e}")
 
 
@@ -681,7 +681,7 @@ def test_colmap_rejects_bad_quaternion():
 
 def test_colmap_handles_empty_observation_lines():
     """COLMAP writes a BLANK second line for images with no observations.
-    Filtering blank lines desynchronises the header/observation pairing."""
+    Filtering blank lines desynchronizes the header/observation pairing."""
     from rpp.colmap import read_colmap
     with tempfile.TemporaryDirectory() as d:
         _write_synthetic_colmap(d)
@@ -897,7 +897,7 @@ def test_ideal_dominates_lbs_and_is_dominated_by_full_fusion():
     ray information alone.
 
     full_fusion sums EVERY ray from every station (both eyes each) at perfect
-    matching; ideal sums ONE ray per station (centre only) at perfect
+    matching; ideal sums ONE ray per station (center only) at perfect
     matching -- a strict subset of full_fusion's terms, so full_fusion is at
     least as informative.  lbs uses only the single best PAIR's two rays -- a
     subset of ideal's terms (which include every station), so ideal is at
@@ -924,7 +924,7 @@ def test_ideal_dominates_lbs_and_is_dominated_by_full_fusion():
     _check("ideal (all pairs) never worse than lbs (single best pair)",
            np.all(s_ideal[ok] <= s_lbs[ok] * (1 + 1e-6)),
            f"max violation {np.nanmax(s_ideal[ok]/s_lbs[ok]):.4f}")
-    _check("full fusion never worse than ideal (all pairs, centre rays only)",
+    _check("full fusion never worse than ideal (all pairs, center rays only)",
            np.all(s_full[ok] <= s_ideal[ok] * (1 + 1e-6)),
            f"max violation {np.nanmax(s_full[ok]/s_ideal[ok]):.4f}")
     # sanity: ideal should differ from both endpoints where multiple stations
@@ -1070,8 +1070,8 @@ def test_plot_stats_box_and_axis_label_control():
     plt.close(fig)
 
 
-def test_plot_shares_colour_limits():
-    """Explicit vmin/vmax must be honoured EXACTLY, or shared colour bars across
+def test_plot_shares_color_limits():
+    """Explicit vmin/vmax must be honored EXACTLY, or shared color bars across
     panels silently desynchronise and the panels stop being comparable."""
     import matplotlib
     matplotlib.use("Agg")
@@ -1088,9 +1088,9 @@ def test_plot_shares_colour_limits():
         ax = plot_map(f, data, scale=100.0, log=log, vmin=1.0, vmax=50.0,
                       ax=axes[0 if log else 1], show_stations=False)
         im = ax.images[-1]
-        _check(f"explicit vmin honoured (log={log})",
+        _check(f"explicit vmin honored (log={log})",
                abs(im.norm.vmin - 1.0) < 1e-12, f"vmin = {im.norm.vmin}")
-        _check(f"explicit vmax honoured (log={log})",
+        _check(f"explicit vmax honored (log={log})",
                abs(im.norm.vmax - 50.0) < 1e-12, f"vmax = {im.norm.vmax}")
     plt.close(fig)
 
@@ -1246,7 +1246,7 @@ def test_anchor_modes():
            choose_anchor(sts, "center") == 1)
     _check("anchor flag is exclusive",
            sum(s.is_anchor for s in sts) == 1)
-    _check("anchor 'site' honours an existing flag",
+    _check("anchor 'site' honors an existing flag",
            choose_anchor(sts, "site") == 1)
 
 

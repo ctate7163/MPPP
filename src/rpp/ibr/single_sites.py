@@ -71,7 +71,7 @@ REM    when both have commits of their own (0.97.21); left alone when it already
 REM 2. python -m rpp single-sites with the arguments given: the stations of src\rpp\data\single_sites.json
 REM    0.97.0: the Perseverance model in the rover mesh, the panorama blended in 16 bits, ONE 16-to-8-bit scaling per
 REM    station for the rover-shown and rover-masked versions (<station>\tone_levels.json), the per-image pictures as
-REM    jpg in photometry_jpg (rad, depth linear / log, normal, incidence, emission, phase, shadow), a centre panorama
+REM    jpg in photometry_jpg (rad, depth linear / log, normal, incidence, emission, phase, shadow), a center panorama
 REM    with its depth, the viewpoint on the azimuth axis at the Mastcam-Z height
 REM    examples:  run_single_site_ibr.bat Sol0052_S003D2046            one station
 REM               run_single_site_ibr.bat --steps ods          the panoramas again (mesh and maps kept)
@@ -84,7 +84,7 @@ REM    the commit goes up with the next run: see "NOT uploaded" at the end and d
 REM set RPP_NO_PAUSE=1 before it: no pause at the end, and the exit code is the run's (for unattended chains)
 REM Nothing in this file names a version, so it never needs replacing.
 REM It also lives in scripts\windows of the repository (0.97.0): there it works on the tree it is in.  Everything
-REM after the settings is one parenthesised block, read whole before it runs - the merge may replace this file.
+REM after the settings is one parenthesized block, read whole before it runs - the merge may replace this file.
 REM A copy put into scripts\windows by hand (untracked) is removed before the merge, which brings the tracked one.
 setlocal EnableDelayedExpansion
 set "REPO=%RPP_HOME%"
@@ -204,7 +204,7 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
             fa += ["--add-images", *ctx]            # for the terrain (0.97.19: rpp dense --add-images, so a station
             #                                         chosen by --scale or --sequence can have context frames too)
         fa = fa + [str(x) for x in (cfg.get("dense_args") or []) + (st.get("dense_args") or [])]
-        near = st.get("nearby_m", cfg.get("nearby_m"))          # 0.97.0: the neighbours' frames constrain the ground
+        near = st.get("nearby_m", cfg.get("nearby_m"))          # 0.97.0: the neighbors' frames constrain the ground
         bt = block_terrain(st, cfg)
         block = bt is not None                                       # 0.98.14 (Christian, 15 Nov 2026: "for rockytop use a
         #   model made from the full ncam block alignment"): the terrain from every Navcam frame of the block - one
@@ -262,7 +262,7 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                 if step == "ods" and ods_width:      # after the config's arguments: the last --width counts
                     argv += ["--width", str(int(ods_width))]
                 if step == "ods" and rover_surface and v == "rover":     # 0.98.2 (experimental): the panorama from the
-                    argv += ["--eyes", "left", "right", "centre"]        # pivot too, for rpp.ibr.rover_surface
+                    argv += ["--eyes", "left", "right", "center"]        # pivot too, for rpp.ibr.rover_surface
                 cmds.append({"variant": v, "step": step, "argv": argv})
         runs.append({"label": lab, "work": str(work), "out": str(base), "note": st.get("note", ""), "variants": vs,
                      "commands": cmds})
@@ -360,7 +360,7 @@ def _summary_line(run: Dict[str, Any], variant: str, codes: Dict[str, int], mins
         o = json.loads((out / "ods.json").read_text(encoding="utf-8"))
         c = o["eyes"]["left"]["coverage"]
         cells.append(f"mesh {100 * c['mesh']:.0f} %, plane {100 * c.get('plane', 0):.0f} %, far {100 * c['far']:.0f} %, "
-                     f"coloured {100 * c['coloured']:.0f} %")
+                     f"colored {100 * c['coloured']:.0f} %")
         cells.append("yes" if any(out.glob("*360_3DTD.jpg")) else "no")
     except (OSError, ValueError, KeyError):
         cells += ["-", "-"]

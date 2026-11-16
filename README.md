@@ -21,21 +21,21 @@ PDS-to-SfM pipeline that fills this gap: it turns **Navcam** and **Mastcam-Z** P
 aligned structure-from-motion blocks in **COLMAP**, and into inputs for **Agisoft Metashape**.
 
 Fixed-baseline stereo gives each rover stop its own range map; RPP lets the images from *nearby* stops triangulate
-together. A **block** is a set of rover stations within a few tens of metres of each other — Perseverance is
+together. A **block** is a set of rover stations within a few tens of meters of each other — Perseverance is
 parked within 10 m of three or more earlier or later stops on about 20 % of sols — and several dozen blocks of
 four or more panoramas have accumulated over the first 2,000 sols.
 
 Five processes take a block from PDS inputs to SfM outputs:
 
 1. **Images** — radiometrically linear 16-bit images (and 8-bit previews) that keep their PDS file names and are
-   traceable, count for count, to the PDS radiance, with colours harmonised between instruments and brightness
+   traceable, count for count, to the PDS radiance, with colors harmonized between instruments and brightness
    between times of day;
 2. **Masks** — rover hardware and rover shadows (the sky is not masked), from a fine-tuned ConvNeXt-tiny
    segmentation model downloaded on first use, so that the matcher ties images together on the terrain, not on the
    rover;
 3. **Cameras and stations** — the label CAHV/CAHVOR/CAHVORE models converted to COLMAP cameras, or the promoted
    temperature-, sol- and focus-aware calibrations of `rpp.calib`; each station placed in a local East–North–Up
-   frame (metres) from the rover waypoints, which with the stereo baseline fixes the scale;
+   frame (meters) from the rover waypoints, which with the stereo baseline fixes the scale;
 4. **Alignment** — a COLMAP project with stereo rigs, SIFT features matched by LightGlue, and a prior-weighted
    bundle adjustment on pyceres;
 5. **Health and exports** — an alignment health report, and the measurements for the 3D reconstruction error
@@ -46,7 +46,7 @@ distortion and the stereo rig to about 0.2 px, so the blocks across the mission 
 no single sol can provide. RPP versions those refined models, checks them across blocks, and feeds them back as
 the default cameras for the next run.
 
-Version **0.99.1** (`v0p99`): the core (`rpp`, the pipeline) and the research studies (`rpp_studies`) apart, the
+Version **0.99.2** (`v0p99`): the core (`rpp`, the pipeline) and the research studies (`rpp_studies`) apart, the
 freeze run as a driver of its own, and the products of one rover station past the block - a cleaned mesh with a
 model of the rover, per-image depth and photometric maps, and a stereoscopic 360 degree panorama with a web
 viewer (below). The paper's freeze release is 0.95 (`paper/paper.md`). Versions before 1.0 are
@@ -93,7 +93,7 @@ rpp run rockytop_example --zcam
 ## Use
 
 A **site** is a block of rover stations — where Perseverance ended its drives repeatedly within a few tens of
-metres — defined by its sol ranges in `src/rpp/data/sites.json` (`rpp sites list`). Each site has a WORK folder
+meters — defined by its sol ranges in `src/rpp/data/sites.json` (`rpp sites list`). Each site has a WORK folder
 `<RPP_SCAPES>/mars2020_sol_<first sol>_<site>[_zcam]`.
 
 ```bash

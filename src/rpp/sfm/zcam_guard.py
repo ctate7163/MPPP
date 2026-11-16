@@ -105,7 +105,7 @@ def brief(cov: Dict[str, Dict[str, int]]) -> str:
 
 # ------------------------------------------------------------------ what changed when a group collapsed
 def frame_poses(rec, project) -> Dict[int, Any]:
-    """{image_id: (R cam_from_world 3x3, centre)} of the registered Mastcam-Z images."""
+    """{image_id: (R cam_from_world 3x3, center)} of the registered Mastcam-Z images."""
     import numpy as np
     out = {}
     for iid in group_of(project):
@@ -200,7 +200,7 @@ def diagnosis_line(d: Dict[str, Any]) -> str:
     return (f"{', '.join(d['groups'])}: {d['images']} images, {d['observations_now']} observations now; registered "
             f"{d.get('frames_registered_before')} -> {d.get('frames_registered_now')}; without keypoints "
             f"{d['images_without_keypoints']}; pose change median {f(d['pose_change_deg_median'], '.4f')} deg "
-            f"(max {f(d['pose_change_deg_max'], '.3f')}), centre {f(d['centre_change_m_median'], '.4f')} m "
+            f"(max {f(d['pose_change_deg_max'], '.3f')}), center {f(d['centre_change_m_median'], '.4f')} m "
             f"(max {f(d['centre_change_m_max'], '.3f')}) over {d['images_with_both_poses']} images; camera change max "
             + (" ".join(f"{v:.3g}" for v in cm) if cm else "-")
             + f"; database pairs per image median {f(d['db_pairs_per_image_median'], '.0f')}, images without pairs "
@@ -238,7 +238,7 @@ def trace_enabled() -> int:
 
 def trace(rec, project, step: str, extra: Dict[str, Any] = None) -> None:
     """Append one record per Mastcam-Z image (registration, observations, keypoints, frame, rig, camera parameters,
-    centre and the pose relative to its left partner against the Mastcam-Z rig) to ``<project>/zr_trace.jsonl``."""
+    center and the pose relative to its left partner against the Mastcam-Z rig) to ``<project>/zr_trace.jsonl``."""
     lvl = trace_enabled()
     if not lvl:
         return

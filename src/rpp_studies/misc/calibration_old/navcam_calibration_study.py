@@ -614,7 +614,7 @@ def main(argv=None):
                          "(two more adjustments); 0 skips it")
     ap.add_argument("--translation-min-span", type=float, default=30.0,
                     help="consensus (v0p62): fit the Navcam rig translation on the blocks whose stations span at least "
-                         "this many metres (0: no translation fit)")
+                         "this many meters (0: no translation fit)")
     ap.add_argument("--apply-translation", action="store_true",
                     help="consensus (v0p62): write the fitted translation into the candidate rig (projects then use it)")
     ap.add_argument("--refit-thermal", action="store_true",
@@ -630,7 +630,7 @@ def main(argv=None):
                          "(applied where |z| >= 3; OUT/k1_slopes_from_bins.json)")
     ap.add_argument("--leave-one-out", action="store_true",
                     help="consensus (v0p80): the joint again without each block; the promotion check gates on it "
-                         "(0.05 px centre, 0.1 px corners)")
+                         "(0.05 px center, 0.1 px corners)")
     ap.add_argument("--loo-iterations", type=int, default=40, help="consensus --leave-one-out: iterations per block")
     ap.add_argument("--previous", help="consensus (v0p80): the previous pass's candidate (or cmods) folder - the change "
                                        "and whether the iteration has converged (OUT/pass_change.json)")

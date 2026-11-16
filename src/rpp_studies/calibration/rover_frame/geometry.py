@@ -1,5 +1,5 @@
 """
-Frames of study 3A (rotations as ``R_a_b``: b coordinates -> a coordinates; centres as points in a frame):
+Frames of study 3A (rotations as ``R_a_b``: b coordinates -> a coordinates; centers as points in a frame):
 
 - world ``w``: the block's frame (ENU of the landing site, minus the project offset; COLMAP's after the adjustment)
 - rover nav frame ``rnav``: x forward, y right, z down; its attitude in the site frame (north-east-down) is the label's

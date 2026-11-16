@@ -230,22 +230,22 @@ def survey(blocks: Dict[str, PathLike], variant: str = "", lists: Optional[Dict[
         if g:
             pooled[zoom] = float(np.median(g))
     levels = {f"{k[0]}|{k[1]}": classify(v, z_min, pooled, slopes) for k, v in by.items()}
-    centre_offsets(by)
+    center_offsets(by)
     seqs = sequences(rows)
     return {"images": rows, "levels": levels, "pooled_gap": pooled, "pooled_slope": slopes, "sequences": seqs,
             "proposal": proposal(rows, seqs, lists), "z_min": z_min, "single_images": single,
             "approach": approach_table(rows, single), "focus_list_proposal": focus_list_proposal(rows + single)}
 
 
-CENTRE_FLAG_PX = 1.0                 # a sequence whose camera centre sits this far from its eye's high-state centre
+CENTER_FLAG_PX = 1.0                 # a sequence whose camera center sits this far from its eye's high-state center
 
 
-def centre_offsets(by: Dict[Tuple[str, str], List[Dict[str, Any]]]) -> None:
+def center_offsets(by: Dict[Tuple[str, str], List[Dict[str, Any]]]) -> None:
     """0.94.5 (Christian, 27 Oct: the right eye's backlash state shows mainly in its principal point - Seitah Overlook
     ZCAM08114 pointings 1, 3, 5 fit high in f but 2-3.7 px off in the high-state bins): per (block, eye and zoom),
     each image's cx, cy (``dcx``, ``dcy``, full-frame px) about the median of the block's unlisted high-state images
-    of that camera.  Only where the centres vary (the states run with ``ZCAM_BIN_REFINE=focal_pp`` frees ZR's; ZL holds
-    its centre as the reference eye).  Sets ``dcx``, ``dcy`` on the rows (None otherwise)."""
+    of that camera.  Only where the centers vary (the states run with ``ZCAM_BIN_REFINE=focal_pp`` frees ZR's; ZL holds
+    its center as the reference eye).  Sets ``dcx``, ``dcy`` on the rows (None otherwise)."""
     for (_blk, _grp), v in by.items():
         c = [(r["cx"], r["cy"]) for r in v if r.get("cx") is not None and r.get("cy") is not None]
         if len(c) < 2 or float(np.ptp([x for x, _ in c])) + float(np.ptp([y for _, y in c])) < 1e-6:
@@ -503,11 +503,11 @@ def report_lines(res: Dict[str, Any]) -> List[str]:
                        + (f"{s['d_median_pct']:+.2f} %" if s["d_median_pct"] is not None else "-") + " | "
                        + (f"{s['gap_pct']:.2f} %" if s["gap_pct"] is not None else "-") + " |")
     cen = [s for s in res["sequences"] if s.get("dcx_median_px") is not None
-           and (s["listed"] or np.hypot(s["dcx_median_px"], s["dcy_median_px"] or 0.0) >= CENTRE_FLAG_PX)]
+           and (s["listed"] or np.hypot(s["dcx_median_px"], s["dcy_median_px"] or 0.0) >= CENTER_FLAG_PX)]
     if any(s.get("dcx_median_px") is not None for s in res["sequences"]):
-        out += ["", "## Camera centre by sequence (where the centres are free: the right eye in the states run)", "",
-                f"The centre (cx, cy, full-frame px) about the median of the block's high-state images of that camera; "
-                f"listed sequences, and those {CENTRE_FLAG_PX:g} px or more off. The right eye's backlash state shows "
+        out += ["", "## Camera center by sequence (where the centers are free: the right eye in the states run)", "",
+                f"The center (cx, cy, full-frame px) about the median of the block's high-state images of that camera; "
+                f"listed sequences, and those {CENTER_FLAG_PX:g} px or more off. The right eye's backlash state shows "
                 "mainly here (Seitah Overlook, 27 Oct).", "",
                 "| block | sol | sequence | camera | images | listed | f pattern | dcx | dcy | d f |", "|---|---|---|---|---|---|---|---|---|---|"]
         for s in cen:

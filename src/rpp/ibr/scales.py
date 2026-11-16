@@ -1,25 +1,25 @@
 """
-rpp.ibr.scales - what the colours of the per-image pictures in ``photometry_jpg/`` mean, and the way back to numbers
+rpp.ibr.scales - what the colors of the per-image pictures in ``photometry_jpg/`` mean, and the way back to numbers
 (0.97.7; Christian, 13 Nov 2026: "Do the photometry_jpg products have a constant scale so that we can take the jpg and
 get the actual range, normal vector, emission angle ... We would need to know the float with units to color mapping.
 Please make sure those mapping parameters are attached to the images and easy to read back into floats").
 
 The scales are constants - the same for every image, station and run:
 
-    <image>_depth_linear.jpg   range from the camera centre (m), 0 .. 75 linear, OpenCV colour map TURBO
+    <image>_depth_linear.jpg   range from the camera center (m), 0 .. 75 linear, OpenCV color map TURBO
     <image>_depth_log.jpg      the same range, 0.5 .. 200 m, log10, TURBO
     <image>_normal.jpg         the surface normal in the camera frame (x right, y down, z forward): n = 2 RGB / 255 - 1
     <image>_incidence.jpg      angle between the normal and the Sun (deg), 0 .. 90 linear, VIRIDIS
     <image>_emission.jpg       angle between the normal and the camera (deg), 0 .. 90 linear, VIRIDIS
     <image>_phase.jpg          angle Sun - surface - camera (deg), 0 .. 180 linear, VIRIDIS
-    <image>_shadow.jpg         lit / shadow / unknown, three fixed colours
+    <image>_shadow.jpg         lit / shadow / unknown, three fixed colors
     (the sky is white in every picture but the shadow one)
     <image>_rad.jpg            the block's 8-bit picture of the frame - a view, not radiance
 
 Every picture carries its scale as JSON in its XMP packet (``rpp:Scale``), and ``photometry_jpg/scales.json`` holds
 all of them.  :func:`decode` turns a picture back into floats with units.
 
-**The pictures are for looking; the numbers are in the .npz files.**  A JPEG holds 8 bits through a colour map and
+**The pictures are for looking; the numbers are in the .npz files.**  A JPEG holds 8 bits through a color map and
 then loses some to compression: read back on a smooth surface, an angle is good to about 0.2 deg (0 .. 90) or 0.4 deg
 (phase), the linear range to 0.15 m, the log range to 1 %, a normal to 0.5 deg (medians; 2-5 times that at the 99.9 %
 point, and worse at edges).  ``maps/<image>.npz``
@@ -44,12 +44,12 @@ NO_DATA_NOTE = "black [0, 0, 0] is the no-data flag: no surface, or the frame it
 def scales() -> Dict[str, Dict[str, Any]]:
     """The scale of each picture, by its file-name suffix."""
     from .raycast import DEPTH_LINEAR_MAX_M, DEPTH_LOG_RANGE_M
-    special = {"ground_plane": "the same colours x 0.55", "sky": [255, 255, 255], "masked_rgb": [0, 0, 0], "none": [0, 0, 0]}
+    special = {"ground_plane": "the same colors x 0.55", "sky": [255, 255, 255], "masked_rgb": [0, 0, 0], "none": [0, 0, 0]}
     return {
-        "depth_linear": {"quantity": "range from the camera centre", "units": "m", "map": "linear", "min": 0.0,
+        "depth_linear": {"quantity": "range from the camera center", "units": "m", "map": "linear", "min": 0.0,
                          "max": float(DEPTH_LINEAR_MAX_M), "colormap": "TURBO", "value": "min + (max - min) * index / 255",
                          "special": special},
-        "depth_log": {"quantity": "range from the camera centre", "units": "m", "map": "log10", "min": float(DEPTH_LOG_RANGE_M[0]),
+        "depth_log": {"quantity": "range from the camera center", "units": "m", "map": "log10", "min": float(DEPTH_LOG_RANGE_M[0]),
                       "max": float(DEPTH_LOG_RANGE_M[1]), "colormap": "TURBO",
                       "value": "10 ** (log10(min) + (log10(max) - log10(min)) * index / 255)", "special": special},
         "normal": {"quantity": "unit surface normal in the camera frame (x right, y down, z forward)", "units": "1",
@@ -100,7 +100,7 @@ def write_scales(folder: PathLike) -> Path:
                              "read_back": "from rpp.ibr.scales import decode; d = decode('<image>_emission.jpg'); d['value'] is "
                                           "float32 in d['units'], NaN where there is no value",
                              "exact_values": NPZ_NOTE, "no_data": NO_DATA_NOTE, "colormaps": "OpenCV COLORMAP_TURBO / COLORMAP_VIRIDIS, 256 entries; "
-                                                                    "index = the entry nearest to the pixel's colour",
+                                                                    "index = the entry nearest to the pixel's color",
                              "scales": scales()}, indent=1), encoding="utf-8")
     return f
 
@@ -151,7 +151,7 @@ def decode(path: PathLike, scale: Optional[Dict[str, Any]] = None) -> Dict[str, 
     cols, plane_from = lut, None
     sp = sc.get("special") or {}
     extra = []
-    if "ground_plane" in sp:                                         # the plane: the same colours darker
+    if "ground_plane" in sp:                                         # the plane: the same colors darker
         plane_from = len(cols)
         cols = np.vstack([cols, np.floor(lut * 0.55)])
     for k in ("sky", "masked_rgb"):

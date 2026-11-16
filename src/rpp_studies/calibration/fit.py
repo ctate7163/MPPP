@@ -191,7 +191,7 @@ def profile_thermal(rec, proj, temps, values: Dict[str, float], T0: float, term:
 
 # ------------------------------------------------------------------------------------------- early-mission offsets
 def _quadratic_design(n: int, h: float):
-    """Centre, +-h on each axis and +h on each pair of axes: (1 + 2n + n(n-1)/2) points, a full quadratic."""
+    """Center, +-h on each axis and +h on each pair of axes: (1 + 2n + n(n-1)/2) points, a full quadratic."""
     pts = [np.zeros(n)]
     for i in range(n):
         for s in (1.0, -1.0):
@@ -274,7 +274,7 @@ def fit_early_offsets(rec, proj, temps, ppm: float, T0: float, xkw: Dict[str, An
     """fx, fy, cx, cy offsets (px, common to both eyes) of the Navcam images taken before ``before_sol``.  Each
     evaluation is one joint adjustment from the same state (``rec`` is not changed) with the images' keypoints
     mapped by :func:`rpp_studies.calibration.joint.early_keypoint_map`.  A full quadratic response surface of the cost over the
-    four offsets (15 adjustments) gives the minimum and the covariance vf H^-1; ``rounds`` re-centres the design on
+    four offsets (15 adjustments) gives the minimum and the covariance vf H^-1; ``rounds`` re-centers the design on
     the minimum.  z = offset / sd per term; the likelihood ratio 2 (cost(0) - cost(best)) / vf against chi2(4)."""
     from scipy import stats
     n_early = len(J.early_keypoint_map(proj, before_sol, np.zeros(4)).early_images)
@@ -327,7 +327,7 @@ def fit_early_offsets(rec, proj, temps, ppm: float, T0: float, xkw: Dict[str, An
                   "eigenvalues": ev.tolist(), "fit_rms": fit_rms, "step": dx.tolist(), "positive_definite": ok}
         out["rounds"].append(rec_rd)
         if verbose:
-            log.info(f"  early offsets, round {rd + 1}/{rounds}: centre " + " ".join(f"{k} {v:+.3f}" for k, v in zip(EARLY_TERMS, best))
+            log.info(f"  early offsets, round {rd + 1}/{rounds}: center " + " ".join(f"{k} {v:+.3f}" for k, v in zip(EARLY_TERMS, best))
                   + "; step " + " ".join(f"{v:+.3f}" for v in dx) + (" (positive definite)" if ok else " (not convex)"))
         if ok and np.all(np.abs(dx) < 0.5 * step):
             best = best + dx
@@ -372,7 +372,7 @@ def leave_one_block_out(rec, proj, idx: Dict[str, Any], temps, ppm: float, T0: f
                         extra_map=None, iterations: int = 40, verbose: bool = True) -> Dict[str, Any]:
     """The joint without each block in turn (:func:`rpp_studies.calibration.joint.subset`), started from the converged joint
     with the thermal terms held, and how far each eye's camera moves (:func:`rpp_studies.calibration.joint.compare`, the best
-    rotation removed): centre / corner rms px, the cx changes, the rig yaw / pitch change and the stereo pointing
+    rotation removed): center / corner rms px, the cx changes, the rig yaw / pitch change and the stereo pointing
     change NR cx - NL cx x fR/fL + fR yaw (px).  Returns {"blocks", "max", "worst", "limits", "ok", "errors"}."""
     full = J.shared_state(rec)
     cams_full = {k: J.pycolmap_camera(full[k]["model"], full[k]["params"]) for k in ("NL", "NR")}
@@ -404,8 +404,8 @@ def leave_one_block_out(rec, proj, idx: Dict[str, Any], temps, ppm: float, T0: f
                                  + fR * np.radians(1e-3 * row["rig_yaw_mdeg"]))
         rows[name] = row
         if verbose:
-            log.info(f"  leave out {name}: NL centre {row['NL']['centre_px']:.3f} corner {row['NL']['corner_px']:.3f}, NR "
-                  f"centre {row['NR']['centre_px']:.3f} corner {row['NR']['corner_px']:.3f} px, stereo "
+            log.info(f"  leave out {name}: NL center {row['NL']['centre_px']:.3f} corner {row['NL']['corner_px']:.3f}, NR "
+                  f"center {row['NR']['centre_px']:.3f} corner {row['NR']['corner_px']:.3f} px, stereo "
                   f"{row['stereo_px']:+.3f} px  {J.progress(kb, len(names), t_all, 'leave-one-out')}")
     ok_rows = [v for v in rows.values() if "error" not in v]
     mx = {"centre_px": max((max(v["NL"]["centre_px"], v["NR"]["centre_px"]) for v in ok_rows), default=None),
@@ -514,7 +514,7 @@ def consensus_change(a_dir: PathLike, b_dir: PathLike) -> Dict[str, Any]:
 
 
 def block_span_m(root: PathLike) -> float:
-    """The largest horizontal distance between the Navcam station centres of a block (its waypoint priors)."""
+    """The largest horizontal distance between the Navcam station centers of a block (its waypoint priors)."""
     from rpp.sfm.project import SfmProject
     from rpp.sfm.reconstruction import navcam_network
     root = Path(root)
@@ -582,7 +582,7 @@ def fit_rig_translation(scapes_cfg: Dict[str, PathLike], res: Dict[str, Any], po
                         sigma_m: float = 0.05, iterations: int = 100, verbose: bool = True) -> Dict[str, Any]:
     """The Navcam rig translation from the large blocks (their waypoint priors fix the scale independently of the
     baseline): merged as in :func:`fit_navcam` with the cameras of ``res`` held, the rig yaw held, pitch, roll and
-    the translation refined (a weak prior of ``sigma_m`` per axis on the right centre)."""
+    the translation refined (a weak prior of ``sigma_m`` per axis on the right center)."""
     import pycolmap
     from rpp.sfm.project import navcam_distortion_terms
     cams = {k: pycolmap.Camera(model="THIN_PRISM_FISHEYE", width=5120, height=3840,
@@ -626,7 +626,7 @@ def fit_rig_translation(scapes_cfg: Dict[str, PathLike], res: Dict[str, Any], po
            "dbaseline_mm": 1e3 * float(np.linalg.norm(t1) - np.linalg.norm(t0)),
            "rig_abs_mdeg": J.rig_angles(R1), "seconds": time.time() - t}
     if verbose:
-        log.info(f"rig translation ({len(out['blocks'])} large blocks): right centre change [mm] "
+        log.info(f"rig translation ({len(out['blocks'])} large blocks): right center change [mm] "
               f"{np.round(out['dcentre_mm'], 3).tolist()} (x along the baseline), sd [mm] "
               f"{None if sd_t is None else np.round(sd_t, 3).tolist()}, baseline {out['baseline_m']:.5f} m "
               f"({out['dbaseline_mm']:+.2f} mm)  ({out['seconds']:.0f} s)")
@@ -924,7 +924,7 @@ def write_navcam(res: Dict[str, Any], out_dir: PathLike, note: str = "",
         else:
             c["sd_source"] = "copied from the cameras in use (not refitted)"
         lo = res.get("leave_one_out")
-        c["verification"] = {"note": ("leave-one-block-out: max centre {:.3f} px, corners {:.3f} px over {} blocks ({})".format(
+        c["verification"] = {"note": ("leave-one-block-out: max center {:.3f} px, corners {:.3f} px over {} blocks ({})".format(
                                  lo["max"]["centre_px"], lo["max"]["corner_px"], len(lo["blocks"]), "ok" if lo["ok"] else "NOT ok")
                                  if lo and lo.get("max", {}).get("centre_px") is not None
                                  else "not verified (no leave-one-block-out run)"),
@@ -1106,9 +1106,9 @@ def check_navcam(candidate_dir: PathLike, current_dir: Optional[PathLike] = None
             add("block agreement", "not run", "required", False, "run the tied joint with diagnostics")
     elif lo and (lo.get("max") or {}).get("centre_px") is not None:
         mx = lo["max"]
-        add("leave-one-block-out", f"centre {mx['centre_px']:.3f} / corners {mx['corner_px']:.3f} px",
+        add("leave-one-block-out", f"center {mx['centre_px']:.3f} / corners {mx['corner_px']:.3f} px",
             f"{LOO_LIMITS['centre_px']} / {LOO_LIMITS['corner_px']} px", bool(lo.get("ok")),
-            f"worst: centre {lo.get('worst', {}).get('centre_px')}, corners {lo.get('worst', {}).get('corner_px')}; "
+            f"worst: center {lo.get('worst', {}).get('centre_px')}, corners {lo.get('worst', {}).get('corner_px')}; "
             f"stereo pointing up to {mx.get('stereo_px') or 0.0:.3f} px" + (f"; failed: {', '.join(lo['errors'])}"
                                                                               if lo.get("errors") else ""))
     else:
@@ -1284,7 +1284,7 @@ def pp_shift_to_rig(R_sensor_from_ref: np.ndarray, t_sensor_from_ref: np.ndarray
                     dcx_px: float, dcy_px: float) -> Tuple[np.ndarray, np.ndarray]:
     """The rig rotation that replaces a principal-point offset of the right (sensor) eye: a camera whose principal
     point is moved by (dcx, dcy) px sees the same pixels as the camera with the original principal point rotated
-    about its own centre by (wx, wy) = (-dcy, dcx) / f.  Returns (R', t') with R' = R_d R, t' = R_d t."""
+    about its own center by (wx, wy) = (-dcy, dcx) / f.  Returns (R', t') with R' = R_d R, t' = R_d t."""
     from scipy.spatial.transform import Rotation
     Rd = Rotation.from_rotvec([-dcy_px / f_px, dcx_px / f_px, 0.0]).as_matrix()
     return Rd @ np.asarray(R_sensor_from_ref, float), Rd @ np.asarray(t_sensor_from_ref, float)
@@ -1973,7 +1973,7 @@ def block_table_markdown(rows: Sequence[Dict[str, Any]], focal_limit_ppm: float 
 
 # ------------------------------------------------------------------------------------------- rig drift (0.90)
 def wls_tau(y: np.ndarray, X: np.ndarray, var: np.ndarray) -> Dict[str, Any]:
-    """Weighted least squares with an additive between-block variance tau^2 (DerSimonian-Laird generalised to a
+    """Weighted least squares with an additive between-block variance tau^2 (DerSimonian-Laird generalized to a
     regression; the study's ``navcal._wls``).  Returns coef, se, p, tau, Q, cov, n_used."""
     from scipy import stats
     y, X, var = np.asarray(y, float), np.asarray(X, float), np.asarray(var, float)
@@ -2032,7 +2032,7 @@ def fit_rig_drift(rows: Sequence[Dict[str, Any]], knot_sol: Union[float, str, No
     knot_sol) - knot_ref)`` per angle, :func:`rpp.calib.constrain.drift_offset_mdeg`) from rig-epoch rows
     (:func:`rig_rows`, or the study's per-block rigs): per angle a between-block regression on camera temperature
     and sol with weights 1 / (sd^2 + tau^2); ``knot_angles`` get a hinge whose knot is ``knot_sol`` or, with
-    ``"free"`` (0.90), the sol in ``knot_grid`` that minimises the weighted residual sum of squares (profile fit;
+    ``"free"`` (0.90), the sol in ``knot_grid`` that minimizes the weighted residual sum of squares (profile fit;
     ``knot_profile`` in the result); ``no_drift`` angles keep their fit for information but get rate 0 (yaw is
     held in the block runs); ``held`` angles get rate 0 and no hinge.  ``sol0`` and ``knot_ref`` are means over
     ``reference_sols`` (default: the rows) so the drift averages to zero over the blocks the joint rig came from.

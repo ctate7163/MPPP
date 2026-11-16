@@ -4,7 +4,7 @@ The sites (blocks of rover stations) and their WORK folders.
 The site definitions are the package data file ``rpp/data/sites.json`` (:func:`load_site_table`,
 :func:`load_sites` for name -> sol range).  A site's block folder is ``mars2020_sol_<first sol, 4 digits>_<site>``
 (``..._zcam`` when Mastcam-Z is included) under the scapes root (:func:`work_folder`, :func:`parse_work_folder`).
-:func:`discover_scapes` walks a root for the folders that hold a finished alignment, labelled and in sol order;
+:func:`discover_scapes` walks a root for the folders that hold a finished alignment, labeled and in sol order;
 :func:`scan_scapes` returns every folder with the reason it was left out.  Nothing here is read at import time.
 """
 from __future__ import annotations
@@ -336,11 +336,11 @@ def check_block_record(b: Any) -> List[str]:
     c = b.get("centre")
     if c is not None:
         if not isinstance(c, dict):
-            out.append("block centre must be an object like {\"lon\": 77.4, \"lat\": 18.4}")
+            out.append("block center must be an object like {\"lon\": 77.4, \"lat\": 18.4}")
         else:
             for k in ("lon", "lat", "easting", "northing", "easting_m", "northing_m"):
                 if k in c and not isinstance(c[k], (int, float)):
-                    out.append(f"block centre {k} {c[k]!r} must be a number")
+                    out.append(f"block center {k} {c[k]!r} must be a number")
     return out
 
 
@@ -469,7 +469,7 @@ def scan_scapes(root: PathLike, sites: Optional[Dict[str, Sequence[int]]] = None
                 require_error_input: bool = False, include_zcam: bool = True,
                 exclude: Iterable[str] = (), min_images: int = 10) -> List[Dict[str, Any]]:
     """
-    Every notebook 03 WORK folder below ``root`` with what it holds and whether it can be analysed (``ok``, else
+    Every notebook 03 WORK folder below ``root`` with what it holds and whether it can be analyzed (``ok``, else
     ``reason``).  A folder is used when its ``colmap/project.json`` records a finished alignment (``settings.
     reconstruction.path``, whose ``images.bin`` exists; a run in progress rewrites project.json first and is left
     out), it has at least ``min_images`` images, ``colmap/error_input/summary.json`` exists if
@@ -559,7 +559,7 @@ def discover_scapes(root: PathLike, sites: Optional[Dict[str, Sequence[int]]] = 
     """
     rows = scan_scapes(root, sites, require_error_input, include_zcam, exclude, min_images)
     # two sites with the same label (e.g. bell_island and bell_island_large, both "Bell Island") stay apart:
-    # the later one is labelled with its site name (before, one silently replaced the other)
+    # the later one is labeled with its site name (before, one silently replaced the other)
     seen: Dict[str, int] = {}
     for r in rows:
         if r["ok"]:

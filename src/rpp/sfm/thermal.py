@@ -4,7 +4,7 @@ The Navcam temperature bins of a solved block: the final stage of :func:`rpp.sfm
 The refined Navcam cameras of a block follow the camera temperature (fx, fy by ~40 ppm/degC, the principal points
 and k1 by their slopes - the thermal terms of the promoted model, :mod:`rpp.calib`).  :func:`temperature_bins` puts
 every exposure (frame) in a bin of ``bin_deg`` by the mean temperature of its images (bins with fewer than
-``min_images`` images merged into their nearer neighbour); :func:`split_by_temperature` rebuilds a solved
+``min_images`` images merged into their nearer neighbor); :func:`split_by_temperature` rebuilds a solved
 reconstruction with one Navcam camera per eye and bin (the stereo rig copied per bin), each bin started from the
 eye's camera moved to the bin temperature by the thermal model; :func:`thermal_stage` adjusts it once more with the
 bins' ``free`` parameters refined (fx, fy, k1), everything else held.  :func:`image_temperatures` gives each project
@@ -89,7 +89,7 @@ def _count(xs: Iterable[str]) -> Dict[str, int]:
 
 # ----------------------------------------------------------------------------- bins
 # the defaults of the final (thermal) stage of notebook 03 - 5 degC bins, a bin with fewer than 5 images
-# (both eyes counted) merged into its neighbour
+# (both eyes counted) merged into its neighbor
 THERMAL_BIN_DEG = 5.0
 THERMAL_MIN_IMAGES = 5
 # finer bins where the images are dense (most Navcam frames are taken at -25..-5 degC): 2.5 degC there,
@@ -131,12 +131,12 @@ def temperature_bins(frame_T: Dict[int, float], frame_n: Dict[int, int], bin_deg
 
     1. A frame's temperature is the mean of its Navcam images' camera temperatures; the frame goes to the bin
        ``[floor(T / bin_deg) * bin_deg, + bin_deg)``, so the bins are fixed multiples of ``bin_deg`` (5 degC:
-       ..., -20..-15, -15..-10, ...), not centred on the data.  Only bins holding frames exist.
+       ..., -20..-15, -15..-10, ...), not centered on the data.  Only bins holding frames exist.
     2. Images are counted per bin (a stereo frame counts 2, both eyes together).  While some bin has fewer than
-       ``min_images``, the smallest of them is merged with the neighbouring occupied bin (the next one below or
-       above in temperature, even across empty bins) whose centre is nearer to its own; the merged bin spans both
+       ``min_images``, the smallest of them is merged with the neighboring occupied bin (the next one below or
+       above in temperature, even across empty bins) whose center is nearer to its own; the merged bin spans both
        (e.g. -20..-15 + -15..-10 -> -20..-10; -25..-20 + -15..-10 -> -25..-10).  Repeated until every bin has
-       ``min_images`` or only one is left.  A tie between two neighbours goes to the colder one.
+       ``min_images`` or only one is left.  A tie between two neighbors goes to the colder one.
 
     ``fine_range`` (a, b) and ``fine_deg``: bins ``fine_deg`` wide inside [a, b) (:func:`bin_edges`), where
     the images are dense; the merge rule then works on those bins as on the others.

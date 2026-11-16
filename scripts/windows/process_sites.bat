@@ -1,7 +1,7 @@
 @echo off
 REM ======================================================================================================
 REM RPP - select and process the images of every site (or some of them) into their WORK folders under ROOT,
-REM one site after the other, in the background (a minimised window; closing it stops it). No alignment.
+REM one site after the other, in the background (a minimized window; closing it stops it). No alignment.
 REM
 REM Uses the newest notebook 03 in RPP_HOME\notebooks with its default settings (sections 1-2: PDS selection
 REM and image processing) and the site list in src\rpp\data\sites.json.
@@ -38,6 +38,6 @@ if not defined RPP_SCAPES if exist "D:\rover_blocks" set "RPP_SCAPES=D:\rover_bl
 if not defined RPP_SCAPES (echo set RPP_SCAPES to the scapes root, e.g. setx RPP_SCAPES D:\rover_blocks & pause & exit /b 1)
 set "ROOT=%RPP_SCAPES%"
 start "RPP process_sites - %ROOT%" /min cmd /c call "%RPP_WIN%\_run_process.bat" --root "%ROOT%" %WHICH% %ZCAM% %EXTRA% %*
-echo RPP process_sites started in a minimised window. Log: "%ROOT%\process_sites_log.txt"
+echo RPP process_sites started in a minimized window. Log: "%ROOT%\process_sites_log.txt"
 echo Status of every site: check_sites.bat
 timeout /t 10

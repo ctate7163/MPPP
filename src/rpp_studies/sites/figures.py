@@ -29,7 +29,7 @@ def plot_site_map(blocks: Optional[Dict[str, Any]], waypoints: Union[PathLike, D
     ``(..., sol)``) on the tinted hillshade of the terrain tiles in ``terrain_dir`` with 100 m contours and a scale
     bar; **C** the block table (number, name, N× end-of-drive Navcam 360s, Z× numbered Mastcam-Z 360s, visits).
     ``blocks`` is the site table's ``official_blocks`` (default: the shipped table); ``highlight`` names the sites
-    whose labels get the warm colour.
+    whose labels get the warm color.
     """
     import matplotlib
     matplotlib.use("Agg")
@@ -89,8 +89,8 @@ def plot_site_map(blocks: Optional[Dict[str, Any]], waypoints: Union[PathLike, D
         ax.contour(gx, gy, Zf, levels=lev, colors="k", linewidths=0.3, alpha=0.25, zorder=1)
         return norm
 
-    def scalebar(ax, box, metres, label):
-        dl = metres / M_LON; y0 = box[2] + 0.06 * (box[3] - box[2]); x0 = box[0] + 0.05 * (box[1] - box[0])
+    def scalebar(ax, box, meters, label):
+        dl = meters / M_LON; y0 = box[2] + 0.06 * (box[3] - box[2]); x0 = box[0] + 0.05 * (box[1] - box[0])
         ax.plot([x0, x0 + dl], [y0, y0], color=INK, lw=3, zorder=9, solid_capstyle="butt")
         ax.text(x0 + dl / 2, y0 + 0.025 * (box[3] - box[2]), label, ha="center", fontsize=8 * FS, zorder=9,
                 bbox=dict(boxstyle="round,pad=0.1", fc="white", ec="none", alpha=0.7))
@@ -169,7 +169,7 @@ def plot_site_map(blocks: Optional[Dict[str, Any]], waypoints: Union[PathLike, D
         ax.text(k / ncol, 1.0, "\n".join(lines[per * k:per * (k + 1)]), va="top", ha="left", family="DejaVu Sans Mono",
                 fontsize=7.2 * FS, color=INK, transform=ax.transAxes, linespacing=1.25)
     ax.set_title(title_c or ("C. Blocks of rover stations: number, name, N× = end-of-drive Navcam 360s and Z× = numbered "
-                             "Mastcam-Z 360s within ±30 m of the block centre, and the sols the rover ended inside that square"),
+                             "Mastcam-Z 360s within ±30 m of the block center, and the sols the rover ended inside that square"),
                  loc="left", fontsize=10 * FS, color=INK)
     fig.savefig(path, dpi=dpi, facecolor=fig.get_facecolor())
     plt.close(fig)
@@ -179,7 +179,7 @@ def plot_site_map(blocks: Optional[Dict[str, Any]], waypoints: Union[PathLike, D
 
 # ------------------------------------------------------------------------------------------- LMST histograms
 # studies/analyses/lmst_histogram.py (30 Sep 2026), ported unchanged: stepped histograms per site plus all sites,
-# Navcam and Mastcam-Z 34 mm each normalised to unit area, local noon dashed, the processing window dotted.
+# Navcam and Mastcam-Z 34 mm each normalized to unit area, local noon dashed, the processing window dotted.
 LMST_NAV_C, LMST_ZC_C = "#2a78d6", "#eb6834"          # categorical slots 1 and 2 (validated: CVD dE 24.7, normal 33.6)
 LMST_FILL_ALPHA = 0.30
 LMST_XLIM = (5.0, 19.0)
@@ -275,7 +275,7 @@ def lmst_site_row(name: str, recs: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
             "navcam_lmst_iqr_h": round(q(lmN, 75) - q(lmN, 25), 2) if len(nav) else None}
 
 
-LMST_T_C = "#8a8a8a"       # the camera temperature points on the secondary axis (grey, so the histograms keep their colours)
+LMST_T_C = "#8a8a8a"       # the camera temperature points on the secondary axis (gray, so the histograms keep their colors)
 
 
 def plot_lmst_histograms(images: Dict[str, Dict[str, Any]], rows: Sequence[Dict[str, Any]], path: PathLike,
@@ -283,7 +283,7 @@ def plot_lmst_histograms(images: Dict[str, Dict[str, Any]], rows: Sequence[Dict[
     """The LMST histogram figure: one stepped panel per site (``rows`` order) and one for all sites, Navcam and
     Mastcam-Z 34 each to unit area, local noon dashed, the processing ``window`` dotted.  ``temperature`` (0.90,
     Christian): every panel gets a secondary right axis with the Navcam camera temperature of each image against
-    its LMST (grey dots, one temperature range for all panels).  Writes ``path`` (dpi 160) and returns (Navcam
+    its LMST (gray dots, one temperature range for all panels).  Writes ``path`` (dpi 160) and returns (Navcam
     images, Mastcam-Z images)."""
     import matplotlib
     matplotlib.use("Agg")
@@ -391,7 +391,7 @@ def plot_lmst_histograms(images: Dict[str, Dict[str, Any]], rows: Sequence[Dict[
         handles.append(Line2D([], [], color="0.55", lw=0.8, ls=":", label=f"processing window {window[0]:g}-{window[1]:g} h"))
     ax.legend(handles=handles, loc="lower center", fontsize=7.5, frameon=False, ncol=len(handles),
               bbox_to_anchor=(0.5, 1.13), borderaxespad=0.0)
-    fig.suptitle("Time of day of the processed images, per site (each camera normalised to unit area)",
+    fig.suptitle("Time of day of the processed images, per site (each camera normalized to unit area)",
                  fontsize=9.5, x=0.01, ha="left", y=0.995)
     fig.subplots_adjust(left=0.03, right=0.96 if Tlim else 0.99, top=1 - 0.55 / fig.get_figheight(), bottom=0.5 / fig.get_figheight())
     Path(path).parent.mkdir(parents=True, exist_ok=True)

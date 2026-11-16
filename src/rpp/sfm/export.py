@@ -9,7 +9,7 @@ Exports for error analysis.
   what ``rpp.colmap.read_colmap`` reads, and what matches the image files.
 * ``stations.csv`` — image -> station (site/drive), sol, SCLK, LMST, solar
   elevation, instrument, downsample scale (the name -> station mapping).
-* ``poses.csv`` — CAHV/waypoint prior vs refined camera centre (ENU, metres)
+* ``poses.csv`` — CAHV/waypoint prior vs refined camera center (ENU, meters)
   and attitude difference (degrees), per image.
 * ``residuals.npz`` — per-observation residual in native pixels.
 * ``summary.json`` — cameras and rig before/after, track statistics, and the
@@ -110,13 +110,13 @@ def write_native_text_model(rec, project: SfmProject, out_dir: PathLike) -> Dict
 
 def point_colors_from_tracks(nat, images_dir: PathLike, invalid_black: bool = True) -> Dict[str, Any]:
     """
-    Colour every 3-D point of the native-pixel model ``nat`` with the mean of
+    Color every 3-D point of the native-pixel model ``nat`` with the mean of
     the image pixels of all its observations.  COLMAP's own
     ``extract_colors_for_all_images`` leaves a point black when the image it
-    happens to take the colour from cannot be read or the keypoint falls on an
+    happens to take the color from cannot be read or the keypoint falls on an
     invalid (black, masked) pixel; here every observation contributes, black
     pixels (``invalid_black``: RGB all zero, RPP's invalid flag) are left out,
-    and a point with no valid sample gets mid-grey.  Each image is read once.
+    and a point with no valid sample gets mid-gray.  Each image is read once.
     Returns counts.
     """
     import cv2
@@ -167,7 +167,7 @@ def write_gui_native(project: SfmProject, rec, out_dir: Optional[PathLike] = Non
     ``<project>/gui_native/``: the refined model and a database in each image's
     native pixels (one camera per camera and resolution), so keypoints, tie
     points and matches line up with the image files.  ``sparse/`` is the model
-    (all keypoints, point colours taken from the images), ``database.db`` holds
+    (all keypoints, point colors taken from the images), ``database.db`` holds
     cameras, rigs, frames, images, native keypoints and the verified matches
     (no descriptors: not for matching).  Opened by ``open_in_colmap.bat``.
     Not for processing: RPP's bundle adjustment works on the full-resolution
@@ -182,7 +182,7 @@ def write_gui_native(project: SfmProject, rec, out_dir: Optional[PathLike] = Non
     if colors:
         try:
             color_report = point_colors_from_tracks(nat, project.images_dir)      # mean over the track
-        except Exception as e:                               # noqa: BLE001  (colours are cosmetic)
+        except Exception as e:                               # noqa: BLE001  (colors are cosmetic)
             color_report = {"error": f"{type(e).__name__}: {e}"}
     nat.write(str(out / "sparse"))
     dbp = out / "database.db"
@@ -298,25 +298,25 @@ def plot_camera_shifts(project: SfmProject, rec=None, rows: Optional[List[Dict[s
                        min_observations: int = 30, ncols: int = 4, station_panels: bool = False):
     """
     Top-down view of how far each camera moved from its reference (its CAHV +
-    waypoint prior) in the refinement.  Stations are tens of metres
-    apart while the cameras of one station lie within a metre, so:
+    waypoint prior) in the refinement.  Stations are tens of meters
+    apart while the cameras of one station lie within a meter, so:
 
     * top left - overview: every station's median shift, prior -> refined, as an
-      arrow exaggerated ``k_overview`` times, coloured by its median vertical
-      shift dU, labelled ``Sol0686 S032D1184``;
-    * top right - every camera's total shift |dC| per station (dots coloured by
+      arrow exaggerated ``k_overview`` times, colored by its median vertical
+      shift dU, labeled ``Sol0686 S032D1184``;
+    * top right - every camera's total shift |dC| per station (dots colored by
       the attitude change);
-    * with ``station_panels`` (off by default since v0p35.1) - one panel per station in local coordinates (metres
-      from the station's median camera centre): one arrow per image from its prior to its refined centre,
+    * with ``station_panels`` (off by default since v0p35.1) - one panel per station in local coordinates (meters
+      from the station's median camera center): one arrow per image from its prior to its refined center,
       horizontal shift exaggerated ``exaggeration`` times (shared by all panels; default: the median arrow is
-      ~30 % of the median station extent, rounded to 1/2/5), coloured by dU (shared scale).
+      ~30 % of the median station extent, rounded to 1/2/5), colored by dU (shared scale).
 
     Stations whose waypoint position prior was not used (v0p35.1, ``LOCALIZE_MIN_IMAGES``:
     ``project.settings["reconstruction"]["unlocalized_stations"]``) are drawn with dashed arrows and marked
     "(no prior)".
 
     Navcam = circles, Mastcam-Z = triangles; images with fewer than
-    ``min_observations`` observations (held at their prior) are grey crosses.
+    ``min_observations`` observations (held at their prior) are gray crosses.
     ``rows``: from :func:`pose_residual_table` or ``poses.csv`` (computed from
     ``rec`` if omitted).  Returns the figure (saved to ``out_png`` if given).
     """
@@ -398,10 +398,10 @@ def plot_camera_shifts(project: SfmProject, rec=None, rows: Optional[List[Dict[s
     ax0.set_ylim(0.5 * (yo.min() + yo.max()) - half, 0.5 * (yo.min() + yo.max()) + half)
     ax0.set_aspect("equal", adjustable="box")
     ax0.set_xlabel("E [m]"); ax0.set_ylabel("N [m]"); ax0.grid(alpha=0.3)
-    ax0.set_title(f"station median shift, prior -> refined (x{k_ov:g}); colour = dU")
+    ax0.set_title(f"station median shift, prior -> refined (x{k_ov:g}); color = dU")
     fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax0, shrink=0.85, label="dU, refined - prior [m]")
 
-    # per-camera total shift by station, coloured by attitude change
+    # per-camera total shift by station, colored by attitude change
     att = np.array([r["dAttitude_deg"] for r in good])
     vmax = max(float(np.percentile(att, 98)) if att.size else 0.1, 1e-3)
     rng = np.random.default_rng(0)
@@ -420,7 +420,7 @@ def plot_camera_shifts(project: SfmProject, rec=None, rows: Optional[List[Dict[s
     ax1.set_xticks(range(len(stations)))
     ax1.set_xticklabels([st + (" (no prior)" if st in unloc else "") for st in stations], rotation=60, ha="right",
                         fontsize=7)
-    ax1.set_ylabel("|refined - prior| camera centre [cm]")
+    ax1.set_ylabel("|refined - prior| camera center [cm]")
     ax1.set_ylim(bottom=0)
     ax1.grid(alpha=0.3, axis="y")
     ax1.set_title(f"per camera: median {100 * float(np.median([r['dC_m'] for r in good])) if good else 0:.1f} cm, "
@@ -429,7 +429,7 @@ def plot_camera_shifts(project: SfmProject, rec=None, rows: Optional[List[Dict[s
     if sc is not None:
         fig.colorbar(sc, ax=ax1, shrink=0.85, label="attitude change [deg]")
 
-    # one panel per station, local coordinates, shared exaggeration and colours (station_panels)
+    # one panel per station, local coordinates, shared exaggeration and colors (station_panels)
     for i, s in enumerate(stations if station_panels else []):
         ax = fig.add_subplot(gs[1 + i // ncols, i % ncols])
         v, c = by_st[s], summ[s]
@@ -455,7 +455,7 @@ def plot_camera_shifts(project: SfmProject, rec=None, rows: Optional[List[Dict[s
             ax.set_ylabel("N - station [m]", fontsize=8)
         ax.set_xlabel("E - station [m]", fontsize=8)
     fig.suptitle("camera shifts relative to the CAHV + waypoint references"
-                 + (f"; station panels: horizontal x{k:g}, colour = dU (+/-{lim * 100:.1f} cm)" if station_panels else "")
+                 + (f"; station panels: horizontal x{k:g}, color = dU (+/-{lim * 100:.1f} cm)" if station_panels else "")
                  + f"; o Navcam, ^ Mastcam-Z, x held (< {min_observations} obs.)"
                  + ("; dashed: station without a position prior (LOCALIZE_MIN_IMAGES)" if unloc else ""), fontsize=10)
     fig.tight_layout(rect=(0, 0, 1, 0.98))

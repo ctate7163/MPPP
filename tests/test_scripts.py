@@ -71,7 +71,7 @@ def test_bat_files_work_from_any_folder_and_find_the_environment():
     body = env.split(":try_prefix\n")[1]
     assert "%~dp0" not in body                     # inside a call :label, %0 is the label
     r = subprocess.run([sys.executable, str(win.parent / "check_env.py")], capture_output=True, text=True)   # 0.94.4: scripts\
-    # the PC, 10 Nov: sys.executable came as ...\miniconda3\.\python.exe, check_env.py printed the normalised path
+    # the PC, 10 Nov: sys.executable came as ...\miniconda3\.\python.exe, check_env.py printed the normalized path
     assert r.returncode in (0, 1) and os.path.normcase(os.path.normpath(sys.executable)) in os.path.normcase(r.stdout)
 
 
@@ -646,7 +646,7 @@ def test_zcam_aspect_geometry_on_a_small_block(tmp_path):
     assert len(rows) == 1 and rows[0]["bin"] == "ZL063_F02000" and rows[0]["ties"] == 300
     r = rows[0]
     assert -30 < r["elevation_deg"] < 0 and 5 < r["range_m"] < 12 and 0 < r["coverage"] <= 1
-    bins = G.summarise(rows * 9)
+    bins = G.summarize(rows * 9)
     assert len(bins) == 1 and bins[0]["aspect_ppm"] == 0.0 and bins[0]["images"] == 9
     md = G.report(bins)
     assert md[0].startswith("# Mastcam-Z bin aspect")

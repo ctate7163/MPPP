@@ -5,7 +5,7 @@ The thermal term of the Navcam focal law (+36 ppm / degC) comes from terrain tie
 uses none: ONE Navcam frame of the surveyed deck targets, its pose free and one focal scale ``s`` free (fx, fy x
 (1 + s); the law's camera at the frame's temperature otherwise held),
 
-    minimise  sum |project(law(T) x (1 + s), pose, X_target) - uv|^2        over pose (6) and s
+    minimize  sum |project(law(T) x (1 + s), pose, X_target) - uv|^2        over pose (6) and s
 
 A single image with a free pose cannot see the size of the object - a uniform scale of the deck (its thermal
 expansion, a survey scale error) is taken up by the camera's distance - nor the stereo baseline.  ``s`` comes from

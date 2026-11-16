@@ -39,9 +39,9 @@ DEFAULT_CARD: Dict[str, Any] = {
     "fpn_width": 256,
     "input_size": 1648,              # long side after resizing (never enlarged beyond the canvas)
     # canvas [W, H] the resized image is zero-padded into (bottom/right).  Absent in
-    # cards written before v0p5 -> square [input_size, input_size], the old behaviour.
+    # cards written before v0p5 -> square [input_size, input_size], the old behavior.
     "normalisation": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]},
-    "input_range": "0-255 linear 8-bit-equivalent RGB (RPP colour pipeline)",
+    "input_range": "0-255 linear 8-bit-equivalent RGB (RPP color pipeline)",
     "output": "logit; sigmoid > threshold = include in reconstruction (terrain)",
     "threshold": 0.4,
     "dilate_kernel": 3,
@@ -50,7 +50,7 @@ DEFAULT_CARD: Dict[str, Any] = {
     # frames whose long side exceeds this are processed as four overlapping quadrants
     # (training and inference).  None (absent in older cards) = never split.
     "quad_split_above": None,
-    "quad_overlap": 64,              # px at full resolution, each side of the centre lines
+    "quad_overlap": 64,              # px at full resolution, each side of the center lines
 }
 
 S4_CHANNELS = 48
@@ -115,7 +115,7 @@ def quad_boxes(h: int, w: int, overlap: int = 64) -> List[Tuple[Box, Box]]:
     """
     The four quadrants of an h x w frame as ``(crop, core)`` pairs, in the order
     top-left, top-right, bottom-left, bottom-right.  ``crop`` extends ``overlap``
-    px past the centre lines (context for the network); ``core`` is the exact
+    px past the center lines (context for the network); ``core`` is the exact
     quadrant, in frame coordinates, that the crop's prediction is kept for.
     The cores tile the frame exactly.
     """
@@ -281,7 +281,7 @@ class ConvNeXtSeg(nn.Module):
     def decode(self, feats, size):
         """
         FPN -> ASPP -> head.  fpn.smooth -> aspp.b* -> aspp.proj is a chain of
-        three convolutions with no normalisation until aspp.bn, so the loss is
+        three convolutions with no normalization until aspp.bn, so the loss is
         invariant to their scale and their weight norms drift upward during
         training.  Pre-BN activations reached 2.3e4 on an ordinary frame with
         the 2025 checkpoint; fp16 overflows at 6.55e4.  Run this part in fp32

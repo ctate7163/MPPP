@@ -4,7 +4,7 @@ rpp.ibr.linear16 - the station's frames as 16-bit linear images for the panorama
 the color space").
 
 A block holds 8-bit images (``images/``, from ``processed/images_png8``): the 16-bit linear product divided by 64 and
-clipped at 255, i.e. at a quarter of the 16-bit range - the bright rover deck and the sky towards the sun are flat
+clipped at 255, i.e. at a quarter of the 16-bit range - the bright rover deck and the sky toward the sun are flat
 white there although the camera measured them.  For the panorama the frames are made again from their PDS products
 with the block's own processing settings (``processed/mppp_config_v*.json``), mask inference off, and kept as
 
@@ -20,7 +20,7 @@ frame's sol folder.
 
 Saturation: a RAD product has no flag for it and its level differs per frame (exposure, flat field), so it is found
 as a plateau - a channel with many pixels within ``SAT_BAND`` of its maximum, piled up against the band below.  Such pixels are white in truth but
-come out tinted after the white balance (the magenta band towards the sun); the panorama makes them neutral and
+come out tinted after the white balance (the magenta band toward the sun); the panorama makes them neutral and
 prefers another frame there.
 """
 from __future__ import annotations
@@ -246,8 +246,8 @@ def ensure_linear16(project, names: Iterable[str], pds: Optional[PathLike] = Non
 
 def tone_soft(x: np.ndarray, knee: float = 190.0, top: float = 255.0) -> np.ndarray:
     """Linear values in 8-bit units (the 16-bit / 64; up to 1024) -> 0..255 for viewing: unchanged up to ``knee``
-    on the brightest channel, above it rolled off towards ``top`` (reached at the 16-bit ceiling), every channel
-    scaled alike so the colour keeps its hue."""
+    on the brightest channel, above it rolled off toward ``top`` (reached at the 16-bit ceiling), every channel
+    scaled alike so the color keeps its hue."""
     x = np.asarray(x, np.float32)
     m = x.max(axis=-1)
     hi = 65535.0 / UNITS_PER_8BIT
@@ -277,15 +277,15 @@ def tone_pipeline(x: np.ndarray) -> np.ndarray:
     return np.clip(np.where(x > PIPELINE_KNEE, y, x), 0.0, 255.0)
 
 
-TERRAIN_GREY = 100.0             # the median of the ground lands here (8-bit), as in the 8-bit pipeline's frames
-KNEE = 170.0                     # linear up to here; above it the highlights roll off towards 255 ...
-DESATURATE = 0.85                # ... and lose this much of their colour by 3 shoulder widths above the knee
+TERRAIN_GRAY = 100.0             # the median of the ground lands here (8-bit), as in the 8-bit pipeline's frames
+KNEE = 170.0                     # linear up to here; above it the highlights roll off toward 255 ...
+DESATURATE = 0.85                # ... and lose this much of their color by 3 shoulder widths above the knee
 
 
 def auto_levels(x: np.ndarray, seen: Optional[np.ndarray] = None, low_pct: float = 0.5) -> Tuple[float, float]:
     """(black point, the ground's median) of a linear panorama, in its own units: the ``low_pct`` percentile of
     the darkest channel, and the median brightness (mean of the channels) of the lower half - below the horizon,
-    mostly terrain - over the pixels a frame coloured (``seen``).  The exposure for viewing is set on the ground,
+    mostly terrain - over the pixels a frame colored (``seen``).  The exposure for viewing is set on the ground,
     not on the brightest things (10 Nov, Van Zyl: with the white point on the 99.7 % of the panorama the sunlit
     white deck took the range and the terrain came out at a fifth of it)."""
     x = np.asarray(x)
@@ -294,7 +294,7 @@ def auto_levels(x: np.ndarray, seen: Optional[np.ndarray] = None, low_pct: float
     sub = x[::step, ::step]
     ok = sub.max(axis=2) > 0 if seen is None else np.asarray(seen)[::step, ::step]
     if not ok.any():
-        return 0.0, TERRAIN_GREY
+        return 0.0, TERRAIN_GRAY
     lo = float(np.percentile(sub[ok].min(axis=1), low_pct))
     low_half = np.zeros(ok.shape, bool)
     low_half[sub.shape[0] // 2:] = True
@@ -306,11 +306,11 @@ def auto_levels(x: np.ndarray, seen: Optional[np.ndarray] = None, low_pct: float
 
 def tone_levels(x: np.ndarray, lo: float, mid: float) -> np.ndarray:
     """Linear values -> 0..255 for viewing (Christian, 10 Nov: "an 8bit version that has the high and low points
-    rescaled optimally to show detail"): ``lo`` -> 0 and the ground's median ``mid`` -> TERRAIN_GREY, linear up to
-    KNEE; above it the brightest channel rolls off towards 255 (never clipped) and the colour fades towards neutral,
+    rescaled optimally to show detail"): ``lo`` -> 0 and the ground's median ``mid`` -> TERRAIN_GRAY, linear up to
+    KNEE; above it the brightest channel rolls off toward 255 (never clipped) and the color fades toward neutral,
     as an overexposed white does."""
     x = np.asarray(x, np.float32)
-    k = TERRAIN_GREY / max(mid - lo, 1e-6)
+    k = TERRAIN_GRAY / max(mid - lo, 1e-6)
     z = np.clip((x - lo) * k, 0.0, None)
     m = z.max(axis=-1)
     span = 255.0 - KNEE
@@ -346,7 +346,7 @@ def shared_levels(path: Optional[PathLike], compute, scale: float = 1.0) -> Tupl
         f.write_text(_json.dumps({**keep, "levels_8bit_linear_units": [lo / scale, mid / scale],
                                   "meaning": "black point and the ground's median of the linear panorama, in the "
                                              "frames' 16-bit scale / 64; view = tone_levels(linear, black, ground): "
-                                             f"ground -> {TERRAIN_GREY:g} of 255, linear to {KNEE:g}, then rolled off",
+                                             f"ground -> {TERRAIN_GRAY:g} of 255, linear to {KNEE:g}, then rolled off",
                                   "note": "delete this file to have the levels found again on the next panorama"},
                                  indent=1), encoding="utf-8")
     return (float(lo), float(mid)), "computed"
@@ -377,7 +377,7 @@ ENH_S = 5.5                      # 6.0 until 0.97.24
 # bringing out detail from the shadows and the terrain. The shadows should not be clipped to black"): nothing clips.
 # The terrain band's ENH_LOW_PCT..ENH_HIGH_PCT span takes ENH_OUT_LOW..ENH_OUT_HIGH of the 8 bits through the S-curve;
 # what is darker runs down a toe to black at zero radiance only; what is brighter (the deck, the sky) rolls off
-# towards white along a shoulder.  Both join the S-curve with its own slope.
+# toward white along a shoulder.  Both join the S-curve with its own slope.
 ENH_OUT_LOW = 0.10              # 0.06 until 0.98.29 - 0.98.30 (Christian, 16 Nov 2026: "the enh and enhlocal should have a
 #                                 little less saturation and black clipping. Otherwise they look really good"): the
 #                                 terrain's darkest 1 % starts higher, and the toe below it with it
@@ -479,7 +479,7 @@ def tone_enhanced(x: np.ndarray, ref: float, lo: float, hi: float, med: float) -
 
 
 def local_contrast(bgr8: np.ndarray, sky_weight: Optional[np.ndarray] = None) -> np.ndarray:
-    """An unsharp mask on the lightness of an 8-bit BGR equirectangular image (the colour kept), continuous across
+    """An unsharp mask on the lightness of an 8-bit BGR equirectangular image (the color kept), continuous across
     the 360-degree seam.  The same filter for any image: both eyes are treated alike.  ``sky_weight`` (0.97.13; (H,
     W) 0-1): no sharpening where it is 1 - in the sky there is no detail to bring out, only the steps between the
     8-bit levels and the frames' seams."""

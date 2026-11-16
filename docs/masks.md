@@ -37,8 +37,8 @@ the models and what is cached, and `rpp mask fetch NAME` downloads one.
 
 ## Inference
 
-1. The image is taken in the 8-bit-equivalent range of the RPP colour pipeline, letterboxed to a 1664 × 1248 canvas
-   (long side ≤ 1648 px) and normalised with ImageNet statistics.
+1. The image is taken in the 8-bit-equivalent range of the RPP color pipeline, letterboxed to a 1664 × 1248 canvas
+   (long side ≤ 1648 px) and normalized with ImageNet statistics.
 2. The sigmoid output is resized back and thresholded at 0.5. The included region is then dilated by 3 × 3.
 3. Invalid pixels (padding, dark columns) are excluded in any case.
 
@@ -57,7 +57,7 @@ D:\code\MPPP\scripts\windows\train_masks.bat
 This batch file does the following:
 
 1. It finds the newest `D:\masks\masks_training_set_vN`.
-2. It regenerates `images\` from the PDS, without selection rules and without a landing position, so every labelled
+2. It regenerates `images\` from the PDS, without selection rules and without a landing position, so every labeled
    frame is used.
 3. It trains a ConvNeXt-tiny with:
    - horizontal flips;

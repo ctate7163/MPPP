@@ -12,7 +12,7 @@ def test_similarity_fit_is_robust():
     a = np.radians(0.3)
     R = np.array([[np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0], [0, 0, 1]])
     dst = 1.0025 * src @ R.T + [0.2, -0.1, 0.05] + rng.normal(0, 0.03, src.shape)
-    dst[3] += [2.0, -1.5, 0]                                   # one bad localisation
+    dst[3] += [2.0, -1.5, 0]                                   # one bad localization
     f = similarity_fit(src, dst)
     assert f["scale"] == pytest.approx(1.0025, abs=4e-4) and f["yaw_deg"] == pytest.approx(0.3, abs=0.05)
 

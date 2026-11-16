@@ -155,7 +155,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--cameras", default="N", help="--station: the camera families (default N)")
     p.add_argument("--sequence", nargs="+", default=None, help="--station: only these sequences (NCAM03461 ...)")
     p.add_argument("--nearby-m", type=float, default=None, metavar="M",
-                   help="0.97.0, with --station: also the frames of the block's other stations within M metres (they "
+                   help="0.97.0, with --station: also the frames of the block's other stations within M meters (they "
                         "see the ground under this station's rover); its own workspace dense_<station>..._near<M>")
     p.add_argument("--whole-block", action="store_true",
                    help="0.98.14: the terrain from the whole alignment - every frame of the block of the --cameras "
@@ -176,7 +176,7 @@ def build_parser() -> argparse.ArgumentParser:
                    "for a whole block")
     p.add_argument("--full-fov", action="store_true", help="0.96: undistort to the whole field of view (the fisheye's "
                    "corners kept: 10 %% of a Navcam frame, 11 %% of the rover's pixels at Van Zyl), the working size "
-                   "scaled so the centre keeps its resolution (~1.8x the stereo time); the default crops to the "
+                   "scaled so the center keeps its resolution (~1.8x the stereo time); the default crops to the "
                    "rectangle of valid pixels")
     p.add_argument("--restereo", action="store_true", help="0.96: delete the workspace's patch-match maps before --stereo "
                    "(they are deleted anyway when they were made with other options; COLMAP skips every image whose "
@@ -759,7 +759,7 @@ def cmd_dense(a: argparse.Namespace) -> int:
             print(f"dense: no frames for --station {a.station} --cameras {a.cameras} --sequence {a.sequence}", file=sys.stderr)
             return 2
         ws = proj_dir / subset_label(a.station, a.sequence, a.images)
-        if getattr(a, "nearby_m", None) and a.station:          # 0.97.0: the neighbours' frames, for the ground here
+        if getattr(a, "nearby_m", None) and a.station:          # 0.97.0: the neighbors' frames, for the ground here
             from .sfm.dense import nearby_station_images
             nb = nearby_station_images(proj, a.station, a.nearby_m, families=a.cameras, scale=a.scale)
             subset = sorted(set(subset) | set(nb["names"]))

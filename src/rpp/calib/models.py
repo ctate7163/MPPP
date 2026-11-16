@@ -87,7 +87,7 @@ def has_camera_file(family: str, eye: str, folder: Optional[PathLike] = None) ->
 
 def hazcam_start_model(family: str, eye: str) -> Dict[str, Any]:
     """The generic start model of a Hazcam eye in the Navcam form (:data:`HAZCAM_START`: f = 2148 px, fx = fy, the
-    principal point at the centre of the full frame, k1 = +0.0145, k2 = -0.0083 on the fisheye theta polynomial,
+    principal point at the center of the full frame, k1 = +0.0145, k2 = -0.0083 on the fisheye theta polynomial,
     every other term 0, no thermal or early-mission term).  Only a fallback: a Hazcam product starts from the fit to
     its own label model (:func:`rpp.calib.labelfit.label_fisheye`)."""
     fam = str(family)[:1].upper()

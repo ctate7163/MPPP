@@ -144,7 +144,7 @@ def test_backlash_stage_refines_both_states(tmp_path):
     ids = proj.settings["database"]["cameras"]
     fb = 0.5 * sum(rec2.cameras[ids["ZL034_F00600"]].params[:2])
     fr = 0.5 * sum(rec2.cameras[ids["ZL034_F00600_reg"]].params[:2])
-    # a pan from one centre holds the block's scale only weakly (no Navcam here): the two states' focal lengths
+    # a pan from one center holds the block's scale only weakly (no Navcam here): the two states' focal lengths
     # move together, their difference is what the split recovers
     assert abs((fb - fr) - 4680 * 0.0095) < 3.0, (fb, fr)
     assert abs(fb - 4680 * 1.0095) < 15.0 and abs(fr - 4680) < 15.0
@@ -808,7 +808,7 @@ def test_refit_lines_with_sequence_offsets(monkeypatch):
     """0.95.0 (Christian, 27 Oct: different sequences sit at different linear offsets with the same slope): on sequence
     bins the backlash-state fx, fy lines get one intercept per sequence - two sequences +12 / -12 px off the block's
     line are recovered, a thin one (4 frames) is held at 0, the slope is the common one, the bins are set on their
-    sequence's line; the k1 line and the pinned centre are untouched."""
+    sequence's line; the k1 line and the pinned center are untouched."""
     import pycolmap
     from rpp.sfm import zcam
     from rpp.sfm.zcam import refit_focus_lines
@@ -880,11 +880,11 @@ def test_refit_lines_only_for_the_zooms_with_real_models(monkeypatch):
 def test_refit_lines_pin_the_regular_state_at_its_own_principal_point(monkeypatch):
     """0.95.0 (Christian, 27 Oct: the right eye's regular principal-point offset): a ZR regular-state line with its own
     bins is pinned at pp0 plus the model's regular_pp_offset_px, as the no-own-line path already added it (0.93.5) -
-    before, the two paths disagreed and the low-state bins were set back to the high state's centre."""
+    before, the two paths disagreed and the low-state bins were set back to the high state's center."""
     from rpp.sfm.zcam import refit_focus_lines
     rec, proj, model, db = _bins(monkeypatch)
     model["cameras"]["ZR034"]["regular_pp_offset_px"] = [-5.0, 3.0]
-    for key, cid in db.items():                       # the low-state bins' centres carry the offset
+    for key, cid in db.items():                       # the low-state bins' centers carry the offset
         if key.startswith("ZR") and key.endswith("_reg"):
             p = np.array(rec.cameras[cid].params, float)
             p[2] -= 5.0

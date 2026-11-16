@@ -11,7 +11,7 @@ then the chosen setting on a full block.  Each variant is one ``rpp run --varian
   focus lines (S6), every health check;
 * runtime - matching, the stage-2 rounds, the pose-guided step, the final adjustment, the export (from the log).
 
-S2 (point thinning) also compares each cap's solution with the all-points one: frame centres (cm), attitudes (mdeg)
+S2 (point thinning) also compares each cap's solution with the all-points one: frame centers (cm), attitudes (mdeg)
 and per-bin focal lengths (%) - the cap where the poses differ by < 1 cm / 0.1 mdeg and the focals by < 0.05 % is the
 setting.
 
@@ -252,7 +252,7 @@ def summary(col: Path, study: str, variant: str, run: Optional[Dict[str, Any]] =
 
 
 def compare_solutions(ref: Dict[str, Any], other: Dict[str, Any]) -> Dict[str, Any]:
-    """S2: the other variant's solution against the reference (all points): frame centres, attitudes, per-bin
+    """S2: the other variant's solution against the reference (all points): frame centers, attitudes, per-bin
     focal lengths of the images and cameras both have."""
     from scipy.spatial.transform import Rotation
     m0, m1 = ref.get("model") or {}, other.get("model") or {}
@@ -339,12 +339,12 @@ def report_site(work: Path, study: str, res: Dict[str, Any]) -> str:
     if study == "S2" and names and "all" in res["variants"]:
         lines += ["", "## Against the all-points solution", "", head, sep]
         cmp = {v: compare_solutions(res["variants"]["all"], res["variants"][v]) for v in names}
-        for label, key, sub in (("frame centres, median / p95 / max (cm)", "centre_cm", ("median", "p95", "max")),
+        for label, key, sub in (("frame centers, median / p95 / max (cm)", "centre_cm", ("median", "p95", "max")),
                                 ("attitudes, median / p95 / max (mdeg)", "attitude_mdeg", ("median", "p95", "max")),
                                 ("per-bin focal length, median / max (%)", "focal_pct", ("median", "max"))):
             lines.append(f"| {label} | " + " | ".join(
                 " / ".join(_f((cmp[v].get(key) or {}).get(s)) for s in sub) if cmp[v].get(key) else "-" for v in names) + " |")
-        lines += ["", "The cap where the frame centres differ by < 1 cm, the attitudes by < 0.1 mdeg and the focal "
+        lines += ["", "The cap where the frame centers differ by < 1 cm, the attitudes by < 0.1 mdeg and the focal "
                   "lengths by < 0.05 % from the all-points solution is the setting (Christian, 28 Oct)."]
     if study == "S6":
         lines += ["", "## S6: per-bin focal residual about the lines vs observations", ""] + s6_table(vs)

@@ -175,9 +175,9 @@ def test_write_health_adds_station_map(tmp_path):
 # beyond-ground and aspect checks, block screening (v0p65)
 
 
-def _mock_rec(points, centres):
+def _mock_rec(points, centers):
     ims = {i: SimpleNamespace(has_pose=True, projection_center=(lambda c=c: np.asarray(c, float)))
-           for i, c in centres.items()}
+           for i, c in centers.items()}
     pts = {k + 1: SimpleNamespace(xyz=np.asarray(X, float),
                                   track=SimpleNamespace(elements=[SimpleNamespace(image_id=i) for i in t]))
            for k, (X, t) in enumerate(points)}

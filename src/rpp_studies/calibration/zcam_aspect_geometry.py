@@ -97,7 +97,7 @@ def block_rows(work: Path, zooms: Sequence[int], variant: str = "") -> List[Dict
     return out
 
 
-def summarise(images: List[Dict[str, Any]]):
+def summarize(images: List[Dict[str, Any]]):
     """Per bin (camera) means, and the aspect in ppm relative to its zoom and eye's weighted median."""
     bins: Dict[str, Dict[str, Any]] = {}
     for r in images:
@@ -196,7 +196,7 @@ def main(argv=None) -> int:
     if not images:
         print("no Mastcam-Z images of these zooms", file=sys.stderr)
         return 1
-    bins = summarise(images)
+    bins = summarize(images)
     for name, rows in (("images.csv", images), ("bins.csv", bins)):
         with open(out / name, "w", newline="") as f:
             wr = csv.DictWriter(f, fieldnames=list(rows[0]))

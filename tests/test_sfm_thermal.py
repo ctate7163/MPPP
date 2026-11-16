@@ -23,7 +23,7 @@ def test_temperature_bins_merge_small_bins():
     n = {f: 2 for f in T}
     b = temperature_bins(T, n, bin_deg=10, min_images=4)
     assert b[1] == b[2] == (-40.0, -30.0)                     # 4 images: kept
-    assert b[3] == b[6] and b[7] == (-30.0, -10.0)            # the lone -20..-10 frame joins its neighbour
+    assert b[3] == b[6] and b[7] == (-30.0, -10.0)            # the lone -20..-10 frame joins its neighbor
     assert b[3] == (-30.0, -10.0)
     assert _tag(-30, -20) == "T-030-020"
     assert temperature_bins({1: 5.0}, {1: 2}) == {1: (0.0, 10.0)}
@@ -171,12 +171,12 @@ def test_temperature_bins_merge_as_documented():
     T = {1: -19.0, 2: -18.0, 3: -17.0, 4: -12.0, 5: -3.0, 6: -2.0, 7: -1.5, 8: -1.0}
     n = {1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 6: 2, 7: 2, 8: 2}
     b = temperature_bins(T, n, 5.0, 5)
-    assert b[4] == (-20.0, -10.0) and b[1] == (-20.0, -10.0)       # the small bin joins its nearer neighbour
+    assert b[4] == (-20.0, -10.0) and b[1] == (-20.0, -10.0)       # the small bin joins its nearer neighbor
     assert b[5] == (-5.0, 0.0)
     # across an empty bin: -25..-20 (2 images) joins -15..-10 (the next occupied one)
     b = temperature_bins({1: -22.0, 2: -12.0, 3: -11.0, 4: -13.0}, {1: 2, 2: 2, 3: 2, 4: 2}, 5.0, 5)
     assert set(b.values()) == {(-25.0, -10.0)}
-    # a tie goes to the colder neighbour
+    # a tie goes to the colder neighbor
     b = temperature_bins({1: -17.0, 2: -12.0, 3: -7.0}, {1: 6, 2: 2, 3: 6}, 5.0, 5)
     assert b[2] == (-20.0, -10.0) and b[3] == (-10.0, -5.0)
 
@@ -310,7 +310,7 @@ def test_temperature_bins_fine_then_merged():
     n = {1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 6: 2}
     b = temperature_bins(T, n, 5.0, 4, (-25.0, -5.0), 2.5)
     assert b[2] == b[3] == (-17.5, -15.0) and b[4] == b[5] == (-15.0, -12.5)     # full fine bins stay 2.5 degC
-    assert b[1] == b[6] == (-40.0, -17.5)        # the two small ones merged (nearest occupied neighbour, as before)
+    assert b[1] == b[6] == (-40.0, -17.5)        # the two small ones merged (nearest occupied neighbor, as before)
     u = temperature_bins(T, n, 5.0, 4)                                   # uniform 5 degC bins as before
     assert u[1] == u[2] == u[3] and u[4] == u[5] == (-15.0, -10.0) and u[6] == u[1]
 

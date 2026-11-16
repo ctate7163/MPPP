@@ -1007,7 +1007,7 @@ def _align_priors_to_cameras(images: List[Dict[str, Any]], cameras: Dict[str, Di
 def zcam_epoch_ranges(pair_sols: Sequence[int], max_span: float = ZCAM_RIG_EPOCH_MAX_SPAN_SOLS,
                       min_pairs: int = ZCAM_RIG_EPOCH_MIN_PAIRS) -> List[Tuple[int, int]]:
     """The sol ranges of the Mastcam-Z rig epochs for the stereo pairs' sols ``pair_sols`` (one entry per pair): no
-    range spans more than ``max_span`` sols; a range with fewer than ``min_pairs`` pairs is joined to the neighbour
+    range spans more than ``max_span`` sols; a range with fewer than ``min_pairs`` pairs is joined to the neighbor
     nearest in sol (the joined range can then exceed ``max_span``: a rig needs pairs to be measured)."""
     psols = sorted(int(x) for x in pair_sols)
     if not psols:
@@ -1036,7 +1036,7 @@ def zcam_rig_epochs(images: List[Dict[str, Any]], zrig: Dict[str, Any], families
     Splits each zoom's virtual rig ``zrig["Z0nn"]`` into one rig per *epoch*: the stereo pairs' sols clustered so
     that no cluster spans more than ``max_span`` sols (:func:`rpp.calib.sol_epochs`: visits more than ``max_span``
     apart are separate, a longer visit is cut at its middle sol).  An epoch with fewer than ``min_pairs`` pairs joins
-    the neighbour nearest in sol.  The first epoch in sol order keeps the key ``Z0nn``; the later ones get a copy
+    the neighbor nearest in sol.  The first epoch in sol order keeps the key ``Z0nn``; the later ones get a copy
     ``Z0nn#k`` (same start rotation and translation, refined on their own), and every Mastcam-Z image row of that
     zoom gets ``zcam_rig_epoch`` = k, which the bundle adjustment reads to pick the rig of a pair.  The intrinsics
     are untouched: the focus bins are shared by the epochs.  Returns {"max_span_sols", "min_pairs", "zooms":
@@ -1175,7 +1175,7 @@ def merge_small_epochs(eps: List[Tuple[int, int]], nav: List[Dict[str, Any]], mi
                        min_stations: int = NAVCAM_RIG_EPOCH_MIN_STATIONS) -> Tuple[List[Tuple[int, int]], List[Dict[str, Any]]]:
     """0.91: an epoch with fewer than ``min_images`` Navcam images or fewer than ``min_stations`` stations cannot
     determine a rig rotation of its own (Rochette's sol-341 single station of 20 Oct: 1.5 deg off): it is joined to
-    the neighbouring epoch nearest in sol, repeatedly, until every epoch is large enough or one is left.  Returns
+    the neighboring epoch nearest in sol, repeatedly, until every epoch is large enough or one is left.  Returns
     (epochs, the merges made)."""
     eps = [tuple(e) for e in eps]
     merged: List[Dict[str, Any]] = []

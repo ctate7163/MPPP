@@ -14,7 +14,7 @@ SfM offers a completely different baseline: the station separation, typically
 5-30 m.  That is 15-70x larger, and range error scales as 1/b, so the
 theoretical improvement is enormous.
 
-But the theoretical gain is only realised if cross-station matching actually
+But the theoretical gain is only realized if cross-station matching actually
 works.  Two views of the same outcrop from 15 m apart differ in view angle, in
 scale, in foreshortening and in illumination.  If the matcher fails, the
 stations cannot be tied together and you are back to fixed-baseline stereo.
@@ -249,7 +249,7 @@ def main(argv=None):
     fig2.colorbar(im, ax=ax, label="median improvement over OPS [x]")
     ax.set_xlabel("theta_max [deg]   (matcher wide-baseline tolerance)")
     ax.set_ylabel("eps_cross [px]   (cross-station matching precision)")
-    ax.set_title("Realised SfM gain vs. the two unknown matching parameters\n"
+    ax.set_title("Realized SfM gain vs. the two unknown matching parameters\n"
                  "Navcam; the whole result lives on this surface")
     fig2.tight_layout()
     p2 = os.path.join(args.out, "cross_station_sensitivity.png")

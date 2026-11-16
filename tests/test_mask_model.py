@@ -75,7 +75,7 @@ def test_quad_inference_stitches_cores(monkeypatch):
     card = {"quad_split_above": 2500, "quad_overlap": 64}
     p = I.predict_probability(None, card, img)
     assert np.allclose(p, img[..., 0] / 255.0)
-    assert calls == [(960 + 64, 1280 + 64)] * 4        # bottom crops start 64 px above the centre line
+    assert calls == [(960 + 64, 1280 + 64)] * 4        # bottom crops start 64 px above the center line
     calls.clear()
     I.predict_probability(None, card, img[:, :1648])        # long side 1648: one pass
     assert calls == [(1920, 1648)]

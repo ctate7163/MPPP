@@ -70,15 +70,15 @@ def test_point_colors_from_tracks(tmp_path):
     cols = np.array([p.color for p in nat.points3D.values()])
     both = [p for p in nat.points3D.values() if {nat.images[e.image_id].name[:2] for e in p.track.elements} == {"NL", "NR"}]
     assert both and all(abs(int(p.color[0]) - int(p.color[2])) < 130 and p.color[1] == 0 for p in both)
-    # a missing image: the point keeps the colour of the images that are there
+    # a missing image: the point keeps the color of the images that are there
     (proj.images_dir / next(im.name for im in nat.images.values() if im.name.startswith("NL"))).unlink()
     rep2 = point_colors_from_tracks(nat, proj.images_dir)
     assert rep2["images_missing"] == 1
 
 
 def _short_stop(tmp_path, offset=(1.5, -1.0, 0.0)):
-    """The synthetic block with one stereo frame of the second station relabelled as a two-image station whose
-    waypoint prior is ``offset`` metres off."""
+    """The synthetic block with one stereo frame of the second station relabeled as a two-image station whose
+    waypoint prior is ``offset`` meters off."""
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent))
@@ -297,7 +297,7 @@ def test_dense_maps_as_images_and_the_bat_prepares_the_masks(tmp_path):
     assert (al[:5, :5] == 0).all() and (al[20:, 35:] == 0).all() and (al[25:, :10] == 0).all() and (al[10:20, 10:30] == 255).all()
     nm_ = np.asarray(Image.open(ws / "stereo" / "maps_png" / files[1]))
     assert (nm_[25:, :10, 3] == 0).all() and (nm_[20:, 35:, 3] == 0).all() and (nm_[10:20, 10:30, 3] == 255).all()
-    assert float(files[0].split("_")[-1].split("-")[1][:-5]) <= 100.0           # the colour range within 100 m
+    assert float(files[0].split("_")[-1].split("-")[1][:-5]) <= 100.0           # the color range within 100 m
     assert export_dense_maps(ws, fmt="jpg")["depth_maps"] == 1
     from rpp.sfm.dense import write_dense_bat
 

@@ -5,7 +5,7 @@ The stereo 360 products of the station runs as a folder a static web page can sh
 top of the right, :mod:`rpp.ibr.ods`) into ``web_dir/panos/`` - reduced to ``width`` when wider - and writes
 ``web_dir/panos.json``, the list the viewer page reads (``docs/ods/index.html`` of the repository: three.js, WebXR).
 ``web_dir`` holding ``index.html``, ``vendor/``, ``panos.json`` and ``panos/`` is all a host needs (GitHub Pages, any
-static server).  ``test_pano`` draws a labelled pair for checking the viewer's orientation and eye order.
+static server).  ``test_pano`` draws a labeled pair for checking the viewer's orientation and eye order.
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ ROVER_3D = ("rover3d", "terrain with rover (3D model)")     # 0.98.8 (Christian:
 DEFAULT_VIEWS = ("standard", "enhanced local", "normal map", "distance map")   # 0.98.30 (Christian, 16 Nov 2026: "Include the
 #   enhlocal image versions in the upload and let it be viewable as one of the skins that button B shows"); 0.98.12 (Christian, 15 Nov 2026: "Uploaded the range map too in log scale"); ("standard", "normal") from 0.98.5 (Christian: "Uploaded the normal maps too"); ("standard",) since 0.97.18 (Christian, 13 Nov 2026: "don't upload the enhanced version to github");
 #                                      ("standard", "enhanced") before; rpp single-sites --publish-views brings it back
-GEOMETRY_WIDTH = 4096              # 0.98.12: the range and normal views are published at most this wide (the colour ones at width)
+GEOMETRY_WIDTH = 4096              # 0.98.12: the range and normal views are published at most this wide (the color ones at width)
 DEFAULT_WIDTH = 8192               # the square's side: 8192 x 8192 holds two 8192 x 4096 eyes (Quest 3: fine).  0.98.30:
 #                                    the panoramas are rendered at 16K (rpp ods); publishing reduces them to this (area filter)
 
@@ -120,10 +120,10 @@ WELCOME_ID = "welcome"
 WELCOME_STATION = "Sol0052_S003D2046"      # Van Zyl Overlook
 WELCOME_WIDTH = 4096
 WELCOME_MUTE = (0.60, 0.85, 0.08)          # the welcome picture (0.98.14; Christian, 15 Nov 2026: "the welcome screen should
-#                                            have color, just be a little more muted than the true van zyl ods"): the colours'
-#                                            distance from grey x the first, then x the second + the third x white
-#                                            (0.98.4-0.98.13: grey, 0.55 x grey + 0.20 x white)
-OLD_TEST_ID = "orientation_test"           # the labelled test pair of before 0.98.4: taken off the list
+#                                            have color, just be a little more muted than the true van zyl ods"): the colors'
+#                                            distance from gray x the first, then x the second + the third x white
+#                                            (0.98.4-0.98.13: gray, 0.55 x gray + 0.20 x white)
+OLD_TEST_ID = "orientation_test"           # the labeled test pair of before 0.98.4: taken off the list
 
 
 WELCOME_YAW_DEG = 270.0      # 0.98.19: the welcome view opens looking west, where its title is
@@ -132,8 +132,8 @@ WELCOME_YAW_DEG = 270.0      # 0.98.19: the welcome view opens looking west, whe
 def welcome_pano(web: Path, station_entry: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """0.98.4 (Christian, 14 Nov 2026: "Remove the fake ods. In its stead put van zyl grayed out with north south and
     east in the sky in white letters ... Rover Photogrammetry Viewer (0.98.19; was MPPP stereo viewer) for Mars 2020 Perseverance Rover in bold welcoming
-    letters a few meters from the viewer"): the list's first entry - Van Zyl Overlook's standard panorama, its colours
-    muted a little (WELCOME_MUTE; grey until 0.98.13), reduced to WELCOME_WIDTH.  The page draws the words over it (an entry with "welcome": true).  None when
+    letters a few meters from the viewer"): the list's first entry - Van Zyl Overlook's standard panorama, its colors
+    muted a little (WELCOME_MUTE; gray until 0.98.13), reduced to WELCOME_WIDTH.  The page draws the words over it (an entry with "welcome": true).  None when
     Van Zyl is not published."""
     import cv2
     if not station_entry:
@@ -145,7 +145,7 @@ def welcome_pano(web: Path, station_entry: Optional[Dict[str, Any]]) -> Optional
     if not src.is_file():
         return None
     dst = web / "panos" / f"{WELCOME_ID}_muted{STACK}"
-    old = web / "panos" / f"{WELCOME_ID}{STACK}"                 # the grey one of before 0.98.14
+    old = web / "panos" / f"{WELCOME_ID}{STACK}"                 # the gray one of before 0.98.14
     if old.is_file():
         old.unlink()
     if not (dst.is_file() and dst.stat().st_mtime >= src.stat().st_mtime):
@@ -173,8 +173,8 @@ TRAVERSE_POINTS = 400
 
 def traverse_map() -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
     """0.98.5 (Christian, 14 Nov 2026: "a little page attached to the left hand that has a little x on the map"): the
-    rover's traverse for the page's small map - (the waypoint table, {"origin_en": [E, N] metres, "xy": [[x, y], ...]
-    metres east and north of the origin, about TRAVERSE_POINTS of them in drive order}).  (None, None) without the table."""
+    rover's traverse for the page's small map - (the waypoint table, {"origin_en": [E, N] meters, "xy": [[x, y], ...]
+    meters east and north of the origin, about TRAVERSE_POINTS of them in drive order}).  (None, None) without the table."""
     try:
         from ..waypoints.table import load_waypoints, _props, _en
         wp = load_waypoints()
@@ -191,7 +191,7 @@ def traverse_map() -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         k = max(1, len(pts) // TRAVERSE_POINTS)
         keep = pts[::k] + ([pts[-1]] if (len(pts) - 1) % k else [])
         return wp, {"origin_en": [round(e0, 1), round(n0, 1)], "xy": [[round(p[3] - e0, 1), round(p[4] - n0, 1)] for p in keep],
-                    "note": "metres east and north of origin_en (the mission's map frame); the rover's waypoints in order"}
+                    "note": "meters east and north of origin_en (the mission's map frame); the rover's waypoints in order"}
     except Exception as e:                                   # noqa: BLE001 - the map is an extra
         log.info("publish: no traverse map (%s)", e)
         return None, None
@@ -218,7 +218,7 @@ def traverse_ortho(wp: Dict[str, Any], traverse: Dict[str, Any], web: Path, root
                    size: int = ORTHO_PX, old: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """0.98.14 (Christian, 15 Nov 2026: "Add low res ortho to the info map"): the orbital orthomosaic under the
     traverse, ``size`` pixels a side, as ``web/panos/traverse_ortho.jpg`` - {"file", "extent": [x0, y0, x1, y1] in
-    the traverse map's metres (north up), "m_per_px", "source"}.  ``old``: the record of the list there; when it has
+    the traverse map's meters (north up), "m_per_px", "source"}.  ``old``: the record of the list there; when it has
     the same extent and its file is there, nothing is read again (the mosaic is 7 GB).  None without an orthomosaic,
     rasterio or pyproj - the map is then the line alone."""
     xy = np.asarray(traverse["xy"], float)
@@ -374,7 +374,7 @@ def traverse_dtm(wp: Dict[str, Any], traverse: Dict[str, Any], web: Path, root: 
     """0.98.19 (Christian, 16 Nov 2026: "The map in the info tab should be the same background as
     m20_mars_to_rover_sites_dtm figure D. Render a blank version of that with the traverse and 2 km scale bar. Put an
     orange x over the ods' particular location"): the blank panel D as ``web/panos/traverse_dtm.jpg`` - {"file",
-    "extent": [x0, y0, x1, y1] in the traverse map's metres (north up), "px", "source", "background"}.  The traverse and
+    "extent": [x0, y0, x1, y1] in the traverse map's meters (north up), "px", "source", "background"}.  The traverse and
     the scale bar are in the picture; the page draws the x.  (Christian, 16 Nov 2026: "render it from the high res dtm on the
     computer. If it isn't there then, have the ibr script render it once and save it for reuse until it changes"):
     drawn once on the HiRISE DTMs of ``<root>/dem`` and kept in ``<root>/dem/ods_info_map``; drawn again
@@ -416,7 +416,7 @@ def traverse_dtm(wp: Dict[str, Any], traverse: Dict[str, Any], web: Path, root: 
 
 
 def station_on_map(label: str, wp: Optional[Dict[str, Any]]) -> Optional[List[float]]:
-    """[x, y] of a station ("...S003D2046...") in the traverse map's metres, or None."""
+    """[x, y] of a station ("...S003D2046...") in the traverse map's meters, or None."""
     m = re.search(r"S(\d{3})D(\d{4})", label)
     if not m or not wp:
         return None
@@ -618,14 +618,14 @@ def install_viewer(web_dir: PathLike, source: Optional[PathLike] = None) -> bool
 
 
 def label_pano(path: PathLike, width: int = 2048) -> Path:
-    """A labelled stereo pair for checking a viewer: compass letters every 45 degrees on the horizon (N at the left
+    """A labeled stereo pair for checking a viewer: compass letters every 45 degrees on the horizon (N at the left
     edge, azimuth growing to the right), elevation lines every 30 degrees, "UP" / "DOWN" at the poles, and the eye's
     name ("LEFT EYE" in blue on top, "RIGHT EYE" in red below).  The letters are 3 px apart between the eyes, so
     they float in front of the lines when the eyes are the right way round and sink behind them when swapped."""
     import cv2
     h = width // 2
     eyes = []
-    for eye, colour, shift in (("LEFT EYE", (255, 170, 90), 3), ("RIGHT EYE", (90, 140, 255), -3)):
+    for eye, color, shift in (("LEFT EYE", (255, 170, 90), 3), ("RIGHT EYE", (90, 140, 255), -3)):
         im = np.full((h, width, 3), 28, np.uint8)
         for el in range(-60, 61, 30):
             y = int(round((90 - el) / 180 * h))
@@ -637,7 +637,7 @@ def label_pano(path: PathLike, width: int = 2048) -> Path:
             for xx in (x, x + width):                                   # N again at the right edge (the seam)
                 cv2.putText(im, name, (xx - 14 * len(name) + shift, h // 2 - 14), cv2.FONT_HERSHEY_SIMPLEX, 1.1,
                             (255, 255, 255), 2, cv2.LINE_AA)
-                cv2.putText(im, eye, (xx + 10 + shift, h // 2 + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.6, colour, 2, cv2.LINE_AA)
+                cv2.putText(im, eye, (xx + 10 + shift, h // 2 + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA)
         for x in range(width // 16, width, width // 4):
             cv2.putText(im, "UP", (x, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
             cv2.putText(im, "DOWN", (x, h - 24), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2, cv2.LINE_AA)

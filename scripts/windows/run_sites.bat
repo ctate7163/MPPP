@@ -3,7 +3,7 @@ REM ============================================================================
 REM RPP - process and align the Navcam block of every site of the ecam_consensus group of
 REM src\rpp\data\sites.json (v0p53) into its own WORK folder mars2020_sol_<sol>_<site> under ROOT
 REM (Navcam only; the Mastcam-Z blocks: run_sites_zcam.bat),
-REM one site after the other, in the background (a minimised window; closing it stops the batch).
+REM one site after the other, in the background (a minimized window; closing it stops the batch).
 REM Finished sites (same settings) are skipped, so double-clicking again continues where it stopped.
 REM
 REM   batch log     %ROOT%\run_sites_log.txt
@@ -37,6 +37,6 @@ set "ROOT=%RPP_SCAPES%"
 REM 0.98.19: run_sites.bat --sites hidden_harbor - a --sites or --group given replaces the group above
 echo.%* | findstr /i /c:"--sites" /c:"--group" >nul && set "WHICH="
 start "RPP run_sites - %ROOT%" /min cmd /c call "%RPP_WIN%\_run_sites.bat" --root "%ROOT%" %WHICH% %EXTRA% %*
-echo RPP run_sites started in a minimised window. Log: "%ROOT%\run_sites_log.txt"
+echo RPP run_sites started in a minimized window. Log: "%ROOT%\run_sites_log.txt"
 echo Status of every site: check_sites.bat
 timeout /t 10

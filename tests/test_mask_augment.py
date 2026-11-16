@@ -79,8 +79,8 @@ def test_photometric_keeps_validity_and_is_seeded():
     assert np.array_equal(out1, out2) and not np.array_equal(out1, out3)
     assert not out1[~valid].any() and out1[valid].max(axis=-1).min() >= 1       # invalid stays 0, valid never 0
     assert "gamma" in p1 and "gains" in p1
-    grey, p = A.photometric(im, valid, np.random.default_rng(0), A.PhotometricConfig(grey_prob=1.0, noise_prob=0.0))
-    assert p.get("grey") and np.array_equal(grey[..., 0], grey[..., 1]) and np.array_equal(grey[..., 1], grey[..., 2])
+    gray, p = A.photometric(im, valid, np.random.default_rng(0), A.PhotometricConfig(grey_prob=1.0, noise_prob=0.0))
+    assert p.get("grey") and np.array_equal(gray[..., 0], gray[..., 1]) and np.array_equal(gray[..., 1], gray[..., 2])
     # exposure only: a brighter copy
     cfg = A.PhotometricConfig(exposure_range=(2.0, 2.0), exposure_prob=1.0, gamma_range=(1.0, 1.0), gain_range=(1.0, 1.0),
                               black_level=0.0, noise_prob=0.0, shadow_prob=0.0, haze_prob=0.0, grey_prob=0.0)
@@ -180,7 +180,7 @@ def test_augment_pipeline_stages_follow_the_config():
     cut = A.hardware_cutout(im, ms)
     donor = lambda rng: (cut, 1.0)                                          # noqa: E731
     aug = A.Augment.from_config(cfg, lb, (160, 120), donor=donor)
-    assert aug.names() == ["copy_paste", "defocus", "photometric"]        # colour transfer off: identity matrix
+    assert aug.names() == ["copy_paste", "defocus", "photometric"]        # color transfer off: identity matrix
     calls = []
     aug.add_stage("my_new_one", lambda s, rng: (calls.append(s.canvas_mrad), s)[1], before="photometric")
     assert aug.names() == ["copy_paste", "defocus", "my_new_one", "photometric"]

@@ -195,7 +195,7 @@ def hazcam_fk(mounts: Dict[str, Dict[str, Any]], path: Path, summary: Sequence[s
     for grp in ("FL", "FR", "RL", "RR"):
         if grp in mounts:
             c = mounts[grp]["C_rover_m"]
-            L.append(f"{HAZCAM_NAMES[grp]} centre in M2020_ROVER (m): {c[0]:.4f} {c[1]:.4f} {c[2]:.4f}")
+            L.append(f"{HAZCAM_NAMES[grp]} center in M2020_ROVER (m): {c[0]:.4f} {c[1]:.4f} {c[2]:.4f}")
     path.write_text("\n".join(L) + "\n", encoding="utf-8")
     return path
 

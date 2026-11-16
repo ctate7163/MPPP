@@ -3,9 +3,9 @@ Feature matching on ``database.db`` (full-resolution keypoints).
 
 ``mode="lightglue"`` (optional; the pipeline's default is COLMAP's exhaustive SIFT matcher since 0.91) matches COLMAP's SIFT features with LightGlue
 (:mod:`rpp.sfm.lightglue`), all pairs, or only ``pairs`` when given.  ``mode="exhaustive"`` is COLMAP's own
-nearest-neighbour SIFT matching of all pairs (ratio test, cross check; use a GPU); ``mode="prior_pairs"`` matches
+nearest-neighbor SIFT matching of all pairs (ratio test, cross check; use a GPU); ``mode="prior_pairs"`` matches
 only the pairs from :func:`rpp.sfm.prior_overlap_pairs` with it - for CPU runs and quick tests; it biases
-completeness statistics towards pairs the priors expected to overlap, so do not use it for survival / theta_max
+completeness statistics toward pairs the priors expected to overlap, so do not use it for survival / theta_max
 analysis.
 
 Geometric verification runs in full-resolution pixels: ``max_error_px`` = 6

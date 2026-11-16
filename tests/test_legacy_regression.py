@@ -6,7 +6,7 @@ The expected values were produced once from that code (``src/legacy`` up to 0.85
 and column of the 16-bit and 8-bit products, the pose reference (X Y Z yaw pitch roll) and the
 pinhole K and distortion vector.  Accepted differences: integer products differ by at most one
 count (round-to-nearest instead of truncation); K differs at the 1e-5 level (CAHV axis A is
-normalised); the XML principal point differed by exactly 0.5 px (pixel-origin convention) and
+normalized); the XML principal point differed by exactly 0.5 px (pixel-origin convention) and
 OpenCV p1/p2 were swapped in the old code.
 """
 import numpy as np

@@ -56,17 +56,17 @@ starts 1 cm off the surface along the surface normal, so a surface the Sun only 
 in the station list); for its shadows
 the camera head is where the Navcam frame nearest in time had it.
 
-`photometry_jpg/` holds a picture of each map for looking at. Their colour scales are constants, the same for every
+`photometry_jpg/` holds a picture of each map for looking at. Their color scales are constants, the same for every
 image and run:
 
 | picture | quantity | scale |
 |---|---|---|
-| `_depth_linear.jpg` | range from the camera centre | 0 to 75 m, linear, colour map TURBO |
+| `_depth_linear.jpg` | range from the camera center | 0 to 75 m, linear, color map TURBO |
 | `_depth_log.jpg` | the same | 0.5 to 200 m, log10, TURBO |
 | `_normal.jpg` | surface normal, camera frame (x right, y down, z forward) | n = 2 RGB / 255 - 1 |
 | `_incidence.jpg`, `_emission.jpg` | angle of the normal to the Sun, to the camera | 0 to 90 degrees, linear, VIRIDIS |
 | `_phase.jpg` | angle Sun - surface - camera | 0 to 180 degrees, linear, VIRIDIS |
-| `_shadow.jpg` | lit / shadow / unknown | three fixed colours |
+| `_shadow.jpg` | lit / shadow / unknown | three fixed colors |
 | all but the shadow picture | the sky | white |
 | `_rad.jpg` | the 8-bit picture of the frame | a view, not radiance |
 | `_image.jpg` | the block's frame as it is, at its own size (0.97.20) | a copy for comparing with the maps |
@@ -74,7 +74,7 @@ image and run:
 
 The panorama step also writes the model alone through the panorama's own rays (0.97.20, for checking the model):
 `<station>_range_log_360_3DTD.jpg`, `<station>_range_linear_360_3DTD.jpg` and `<station>_normal_360_3DTD.jpg`, the
-left eye on top as in the colour panoramas. Range is from each eye's ray origin in the colours of the table above;
+left eye on top as in the color panoramas. Range is from each eye's ray origin in the colors of the table above;
 the normal is in the station's frame, RGB = 127.5 (1 + [east, north, up]), so level ground is blue. No source frame
 is used, so a fault seen there is in the mesh, the plane, the rover model or the far field and not in the blending.
 `rpp ods --no-geometry` leaves them out. The viewer lists them as "distance map" (log), "distance map linear" and
@@ -103,30 +103,30 @@ range) and 0.5 degrees (normal) on smooth surfaces, and worse at edges; for phot
 
 Each eye is an equirectangular image, **8192 x 4096** by default (`--width 16384` for 16K: 16384 x 8192 per eye): the left edge looks north and the
 azimuth grows eastward, so it reads N, E, S, W from left to right; the top row is the zenith. Every pixel's ray is
-cast into the mesh and coloured from the station frames that see that point best, blended in two frequency bands.
+cast into the mesh and colored from the station frames that see that point best, blended in two frequency bands.
 
 Frames of other cameras can fill in what the panorama's own frames do not see: `--fill-cameras F` adds the front
-Hazcam pair when it was taken within 2 hours of them, which colours the ground under the arm. A fill frame has weight only where no regular
-frame sees the surface, and its colours are matched to the regular frames first, per channel, on the surface both
+Hazcam pair when it was taken within 2 hours of them, which colors the ground under the arm. A fill frame has weight only where no regular
+frame sees the surface, and its colors are matched to the regular frames first, per channel, on the surface both
 see (`ods.json`, `fill_colour_match`). The regular frames are not changed.
 
 **Context frames** (`"context"` in the station list, `rpp ods --context-images`) are frames of the block taken
 from another place, or from this place on another sol. They add to the terrain in the dense step, and in the
 panorama they are fill-only sources like the Hazcam pair, with three differences: their rover mask is applied in
-both variants (the rover in them is somewhere else), they never colour the rover model, and each is colour-matched
+both variants (the rover in them is somewhere else), they never color the rover model, and each is color-matched
 to the panorama on its own, whenever it was taken.
 
 On near surfaces - the rover, and the ground beside it - a frame is weighted more steeply by how little parallax it
 has against the panorama's ray. There a wrong depth in the mesh moves the picture by (the camera's distance from
 the ray) x (the depth error) / range squared: at 1.2 m, 20 cm and 5 cm make 23 pixels of a 16K panorama, and the
 frame nearest the ray shows what the panorama should show whatever the model's shape. The weight of a frame is its
-feather (wide for the colour band, narrow for the detail band) x the parallax term to a power: 1 (colour) and 3
-(detail) on the terrain, rising gradually between 4 m and 2 m to 2 and 4. The colour of a near surface is a blend of
+feather (wide for the color band, narrow for the detail band) x the parallax term to a power: 1 (color) and 3
+(detail) on the terrain, rising gradually between 4 m and 2 m to 2 and 4. The color of a near surface is a blend of
 the frames that see it; its detail comes mostly from the frame nearest the ray.
 
 ### The far field
 
-Beyond the ground plane lie hills from a hundred metres to kilometres, and the sky. The frames' cameras are up to
+Beyond the ground plane lie hills from a hundred meters to kilometers, and the sky. The frames' cameras are up to
 0.4 m apart, so where two frames overlap, a surface drawn at the wrong range is drawn twice (0.4 m at 100 m against
 infinity: 5 pixels of an 8K panorama). Before the eyes are rendered, every far direction is tried at 100 m, at the
 sky sphere's 300 m and at infinity; the radius at which the overlapping frames agree best in their detail is the
@@ -144,12 +144,12 @@ the place alone (`dense_S003D2046`), and `--station` takes either form.
 | file | content |
 |---|---|
 | `<prefix>_360_3DTD.png`, `.jpg` | both eyes in one square, **the left eye on top** (8-bit) |
-| `<prefix>_360_3DTD_16.png` | the same in 16-bit linear radiance units: the record for colour work |
+| `<prefix>_360_3DTD_16.png` | the same in 16-bit linear radiance units: the record for color work |
 | `<prefix>_enh_360_3DTD.jpg`, `_enhlocal_360_3DTD.jpg` | contrast-enhanced views, made from the 16-bit panoramas (terrain stretched; the sky smoothed; sky and deck may clip) |
 | `<prefix>_ods_sky_weight.png` | small map of the sky above the skyline: where the enhanced views smooth |
-| `<prefix>_ods_left`, `_right` `.png` / `_16.png` | the eyes apart (`--eyes left right centre` adds the view from the pivot, a third more time) |
+| `<prefix>_ods_left`, `_right` `.png` / `_16.png` | the eyes apart (`--eyes left right center` adds the view from the pivot, a third more time) |
 | `<prefix>_ods_centre_depth.npz`, `_depth_16.png`, `_depth_*.jpg` | the range from the pivot for every pixel; from rays alone, seconds |
-| `provenance.png`, `ods.json` | which frames coloured what, their colours mixed by their weights; every setting and the coverage |
+| `provenance.png`, `ods.json` | which frames colored what, their colors mixed by their weights; every setting and the coverage |
 
 The PNG files are the data record; the JPEGs are for viewing. `_360_3DTD` in a file name is the convention headset
 viewers read (360 degrees, 3D, top-down). The stacked files also carry XMP metadata (Google Photo Sphere
@@ -158,7 +158,7 @@ and a viewer that reads only `GPano` shows the square as one mono sphere.
 
 ### The eye separation
 
-A strict omnidirectional stereo pair is right only at the horizon: towards a pole the columns' eye offsets turn
+A strict omnidirectional stereo pair is right only at the horizon: toward a pole the columns' eye offsets turn
 with the azimuth, and a viewer looking down sees them misaligned. Since 0.97.13 the eye separation is
 
     64 mm x cos(elevation)
@@ -169,14 +169,14 @@ to 0.97.12 had both, and the cosine only near the nadir).
 What the cosine does: with a share s of the separation a point at distance d is seen at d / s. Everything along
 one line of sight is seen 1 / cos(elevation) farther - the rover and the terrain behind it alike, so their depths
 stay in proportion. Flat ground h below the eyes is seen h / cos(elevation) below them: 1.15 h at -30 degrees,
-1.41 h at -45, 2 h at -60. The ground appears to dip towards the rover. `rpp ods --pole-merge START END` and
+1.41 h at -45, 2 h at -60. The ground appears to dip toward the rover. `rpp ods --pole-merge START END` and
 `--pole-merge-down START END` set where the fall starts and ends on each side (`0 90` is the cosine; `90 90`
 none); the constants are at the top of `rpp/ibr/ods.py`, and `ods.json` records what was used.
 
 ### The mark at the nadir
 
 Within 20 degrees of straight down the panorama shows no terrain worth keeping (the mast, or filled-in ground). A
-light blue disc there carries two rows of black text near its rim, each over at most half the circle and centred on
+light blue disc there carries two rows of black text near its rim, each over at most half the circle and centered on
 the rover's front: "Mars 2020 Perseverance Rover" with the sol and the site, and the image credit
 (NASA/JPL-Caltech/MSSS for Navcam and Hazcam frames; NASA/JPL-Caltech/MSSS/ASU when Mastcam-Z frames are in)
 followed by "made by C. Tate". In the flat image they are two straight lines along the bottom; in a headset, facing the rover's front and
@@ -185,7 +185,7 @@ which leaves them about twice too narrow in the headset: the strip is stretched 
 can have its own shape in both. The first row is 1.6 times as tall as the second. The disc lies on the surface
 under the mast - the deck with the rover shown, the ground without (the median depth below the pivot of what is
 seen at the disc's rim, `depth_below_pivot_m`): each eye sees it with that surface's disparity, so it is at the
-surface's distance and not at infinity. The disc is in every colour panorama, not in the depth products; `ods.json`
+surface's distance and not at infinity. The disc is in every color panorama, not in the depth products; `ods.json`
 records it (`nadir_mark`), and `rpp ods --no-nadir-mark` leaves it out.
 
 ### Sky and brightness
@@ -210,24 +210,24 @@ the device can show (maximum texture size, compressed-texture formats).
   to 8192) into `docs/ods/panos/` and lists them in `docs/ods/panos.json`; commit and push `docs/ods`.
 - Another image list: `.../ods/?index=URL` (same origin, or a host that allows cross-origin requests).
 
-Status: a prototype. It has been checked in a desktop browser with a labelled test pair; the stereo in a headset,
+Status: a prototype. It has been checked in a desktop browser with a labeled test pair; the stereo in a headset,
 tiled 16K / 32K images and zoom are not done.
 
 ## The rover as a 3D model (0.98.14)
 
 A station run also renders the with-rover panorama from the pivot and writes `with_rover/<prefix>_rover_surface.glb`:
-the Perseverance model where `rpp mesh --rover` put it (all its triangles, in metres about the pivot), the rows of
-that panorama that hold the rover, and their range. The viewer colours a point of the model with the panorama's pixel
+the Perseverance model where `rpp mesh --rover` put it (all its triangles, in meters about the pivot), the rows of
+that panorama that hold the rover, and their range. The viewer colors a point of the model with the panorama's pixel
 in its direction when it is the surface the pivot sees there (its distance against the range image, with a bias of
-12 mm + 1.2 %); what the pivot does not see was seen by no camera and is the rover grey. So the rover has no holes
+12 mm + 1.2 %); what the pivot does not see was seen by no camera and is the rover gray. So the rover has no holes
 from any viewpoint and its edges are the model's. `<prefix>_rover_surface.json` gives the share of the model's area
-seen from the pivot. To build it again from a folder that already has the centre panorama:
+seen from the pivot. To build it again from a folder that already has the center panorama:
 
 ```
 python -m rpp.ibr.rover_surface D:\rover_blocks\single_sites\Sol0052_S003D2046\with_rover
 ```
 
-On a screen, `.../ods/?head=0.15,0,0` puts the eye 0.15 m east of the pivot (east, up, south, metres) to look at the
+On a screen, `.../ods/?head=0.15,0,0` puts the eye 0.15 m east of the pivot (east, up, south, meters) to look at the
 model's parallax. (0.98.2-0.98.13: a grid mesh cut from the panorama's depth, with a second layer behind its edges.)
 
 ## Experimental: a Mastcam-Z panorama on the Navcam terrain (0.98.2)
@@ -240,4 +240,4 @@ when named.
 
 - (The rover surface of 0.98.4-0.98.13 had two grid layers; replaced by the model in 0.98.14.)
 - The sky's last step, `heal_sky`, replaces frame-shaped patches and bands by the sky's own smooth version.
-- Viewer: right / left trigger = next / previous station, thumbstick = turn, A = site and sol, X = colour view.
+- Viewer: right / left trigger = next / previous station, thumbstick = turn, A = site and sol, X = color view.

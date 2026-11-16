@@ -110,7 +110,7 @@ def _cost(prob) -> float:
 
 def _set_units_from_law(ties: Sequence[Dict[str, Any]]) -> None:
     """Every tied unit parameter set to what its tie says (A x = 0 with a coefficient 1 on the unit parameter); a
-    rig unit's quaternion w renormalised."""
+    rig unit's quaternion w renormalized."""
     for t in ties:
         A, blocks = t["A"], t["blocks"]
         n_u = len(blocks[0])
@@ -273,7 +273,7 @@ def exact_tie_refine(prob, ties: Sequence[Dict[str, Any]], point_blocks: Sequenc
             accepted = False
             for _try in range(20):               # 1e-4 x 5^19: down to a gradient step
                 # 25 Oct: the points damped too (as Ceres does) - undamped, a poorly seen far point stepped by a
-                # metre and an observation behind its camera came back (+34 in cost at any step size)
+                # meter and an observation behind its camera came back (+34 in cost at any step size)
                 Hpp_inv = _point_block_inverse(Hpp, npts, 1e-12, lm=lam)
                 S = (Arr - Hrp @ Hpp_inv @ Hrp.T).tocsr()
                 b = br - Hrp @ (Hpp_inv @ bp)
@@ -291,7 +291,7 @@ def exact_tie_refine(prob, ties: Sequence[Dict[str, Any]], point_blocks: Sequenc
                 step_r = T @ step_z
                 step_p = -(Hpp_inv @ (bp + Hrp.T @ step_r))
                 snap = snapshot()
-                # apply: points additive, the rest through their PlusJacobian (quaternions renormalised)
+                # apply: points additive, the rest through their PlusJacobian (quaternions renormalized)
                 full = np.concatenate([step_p, step_r])
                 for j, a in enumerate(plist):
                     d = full[offs[j]:offs[j + 1]]

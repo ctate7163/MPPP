@@ -101,7 +101,7 @@ def metashape_xml(e) -> str:
     p = e["median_params"]
     W, H = e["width"], e["height"]
     f = float(p[1])
-    # FULL_OPENCV -> Metashape: f = fy, b1 = fx - fy, cx/cy from the centre, P1 = p2, P2 = p1 (see
+    # FULL_OPENCV -> Metashape: f = fy, b1 = fx - fy, cx/cy from the center, P1 = p2, P2 = p1 (see
     # rpp.sfm.project.camera_from_metashape_xml)
     vals = {"f": f, "cx": float(p[2] - W / 2), "cy": float(p[3] - H / 2), "b1": float(p[0] - p[1]),
             "k1": float(p[4]), "k2": float(p[5]), "k3": float(p[8]), "p1": float(p[7]), "p2": float(p[6])}

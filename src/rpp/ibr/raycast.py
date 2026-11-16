@@ -1,7 +1,7 @@
 """
 rpp.ibr.raycast - per-image depth, range, normal and label maps cast from one surface (plan of 31 Oct, step 3).
 
-A ray through every pixel centre of an image, through the image's **exact** camera model (``pycolmap.Camera.
+A ray through every pixel center of an image, through the image's **exact** camera model (``pycolmap.Camera.
 cam_from_img``: THIN_PRISM_FISHEYE for the Navcam, FULL_OPENCV for Mastcam-Z), rotated into the block frame and
 cast at the station's surface (``open3d.t.geometry.RaycastingScene``).  One surface, many views: the maps of two
 images agree by construction, which the patch-match maps never do.
@@ -13,7 +13,7 @@ the axis; it also fills the mesh's holes); where it misses both, the **sky at in
 no depth).  The mesh wins over the plane even where the plane is nearer (a hollow below it), and only the mesh
 occludes.  A finite far sphere (the 0.96.0 prototype's) is still taken when one is given.
 
-Per pixel: ``depth`` (z along the optical axis, metres, COLMAP's convention), ``range`` (along the ray; a fisheye
+Per pixel: ``depth`` (z along the optical axis, meters, COLMAP's convention), ``range`` (along the ray; a fisheye
 pixel near 90 degrees has z -> 0), ``normal`` (camera frame, facing the camera), ``label`` (0 none, 1 mesh, 2 far:
 the sky at infinity - depth and range 0 - or the finite far sphere, 3 masked by the image's rover mask, 4 the ground
 plane) and the triangle id.  Stored as ``maps/<image>.npz`` (depth float32,
@@ -21,7 +21,7 @@ range float16, normal int8 x 127, label uint8, tri int32) with PNG previews.
 
 Resolution: ``scale`` of the frame's own size - 1 by default, its own pixel grid (10 Nov; 0.5 before); Mastcam-Z
 ``zcam_scale`` 1.  The
-camera is never rescaled: the scaled grid's pixel centres are mapped to native pixel coordinates first.
+camera is never rescaled: the scaled grid's pixel centers are mapped to native pixel coordinates first.
 
 Validation (``maps_report.json``): the observed sparse points of every image against the cast depth at their
 keypoints (median |dz|/z and the 90th percentile in range bins), and the coverage per image (mesh / far / none /
@@ -83,14 +83,14 @@ class Scene:
         self.rover_triangles: Optional[Tuple[int, int]] = None     # 0.97.0: [first, end) of the rover model in the mesh
         self.terrain_triangles: Optional[Tuple[int, int]] = None   # 0.98.30: [first, end) of the surface from the cloud
         #                                                            (mesh_report "terrain_triangles"; not fill, floors, model)
-        self.sky_radius_m: Optional[float] = None    # 0.97.0: the sky on a sphere of this radius about the plane's centre
+        self.sky_radius_m: Optional[float] = None    # 0.97.0: the sky on a sphere of this radius about the plane's center
         self.far_field: Optional[Dict[str, Any]] = None   # 0.97.13: 1 / radius of the far surface per direction
 
     def set_sky_sphere(self, radius_m: Optional[float]) -> None:
         """0.97.0 (Christian, 12 Nov 2026: "the 3d terrain should probably stop at a 100 or 200 m radius sky sphere"
         ... "Extend the ground plane to the sphere so mesh, plane and sphere meet without a gap in depth"): the rays
-        that miss mesh and plane end on a sphere of ``radius_m`` about the plane's centre, and the plane reaches to
-        it.  None or 0: the sky at infinity, the plane as fitted.  Needs the plane (its centre)."""
+        that miss mesh and plane end on a sphere of ``radius_m`` about the plane's center, and the plane reaches to
+        it.  None or 0: the sky at infinity, the plane as fitted.  Needs the plane (its center)."""
         if not radius_m or self.plane is None or not self.sky:
             self.sky_radius_m = None
             return
@@ -221,7 +221,7 @@ def scaled_size(camera, scale: float) -> Tuple[int, int]:
 
 
 def pixel_rays(camera, R: np.ndarray, scale: float = 1.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Unit rays of the pixel centres of the image at ``scale``: (dirs_cam (H, W, 3), dirs_world (H, W, 3), valid
+    """Unit rays of the pixel centers of the image at ``scale``: (dirs_cam (H, W, 3), dirs_world (H, W, 3), valid
     (H, W)).  ``R`` is the world-to-camera rotation; a pixel the model cannot undistort is invalid."""
     W, H = scaled_size(camera, scale)
     xs = (np.arange(W) + 0.5) / scale
@@ -294,7 +294,7 @@ JPEG_QUALITY = 92
 
 def depth_rgb(rng: np.ndarray, lab: np.ndarray, mode: str = "log") -> np.ndarray:
     """A range map as a BGR picture: turbo over ``mode`` "log" (DEPTH_LOG_RANGE_M) or "linear" (0 to
-    DEPTH_LINEAR_MAX_M); the ground plane the same colours darker, the sky white, masked and none black (0.97.20,
+    DEPTH_LINEAR_MAX_M); the ground plane the same colors darker, the sky white, masked and none black (0.97.20,
     Christian, 13 Nov 2026: "the depth maps should have black for the masked out regions"; dark red before)."""
     import cv2
     rng = np.asarray(rng, np.float32)
@@ -308,7 +308,7 @@ def depth_rgb(rng: np.ndarray, lab: np.ndarray, mode: str = "log") -> np.ndarray
     img = cv2.applyColorMap((v * 255).astype(np.uint8), cv2.COLORMAP_TURBO)
     pl = lab == LABEL_PLANE
     img[pl] = (img[pl] * 0.55).astype(np.uint8)
-    img[lab == LABEL_FAR] = (255, 255, 255)                  # 0.97.8: the sky white (grey before)
+    img[lab == LABEL_FAR] = (255, 255, 255)                  # 0.97.8: the sky white (gray before)
     img[lab == LABEL_MASKED] = 0
     img[lab == LABEL_NONE] = 0
     return img
@@ -386,7 +386,7 @@ def image_jpg(image_file: PathLike, out_file: PathLike) -> Optional[Path]:
 
 
 def preview_png(maps: Dict[str, np.ndarray], out_prefix: PathLike) -> Tuple[Path, Path]:
-    """``<prefix>_depth.png`` (turbo over log range; far sphere grey, masked and none black) and ``<prefix>_normal.png``."""
+    """``<prefix>_depth.png`` (turbo over log range; far sphere gray, masked and none black) and ``<prefix>_normal.png``."""
     import cv2
     rng = maps["range"].astype(np.float32)
     lab = maps["label"]
@@ -396,7 +396,7 @@ def preview_png(maps: Dict[str, np.ndarray], out_prefix: PathLike) -> Tuple[Path
     v[ok] = np.clip((np.log10(np.clip(rng[ok], 0.5, 200)) - np.log10(0.5)) / (np.log10(200) - np.log10(0.5)), 0, 1)
     img = cv2.applyColorMap((v * 255).astype(np.uint8), cv2.COLORMAP_TURBO)
     pl = lab == LABEL_PLANE
-    img[pl] = (img[pl] * 0.55).astype(np.uint8)                        # the ground plane: the same colours, darker
+    img[pl] = (img[pl] * 0.55).astype(np.uint8)                        # the ground plane: the same colors, darker
     img[lab == LABEL_FAR] = (160, 160, 160)
     img[lab == LABEL_MASKED] = 0
     img[lab == LABEL_NONE] = 0

@@ -186,9 +186,9 @@ def _synthetic_model(noise_px=0.0, seed=0, full_keypoint_lists=True):
     cam = ColmapCamera(1, "FULL_OPENCV", 1280, 960, np.array([1000, 1000, 640, 480, -0.2, 0.05, 1e-4, -1e-4,
                                                                0, 0, 0, 0], float))
     X = np.c_[rng.uniform(-3, 3, 200), rng.uniform(8, 12, 200), rng.uniform(-0.3, 0.3, 200)]
-    centres = [np.array([sx + dx, 0, 2.0]) for sx in (-3.0, 3.0) for dx in (-0.2, 0.0, 0.2)]
+    centers = [np.array([sx + dx, 0, 2.0]) for sx in (-3.0, 3.0) for dx in (-0.2, 0.0, 0.2)]
     images, obs = {}, {}
-    for k, C in enumerate(centres, start=1):
+    for k, C in enumerate(centers, start=1):
         R = _look_at(C, [0, 10, 0])
         t = -R @ C
         uv = project_camera(cam.model, cam.params, X @ R.T + t) + rng.normal(0, noise_px, (len(X), 2))

@@ -41,7 +41,7 @@ def available() -> bool:
 
 
 def load(parts: Optional[Sequence[str]] = None) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
-    """(vertices (n, 3) in RMECH metres, faces (m, 3), meta) of the model, or of the named ``parts`` of it (body,
+    """(vertices (n, 3) in RMECH meters, faces (m, 3), meta) of the model, or of the named ``parts`` of it (body,
     arm, arm_base, suspension, wheels, mast, antenna; ``meta["parts"]``)."""
     if "raw" not in _cache:
         d = np.load(FILE)
@@ -202,9 +202,9 @@ def arm_is_stowed(label_deg, within_deg: float = ARM_STOWED_WITHIN_DEG) -> bool:
 # In the labels' convention az = 180 deg looks forward (+x), el = 90 deg is level, el = 0 looks straight down.
 #
 # NASA's model has the head at az = 180 deg, el = 90 deg (HEAD_MODEL_AZ_EL_DEG): looking forward, level.  Checked
-# against the chain's Navcam centres at that pose: the model's two Navcam housings are centred 17 mm inside the
-# chain's camera centres in y (the model's stereo base is short by about 34 mm, or the lenses are not centred in
-# their housings), 1 mm in z, the lens front 14 mm ahead of the centres in x; the model's mast tube is centred 5 mm
+# against the chain's Navcam centers at that pose: the model's two Navcam housings are centered 17 mm inside the
+# chain's camera centers in y (the model's stereo base is short by about 34 mm, or the lenses are not centered in
+# their housings), 1 mm in z, the lens front 14 mm ahead of the centers in x; the model's mast tube is centered 5 mm
 # from the chain's azimuth axis.  So the head is good to about 2 cm - enough for its shadow, not for anything else.
 MAST_P_XY_RNAV_M = (0.8011894511997478, 0.5568794458630825)
 MAST_G_ROTVEC_RAD = (0.0015152142044422285, -0.0023839926438474776, -0.019291570441226168)

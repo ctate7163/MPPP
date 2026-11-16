@@ -104,7 +104,7 @@ def block_pairs(project_json: PathLike, zooms: Sequence[int], per_block: int = 4
 
 # ------------------------------------------------------------------------------------------------ images, matches
 def read_gray(path: PathLike) -> np.ndarray:
-    """A PDS ``.IMG`` (or any image file) as an 8-bit grey image, stretched between its 0.5 and 99.5 percentiles."""
+    """A PDS ``.IMG`` (or any image file) as an 8-bit gray image, stretched between its 0.5 and 99.5 percentiles."""
     p = Path(path)
     if p.suffix.upper() == ".IMG":
         from rpp.labels import ensure_hwc, read_pds
@@ -122,7 +122,7 @@ def read_gray(path: PathLike) -> np.ndarray:
 
 
 def match_pair(gL: np.ndarray, gR: np.ndarray, max_features: int = 12000, ratio: float = 0.8) -> Tuple[np.ndarray, np.ndarray]:
-    """SIFT matches ZL -> ZR (ratio test, mutual), (n, 2) pixel arrays (pixel centres at integers + 0.5 as COLMAP)."""
+    """SIFT matches ZL -> ZR (ratio test, mutual), (n, 2) pixel arrays (pixel centers at integers + 0.5 as COLMAP)."""
     import cv2
     sift = cv2.SIFT_create(nfeatures=int(max_features), contrastThreshold=0.02)
     kL, dL = sift.detectAndCompute(gL, None)
@@ -145,7 +145,7 @@ def match_pair(gL: np.ndarray, gR: np.ndarray, max_features: int = 12000, ratio:
 
 
 def rays(xy: np.ndarray, params: Sequence[float], pp: Optional[Sequence[float]] = None) -> np.ndarray:
-    """Pixels -> undistorted normalised coordinates (n, 2) through a FULL_OPENCV camera (fx, fy, cx, cy, k1, k2,
+    """Pixels -> undistorted normalized coordinates (n, 2) through a FULL_OPENCV camera (fx, fy, cx, cy, k1, k2,
     p1, p2, k3 ...); ``pp``: the principal point used instead of the camera's."""
     import cv2
     p = [float(v) for v in params]
@@ -165,7 +165,7 @@ def _rot(w):
 
 
 def sampson(xL: np.ndarray, xR: np.ndarray, R: np.ndarray, t: np.ndarray) -> np.ndarray:
-    """Signed Sampson distances (normalised units) of x_R^T [t]_x R x_L = 0."""
+    """Signed Sampson distances (normalized units) of x_R^T [t]_x R x_L = 0."""
     E = _skew(t / np.linalg.norm(t)) @ R
     a = np.c_[xL, np.ones(len(xL))]
     b = np.c_[xR, np.ones(len(xR))]

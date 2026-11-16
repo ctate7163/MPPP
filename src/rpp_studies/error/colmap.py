@@ -28,9 +28,9 @@ Enough:  eps calibration, the view graph, track-length statistics, convergence
 
 Not enough:  absolute accuracy against ground truth (needs external control or
          a reference DTM), surface completeness, or anything about the terrain
-         between tie points.  Sparse tracks are biased towards well-textured,
+         between tie points.  Sparse tracks are biased toward well-textured,
          well-matched terrain -- exactly the easy cases -- so eps measured this
-         way is an OPTIMISTIC estimate and should be labelled as such.
+         way is an OPTIMISTIC estimate and should be labeled as such.
 """
 
 from __future__ import annotations
@@ -223,14 +223,14 @@ def match_survival(model: ColmapModel, n_bins: int = 15,
                 if cand[a][0] in seen and cand[b][0] in seen:
                     obs[k] += 1
 
-    centres = np.degrees(0.5 * (edges[:-1] + edges[1:]))
+    centers = np.degrees(0.5 * (edges[:-1] + edges[1:]))
     with np.errstate(invalid="ignore", divide="ignore"):
         surv = np.where(poss > 0, obs / np.maximum(poss, 1), np.nan)
     # half-survival crossing, linearly interpolated
     theta_half = np.nan
     ok = np.isfinite(surv) & (poss > 20)
     if ok.sum() > 2:
-        c, v = centres[ok], surv[ok]
+        c, v = centers[ok], surv[ok]
         below = np.where(v < 0.5 * v[0])[0]
         if below.size:
             j = below[0]
@@ -239,13 +239,13 @@ def match_survival(model: ColmapModel, n_bins: int = 15,
                 theta_half = float(c[j - 1] + t * (c[j] - c[j - 1]))
             else:
                 theta_half = float(c[0])
-    return {"theta_deg": centres, "n_observed": obs, "n_possible": poss,
+    return {"theta_deg": centers, "n_observed": obs, "n_possible": poss,
             "survival": surv, "theta_half_deg": theta_half}
 
 
 def observed_rays(model: ColmapModel, pt: "ColmapPoint") -> Tuple[List[int], np.ndarray, np.ndarray]:
     """
-    (image ids, camera centres (N,3), unit ray directions (N,3)) of a track,
+    (image ids, camera centers (N,3), unit ray directions (N,3)) of a track,
     from the OBSERVED keypoints (undistorted through the camera model), not
     from the fitted point.  Works with complete keypoint lists (RPP >= 0.14.5,
     COLMAP) and with lists that hold only the observed keypoints (earlier RPP
@@ -334,10 +334,10 @@ def measure_theta_c(model: ColmapModel, n_bins: int = 14,
                 if 0 <= k < n_bins:
                     prod[k].append(float(rn[a] @ rn[b]) / 3.0)
 
-    centres = np.degrees(0.5 * (edges[:-1] + edges[1:]))
+    centers = np.degrees(0.5 * (edges[:-1] + edges[1:]))
     rho = np.array([np.mean(v) if v else np.nan for v in prod])
     n = np.array([len(v) for v in prod])
-    return {"theta_deg": centres, "rho": rho, "n": n,
+    return {"theta_deg": centers, "rho": rho, "n": n,
             "residual_scale_m": float(np.median(var)) if var else float("nan")}
 
 

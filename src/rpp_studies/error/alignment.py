@@ -27,7 +27,7 @@ values it assumes (``ModelConfig`` defaults, ``cases.CASE_PARAMS``):
 ========================  ===================================================
 
 ``notebooks/studies/error_analysis.ipynb`` runs these on the sites of a study.
-Caveats: sparse tracks are biased towards well-matched terrain, so eps is a
+Caveats: sparse tracks are biased toward well-matched terrain, so eps is a
 lower bound and the survival curves are optimistic; "possible" pairs ignore
 occlusion and the RPP masks, which lowers the same-station and cross-station
 rates alike (the gate is their ratio).
@@ -207,8 +207,8 @@ def _observations(al: Alignment) -> Dict[str, np.ndarray]:
     st = np.array([m.images[int(i)].station for i in iid])
     if pid is not None:
         cross = np.array([len(track_st[int(p)]) > 1 for p in pid], bool)
-        centres = {i: m.images[i].center for i in m.images}
-        rng = np.array([np.linalg.norm(m.points[int(p)].xyz - centres[int(i)]) for p, i in zip(pid, iid)])
+        centers = {i: m.images[i].center for i in m.images}
+        rng = np.array([np.linalg.norm(m.points[int(p)].xyz - centers[int(i)]) for p, i in zip(pid, iid)])
     else:
         cross = np.zeros(res.size, bool)
         rng = np.full(res.size, np.nan)
@@ -285,7 +285,7 @@ def eps_table(al: Alignment) -> List[Dict[str, Any]]:
 
 def eps_by_range(al: Alignment, edges_m: Sequence[float] = (0, 2, 4, 6, 8, 10, 15, 20, 30, 50, 100),
                  family: Optional[str] = None) -> Dict[str, np.ndarray]:
-    """eps [px] against observation range (point to camera centre), intra and cross tracks."""
+    """eps [px] against observation range (point to camera center), intra and cross tracks."""
     o = al.__dict__.setdefault("_obs", _observations(al))
     e = np.asarray(edges_m, float)
     sel0 = np.ones(o["residual_px"].size, bool) if family is None else o["family"] == family
@@ -745,7 +745,7 @@ def decorrelation(al: Alignment, n_points: int = 6000, seed: int = 0, edges_deg:
     rho(theta) of pair-triangulation residuals (v0p22.2 estimator).  For each
     track of ``min_track``-``max_track`` images, every image pair is
     triangulated on its own (observed rays); residuals are taken from the mean
-    of the pair solutions and normalised by their rms; the correlation of two
+    of the pair solutions and normalized by their rms; the correlation of two
     residuals is binned by the angle between the two pairs' bisectors.  Only
     pairs that share NO image are used - two pairs sharing an image are
     correlated by that image's observation error whatever the angle
@@ -815,8 +815,8 @@ def decorrelation(al: Alignment, n_points: int = 6000, seed: int = 0, edges_deg:
     if n_boot and tracks:
         boots = [curve([tracks[i] for i in rng.integers(0, len(tracks), len(tracks))], 0)[0] for _ in range(int(n_boot))]
         se = np.nanstd(np.array(boots), axis=0)
-    centres = 0.5 * (e[:-1] + e[1:])
-    return {"theta_deg": centres, "edges_deg": e, "rho": rho, "se": se, "n": n, "rho_shared_image": rho_s,
+    centers = 0.5 * (e[:-1] + e[1:])
+    return {"theta_deg": centers, "edges_deg": e, "rho": rho, "se": se, "n": n, "rho_shared_image": rho_s,
             "n_shared": n_s, "n_tracks": len(tracks), "min_track": min_track}
 
 

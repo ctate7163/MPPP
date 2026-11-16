@@ -318,7 +318,7 @@ def tied_reconstruction(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], bin_
                 e = eye_of_cam[int(rec.images[i].camera_id)]
                 counts[k][e] = counts[k].get(e, 0) + 1
         nf = merge_bins(frames, counts, merge_min_images, merge_max_deg, bin_deg)
-        log.info(f"diagnostic bins: {nf} thin {bin_deg:g} degC bins merged into their neighbours "
+        log.info(f"diagnostic bins: {nf} thin {bin_deg:g} degC bins merged into their neighbors "
                  f"(>= {merge_min_images} images per eye, <= {merge_max_deg:g} degC)")
 
     def cam_key(f, eye):

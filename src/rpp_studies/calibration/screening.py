@@ -29,7 +29,7 @@ def restation(report: Dict[str, Any], colmap_dir: PathLike, min_frame_observatio
     Before 0.94.4 a Hazcam image's shift was measured from its prior as moved by its station's Navcam shift (stage
     2, ``hazcam_station_priors``), so a station that moved made its Hazcam frames look that far from its Navcam
     frames: ``within_station_shift_spread_m`` FAIL at 1.06 m in Van Zyl Overlook Huge (Navcam shift 2.1 m).  Uses
-    ``<colmap>/error_input/poses.csv`` (the refined centres) and ``project.json`` (``prior_C_label``).  Returns the
+    ``<colmap>/error_input/poses.csv`` (the refined centers) and ``project.json`` (``prior_C_label``).  Returns the
     checks changed; nothing when the block has no moved prior.
     """
     import csv

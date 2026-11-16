@@ -87,7 +87,7 @@ RUN_MARKERS = ("_run_process.bat", "_run_sites.bat", "_run_align.bat", "process_
 
 def rpp_processes(rows) -> List[Dict[str, Any]]:
     """The RPP runner processes among ``rows`` ({"pid", "ppid", "cmd"}): those whose command line names one of
-    ``RUN_MARKERS`` (the minimised .bat windows and the Python runners; their image workers are their children).
+    ``RUN_MARKERS`` (the minimized .bat windows and the Python runners; their image workers are their children).
     Only the top of each tree is returned (killing it with /T takes the rest)."""
     parent = {int(r["pid"]): int(r.get("ppid") or 0) for r in rows}
     mine, p = set(), os.getpid()

@@ -410,7 +410,7 @@ def scale_summary(scale_dir, tag="ppf"):
 def label_scale_consistency(manifests):
     """
     v0p35.1: do the flight (label) camera models of the Navcam downsample scales agree once mapped to full-frame
-    pixels the way RPP maps keypoints (x_full = (x + dx + 0.5) / scale - 0.5, pixel-centre origin, dx the sub-frame
+    pixels the way RPP maps keypoints (x_full = (x + dx + 0.5) / scale - 0.5, pixel-center origin, dx the sub-frame
     offset)?  From the label CAHVORE in RPP manifests: per eye and sol, the median principal point (hc, vc) and
     scale (hs) of each downsample scale minus those of the half-resolution products.  A different pixel convention
     (e.g. sub-sampling instead of binning) would show as 0.5 px (full resolution) or 1.5 px (quarter) offsets.

@@ -151,7 +151,7 @@ def stations_from_rmcs(
     revisits alongside the ones you actually want; `build_stations`'s radius
     selection can't distinguish them).
 
-    anchor_rmc defaults to rmcs[0]. The frame is centred on the anchor's
+    anchor_rmc defaults to rmcs[0]. The frame is centered on the anchor's
     GROUND position (see the frame-convention note in `build_stations`).
 
     use_odometry_path=True sets each station's path_m from the ACTUAL rover
@@ -231,14 +231,14 @@ def build_stations(
     flatten_elevation: bool = False,
 ) -> Tuple[List[Station], dict]:
     """
-    Build Station objects from a traverse, centred on the anchor.
+    Build Station objects from a traverse, centered on the anchor.
 
     cam_offset_xyz  : mast offset in the ROVER body frame (forward, left, up),
                       rotated into the world frame by the rover heading.
     camera_height_m : additional height of the camera above the waypoint
                       elevation, applied on top of cam_offset_xyz[2].
     flatten_elevation : if True, force all stations to a common height (the
-                      original mars20_waypoints behaviour).  Provided only
+                      original mars20_waypoints behavior).  Provided only
                       for back-comparison; leave False for real work.
 
     Returns (stations, info) where info carries anchor metadata.
@@ -269,10 +269,10 @@ def build_stations(
 
     off = np.asarray(cam_offset_xyz, dtype=float)
 
-    # FRAME CONVENTION: the output frame is centred on the anchor's GROUND
+    # FRAME CONVENTION: the output frame is centered on the anchor's GROUND
     # position, not its camera position.  The evaluation grid therefore sits at
     # z = 0 (local ground) and cameras sit at +camera_height_m above it.
-    # Centring on the camera instead puts the cameras in the ground plane, every
+    # Centering on the camera instead puts the cameras in the ground plane, every
     # emission angle goes to 90 deg, and nothing is visible anywhere.
     anchor_ground = np.array([ax, ay, az_anchor])
 

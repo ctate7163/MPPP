@@ -8,7 +8,7 @@ Steps (notebook ``03_colmap_alignment``)::
     extract_features(project)                                    # SIFT at native resolution -> features.db
     build_database(project)                                      # -> database.db (full-resolution keypoints)
     match(project, mode="exhaustive" | "prior_pairs")            # matches + two-view geometries
-    rec = reconstruct(project)                                   # CAHV-initialised, weighted BA
+    rec = reconstruct(project)                                   # CAHV-initialized, weighted BA
     report = assess_alignment(project, rec)                      # alignment health, before any analysis
     export_for_error(project, rec)                               # native-resolution text model + tables
 
@@ -24,7 +24,7 @@ Design (see ``docs/methods.md`` section 9):
 * **One rig**: Navcam left is the reference sensor; the right camera's ``sensor_from_rig`` starts from the promoted
   rig at the block's median sol (the median left->right CAHV pose otherwise).  Because every resolution uses the
   same two cameras, the offset is the same for all stereo pairs.
-* **Frames** = exposures (shared SCLK); left-only exposures are frames with one image.  Extrinsics are initialised
+* **Frames** = exposures (shared SCLK); left-only exposures are frames with one image.  Extrinsics are initialized
   from CAHV (``RPPImage.pose``).
 * **Weighting**: a keypoint at downsample scale s has a full-resolution standard deviation sigma/s, which the custom
   bundle adjustment uses (COLMAP's own BA weights every residual equally, which would over-weight quarter-resolution

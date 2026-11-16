@@ -6,7 +6,7 @@ run_scapes, with their image-processing workers.
     python scripts\\stop_runs.py --yes      # stop them without asking
     python scripts\\stop_runs.py --list     # only list them
 
-Runs are found by their command lines (the minimised .bat windows and the Python runners); each is stopped with
+Runs are found by their command lines (the minimized .bat windows and the Python runners); each is stopped with
 everything it started (Windows: ``taskkill /T /F``).  Notebooks open in Jupyter are not touched.  The status files
 under ``--root`` (``mppp_batch.json`` and each WORK folder's ``mppp_status.json``) are then marked "stopped", so a
 new run can start at once.  A site stopped half-way is completed by the next run: images already processed are

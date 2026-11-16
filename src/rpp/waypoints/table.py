@@ -1,5 +1,5 @@
 """
-Mars 2020 rover waypoints (localised site/drive positions).
+Mars 2020 rover waypoints (localized site/drive positions).
 
 Source: the M2020 mission "waypoints" GeoJSON.  A snapshot ships with the
 package (``rpp/data/M20_waypoints.json``) so that processing is reproducible
@@ -145,7 +145,7 @@ def waypoint_for_site_drive(data: Dict[str, Any], site: int, drive: int,
 
 def waypoints_within_radius(data: Dict[str, Any], anchor_sol: int, radius: float) -> List[Dict[str, Any]]:
     """
-    All waypoint features within ``radius`` metres (planar E-N) of the anchor:
+    All waypoint features within ``radius`` meters (planar E-N) of the anchor:
     the last waypoint of ``anchor_sol``; ``-1`` = last waypoint of the highest sol.
     Unlike the legacy function, an anchor sol with no waypoint raises an error
     instead of silently using the latest waypoint.
@@ -176,7 +176,7 @@ def waypoints_within_radius(data: Dict[str, Any], anchor_sol: int, radius: float
 
 def stations_near(data: Dict[str, Any], stations: Iterable[Tuple[int, int]], radius_m: float = 5.0) -> List[Dict[str, Any]]:
     """
-    Waypoint stations within ``radius_m`` metres (planar E-N) of any of ``stations``
+    Waypoint stations within ``radius_m`` meters (planar E-N) of any of ``stations``
     (site, drive pairs; each placed at its waypoint, or the nearest drive of its
     site when the exact one is not in the table).  Returns one row per (site,
     drive) of the table, anchors included: ``site``, ``drive``, ``sol``,

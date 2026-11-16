@@ -6,7 +6,7 @@ REM this file never needs updating when RPP changes. Process the images first wi
 REM
 REM Copy this file into a site's WORK folder (the folder that holds processed\, e.g.
 REM <scapes root>\mars2020_sol_1408_south_arm_zcam) and double-click it. The alignment runs in the background
-REM (a minimised window; closing that window stops it). Nothing needs Jupyter.
+REM (a minimized window; closing that window stops it). Nothing needs Jupyter.
 REM
 REM   progress   runs\<date-time>\log.txt   (every notebook cell and every [sfm] line as it happens)
 REM   status     mppp_status.json           (double-click this file again while it runs: it shows the status)
@@ -47,6 +47,6 @@ if not errorlevel 1 (
   exit /b 0
 )
 start "RPP align - %WORK%" /min cmd /c call "%RPP_HOME%\scripts\windows\_run_align.bat" "%WORK%" %*
-echo RPP alignment of "%WORK%" started in a minimised window.
+echo RPP alignment of "%WORK%" started in a minimized window.
 echo Progress: "%WORK%\runs\" (newest folder, log.txt). Double-click align_here.bat again for the status.
 timeout /t 10

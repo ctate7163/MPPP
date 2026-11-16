@@ -19,7 +19,7 @@ MARS_RADIUS_M = 3389500.0
 
 
 def read_qmesh(path: os.PathLike) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """(u, v, h) of a quantized-mesh tile: u, v in 0..1 across the tile, h in metres."""
+    """(u, v, h) of a quantized-mesh tile: u, v in 0..1 across the tile, h in meters."""
     b = Path(path).read_bytes()
     if b[:2] == b"\x1f\x8b":
         b = gzip.decompress(b)

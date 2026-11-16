@@ -67,7 +67,7 @@ STAGES = ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_
 # 0.94.4 (Christian, 25 Oct): the states run - the Mastcam-Z sites again as the variant "states", one camera per image
 # with its own focal length (run_zcam_states.bat), then rpp zcam-states: which frames are low, the found-list proposal
 ZCAM_STATES_SETS = ("ZCAM_BIN_BY=image", "ZCAM_HOLD_F_IMAGES=0", "ZCAM_BIN_REFINE=focal_pp", "ZCAM_FOCUS_LINE=false")
-# 0.94.5 (Christian, 27 Oct): focal_pp - the right eye's centre free per image too (its state shows there; focal held it)
+# 0.94.5 (Christian, 27 Oct): focal_pp - the right eye's center free per image too (its state shows there; focal held it)
 # the stage set of the state file (0.94.4: ecam stages).  Not changed for the rover_frame stage (added 23 Oct during
 # the weekend run): a state of this tag simply lacks it, so a rerun does rover_frame and the report only
 STATE_TAG = "v0944"
@@ -185,7 +185,7 @@ class Pipeline:
             # 0.95.0 (Christian, 28 Oct): a calibration run skips the native text model, residuals, the Navcam-stage
             # export and the COLMAP GUI copy.  2 Nov 2026: the freeze run writes the full export by default - the
             # error_analysis stage reads error_input/native, and the paper and the exports need gui_native (--light:
-            # the calibration-run behaviour)
+            # the calibration-run behavior)
             cmd += ["--set", "export_level=light"]
         if zcam:
             cmd.append("--zcam")

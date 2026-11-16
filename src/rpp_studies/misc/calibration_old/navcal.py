@@ -57,7 +57,7 @@ def _rig_rows(ba: Dict[str, Any], rec, R_ref: Optional[np.ndarray], mode: str) -
             T = rig.sensor_from_rig(sid)
             R = np.asarray(T.rotation.matrix())
             t = np.asarray(T.translation)
-            C = -R.T @ t                               # right centre in the left camera frame
+            C = -R.T @ t                               # right center in the left camera frame
             ang = rig_angles(R, R_ref)
             row = {"rig_id": int(rid), "camera_id": int(sid.id), "mode": mode, **ang,
                    **{k.replace("_mdeg", "_abs_mdeg"): v for k, v in rig_angles(R).items()},
@@ -335,7 +335,7 @@ def rig_study(sc: Scape, bin_deg: float = 10.0, min_images: int = 8, max_iterati
 
 def _wls(y: np.ndarray, X: np.ndarray, var: np.ndarray) -> Dict[str, Any]:
     """Weighted least squares with an additive between-block variance tau^2 (method of moments, DerSimonian-Laird
-    generalised to a regression).  Returns coefficients, their standard errors, tau and Q."""
+    generalized to a regression).  Returns coefficients, their standard errors, tau and Q."""
     # v0p61: rows without a finite value or variance (e.g. a rig angle held in its block: sd nan) are left out
     y, X, var = np.asarray(y, float), np.asarray(X, float), np.asarray(var, float)
     ok = np.isfinite(y) & np.isfinite(var) & np.all(np.isfinite(X), axis=1)
@@ -522,7 +522,7 @@ NAVCAM_T_REF_DEGC = -20.0     # v0p40: the reference camera temperature of the f
 
 def rig_rotation_at(R, t, dT: float, yaw_mdeg_per_degC: float, pitch_mdeg_per_degC: float = 0.0):
     """The stereo rig (x_R = R x_L + t) at a temperature dT from the one it describes, with the right camera's
-    rotation changing by (pitch, yaw) slopes x dT (rotation vector in the right camera frame) and its centre fixed:
+    rotation changing by (pitch, yaw) slopes x dT (rotation vector in the right camera frame) and its center fixed:
     R' = Rot R, t' = Rot t.  (The frozen form has no rig temperature term; kept for the earlier joint files.)"""
     from scipy.spatial.transform import Rotation
     Q = Rotation.from_rotvec(np.radians(1e-3 * np.array([pitch_mdeg_per_degC * dT, yaw_mdeg_per_degC * dT, 0.0]))).as_matrix()
@@ -621,7 +621,7 @@ def write_joint_cameras(joint: Dict[str, Any], out_dir: PathLike, loo: Optional[
         written[g] = path
     rg = joint.get("rig") or {}
     if "C_right_m" in rg:
-        # the rig rotation of the joint adjustment; the translation from its centre (unchanged: rotation mode)
+        # the rig rotation of the joint adjustment; the translation from its center (unchanged: rotation mode)
         pass
     R = np.asarray(joint.get("rig_R") or np.eye(3), float)
     t = np.asarray(joint.get("rig_t") or [0, 0, 0], float)
@@ -696,7 +696,7 @@ def drift_robustness(studies: Sequence[Dict[str, Any]], mode: str = "rotation_pp
     How robust the rig's drift with sol is (v0p35.1): :func:`rig_drift` on all blocks (less ``exclude``), with
     sol alone and with temperature alone; leave-one-block-out rates (jackknife); and, when ``holdout`` names blocks,
     the fit without them and its prediction of their rigs (residual, prediction sd from the formal sd, the fit's
-    standard errors and tau, and the normalised residual z).
+    standard errors and tau, and the normalized residual z).
     """
     use = [s for s in studies if s["scape"] not in set(exclude) and ((s.get(mode) or {}).get("rigs"))]
     out: Dict[str, Any] = {"mode": mode, "blocks": [s["scape"] for s in use], "excluded": list(exclude)}
@@ -968,8 +968,8 @@ def scale_offsets(sc: Scape, free: Sequence[str] = ("cx", "cy"), min_images: int
     of every scale are in full-resolution pixels (native x 1/scale, corner origin: exact for binning that starts
     at the detector corner), so a wrong native-to-full mapping shows as a principal-point offset of the scale's
     camera from the reference scale (0.5 px at half resolution and 1.5 px at quarter resolution for a
-    pixel-centre instead of a pixel-corner origin).  The principal point stays observable although a pure shift is
-    close to a rotation, because the strong distortion is centred on it.  Returns the rows with cx, cy (and fx,
+    pixel-center instead of a pixel-corner origin).  The principal point stays observable although a pure shift is
+    close to a rotation, because the strong distortion is centered on it.  Returns the rows with cx, cy (and fx,
     fy), their sd, and the offsets from the eye's reference camera.
     """
     from rpp.sfm.reconstruction import bundle_adjust

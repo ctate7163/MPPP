@@ -11,7 +11,7 @@ right(theta)`` with ``right = h x up`` and ``h`` the horizontal view direction -
 Both rays are cast at the station's surface (mesh within 30 m of the mast axis, the ground plane to 100 m, the sky at
 infinity; :mod:`.raycast`): the hit point X and its label.
 
-Colour: X is projected into every image of the station (the Navcam frames of that waypoint; ``--cameras`` adds
+Color: X is projected into every image of the station (the Navcam frames of that waypoint; ``--cameras`` adds
 Mastcam-Z) through the exact camera model; an image is a candidate when X falls inside it, in front of it, is not
 masked, and the segment camera -> X meets no surface before X (ray cast; tolerance tau(z)).  Holes - no surface, or
 no image sees the point - are black and recorded in the provenance map (``provenance.png``: the source image index).
@@ -33,12 +33,12 @@ Blending (10 Nov 2026, Christian: "the mosaic should be blended together to avoi
   the terrain behind, which the mesh then hides from every camera - a black triangle on the deck, a sliver along a
   mesh edge.  A pixel no source sees unhidden takes the best hidden one (by the same weight); cracks still left
   (at most ``HOLE_FILL_MAX_PX`` pixels and ``HOLE_FILL_MAX_WIDTH_PX`` wide) are filled from their edges
-  (``cv2.inpaint``) and marked in the provenance map (grey); large unseen areas below the horizon (straight down)
+  (``cv2.inpaint``) and marked in the provenance map (gray); large unseen areas below the horizon (straight down)
   stay black;
 - **the sky above the frames** (10 Nov, Christian: "extrapolate and blur the light blue sky upwards so that there
-  isn't a shape boundary there"): per column the colour of the band just below the highest sky pixel a frame saw,
-  that boundary and its colour smoothed around the panorama (no sawtooth from the frames' tops), the colour carried
-  up and blended into the panorama's mean sky colour at the zenith, cross-faded with the seen sky over a band about
+  isn't a shape boundary there"): per column the color of the band just below the highest sky pixel a frame saw,
+  that boundary and its color smoothed around the panorama (no sawtooth from the frames' tops), the color carried
+  up and blended into the panorama's mean sky color at the zenith, cross-faded with the seen sky over a band about
   the smoothed boundary; light blue in the provenance map; ``--no-sky-fill``.
 
 Resolution: 8192 x 4096 is 0.77 mrad/px; a half-resolution Navcam frame (2560 px) is 0.68 mrad/px, a full-resolution
@@ -70,7 +70,7 @@ DEFAULT_WIDTH = 16384             # 0.98.30 (Christian, 16 Nov 2026: "Render the
 #                                   standard for now"), 16384 from 0.97.4 to 0.97.9
 DEFAULT_IPD_M = 0.064
 # 0.97.0 (Christian, 12 Nov 2026, Quest 3: "when I tilt my head down ... I go cross-eyed"): pole merging.  An ODS
-# pair is right only at the horizon: towards a pole each column keeps its own eye offset, so in a view looking down
+# pair is right only at the horizon: toward a pole each column keeps its own eye offset, so in a view looking down
 # the columns to the side carry their disparity along the wrong direction for the viewer's eyes (vertical
 # misalignment), and near surfaces (the deck 1 m below) carry far too much of it.  The eye separation is full to
 # POLE_MERGE_DEG[0] of elevation (up or down), falls as a cosine and is zero from POLE_MERGE_DEG[1]: one image
@@ -84,7 +84,7 @@ POLE_MERGE_DEG: Optional[Tuple[float, float]] = (0.0, 90.0)       # 0.97.13: cos
 # terrain in front of the rover look flat while reducing eye strain while looking at the rover deck?"): the cosine
 # law is what made the dip - with a share s of the eye separation a point at distance d is seen at d / s, so the
 # ground h below the eyes is seen h / cos(elevation) below them: 1.15 h at -30 deg, 1.41 h at -45, 2 h at -60.
-# Now the separation is full to -60 deg and merges only towards the nadir, and what strains the eyes is limited
+# Now the separation is full to -60 deg and merges only toward the nadir, and what strains the eyes is limited
 # where it arises - on near surfaces: NEAR_MERGE_M.
 # 0.97.13 (Christian, 13 Nov, Quest 3, after 0.97.12: "The rover depth looks too far away relative to the terrain.
 # Let's return everything to true disparity and implement a cosine pole merging"): the range-dependent shares are off
@@ -166,10 +166,10 @@ PAD_MAX_VALUE = 1                # a source pixel this dark in every channel, in
 PAD_MIN_FRAC = 0.002             # ... when the region is at least this fraction of the image
 SKY_MIN_VALUE = 12               # the sky fill samples no pixel darker than this (no black or near-black areas)
 SKY_ENVELOPE_FRAC = 0.10         # the boundary: the lowest of the frames' tops within this fraction of the width
-SKY_SKIP_FRAC = 0.004            # the sky colour sampled this far (of the height) below each column's highest seen pixel
+SKY_SKIP_FRAC = 0.004            # the sky color sampled this far (of the height) below each column's highest seen pixel
 SKY_BAND_FRAC = 0.03             #   over a band this tall, from its brightest SKY_BRIGHT_SHARE (sky, not the distant
 SKY_BRIGHT_SHARE = 0.4           #   hills the band can reach - both are "far"), median
-SKY_SMOOTH_FRAC = 0.02           # the boundary and the colour smoothed around the panorama (Gaussian, of the width)
+SKY_SMOOTH_FRAC = 0.02           # the boundary and the color smoothed around the panorama (Gaussian, of the width)
 SKY_EDGE_ROWS_FRAC = 0.001       # the first rows below each column's highest seen sky pixel are replaced by the fill
 SKY_FEATHER_FRAC = 0.02          # the fill cross-fades with the seen sky over this band (of the height) about the boundary
 GAIN_PASS_WIDTH = 1024
@@ -204,7 +204,7 @@ def ods_rays(width: int, height: int, rows: Tuple[int, int], pivot: Sequence[flo
 
 
 class SourceImage:
-    """One candidate image: its camera, pose, native mask and the colour image at ``scale`` (loaded on demand)."""
+    """One candidate image: its camera, pose, native mask and the color image at ``scale`` (loaded on demand)."""
 
     def __init__(self, name: str, camera, R: np.ndarray, C: np.ndarray, image_file: Path, mask_file: Optional[Path], scale: float):
         self.name, self.camera, self.R, self.C = name, camera, np.asarray(R, float), np.asarray(C, float)
@@ -216,7 +216,7 @@ class SourceImage:
         self.gain = 1.0
         self.extra_mask: Optional[np.ndarray] = None      # True = may not be used (the mast-head hardware, rover shown)
         self.rover_mask_file: Optional[Path] = None       # 0.97.0, rover shown: the rover mask kept for the surface check
-        self.fill_only = False                            # 0.97.7: colours only what no regular source sees (a Hazcam frame)
+        self.fill_only = False                            # 0.97.7: colors only what no regular source sees (a Hazcam frame)
         self.context = False                              # 0.97.15: a frame from another place or sol (see station_sources)
         self._rover: Optional[np.ndarray] = None
         self.model_rover: Optional[np.ndarray] = None     # 0.98.22: the rover model's silhouette, where the mask has no rover
@@ -239,7 +239,7 @@ class SourceImage:
         return uv, z, inside
 
     def rgb(self) -> np.ndarray:
-        """The colour image at scale: uint8, or - from the 16-bit linear image - float32 in the 8-bit image's units
+        """The color image at scale: uint8, or - from the 16-bit linear image - float32 in the 8-bit image's units
         (the 16-bit value / 64: up to 1024, not clipped at 255), saturated pixels made neutral."""
         if self._rgb is None and self.linear_file is not None:
             import cv2
@@ -380,11 +380,11 @@ class SourceImage:
         return np.stack([map_coordinates(img[..., c], coords, order=1, mode="nearest") for c in range(img.shape[2])], axis=1)
 
     def sample(self, uv: np.ndarray) -> np.ndarray:
-        """Bilinear colour (n, 3) float at the scaled pixel coordinates ``uv``."""
+        """Bilinear color (n, 3) float at the scaled pixel coordinates ``uv``."""
         return self._bilinear(self.rgb().astype(np.float32), uv)
 
     def sample_bands(self, uv: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """(low band, full image) colours (n, 3) at ``uv``."""
+        """(low band, full image) colors (n, 3) at ``uv``."""
         return self._bilinear(self.low(), uv), self.sample(uv)
 
     def sample_edge_distance(self, uv: np.ndarray) -> np.ndarray:
@@ -470,9 +470,9 @@ def station_sources(project, rec, station, families: str = "N", scale: float = 1
 
     ``context_images`` (0.97.15; Christian, 13 Nov 2026: "include NLF_1790_... from a near location for context.
     Since it is from a different location, it should be masked in both the with and without rover parts"): frames of
-    the block taken from another place, or at this place on another sol.  They are fill-only sources (they colour
+    the block taken from another place, or at this place on another sol.  They are fill-only sources (they color
     what the station's own frames do not see), their rover mask is always applied - the rover in them is somewhere
-    else, or in another state - and they never colour the rover model."""
+    else, or in another state - and they never color the rover model."""
     by_name = {im.name: im for im in rec.images.values()}
     names = list(images) if images else [n for n in station.images if n[:1].upper() in set(families.upper())]
     ctx = list(dict.fromkeys(context_images or ()))           # a context frame at this station is not one of its own
@@ -536,7 +536,7 @@ def model_rover_masks(sources, pose: Dict[str, Any], use_masks: bool = True) -> 
     well. What is happening here and how to fix it?"): Three Forks north's sol 690 Mastcam-Z 360 (ZCAM08692), the deck
     pan and the sol 688 Navcam 360 are processed without the mask model (``no_mask_inference_at``: the deck-fiducial
     work wants the deck), so their rover was neither kept off the terrain (rover masked: the deck painted on the ground
-    from the Mastcam-Z's place, 0.2-0.5 m from the pivot - doubled and smeared hardware) nor recognised as rover (rover
+    from the Mastcam-Z's place, 0.2-0.5 m from the pivot - doubled and smeared hardware) nor recognized as rover (rover
     shown: the surface check kept every one of their pixels off the rover model).  A frame whose mask is missing or
     calls more than ``MODEL_MASK_MIN_LEFT`` of the rover model's silhouette terrain gets the silhouette instead: masked
     out (``extra_mask``) for the terrain-only panorama, the rover pixels for the surface check with the rover shown
@@ -582,12 +582,12 @@ def _smoothstep(x: np.ndarray) -> np.ndarray:
 
 SURFACE_CHECK = True              # 0.97.0, rover shown: see candidates()
 BROWN_FILL_8BIT = (150.0, 105.0, 70.0)   # RGB, 8-bit units: the fill where the check leaves a surface without a source and
-#                                          the panorama has no terrain to take the colour from (else: the median terrain colour)
+#                                          the panorama has no terrain to take the color from (else: the median terrain color)
 BROWN_FILL_DARKEN = 0.8                  # the fill a little darker than the terrain, so it reads as fill
-ROVER_GREY_REL = 1.25                    # 0.98.12 (Christian, 15 Nov 2026: "The 3d rover models should not interpolate colors
-#                                          across the rover ... Make in images mars rover grey"): the rover model where no
-#                                          frame coloured it is a neutral grey this much brighter than the terrain's median
-#                                          (the deck reads lighter than the ground); never filled from neighbouring pixels
+ROVER_GRAY_REL = 1.25                    # 0.98.12 (Christian, 15 Nov 2026: "The 3d rover models should not interpolate colors
+#                                          across the rover ... Make in images mars rover gray"): the rover model where no
+#                                          frame colored it is a neutral gray this much brighter than the terrain's median
+#                                          (the deck reads lighter than the ground); never filled from neighboring pixels
 
 
 # 0.97.8 (Christian, 13 Nov 2026, Van Zyl with the rover: "the 3d model rover looks just as bad"): on a surface this
@@ -601,9 +601,9 @@ ROVER_GREY_REL = 1.25                    # 0.98.12 (Christian, 15 Nov 2026: "The
 # smoother function when multiple images see the same surfaces. the mid and far distances terrain looks well
 # blended"): 0.97.8 gave near surfaces the narrow feather and the 4th power in both bands, switched on at 3 m: one
 # frame took nearly everything, with a hard change of frame where two were equally far from the ray, and a line on
-# the ground at 3 m.  Now the feathers are the terrain's everywhere (wide for the colour, narrow for the detail), and
-# only the parallax term's power rises on near surfaces, gradually: from the terrain's 1 (colour) and 3 (detail) at
-# NEAR_BLEND_M[1] to NEAR_LOW_POWER and NEAR_PARALLAX_POWER at NEAR_BLEND_M[0] and nearer.  The colour of a near
+# the ground at 3 m.  Now the feathers are the terrain's everywhere (wide for the color, narrow for the detail), and
+# only the parallax term's power rises on near surfaces, gradually: from the terrain's 1 (color) and 3 (detail) at
+# NEAR_BLEND_M[1] to NEAR_LOW_POWER and NEAR_PARALLAX_POWER at NEAR_BLEND_M[0] and nearer.  The color of a near
 # surface is again a blend of the frames that see it; its detail still comes mostly from the frame nearest the ray.
 NEAR_BLEND_M: Optional[Tuple[float, float]] = (2.0, 4.0)
 TERRAIN_DETAIL_POWER = 2.0        # 0.98.0 (Christian, 14 Nov 2026: "When blending the images, make sure to preserve the noise
@@ -638,7 +638,7 @@ def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: n
     ``surface_check`` (0.97.0; Christian, 12 Nov 2026: "nothing from the rover mask lands on the terrain and nothing
     from the terrain mask lands on the rover"; default :data:`SURFACE_CHECK`): with the rover model in the mesh
     (``scene.rover_triangles``) and a source that kept its rover mask (``rover_mask_file``: the rover-shown render),
-    a source pixel inside the rover mask may colour the rover model only, and one outside it anything but the model.
+    a source pixel inside the rover mask may color the rover model only, and one outside it anything but the model.
     ``"rejected"``: [rover pixels kept off the terrain, terrain pixels kept off the rover] (samples)."""
     if surface_check is None:
         surface_check = SURFACE_CHECK
@@ -681,7 +681,7 @@ def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: n
                 rej_px[ij[~same]] = True
                 ij, dist = ij[same], dist[same]
         if on_rover is not None and getattr(src, "context", False) and len(ij):
-            keep = ~on_rover[ij]                             # 0.97.15: a context frame never colours the rover model
+            keep = ~on_rover[ij]                             # 0.97.15: a context frame never colors the rover model
             ij, dist = ij[keep], dist[keep]
         if not len(ij):
             continue
@@ -723,7 +723,7 @@ def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: n
     best["k"][use, 0], best["uv"][use, 0], best["dist"][use, 0] = fb_k[use], fb_uv[use], fb_dist[use]
     best["short"][use, 0], best["ang"][use, 0] = fb_short[use], 1.0
     # 0.97.7 (Christian, 13 Nov 2026: "add the fhaz cam image pair taken with the navcams to cover the terrain under
-    # the arm"): a fill-only source colours what the regular ones do not see, and comes in as their feather goes out
+    # the arm"): a fill-only source colors what the regular ones do not see, and comes in as their feather goes out
     fill = np.array([bool(getattr(s_, "fill_only", False)) for s_ in sources] + [False])
     fw = np.ones((n, K), np.float32)
     if fill.any():
@@ -739,7 +739,7 @@ def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: n
 # 0.97.13 (Christian, 13 Nov 2026: "we might need sky sphere at both 100 m, 200m and infinity and blend between them
 # favoring the sharpest one" ... "move the 200 m sphere to 300 m. and pay attention to the blending between the 100,
 # 300, and inf m spheres"): THE FAR FIELD.  What lies beyond the mesh and the ground plane - hills from 100 m to
-# kilometres, the sky - was painted on one sphere.  The frames' cameras are up to 0.4 m apart, so where two frames
+# kilometers, the sky - was painted on one sphere.  The frames' cameras are up to 0.4 m apart, so where two frames
 # overlap, a surface drawn at the wrong range is drawn twice: 0.4 m / 100 m against 0.4 m / infinity is 4 mrad, 5
 # pixels of an 8K panorama.  Before the eyes are rendered, the far directions are tried on each of FAR_RADII_M (the
 # sky sphere's radius is one of them; None = infinity): the frames that would be blended there are sampled, and the
@@ -873,7 +873,7 @@ def estimate_far_field(scene: Scene, sources: Sequence[SourceImage], pivot: Sequ
 
 def estimate_gains(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[float], width: int = GAIN_PASS_WIDTH,
                    up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0), rows_per_chunk: int = 128) -> Dict[str, Any]:
-    """One gain per source from the pixels two sources share (low-band brightness; the centre eye at ``width``):
+    """One gain per source from the pixels two sources share (low-band brightness; the center eye at ``width``):
     a_k - a_l = median(log L_l - log L_k) per pair, least squares with a weak pull to a = 0, g = exp(a) clipped to
     GAIN_RANGE.  Sets ``src.gain``; returns {"gains": {name: g}, "pairs": n, "samples": n}."""
     height = width // 2
@@ -928,7 +928,7 @@ def estimate_gains(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence
             "samples": int(sum(p[3] for p in pairs))}
 
 
-FILL_MATCH_MIN_SAMPLES = 300      # shared pixels a fill camera needs for its colour factors
+FILL_MATCH_MIN_SAMPLES = 300      # shared pixels a fill camera needs for its color factors
 FILL_MATCH_RANGE = (0.4, 2.5)     # the factors are clipped to this
 FILL_MATCH_MAX_SCLK_S = 1800.0    # ... from regular frames taken within this many seconds of the fill frame
 FILL_MATCH_POINTS = 200_000       # terrain points tried
@@ -936,15 +936,15 @@ FILL_MATCH_WITHIN_M = 12.0        # ... on the mesh within this distance of a fi
 
 
 def _fill_key(src) -> str:
-    """The colour-match group of a fill source: its camera (``FL``), or - a context frame, whose light is its own -
+    """The color-match group of a fill source: its camera (``FL``), or - a context frame, whose light is its own -
     the frame itself."""
     return Path(src.name).stem if getattr(src, "context", False) else Path(src.name).name[:2].upper()
 
 
-def estimate_fill_colour(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[float] = (0, 0, 0), width: int = GAIN_PASS_WIDTH,
+def estimate_fill_color(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[float] = (0, 0, 0), width: int = GAIN_PASS_WIDTH,
                          up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0), rows_per_chunk: int = 128, apply: bool = True,
                          n_points: int = FILL_MATCH_POINTS, within_m: float = FILL_MATCH_WITHIN_M) -> Dict[str, Any]:
-    """Per fill camera (``FL``, ``FR``: the first two letters of the name) the factor per colour channel that makes
+    """Per fill camera (``FL``, ``FR``: the first two letters of the name) the factor per color channel that makes
     its frames match the regular sources on the surface both see (0.97.7; Christian, 13 Nov 2026: "The front hazcams
     need a different processing white balance for its colors to be consistent with the Navcams.  Please try to
     estimate that without changing ncam.  Just make fhaz images taken at the same time of day projected onto the
@@ -992,7 +992,7 @@ def estimate_fill_colour(scene: Scene, sources: Sequence[SourceImage], pivot: Se
     X = a_[pick] + u[:, None] * (b_[pick] - a_[pick]) + v[:, None] * (c_[pick] - a_[pick])
     out["points"] = int(len(X))
 
-    def seen(src):                                   # (colour (n, 3) with NaN where not usable, edge share (n,))
+    def seen(src):                                   # (color (n, 3) with NaN where not usable, edge share (n,))
         col = np.full((len(X), 3), np.nan, np.float32)
         share = np.zeros(len(X), np.float32)
         uv, z, inside = src.project(X)
@@ -1081,7 +1081,7 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
     rover_px = np.zeros((height, width), bool)               # the rover model under the pixel
     rej_map = np.zeros((height, width), bool)                # a source sample was turned away by the surface check
     neff_vals: List[np.ndarray] = []                         # 0.98.0: the detail band's frames' worth on terrain pixels
-    prov = np.zeros((height, width, 3), np.uint8)            # 0.97.13: the provenance picture's colours (BGR), blended
+    prov = np.zeros((height, width, 3), np.uint8)            # 0.97.13: the provenance picture's colors (BGR), blended
     u_ = np.asarray(up, float) / np.linalg.norm(up)
     pl = getattr(scene, "plane", None)
     t0 = time.time()
@@ -1115,7 +1115,7 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
         w_hi_sq = np.zeros(n, np.float32)                      # 0.98.0: for the frames' worth of the detail band
         strongest = np.full(n, -1, np.int32)
         strongest_w = np.zeros(n, np.float32)
-        prov_lo = np.zeros((n, 3), np.float32)                 # 0.97.13: the frames' colours by their weights
+        prov_lo = np.zeros((n, 3), np.float32)                 # 0.97.13: the frames' colors by their weights
         prov_hi = np.zeros((n, 3), np.float32)
         K = c["k"].shape[1]
         for slot in range(K):
@@ -1140,7 +1140,7 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
                 w_low_sum[sel] += w_lo
                 w_hi_sum[sel] += w_hi
                 w_hi_sq[sel] += w_hi * w_hi
-                pc = _source_colour(k)
+                pc = _source_color(k)
                 prov_lo[sel] += w_lo[:, None] * pc
                 prov_hi[sel] += w_hi[:, None] * pc
                 better = w_lo > strongest_w[sel]
@@ -1178,25 +1178,25 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
     brown = np.zeros(label.shape, bool)
     checked = getattr(scene, "rover_triangles", None) is not None
 
-    def _brown(sel: np.ndarray, grey: bool = False) -> None:  # 0.97.0 (Christian, 12 Nov 2026: "where the disagreement is
+    def _brown(sel: np.ndarray, gray: bool = False) -> None:  # 0.97.0 (Christian, 12 Nov 2026: "where the disagreement is
         if not sel.any():                                    # too much ... leave that a brown fill color")
             return
         don = ground & (source >= 0)
         col = (np.median(rgb[don].reshape(-1, 3).astype(np.float32), axis=0) if don.sum() >= 50
                else np.asarray(BROWN_FILL_8BIT, np.float32))
-        if grey:                                             # 0.98.12: the rover a flat Mars-rover grey
-            col = np.full(3, ROVER_GREY_REL * float(np.mean(col)), np.float32)
-        rgb[sel] = np.clip((1.0 if grey else BROWN_FILL_DARKEN) * col, 0, top).astype(rgb.dtype)
+        if gray:                                             # 0.98.12: the rover a flat Mars-rover gray
+            col = np.full(3, ROVER_GRAY_REL * float(np.mean(col)), np.float32)
+        rgb[sel] = np.clip((1.0 if gray else BROWN_FILL_DARKEN) * col, 0, top).astype(rgb.dtype)
         source[sel] = -5
         brown[sel] = True
-    if checked:                                              # the rover model where no frame coloured it: flat grey, before
-        _brown((source == -1) & rover_px, grey=True)         # the crack fill could carry colours across it (0.98.12; before:
+    if checked:                                              # the rover model where no frame colored it: flat gray, before
+        _brown((source == -1) & rover_px, gray=True)         # the crack fill could carry colors across it (0.98.12; before:
         #                                                      only where the check rejected, the rest after the crack fill)
     kw = max(1.0, width / HOLE_FILL_REF_WIDTH)             # 0.97.7: the limits are angles - they grow with the panorama
     filled = fill_cracks(rgb, source, label, max_px=int(HOLE_FILL_MAX_PX * kw * kw), max_width_px=HOLE_FILL_MAX_WIDTH_PX * kw,
                          inpaint_px=int(round(5 * kw)))
     if checked:
-        _brown((source == -1) & rover_px, grey=True)         # the rest of the model nobody coloured
+        _brown((source == -1) & rover_px, gray=True)         # the rest of the model nobody colored
     gfill = fill_ground(rgb, source, ground) if ground_fill else np.zeros(label.shape, bool)
     sky = fill_sky(rgb, source, label) if sky_fill else np.zeros(label.shape, bool)
     evened = even_sky(rgb, label) if sky_fill else {}
@@ -1213,10 +1213,10 @@ GROUND_PAD_FRAC = 0.25           # the panorama wrapped by this share of its wid
 
 
 def fill_ground(rgb: np.ndarray, source: np.ndarray, donors: np.ndarray) -> np.ndarray:
-    """Fill (in place) what no frame coloured below the horizon - under the rover, behind the arm, through holes in
+    """Fill (in place) what no frame colored below the horizon - under the rover, behind the arm, through holes in
     the rover - as plain terrain (Christian, 10 Nov: "the holes in the rover should be filled at ground level. Same
-    with the area occluded by the arm. It shouldn't be zero, but continuous with a planar terrain"): the colours of
-    the terrain pixels (``donors``: coloured, on the ground plane or mesh at its level - not the rover) carried
+    with the area occluded by the arm. It shouldn't be zero, but continuous with a planar terrain"): the colors of
+    the terrain pixels (``donors``: colored, on the ground plane or mesh at its level - not the rover) carried
     inwards by a pull-push pyramid, so the fill is continuous with the terrain at its rim and smooth far from it.
     ``source`` = -4 there.  Returns the mask of the pixels filled."""
     import cv2
@@ -1251,16 +1251,16 @@ def fill_ground(rgb: np.ndarray, source: np.ndarray, donors: np.ndarray) -> np.n
 
 def fill_sky(rgb: np.ndarray, source: np.ndarray, label: np.ndarray) -> np.ndarray:
     """Fill (in place) the sky no frame saw, above the horizon (see the module doc).  The boundary is the lower
-    envelope of the frames' tops (the lowest top within SKY_ENVELOPE_FRAC of the width), smoothed; the colour the
+    envelope of the frames' tops (the lowest top within SKY_ENVELOPE_FRAC of the width), smoothed; the color the
     median of the seen sky SKY_SKIP_FRAC below it (past the frames' darker top edges), smoothed around the panorama;
-    carried up into the panorama's median sky colour at the zenith; the seen sky above the boundary and within
+    carried up into the panorama's median sky color at the zenith; the seen sky above the boundary and within
     SKY_FEATHER_FRAC of it cross-faded into the fill.  ``source`` = -3 where nothing was seen.  Returns the mask of
     the pixels changed (empty when no sky was seen at all)."""
     from scipy.ndimage import gaussian_filter1d, maximum_filter1d
     H, W = label.shape
     rows = np.arange(H)
     above = (90.0 - (rows + 0.5) / H * 180.0) > 0.0
-    sky = ((label == LABEL_FAR) | (source == -1)) & above[:, None]     # 10 Nov: an uncoloured surface up there too
+    sky = ((label == LABEL_FAR) | (source == -1)) & above[:, None]     # 10 Nov: an uncolored surface up there too
     bright = rgb.max(axis=2) >= SKY_MIN_VALUE
     seen = sky & (source != -1) & bright                     # no black or near-black pixel is carried up
     changed = np.zeros((H, W), bool)
@@ -1349,7 +1349,7 @@ SKY_EVEN_SKYLINE_FRAC = 0.06     # ... taken as the highest within this share of
 def even_sky(rgb: np.ndarray, label: np.ndarray, sky: Optional[np.ndarray] = None) -> Dict[str, Any]:
     """Lift (in place) the dark patches of the sky (0.97.4; Christian, 13 Nov 2026: "dark splotches in the sky for
     over saturated images looking into the sun").  A frame that clipped on the bright sky, or was matched darker than
-    its neighbours, leaves a patch darker than the sky around it; the real sky has no such holes.  The smoothed sky
+    its neighbors, leaves a patch darker than the sky around it; the real sky has no such holes.  The smoothed sky
     brightness is closed morphologically (a maximum, then a minimum, over SKY_EVEN_AZ_FRAC of the width by
     SKY_EVEN_EL_DEG; wrapped in azimuth): valleys smaller than that window are filled to their rim, slopes and bright
     regions are unchanged.  Each sky pixel is multiplied by closed / smoothed (at least 1, at most SKY_EVEN_MAX_GAIN),
@@ -1430,7 +1430,7 @@ def even_sky(rgb: np.ndarray, label: np.ndarray, sky: Optional[np.ndarray] = Non
 
 
 SKY_HEAL_SMOOTH_FRAC = 0.04      # the sky's own smooth version: a Gaussian of this share of the width in azimuth (14 degrees)
-SKY_HEAL_SMOOTH_EL_DEG = 0.7     # ... and of only this much in elevation: the sky's brightening towards the horizon is real and kept
+SKY_HEAL_SMOOTH_EL_DEG = 0.7     # ... and of only this much in elevation: the sky's brightening toward the horizon is real and kept
 SKY_HEAL_RAMP = 3.0              # the heal reaches full strength this many times sooner above the skyline than the evening
 SKY_HEAL_MEDIAN_DEG = 90.0       # the reference is each row's running median over this much azimuth: a patch or band
 #                                  narrower than half of it is healed whole; a wider one only at its edges
@@ -1451,9 +1451,9 @@ def sky_to_skyline(rgb: np.ndarray, label: np.ndarray, weight: np.ndarray) -> np
     """0.98.6 (Christian, 14 Nov 2026: the heal "needs to come down lower all the way to where the light sky meets
     the horizon"): the sky's weight (at ``weight``'s size) carried down each column to the skyline.  :func:`even_sky`
     stops 1.5 degrees above the highest edge nearby - and a frame's bright edge near the horizon is such an edge.
-    Here the sky is told from the far hills by colour: red / blue of the sky well above the skyline against that of
+    Here the sky is told from the far hills by color: red / blue of the sky well above the skyline against that of
     the terrain; a "far" pixel on the sky's side of the middle, reached from above without a break, is sky.  The
-    last row above the hills is left out.  Returns ``weight`` unchanged when the two colours are too alike."""
+    last row above the hills is left out.  Returns ``weight`` unchanged when the two colors are too alike."""
     import cv2
     h, w = weight.shape
     small = cv2.resize(rgb, (w, h), interpolation=cv2.INTER_AREA).astype(np.float32)
@@ -1477,7 +1477,7 @@ def sky_to_skyline(rgb: np.ndarray, label: np.ndarray, weight: np.ndarray) -> np
     with np.errstate(all="ignore"):
         L_above = np.nanmedian(Lk, axis=0)                       # the sky's brightness just above where the weight ends
     L_above = np.where(np.isfinite(L_above), L_above, 0.0)
-    # sky: "far", on the sky's side in colour, and no darker than the sky above it (hazy far hills are darker)
+    # sky: "far", on the sky's side in color, and no darker than the sky above it (hazy far hills are darker)
     cond = (lab == LABEL_FAR) & (rb < r_sky + SKY_HEAL_RB_SHARE * (r_ter - r_sky)) & (L >= SKY_HEAL_LIGHT * L_above[None, :])
     run = np.where(rows >= top[None, :], cond | known, True)
     reach = np.logical_and.accumulate(run, axis=0) & (rows >= top[None, :]) & has[None, :]
@@ -1486,7 +1486,7 @@ def sky_to_skyline(rgb: np.ndarray, label: np.ndarray, weight: np.ndarray) -> np
     pad = kw
     lw = np.concatenate([line[-pad:], line, line[:pad]])
     lw = minimum_filter1d(median_filter(lw, size=kw, mode="nearest"), size=3, mode="nearest")[pad:pad + w]      # no single
-    line = np.minimum(line, lw)                                  # column reaches lower than its neighbours' middle
+    line = np.minimum(line, lw)                                  # column reaches lower than its neighbors' middle
     reach = (rows < (line[None, :] - 1.0)) & (rows >= top[None, :]) & has[None, :]       # not the last row above the hills
     return np.maximum(weight, reach.astype(np.float32))
 
@@ -1494,7 +1494,7 @@ def sky_to_skyline(rgb: np.ndarray, label: np.ndarray, weight: np.ndarray) -> np
 def heal_sky(rgb: np.ndarray, weight: Optional[np.ndarray], label: Optional[np.ndarray] = None) -> Dict[str, Any]:
     """0.98.4 (Christian, 14 Nov 2026: "The sky needs an extra check at the end to heal over any dark bands or other
     artifacts"): the last step on the sky, in place.  The real sky has no edges and no bands; a frame that was
-    brighter, darker or tinted against its neighbours leaves both.  The sky (``weight``: 1 = sky well above the
+    brighter, darker or tinted against its neighbors leaves both.  The sky (``weight``: 1 = sky well above the
     skyline, from :func:`even_sky`, at its reduced size) is compared with its own smooth version - a Gaussian of
     SKY_HEAL_SMOOTH_FRAC of the width along the azimuth and SKY_HEAL_SMOOTH_EL_DEG in elevation, of each row's running
     median over SKY_HEAL_MEDIAN_DEG of azimuth (a patch narrower than half of that does not move it).
@@ -1596,19 +1596,19 @@ def fill_cracks(rgb: np.ndarray, source: np.ndarray, label: np.ndarray, max_px: 
     return filled
 
 
-def _source_colour(k: int) -> np.ndarray:
-    """The provenance colour (BGR, float32) of source ``k``: golden-angle hues."""
+def _source_color(k: int) -> np.ndarray:
+    """The provenance color (BGR, float32) of source ``k``: golden-angle hues."""
     import cv2
     hsv = np.array([[[int((k * 137.508) % 180), 200, 230]]], np.uint8)
     return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)[0, 0].astype(np.float32)
 
 
 def provenance_png(source: np.ndarray, out_png: PathLike, n_sources: int, mix: Optional[np.ndarray] = None) -> Path:
-    """Which frames coloured each pixel (golden-angle hues), black = no data.  ``mix`` (0.97.13; Christian, 13 Nov
+    """Which frames colored each pixel (golden-angle hues), black = no data.  ``mix`` (0.97.13; Christian, 13 Nov
     2026: "The provenance should be a smoother function when multiple images see the same surfaces"): the frames'
-    colours mixed by their weights in the blend (the mean of the colour band's and the detail band's shares), (H,
-    W, 3) BGR - a pixel between two hues is a blend of the two frames; without it the strongest frame's colour alone
-    (the picture before 0.97.13).  The fills keep their flat colours: grey cracks, light blue sky fill, brown
+    colors mixed by their weights in the blend (the mean of the color band's and the detail band's shares), (H,
+    W, 3) BGR - a pixel between two hues is a blend of the two frames; without it the strongest frame's color alone
+    (the picture before 0.97.13).  The fills keep their flat colors: gray cracks, light blue sky fill, brown
     ground fill, dark brown where the surface check left no source."""
     import cv2
     img = np.zeros(source.shape + (3,), np.uint8)
@@ -1649,7 +1649,7 @@ def ods_prefix(station_label: str, rover: bool = False) -> str:
 
 
 def ods_file(out_dir: PathLike, kind: str, prefix: str = "", ext: str = ".png") -> Path:
-    """``<prefix>_ods_<kind><ext>`` (kind left / right / centre; the top-down square: :func:`stack_file`); ``ods_<kind><ext>`` without a prefix."""
+    """``<prefix>_ods_<kind><ext>`` (kind left / right / center; the top-down square: :func:`stack_file`); ``ods_<kind><ext>`` without a prefix."""
     return Path(out_dir) / f"{(prefix + '_') if prefix else ''}ods_{kind}{ext}"
 
 
@@ -1662,15 +1662,15 @@ def stack_file(out_dir: PathLike, prefix: str = "", ext: str = ".png", suffix: s
 GEOMETRY_VIEWS = ("range_log", "range_linear", "normal")
 GEOMETRY_WIDTH = 4096             # 0.98.12 (Christian, 15 Nov 2026: "Make those extra channels 4k and the same with the range
 #                                   map ... It doesn't need to be as high res as the ods"): the range and normal panoramas'
-#                                   width (the colour ones' until 0.98.11)
+#                                   width (the color ones' until 0.98.11)
 
 
 def geometry_panorama(scene: Scene, station, out_dir: PathLike, prefix: str = "", width: int = 8192, ipd_m: float = 0.064,
                       azimuth0_deg: float = 0.0, pole_merge_deg="default", rows_per_chunk: int = 64, top: str = "left") -> Dict[str, str]:
     """0.97.20 (Christian, 13 Nov 2026: "how hard would it be to render a ods of the range or normal map? that would
     help checking the model during debugging and dev"): the model alone, seen through the panorama's own rays -
-    ``<prefix>_range_log_360_3DTD.jpg``, ``_range_linear_`` and ``_normal_`` (left eye on top, as the colour ones).
-    Range: from each eye's ray origin, in the colours of the per-image depth pictures (:func:`raycast.depth_rgb`:
+    ``<prefix>_range_log_360_3DTD.jpg``, ``_range_linear_`` and ``_normal_`` (left eye on top, as the color ones).
+    Range: from each eye's ray origin, in the colors of the per-image depth pictures (:func:`raycast.depth_rgb`:
     turbo, the ground plane darker, the sky white, nothing black).  Normal: in the station's frame,
     [R, G, B] = 127.5 * (1 + [east, north, up]); the sky white, nothing black.  No source frame is used: a fault that
     shows here is in the mesh, the plane, the rover model or the far field, not in the blending."""
@@ -1829,12 +1829,12 @@ def stack_eyes(out_dir: PathLike, top: str = "left", jpeg_quality: int = 95, pre
 DEPTH16_UNITS_PER_M = 500.0      # <prefix>_ods_centre_depth_16.png: uint16 = range (m) x this (2 mm steps, to 131 m)
 
 
-def write_centre_depth(out_dir: PathLike, prefix: str, rng: np.ndarray, label: np.ndarray,
+def write_center_depth(out_dir: PathLike, prefix: str, rng: np.ndarray, label: np.ndarray,
                        rover: Optional[np.ndarray] = None, unseen: Optional[np.ndarray] = None) -> Dict[str, Any]:
     """0.97.0 (Christian, 12 Nov 2026: "also make a version projected from the center rotation with a depth map"): the
-    depth of the centre panorama - the range from the pivot along each pixel's ray, on the panorama's own grid -
-    as ``<prefix>_ods_centre_depth.npz`` (float32 metres ``range``, uint8 ``label``; 0 = no surface, the sky inf),
-    ``_depth_16.png`` (uint16 = metres x DEPTH16_UNITS_PER_M; 0 = no surface, 65535 = the sky or beyond 131 m) and the
+    depth of the center panorama - the range from the pivot along each pixel's ray, on the panorama's own grid -
+    as ``<prefix>_ods_centre_depth.npz`` (float32 meters ``range``, uint8 ``label``; 0 = no surface, the sky inf),
+    ``_depth_16.png`` (uint16 = meters x DEPTH16_UNITS_PER_M; 0 = no surface, 65535 = the sky or beyond 131 m) and the
     pictures ``_depth_linear.jpg`` / ``_depth_log.jpg`` (:func:`rpp.ibr.raycast.depth_rgb`)."""
     import cv2
     from .raycast import JPEG_QUALITY, SKY_RANGE_M, depth_rgb
@@ -1848,7 +1848,7 @@ def write_centre_depth(out_dir: PathLike, prefix: str, rng: np.ndarray, label: n
              "linear": ods_file(out, "centre_depth_linear", prefix, ".jpg"), "log": ods_file(out, "centre_depth_log", prefix, ".jpg")}
     if rover is not None:                                # 0.98.2: where the rover model is, for rpp.ibr.rover_surface
         extra = {} if unseen is None else {"unseen": np.asarray(unseen, bool).astype(np.uint8)}     # 0.98.4: rover pixels
-        np.savez_compressed(files["npz"], range=r, label=lab, rover=np.asarray(rover, bool).astype(np.uint8), **extra)   # no frame coloured
+        np.savez_compressed(files["npz"], range=r, label=lab, rover=np.asarray(rover, bool).astype(np.uint8), **extra)   # no frame colored
     else:
         np.savez_compressed(files["npz"], range=r, label=lab)
     d16 = np.where(np.isfinite(r), np.clip(np.rint(r * DEPTH16_UNITS_PER_M), 0, 65535), 65535).astype(np.uint16)
@@ -1883,7 +1883,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                    mask_head_hardware: bool = True, azimuth0_deg: float = 0.0, prefix: Optional[str] = None,
                    bits: int = 8, pds: Optional[PathLike] = None, tone: str = "pipeline", exposure16: Union[float, str] = 1.0,
                    ground_fill: bool = True, mask_mast: bool = True,
-                   tone_levels_file: Optional[PathLike] = None, centre_depth: bool = True, pole_merge_deg="default", sky_radius_m="default",
+                   tone_levels_file: Optional[PathLike] = None, center_depth: bool = True, pole_merge_deg="default", sky_radius_m="default",
                    fill_families: str = "", nadir_mark: bool = True, site_name: Optional[str] = None,
                    nadir_mark_deg: Optional[float] = None, far_field: Optional[bool] = None,
                    context_images: Sequence[str] = (), geometry: bool = True) -> Dict[str, Any]:
@@ -1983,9 +1983,9 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             fwd = _nadir.forward_azimuth_deg(mast_pose or _rover_pose(project, rec, station.images), station.north, station.east)
             fwd_known = True
         except Exception as e:                           # noqa: BLE001 - then it starts at north
-            log.warning("ods: no rover pose for the nadir mark (%s); its text is centred on north", e)
+            log.warning("ods: no rover pose for the nadir mark (%s); its text is centered on north", e)
         mark = _nadir.make_mark(width, height, lines, _nadir.NADIR_MARK_DEG if nadir_mark_deg is None else nadir_mark_deg,
-                                azimuth0_deg, centre_azimuth_deg=fwd + _nadir.TEXT_AZIMUTH_FROM_FORWARD_DEG)
+                                azimuth0_deg, center_azimuth_deg=fwd + _nadir.TEXT_AZIMUTH_FROM_FORWARD_DEG)
         # 0.97.13: the disc lies on the surface under the mast - the median depth below the pivot of what the rays at
         # the disc's rim meet (the deck with the rover shown, the ground without)
         rim = int(np.clip(mark["row0"], 0, height - 1))
@@ -2004,7 +2004,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                                  "text_from_forward_deg": _nadir.TEXT_AZIMUTH_FROM_FORWARD_DEG,
                                  "note": "a light blue disc with this text in black, ahead of the rover's front, not data; it lies on the "
                                          "horizontal plane depth_below_pivot_m below the pivot (each eye sees it with that plane's "
-                                         "disparity; from the pivot it covers the rows from first_row down); in every colour "
+                                         "disparity; from the pivot it covers the rows from first_row down); in every color "
                                          "panorama, not in the depth products"}
     if gains:
         g = estimate_gains(scene, sources, station.pivot, width=min(GAIN_PASS_WIDTH, width), rows_per_chunk=rows_per_chunk, **axes)
@@ -2021,8 +2021,8 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                      ", ".join(f"{k} {100 * x:.0f} %" for k, x in ff["share_nearest"].items()), ff["median_radius_m_where_decided"] or 0)
             np.savez_compressed(out / "far_field.npz", inverse_radius_per_m=scene.far_field["inv"],
                                 el_top_deg=scene.far_field["el_top_deg"], el_bottom_deg=scene.far_field["el_bottom_deg"])
-    if any(s.fill_only for s in sources):                # 0.97.7: the fill frames' colours matched to the regular ones
-        fc = estimate_fill_colour(scene, sources, station.pivot, width=min(GAIN_PASS_WIDTH, width), rows_per_chunk=rows_per_chunk, **axes)
+    if any(s.fill_only for s in sources):                # 0.97.7: the fill frames' colors matched to the regular ones
+        fc = estimate_fill_color(scene, sources, station.pivot, width=min(GAIN_PASS_WIDTH, width), rows_per_chunk=rows_per_chunk, **axes)
         fc["linear_sources"] = bool(linear)
         if not linear:
             fc["note"] = "8-bit sources: the factors match the pictures, they are not a white balance of the radiance"
@@ -2103,8 +2103,8 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                 mark["bg8"] = np.asarray(_nadir.BACKGROUND_RGB)[::-1]
                 _nadir.apply_mark(view8, mark, mark["bg8"])
             cv2.imwrite(str(f), view8)
-        if eye in ("centre", "center") and centre_depth:     # 0.97.0: the panorama from the pivot, with its depth
-            depth_rec = write_centre_depth(out, prefix, res["range"], res["label"], rover=res.get("rover"),
+        if eye in ("centre", "center") and center_depth:     # 0.97.0: the panorama from the pivot, with its depth
+            depth_rec = write_center_depth(out, prefix, res["range"], res["label"], rover=res.get("rover"),
                                            unseen=(res["brown_filled"] & res["rover"]) if res.get("rover") is not None else None)
         if eye == eyes[0]:
             provenance_png(res["source"], out / "provenance.png", len(sources), mix=res.get("provenance"))
@@ -2134,7 +2134,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         rec_out["eyes"][eye]["effective_frames"] = res.get("effective_frames")      # 0.98.0
         for s in sources:
             s.release()
-    if centre_depth and depth_rec is None:               # 0.97.11: the depth without the centre panorama's colours
+    if center_depth and depth_rec is None:               # 0.97.11: the depth without the center panorama's colors
         td = time.time()                                 # (Christian, 13 Nov 2026: "skip the center render because it
         rng_c = np.zeros((height, width), np.float32)    # takes 1/3 more time"): rays only, no frame is sampled
         lab_c = np.zeros((height, width), np.uint8)
@@ -2150,10 +2150,10 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                 onr = scene.on_rover(hc["tri"])
                 if onr is not None:
                     rov_c[r0:r1] = np.asarray(onr, bool).reshape(r1 - r0, width)
-        depth_rec = write_centre_depth(out, prefix, rng_c, lab_c, rover=rov_c)
+        depth_rec = write_center_depth(out, prefix, rng_c, lab_c, rover=rov_c)
         depth_rec["seconds"] = round(time.time() - td, 1)
-        depth_rec["from"] = "rays from the pivot alone (no centre panorama rendered)"
-        log.info("ods: the depth from the pivot without the centre panorama (%.0f s)", depth_rec["seconds"])
+        depth_rec["from"] = "rays from the pivot alone (no center panorama rendered)"
+        log.info("ods: the depth from the pivot without the center panorama (%.0f s)", depth_rec["seconds"])
         del rng_c, lab_c
     if "left" in eyes and "right" in eyes:
         rec_out["stacked"] = stack_eyes(out, top=stack_top, prefix=prefix)
@@ -2219,7 +2219,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         tg = time.time()
         rec_out["geometry"] = {"files": geometry_panorama(scene, station, out, prefix or "", min(width, GEOMETRY_WIDTH), ipd_m, azimuth0_deg, pole_merge_deg,
                                                           rows_per_chunk, top=stack_top),
-                               "range": "from each eye's ray origin; colours as the per-image depth pictures (photometry_jpg/scales.json: "
+                               "range": "from each eye's ray origin; colors as the per-image depth pictures (photometry_jpg/scales.json: "
                                         "depth_log, depth_linear)",
                                "normal": "station frame: [R, G, B] = 127.5 * (1 + [east, north, up]) on the mesh and the rover model; "
                                          "the ground plane black (0.98.12), sky white",
@@ -2230,7 +2230,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
     rec_out["seconds"] = round(time.time() - t0, 1)
     try:                                                                    # 0.97.4: XMP in the stacked products
         from .xmp import tag_folder
-        rec_out["xmp"] = tag_folder(out, heading_centre_deg=float(rec_out.get("azimuth_of_column_0_deg") or 0.0) + 180.0,
+        rec_out["xmp"] = tag_folder(out, heading_center_deg=float(rec_out.get("azimuth_of_column_0_deg") or 0.0) + 180.0,
                                     extra={"Station": str(getattr(station, "label", "") or prefix)})
     except Exception as e:                                                  # noqa: BLE001 - the products are complete without it
         log.warning("ods: XMP not written (%s: %s)", type(e).__name__, e)

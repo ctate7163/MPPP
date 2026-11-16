@@ -35,7 +35,7 @@ IDEAL       Best of every possible long-baseline constraint, combined.  Not
             under this ray model.  It uses PERFECT (eps_intra) matching, no
             angular/tilt gating, and -- to isolate "how many independent
             baselines exist" from "how good is each station's own stereo" --
-            ONE ray per station (its centre), not each station's own two eyes.
+            ONE ray per station (its center), not each station's own two eyes.
             Provably ideal >= lbs is false -- ideal <= lbs always (more
             information cannot increase variance); see
             `test_ideal_dominates_lbs_and_is_dominated_by_full_fusion`.
@@ -47,7 +47,7 @@ then average the results" is mathematically IDENTICAL to "put all rays in one
 bundle".  The two regimes cannot differ that way.  What actually distinguishes
 SfM+MVS from fixed-baseline stereo is that without cross-station correspondence
 there is nothing to average: you get separate point clouds whose relative
-registration is only as good as rover localisation.
+registration is only as good as rover localization.
 """
 
 from __future__ import annotations
@@ -78,15 +78,15 @@ CASE_PARAMS: Dict[str, Tuple[float, float, float, float, str]] = {
 
 def _center_ray_clones(stations: Sequence[Station]) -> List[Station]:
     """
-    Clone every station with its eyes collapsed to a single centre ray
+    Clone every station with its eyes collapsed to a single center ray
     (eye_offsets=(0.0,)).
 
     Used by BOTH `lbs_field` and `ideal_field` so their visibility tests and
     geometry are self-consistent by construction.  Originally they were not:
     `lbs_field` picked its best pair using two-eye visibility (from the real
-    stereo geometry) but then computed precision from the station-CENTRE ray.
+    stereo geometry) but then computed precision from the station-CENTER ray.
     At an occlusion boundary one eye can see past the mask while the exact
-    centre ray cannot, so a station could be credited as visible by the
+    center ray cannot, so a station could be credited as visible by the
     eligibility test and then contribute geometry that test would have
     rejected -- `test_ideal_dominates_lbs_and_is_dominated_by_full_fusion`
     caught this as a real (if rare, ~0.1% of cells) violation of the "more
@@ -115,7 +115,7 @@ def lbs_field(grid: Grid, stations: Sequence[Station],
     it -- both eligibility and geometry now come from `_center_ray_clones`, so
     "widest pair that sees it" and "the ray used to compute its precision"
     agree by construction (see that function's docstring for the bug this
-    fixes) -- and treat each as ONE camera (its own centre, its own range),
+    fixes) -- and treat each as ONE camera (its own center, its own range),
     i.e. classic two-camera long-baseline photogrammetry, ignoring each
     station's own intra-pair stereo baseline.  The precision is the EXACT
     rank-2 sum of the two ray precisions:
@@ -136,7 +136,7 @@ def lbs_field(grid: Grid, stations: Sequence[Station],
 
     The exact form reduces to the small-angle shortcut in its valid regime (see
     `test_two_ray_analytic`) and is otherwise a strict improvement, so this is
-    not a behaviour change within the regime the shortcut was designed for --
+    not a behavior change within the regime the shortcut was designed for --
     only outside it.
     """
     cfg = config or ModelConfig(store_station_dirs=True)
@@ -208,17 +208,17 @@ def ideal_field(grid: Grid, stations: Sequence[Station],
                 pose: Optional[PoseModel] = None) -> PrecisionField:
     """
     Best-of-every-possible-pair reference: properly fuse (no double counting)
-    the single station-centre-ray precision from EVERY visible station
+    the single station-center-ray precision from EVERY visible station
     simultaneously, at perfect matching, no gating.
 
     Implementation note: rather than looping over pairs by hand (which risks
     the double-counting bug this docstring warns against -- summing raw
     Fisher information over all C(N,2) pairs counts each station's own ray
     (N-1) times, wildly over-stating precision), this clones each station with
-    its eyes collapsed to a single centre ray (eye_offsets=(0.0,)) and hands
+    its eyes collapsed to a single center ray (eye_offsets=(0.0,)) and hands
     the clones to the SAME exact-geometry solver (`solve_precision_field`,
     link_mode='full') already validated against a naive independent reference
-    in `test_vectorised_matches_reference`.  Reusing tested machinery here
+    in `test_vectorized_matches_reference`.  Reusing tested machinery here
     rather than a fresh derivation is deliberate: it is the safer path to a
     provably-correct "sum every ray once."
 
@@ -242,7 +242,7 @@ def ideal_field(grid: Grid, stations: Sequence[Station],
 #: Per-case pose model. Each regime is registered differently, so each gets
 #: the pose error its own registration path actually incurs:
 #:   FIXED       telemetry/VO, ~3% of PATH DRIVEN -- products are placed in the
-#:               common frame by rover localisation, and the path is what
+#:               common frame by rover localization, and the path is what
 #:               drifts (18 m apart can be 167 m driven).
 #:   SfM+MVS     ~0.2% of straight-line BASELINE to the anchor -- relative pose
 #:               comes from bundle adjustment on the cross-station ties.

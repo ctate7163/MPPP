@@ -1,10 +1,10 @@
 """
 rpp.error.plotting -- map rendering of a PrecisionField and its metrics.
 
-  * imshow extent uses cell EDGES, not centres (an offset by half a cell
+  * imshow extent uses cell EDGES, not centers (an offset by half a cell
     matters for a metric product).
   * log scale, station markers with the rover glyph (NaN azimuth draws no
-    heading), and unconstrained cells rendered as an explicit colour.
+    heading), and unconstrained cells rendered as an explicit color.
 """
 
 from __future__ import annotations
@@ -19,10 +19,10 @@ from .core import PrecisionField
 __all__ = ["plot_map", "plot_panel", "PRESETS"]
 
 
-#: (key, title, colour-bar label, unit scale, cmap, log by default)
+#: (key, title, color-bar label, unit scale, cmap, log by default)
 PRESETS: Dict[str, tuple] = {
     "sigma_n":      ("Normal (DEM vertical) precision", "sigma_n [cm]", 100.0, "viridis_r", True),
-    "G_n":          ("Normalised precision G_n", "sigma_n / (eps psi r) [-]", 1.0, "magma_r", True),
+    "G_n":          ("Normalized precision G_n", "sigma_n / (eps psi r) [-]", 1.0, "magma_r", True),
     "gsd":          ("Ground sample distance", "GSD [cm]", 100.0, "cividis_r", True),
     "kappa":        ("Anisotropy (sigma_max / sigma_min)", "ratio [-]", 1.0, "inferno_r", True),
     "n_vis":        ("Visible stations", "count", 1.0, "viridis", False),
@@ -36,13 +36,13 @@ PRESETS: Dict[str, tuple] = {
 
 def _rover_glyph(ax, xy, az_deg: float, scale: float = 1.0,
                  is_anchor: bool = False, mast_fwd_m: float = 0.65,
-                 mast_right_m: float = 0.45, show_rotation_centre: bool = False):
+                 mast_right_m: float = 0.45, show_rotation_center: bool = False):
     """
     Abstract top-down rover glyph.
 
     Three wheels per side, EQUALLY spaced at x = -1, 0, +1 m; a 2.0 m x 1.4 m
-    body CENTRED on the wheels (body centre = middle-wheel line = rotation
-    centre); the mast a little INWARD of the forward-starboard corner of the
+    body CENTERED on the wheels (body center = middle-wheel line = rotation
+    center); the mast a little INWARD of the forward-starboard corner of the
     body.  Station xyz refers to the MAST (where range is measured from).
     az_deg is compass bearing (CW from north); theta = 90 - az.
     """
@@ -66,7 +66,7 @@ def _rover_glyph(ax, xy, az_deg: float, scale: float = 1.0,
                                    linewidth=0.6, transform=tr, zorder=5))
     ax.add_patch(Circle(mast_xy, 0.28 * scale, facecolor="white",
                         edgecolor="crimson" if is_anchor else "k", linewidth=1.4, zorder=7))
-    if show_rotation_centre:
+    if show_rotation_center:
         ax.plot([rot_c[0]], [rot_c[1]], "+", ms=9, color="crimson", mew=1.3, zorder=8)
 
 
@@ -137,8 +137,8 @@ def plot_map(field: PrecisionField, data: np.ndarray, *,
             raise ValueError("no positive finite data to plot on a log scale")
         if vmin is None:
             # clamp the auto lower bound to the data, but NEVER override an
-            # explicitly supplied vmin -- doing so silently desynchronises
-            # colour bars that the caller intended to share across panels.
+            # explicitly supplied vmin -- doing so silently desynchronizes
+            # color bars that the caller intended to share across panels.
             lo = max(np.nanpercentile(arr[pos], 1), np.nanmin(arr[pos]))
         else:
             lo = vmin
@@ -160,7 +160,7 @@ def plot_map(field: PrecisionField, data: np.ndarray, *,
 
     im = ax.imshow(masked, extent=field.grid.extent_edges(), origin="lower",
                    aspect="equal", cmap=cm, norm=norm, interpolation="nearest")
-    # Colour bar suppressible so a multi-panel figure with a SHARED scale per
+    # Color bar suppressible so a multi-panel figure with a SHARED scale per
     # row can carry one bar on the outer (last) column instead of repeating an
     # identical bar on every "inner" panel.
     if show_colorbar:

@@ -19,7 +19,7 @@ G_n      : sigma_n / (eps_intra * psi * r_ref), dimensionless.
 
 INTERPRETATION GUIDE  (see metric_guide())
 ------------------------------------------
-sigma_t1/t2 : lateral registration accuracy.  Matters for feature localisation
+sigma_t1/t2 : lateral registration accuracy.  Matters for feature localization
               and for tying to orbital data; NOT for DEM quality.
 kappa       : anisotropy.  kappa >> 1 means one direction is unconstrained --
               look at worst_direction() to find out WHICH, because that tells
@@ -58,7 +58,7 @@ def compute_metrics(field: PrecisionField,
     """
     Compute all derived maps.  Unconstrained cells are set to NaN.
 
-    rho_adjacent : correlation between neighbouring cells' errors, used for
+    rho_adjacent : correlation between neighboring cells' errors, used for
                    sigma_slope.  0 gives the pessimistic (fully independent)
                    bumpiness; values near 1 mean errors are smooth and slope
                    error is small.  UNMEASURED -- treat as a swept parameter.
@@ -90,7 +90,7 @@ def compute_metrics(field: PrecisionField,
     with np.errstate(divide="ignore", invalid="ignore"):
         out["kappa"] = np.where(bad | (s_min <= 0), np.nan, s_max / s_min)
 
-    # --- resolution & normalisation ---------------------------------------
+    # --- resolution & normalization ---------------------------------------
     psi = field.ifov_ref
     eps = field.eps_intra_px
     r_ref = field.range_min
@@ -138,7 +138,7 @@ def _n_eff(field: PrecisionField) -> np.ndarray:
 
     With correlation disabled every visible station is independent by
     construction, so n_eff == n_vis.  The map is still worth producing when
-    correlation is enabled: n_eff << n_vis localises the redundant geometry.
+    correlation is enabled: n_eff << n_vis localizes the redundant geometry.
     """
     cfg = field.config
     vis = field.station_vis
@@ -169,7 +169,7 @@ def _sigma_slope(field: PrecisionField, sigma_n: np.ndarray,
 
         sigma_slope ~ sigma_n * sqrt(2 (1 - rho_adj)) / dx
 
-    Uses the local mean of sigma_n over the neighbour pair.  Dimensionless
+    Uses the local mean of sigma_n over the neighbor pair.  Dimensionless
     (rise over run); multiply by 100 for percent slope.
     """
     g = field.grid

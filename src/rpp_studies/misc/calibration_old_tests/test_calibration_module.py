@@ -323,13 +323,13 @@ def test_fit_focus_model_recovers_temperature_trend_and_navcam_scale():
                      "state": "backlash", "f_refined_px": f, "fx_refined_px": f / 1.0005, "fy_refined_px": f * 1.0005,
                      "temperature_degC": T, "sol": float(sol), "navcam_scale": scale, "f_label_median_px": None})
     r = fit_focus_model(rows, "ZR034", min_observations=1000, per_scape_offset=False, thermal=True, trend=True,
-                        navcam_normalise=True, reference_focus=600.0)
+                        navcam_normalize=True, reference_focus=600.0)
     assert r["f0_px"] == pytest.approx(4720, abs=0.3)
     assert r["slope_px_per_count"] == pytest.approx(0.06, abs=0.001)
     assert r["thermal"]["f_px_per_degC"] == pytest.approx(0.4, abs=0.03)
     assert r["trend"]["f_px_per_sol"] == pytest.approx(0.02, abs=0.002)
     assert r["slope_sd_px_per_count"] < 0.001 and r["aspect"] == pytest.approx(1.001, abs=1e-4)
-    # without the Navcam normalisation the Three Forks-like scale leaks into the fit
+    # without the Navcam normalization the Three Forks-like scale leaks into the fit
     r2 = fit_focus_model(rows, "ZR034", min_observations=1000, per_scape_offset=False, thermal=True, trend=True,
                          reference_focus=600.0)
     assert r2["rms_px"] > 3 * r["rms_px"]
