@@ -3,6 +3,15 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.31 — 2026-11-16
+
+Christian (16 Nov): "how does the z34 show up in the list of ods?"
+
+- `single_sites.json`: the Mastcam-Z station `Sol0690_S032D1184_Z34` gets the name "Three Forks (Mastcam-Z 34 mm)".
+  Without one, its menu entry read "Sol 0690 Sol0690_S032D1184_Z34"; now "Sol 0690 Three Forks (Mastcam-Z 34 mm)",
+  next to the Navcam station's "Sol 0686 Three Forks". The next publish (`run_single_site_ibr.bat --publish-only`)
+  writes the new title.
+
 ## 0.98.30 — 2026-11-16
 
 Christian (16 Nov): "remove knob mountain from the zcam consensus list since enchanted lake covers the most important site".

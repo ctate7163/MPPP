@@ -1157,7 +1157,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert block_name("van_zyl_overlook_huge") == "Van Zyl Overlook" and block_name("witch_hazel_large") == "Witch Hazel Hill"
     assert block_name("taylorfjellet_large") == "Taylorfjellet" and block_name("rockytop") == "Rockytop"
     assert block_name("not_a_site_tiny") == "Not A Site" and block_name(None) is None
-    assert all("name" not in v for k, v in cfg["stations"].items() if k not in ("Sol0477_S026D1004", "Sol0502_S026D1222"))   # 0.98.19: these two are not "Rockytop"
+    assert all("name" not in v for k, v in cfg["stations"].items() if k not in ("Sol0477_S026D1004", "Sol0502_S026D1222", "Sol0690_S032D1184_Z34"))   # 0.98.19: these two are not "Rockytop"; 0.98.31: the Z34 station has no site to name it
     names = {k: next(c["argv"][c["argv"].index("--site-name") + 1] for c in r["commands"] if c["step"] == "ods") for k, r in
              ((r["label"], r) for r in runs)}
     assert names["Sol0474_S026D0850"] == "Rockytop" and names["Sol1411_S068D0142"] == "Witch Hazel Hill"
@@ -3287,3 +3287,14 @@ def test_16bit_sources_are_looked_for_in_the_zcam_archive_beside_the_navcam_one(
         roots = L.archive_roots(P(), given)
         assert L.find_product("ZL0_0690_0728175201_111RAD_N0321184ZCAM08692_0340LMA01", roots) is not None
         assert L.find_product("NLF_0690_0728000000_000RAD_N0321184NCAM00500_0A0195J01", roots) is not None
+
+
+def test_z34_station_has_a_name_for_the_menu():
+    """0.98.31 (Christian, 16 Nov 2026: "how does the z34 show up in the list of ods?"): without a name its menu entry
+    read "Sol 0690 Sol0690_S032D1184_Z34"; now "Sol 0690 Three Forks (Mastcam-Z 34 mm)", beside the Navcam station's
+    "Sol 0686 Three Forks"."""
+    import json
+    from mppp.ibr import single_sites as SS
+    cfg = json.loads((Path(SS.__file__).resolve().parent.parent / "data" / "single_sites.json").read_text(encoding="utf-8"))
+    st = cfg.get("stations", cfg)
+    assert st["Sol0690_S032D1184_Z34"]["name"] == "Three Forks (Mastcam-Z 34 mm)"

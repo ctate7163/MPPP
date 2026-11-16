@@ -150,6 +150,7 @@
    ]
   },
   "Sol0690_S032D1184_Z34": {
+   "name": "Three Forks (Mastcam-Z 34 mm)",
    "experimental": true,
    "work": "mars2020_sol_0413_threeforks_north_zcam",
    "station": "32_1184",
