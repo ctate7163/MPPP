@@ -1952,10 +1952,11 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
     if nadir_mark:                                       # 0.97.7: the black disc with the credits at the nadir
         from . import nadir as _nadir
         lines = _nadir.mark_lines([s.name for s in sources if not s.context], site_name)   # the station's own sols
-        fwd = 0.0
+        fwd, fwd_known = 0.0, False
         try:                                             # the text ahead of the rover's front
             from .rover_deck import rover_pose as _rover_pose
             fwd = _nadir.forward_azimuth_deg(mast_pose or _rover_pose(project, rec, station.images), station.north, station.east)
+            fwd_known = True
         except Exception as e:                           # noqa: BLE001 - then it starts at north
             log.warning("ods: no rover pose for the nadir mark (%s); its text is centred on north", e)
         mark = _nadir.make_mark(width, height, lines, _nadir.NADIR_MARK_DEG if nadir_mark_deg is None else nadir_mark_deg,
@@ -1972,6 +1973,10 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         mark["depth_m"] = float(np.median(below)) if len(below) >= 8 else 2.0
         rec_out["nadir_mark"] = {"depth_below_pivot_m": mark["depth_m"], "lines": lines, "text": mark["text"], "radius_deg": mark["radius_deg"], "first_row": mark["row0"],
                                  "text_centre_azimuth_deg": mark["centre_azimuth_deg"],
+                                 # 0.98.28: the rover's +x (RNAV forward), level - the viewer's O looks there (the text's
+                                 # middle is text_from_forward_deg clockwise of it); None without a rover pose
+                                 "rover_forward_azimuth_deg": round(float(fwd), 3) if fwd_known else None,
+                                 "text_from_forward_deg": _nadir.TEXT_AZIMUTH_FROM_FORWARD_DEG,
                                  "note": "a light blue disc with this text in black, ahead of the rover's front, not data; it lies on the "
                                          "horizontal plane depth_below_pivot_m below the pivot (each eye sees it with that plane's "
                                          "disparity; from the pivot it covers the rows from first_row down); in every colour "

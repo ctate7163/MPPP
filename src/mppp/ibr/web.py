@@ -72,8 +72,24 @@ def ground_mark(folder: Path, web: Path) -> Optional[Dict[str, Any]]:
                     # 0.98.7: where the page cuts the picture into the compass and the text ring - between the two
                     "split": round(0.5 * (float((m.get("compass") or {}).get("radius_in_disc") or 0.5)
                                           + float(m.get("text_inner_edge_in_disc") or 0.56)), 3),
-                    "text_centre_azimuth_deg": round(float(m.get("text_centre_azimuth_deg") or 0.0), 2)}
+                    "text_centre_azimuth_deg": round(float(m.get("text_centre_azimuth_deg") or 0.0), 2),
+                    "rover_forward_azimuth_deg": rover_forward_azimuth(m)}
     return None
+
+
+def rover_forward_azimuth(mark: Dict[str, Any]) -> Optional[float]:
+    """0.98.28 (Christian, 16 Nov 2026: "O should take you to the looking straight ahead of where the rover is (the +x
+    direction in rover frame)"): the azimuth (deg east of north) of the rover's +x from a station's ``nadir_mark``
+    record - its own field, or, for a station rendered before 0.98.28, the text's middle less the turn the text has
+    had from the front since 0.98.7 (``nadir.TEXT_AZIMUTH_FROM_FORWARD_DEG``, 135 deg; until 0.98.27 the page took the
+    text's middle itself for the front - 135 deg off).  None when the record has neither."""
+    if mark.get("rover_forward_azimuth_deg") is not None:
+        return round(float(mark["rover_forward_azimuth_deg"]) % 360.0, 2)
+    if mark.get("text_centre_azimuth_deg") is None:
+        return None
+    from .nadir import TEXT_AZIMUTH_FROM_FORWARD_DEG
+    off = float(mark.get("text_from_forward_deg", TEXT_AZIMUTH_FROM_FORWARD_DEG))
+    return round((float(mark["text_centre_azimuth_deg"]) - off) % 360.0, 2)
 
 
 def rover_surface(folder: Path, web: Path) -> Optional[Dict[str, Any]]:
@@ -140,7 +156,7 @@ def welcome_pano(web: Path, station_entry: Optional[Dict[str, Any]]) -> Optional
             tag_stereo(dst, extra={"Station": WELCOME_STATION})
         except Exception:                                    # noqa: BLE001
             pass
-    return {"id": WELCOME_ID, "title": "Welcome", "welcome": True, "site_name": "Rover Photogrammetry Viewer",
+    return {"id": WELCOME_ID, "title": "Welcome", "welcome": True, "site_name": "Rover Photogrammetry Viewer (RPV)",
             "yaw_deg": WELCOME_YAW_DEG,                       # 0.98.19 (Christian, 16 Nov 2026): it opens looking west
             "variants": [{"key": "welcome", "label": "welcome", "views": {"standard": "panos/" + dst.name}}]}
 
