@@ -195,7 +195,9 @@ between a station's two variants.
 
 `docs/ods/index.html` is one static page (three.js, WebXR): it shows the `_360_3DTD` squares on a sphere per eye,
 with menus for station, variant and view, a link per view (`#<station>/<variant>/<view>`), drag and wheel on a
-screen and a choice of the eye shown there (left or right; the L key), and in a headset: trigger = next station, grip = variant, A or X = view. A line at the bottom reports what
+screen and a choice of the eye shown there (left or right; the L key), and in a headset: right / left trigger = next / previous station, grip = variant,
+A = view, X = info and map, Y = home (the welcome view, facing west), B = terrain only, thumbstick = turn (0.98.28). On a screen: the house
+button or H = home, B = terrain only, and the N E S W O cross at the upper right (O = level along the rover's +x). A line at the bottom reports what
 the device can show (maximum texture size, compressed-texture formats).
 
 - On the documentation site: [https://ctate7163.github.io/MPPP/ods/](https://ctate7163.github.io/MPPP/ods/){target="_blank" rel="noopener"}

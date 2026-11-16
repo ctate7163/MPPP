@@ -3108,7 +3108,39 @@ def test_rover_variant_gets_a_turning_disc_and_the_page_faces(tmp_path):
     assert web.WELCOME_YAW_DEG == 270.0
     page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
     assert "Rover Photogrammetry Viewer" in page and "MPPP stereo viewer" not in page and "WELCOME_AZ_DEG = 270" in page
-    assert all(f'id="face{k}"' in page for k in "NESWO") and "lookKeys" in page and "-Math.PI / 4" in page
+    assert all(f'id="face{k}"' in page for k in "NESWO") and "lookKeys" in page   # O looks level since 0.98.28
+
+
+def test_o_looks_along_the_rover_x_and_y_b_home_buttons(tmp_path):
+    """0.98.28 (Christian, 16 Nov 2026): "the N,E,S,W,O should be in the upper right. O should take you to the looking
+    straight ahead of where the rover it (the +x direction in rover frame) ... Button Y should take you to the welcome
+    screen facing West. In the desktop version, add a home icon for the same. Button B should take you to the terrain
+    only view. ... make the Enter VR button a little larger if supported" and "In the info box, capitalize Sol".
+    The station's ods.json records the rover's +x azimuth; publish passes it on; an older record gives it as the
+    text's middle less 135 deg (the page took the text's middle itself until 0.98.27: 135 deg off)."""
+    from mppp.ibr import web, nadir, single_sites as SS
+    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    base = tmp_path / "sites" / "Sol0091_S003D0010"
+    rep = O.render_station(proj, rec, st, scene, base, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, geometry=False)
+    nm = rep["nadir_mark"]
+    assert "rover_forward_azimuth_deg" in nm and nm["text_from_forward_deg"] == nadir.TEXT_AZIMUTH_FROM_FORWARD_DEG
+    if nm["rover_forward_azimuth_deg"] is not None:
+        assert abs(((nm["text_centre_azimuth_deg"] - nm["rover_forward_azimuth_deg"]) % 360) - 135.0) < 0.01
+    doc = web.publish(tmp_path / "sites", tmp_path / "web")
+    gm = doc["panos"][-1]["variants"][0]["ground_mark"]
+    assert gm["rover_forward_azimuth_deg"] == web.rover_forward_azimuth(nm)
+    # records without the field (0.98.7 - 0.98.27) and without a mark
+    assert web.rover_forward_azimuth({"text_centre_azimuth_deg": 200.0}) == 65.0
+    assert web.rover_forward_azimuth({"text_centre_azimuth_deg": 100.0}) == 325.0
+    assert web.rover_forward_azimuth({"rover_forward_azimuth_deg": 370.0, "text_centre_azimuth_deg": 1.0}) == 10.0
+    assert web.rover_forward_azimuth({}) is None
+    page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    assert "#compass { position: fixed; right: 12px; top: 52px;" in page and "-Math.PI / 4" not in page
+    assert "TEXT_FROM_FORWARD_DEG = 135" in page and "rover_forward_azimuth_deg" in page
+    assert 'id="home"' in page and "goHome" in page and "faceAfterLoad = 270" in page
+    assert "pressed(src, 5)" in page and "if (left) goHome(); else terrainOnly();" in page
+    assert "q.key === 'masked'" in page and "#VRButton.rpv-big" in page and "isSessionSupported('immersive-vr')" in page
+    assert "`Sol ${sols[0]}`" in page and "`sol ${" not in page
 
 
 def test_info_map_is_the_blank_panel_d_and_the_menu_says_sol_then_name(tmp_path, monkeypatch):

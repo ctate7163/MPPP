@@ -3,6 +3,27 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.28 — 2026-11-16
+
+Christian (16 Nov): "the N,E,S,W,O should be in the upper right. O should take you to the looking straight ahead of
+where the rover is (the +x direction in rover frame). This direction will be different every site. Button Y should
+take you to the welcome screen facing West. In the desktop version, add a home icon for the same. Button B should take
+you to the terrain only view. In the website version, make the Enter VR button a little larger if supported." and
+"In the info box, capitalize Sol."
+
+- **O fixed:** it took the nadir mark's text centre for the rover's front, but that text has been turned 135 deg
+  clockwise of the front since 0.98.7, so O looked 135 deg off. Now O looks level along the rover's +x (RNAV
+  forward). The station's `ods.json` records `nadir_mark.rover_forward_azimuth_deg` (and `text_from_forward_deg`), and
+  `web.publish` passes it on as `ground_mark.rover_forward_azimuth_deg` (`web.rover_forward_azimuth`). For entries
+  published before, the page takes the text centre less 135 deg.
+- The N E S W O cross is at the upper right, below the bar.
+- **Headset:** Y (left) = home, the welcome view facing west (the world turned so west is where the head points); B
+  (right) = the terrain-only variant. The welcome help panel lists them.
+- **Screen:** a house button in the bar, and the keys H (home) and B (terrain only).
+- The Enter VR button is larger (160 px, 18 px bold) where immersive VR is supported.
+- Info box: "Sol" / "Sols" capitalised.
+- `window.rpvState()`: the station, variant, view and the azimuth / elevation looked at, for checks.
+
 ## 0.98.27 — 2026-11-16
 
 Christian (16 Nov): "the ods welcome page should read Rover Photogrammetry Viewer (RPV) followed by a line about it
