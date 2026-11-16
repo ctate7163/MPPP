@@ -3,6 +3,45 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.25 — 2026-11-16
+
+Christian (16 Nov): "the z34 without the rover still has a lot of hardware. you may need to rerun those images with
+the mask inference enabled."
+
+- `ibr.rover_masks` (new): a frame the block processed with the mask model off (`no_mask_inference_at`; at Three
+  Forks north ZCAM08692 and the sol 688 Navcam 360, kept with the rover for the deck-fiducial work) gets the mask
+  model's rover mask for the panoramas in `colmap/masks_ibr/` - from the block's 8-bit image (the model's own input
+  during processing), the block's no-data and exclusions kept. Made once and reused until the image changes. The
+  block's `masks/`, its alignment and its run key are untouched.
+- `ibr.ods` (sources, mast-head hardware) and `ibr.raycast` (the per-image maps) read `masks_ibr` first. The rover
+  model's silhouette (0.98.22) still covers a frame whose mask leaves the rover in - now only where the mask model
+  is not available.
+- `sync_code.bat`: when main cannot fast-forward (the PC's own "Viewer: panoramas" publish commits) the bundle is
+  merged; it stops only when the merge has conflicts (the merge aborted, nothing changed).
+
+## 0.98.24 — 2026-11-16
+
+Christian (16 Nov): "for the z34 ods, why does it say: ods --bits 16: 214 of 214 frames have no 16-bit image - THE
+PANORAMA IS RENDERED IN 8 BITS. If there are no 16-bit frames then it should generate them."
+
+- `ibr.linear16.archive_roots`: the 16-bit frames are made from the PDS products, looked for under `--pds`,
+  `MPPP_PDS` and the archive the block's manifest names - which was the Navcam/Hazcam tree (`...\m2020\datadrive`).
+  The Mastcam-Z products sit beside it (`...\m2020\zcam`), so every Mastcam-Z frame was "missing". Each root's
+  siblings and children `datadrive` and `zcam` are searched too.
+
+## 0.98.23 — 2026-11-16
+
+Christian (16 Nov): "before freeze-3, let's just rerun chal rocks large and seitah overlook and run a zcam joint so
+that we get the first good models for z26 and z100 with improved z63 and z79 models before the next freeze. seitah
+overlook should have a min paralax of 0.05 degrees"; "for hidden harbor, do not include images from site 29 or 30
+drive 0000, or site 31 drive 000".
+
+- `sites.json`: Seitah Overlook `min_tri_angle_deg` 0.05 (was 0.10); Chal Rocks large no longer holds 26 and 100 mm
+  (`zcam_hold` removed: they stay in every run and go into the joints); Hidden Harbor leaves out rover site 29
+  (`*RAD_N029????*`), S030D0000 and S031D0000.
+- The pre-freeze-3 run (`Claude outputs\prefreeze3_2026-11-16\run_prefreeze3.bat`, not in the repository): six
+  Mastcam-Z blocks again, then the 26, 100, 63 and 79 mm joints.
+
 ## 0.98.22 — 2026-11-16
 
 Christian (16 Nov): "for the z34 ods, somehow the z34 frames are not projecting on to the rover very well. What is

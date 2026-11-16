@@ -465,12 +465,14 @@ def test_zcam_hold_keeps_chal_rocks_regular_and_large_out_of_a_filtered_run():
     from mppp import pipeline as P
     from mppp.waypoints.sites import load_site_table
     t = load_site_table()["sites"]
-    assert t["chal_rocks"]["zcam_hold"] == [100] and t["chal_rocks_large"]["zcam_hold"] == [26, 100]
+    # 0.98.23 (Christian, 16 Nov 2026: "rerun chal rocks large ... so that we get the first good models for z26 and
+    # z100"): Chal Rocks large holds nothing any more; Chal Rocks still holds 100 mm
+    assert t["chal_rocks"]["zcam_hold"] == [100] and not t["chal_rocks_large"].get("zcam_hold")
     only = [26, 34, 48, 63, 79, 100, 110]
     z = lambda site, o: P.zcam_zooms(P.Settings(include_zcam=True, zcam_zooms_only=o), t[site])
-    assert z("chal_rocks", only) == [34, 48, 63, 79, 110] == z("chal_rocks_large", only)
+    assert z("chal_rocks", only) == [34, 48, 63, 79, 110] and z("chal_rocks_large", only) == only
     assert z("chal_rocks_tiny", only) == [26, 34, 48, 63, 100] and z("seitah_overlook", only) == only
     assert z("chal_rocks_large", None) == [26, 34, 48, 63, 79, 100, 110]            # without a filter: the whole list
     k = lambda site, o: P.Settings(include_zcam=True, zcam_zooms=z(site, o), zcam_zooms_only=o).key_dict()
-    assert k("chal_rocks_large", only) == k("chal_rocks_large", [34, 48, 63, 79, 110])
+    assert k("chal_rocks", only) == k("chal_rocks", [34, 48, 63, 79, 110])
     assert k("chal_rocks_tiny", only) != k("chal_rocks_tiny", [34, 48, 63, 79, 110])

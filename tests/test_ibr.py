@@ -3212,3 +3212,25 @@ def test_frames_whose_mask_left_the_rover_in_take_the_models_silhouette(tmp_path
     if rover_model.FILE.is_file():                                              # the real model: no head, wide triangles
         _, _, meta = rover_model.load()
         assert "head" in meta["parts"]
+
+
+def test_16bit_sources_are_looked_for_in_the_zcam_archive_beside_the_navcam_one(tmp_path, monkeypatch):
+    """0.98.24 (Christian, 16 Nov 2026: "for the z34 ods ... 214 of 214 frames have no 16-bit image ... it should
+    generate them"): the Mastcam-Z products sit in <archive>/zcam/<sol>, beside <archive>/datadrive/<sol>; a root
+    naming either finds both."""
+    from mppp.ibr import linear16 as L
+    dd = tmp_path / "m2020" / "datadrive" / "00690" / "ids" / "rdr" / "ncam"
+    zc = tmp_path / "m2020" / "zcam" / "00690"
+    dd.mkdir(parents=True)
+    zc.mkdir(parents=True)
+    (dd / "NLF_0690_0728000000_000RAD_N0321184NCAM00500_0A0195J01.IMG").write_bytes(b"x")
+    (zc / "ZL0_0690_0728175201_111RAD_N0321184ZCAM08692_0340LMA01.IMG").write_bytes(b"x")
+    monkeypatch.delenv("MPPP_PDS", raising=False)
+
+    class P:                                     # a block without a processed folder: the roots are the given one
+        root = tmp_path / "block" / "colmap"
+        settings = {}
+    for given in (tmp_path / "m2020" / "datadrive", tmp_path / "m2020"):
+        roots = L.archive_roots(P(), given)
+        assert L.find_product("ZL0_0690_0728175201_111RAD_N0321184ZCAM08692_0340LMA01", roots) is not None
+        assert L.find_product("NLF_0690_0728000000_000RAD_N0321184NCAM00500_0A0195J01", roots) is not None

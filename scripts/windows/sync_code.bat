@@ -16,8 +16,9 @@ REM aborted the 9 Nov runs; failures are listed, not fatal), and the freeze chec
 REM D:\code\MPPP_freeze) fast-forwarded to this tree's main - unless a freeze is running on it (freeze.bat --status
 REM says so; the code must not change under a run).  Nothing is started.  Replaces claude_sync.bat (0.95.0).
 REM
-REM It stops, changing nothing, when main cannot fast-forward (this tree has commits the delivery lacks: send Claude
-REM `git log --oneline -5`).  Uncommitted changes to tracked files go to a stash and come back after the merge.
+REM When main cannot fast-forward (this tree has commits the delivery lacks - the viewer's "Viewer: panoramas" publish
+REM commits) the bundle is merged (0.98.25); it stops, changing nothing, only when that merge has conflicts (send
+REM Claude `git log --oneline -5` and `git status`).  Uncommitted changes to tracked files go to a stash and come back after the merge.
 REM Runs from a copy in %TEMP% (cmd.exe reads a batch file line by line, and the merge may replace this file).
 REM Log: %TEMP%\mppp_sync_<test>.log per test file.  Then: git push origin main (you), freeze.bat.
 REM ======================================================================================================
@@ -55,7 +56,10 @@ if /i "%~1"=="--github" (
   if not exist "!BUNDLE!" ( echo !BUNDLE! not found & goto :unstash_fail )
   git bundle verify "!BUNDLE!" >nul || ( echo the bundle does not fit this repository ^(a commit it builds on is missing here^) & goto :unstash_fail )
   git fetch -q "!BUNDLE!" !BRANCH!:refs/remotes/bundle/!BRANCH! || ( echo fetch failed & goto :unstash_fail )
-  git merge -q --ff-only refs/remotes/bundle/!BRANCH! || ( echo fast-forward failed - main has commits the bundle does not; send Claude: git log --oneline -5 & goto :unstash_fail )
+  git merge -q --ff-only refs/remotes/bundle/!BRANCH! 2>nul || (
+    echo main has commits the bundle does not ^(the viewer's publish commits^): merging
+    git merge -q --no-edit refs/remotes/bundle/!BRANCH! || ( git merge --abort & echo the merge has conflicts - nothing changed; send Claude: git log --oneline -5 and git status & goto :unstash_fail )
+  )
 )
 if defined STASHED ( git stash pop -q || echo WARNING: stash pop had conflicts - resolve them )
 for /f %%h in ('git rev-parse --short HEAD') do set "HEAD1=%%h"
