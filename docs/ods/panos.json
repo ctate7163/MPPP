@@ -5,8 +5,8 @@
    "id": "welcome",
    "title": "Welcome",
    "welcome": true,
-   "site_name": "MPPP stereo viewer",
-   "yaw_deg": null,
+   "site_name": "Rover Photogrammetry Viewer",
+   "yaw_deg": 270.0,
    "variants": [
     {
      "key": "welcome",
@@ -875,6 +875,82 @@
     1792
    ],
    "site_name": "Origny"
+  },
+  {
+   "id": "Sol1947_S091D0000",
+   "title": "Hippo Pools",
+   "variants": [
+    {
+     "key": "masked",
+     "label": "terrain only",
+     "views": {
+      "standard": "panos/Sol1947_S091D0000_360_3DTD.jpg",
+      "normal": "panos/Sol1947_S091D0000_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1947_S091D0000_range_log_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1947_S091D0000_nadir_mark.png",
+      "depth_m": 1.9694,
+      "radius_m": 0.4514,
+      "mark_radius_m": 0.3473,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 139.12
+     }
+    },
+    {
+     "key": "rover",
+     "label": "terrain with rover (projected)",
+     "views": {
+      "standard": "panos/Sol1947_S091D0000_rover_360_3DTD.jpg",
+      "normal": "panos/Sol1947_S091D0000_rover_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1947_S091D0000_rover_range_log_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1947_S091D0000_rover_nadir_mark.png",
+      "depth_m": 1.9694,
+      "radius_m": 0.4514,
+      "mark_radius_m": 0.3473,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 139.12,
+      "at": "the terrain's level"
+     }
+    },
+    {
+     "key": "rover3d",
+     "label": "terrain with rover (3D model)",
+     "views": {
+      "standard": "panos/Sol1947_S091D0000_360_3DTD.jpg",
+      "normal": "panos/Sol1947_S091D0000_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1947_S091D0000_range_log_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1947_S091D0000_nadir_mark.png",
+      "depth_m": 1.9694,
+      "radius_m": 0.4514,
+      "mark_radius_m": 0.3473,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 139.12
+     },
+     "rover_surface": {
+      "file": "panos/Sol1947_S091D0000_rover_rover_surface.glb",
+      "triangles": 179426,
+      "experimental": true
+     }
+    }
+   ],
+   "mppp": "0.98.25",
+   "published": "2026-11-16",
+   "map": [
+    843.8,
+    918.6
+   ],
+   "sols": [
+    1947
+   ],
+   "site_name": "Hippo Pools"
   },
   {
    "id": "Sol1955_S091D0124",
@@ -3864,6 +3940,22 @@
     "MSR_hirise_soc_003_Orthomosaic_0.25m_Eqc_latTs0_lon0_First_NoBlend.tif"
    ],
    "credit": "HiRISE orthomosaic (NASA/JPL-Caltech/UArizona/USGS)"
+  },
+  "dtm": {
+   "file": "panos/traverse_dtm.jpg",
+   "extent": [
+    -1277.1,
+    -2369.2,
+    14725.6,
+    5632.9
+   ],
+   "px": [
+    2048,
+    1023
+   ],
+   "stamp": "m20_ods_traverse_map_dtm.png 1794859132",
+   "background": "HiRISE DTM (JEZ_hirise_soc_006_DTM_MOLAtopography_DeltaGeoid_1m_Eqc_latTs0_lon0_blend40.tif, MSR_hirise_soc_003_DTM_MOLATopography_DeltaGeoid_1m_Eqc_latTs0_lon0_Blend40.tif) where it covers, ~70 m terrain tiles elsewhere",
+   "credit": "HiRISE DTM and terrain (NASA/JPL-Caltech/UArizona/USGS)"
   }
  }
 }
