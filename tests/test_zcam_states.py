@@ -237,8 +237,8 @@ def test_run_key_of_a_site_without_100mm_ignores_100_in_the_zoom_filter(tmp_path
     assert key("wildcat_ridge", [34, 48, 63, 79, 110]) != key("wildcat_ridge", [34, 48, 63, 79, 100, 110])
     assert key("skinner_ridge", [34, 48, 63, 79, 110]) == key("skinner_ridge", [34, 48, 63, 79, 100, 110])
     assert key("seitah_overlook", [34, 48, 63, 79, 110]) != key("seitah_overlook", [34, 48, 63, 79, 100, 110])
-    # 0.98.4: Chal Rocks large holds its 26 and 100 mm ("zcam_hold"), so its key does not change either
-    assert key("chal_rocks_large", [34, 48, 63, 79, 110]) == key("chal_rocks_large", [34, 48, 63, 79, 100, 110])
+    # 0.98.23: Chal Rocks large no longer holds its 26 and 100 mm - its key changes with the filter
+    assert key("chal_rocks_large", [34, 48, 63, 79, 110]) != key("chal_rocks_large", [34, 48, 63, 79, 100, 110])
 
 
 def test_vf_points_of_the_101_station_joint_ship_with_the_studies():

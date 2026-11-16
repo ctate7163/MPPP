@@ -448,7 +448,7 @@ def test_fresh_sets_the_old_status_aside(tmp_path, monkeypatch):
 
 def test_seitah_overlook_parallax():
     from mppp.pipeline import load_settings
-    assert load_settings(site="seitah_overlook").min_tri_angle_deg == 0.10
+    assert load_settings(site="seitah_overlook").min_tri_angle_deg == 0.05      # 0.98.23 (was 0.10)
     assert load_settings(site="chal_rocks_large").min_tri_angle_deg == 0.25
 
 

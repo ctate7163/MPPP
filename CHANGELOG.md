@@ -3,6 +3,19 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.23 — 2026-11-16
+
+Christian (16 Nov): "before freeze-3, let's just rerun chal rocks large and seitah overlook and run a zcam joint so
+that we get the first good models for z26 and z100 with improved z63 and z79 models before the next freeze. seitah
+overlook should have a min paralax of 0.05 degrees"; "for hidden harbor, do not include images from site 29 or 30
+drive 0000, or site 31 drive 000".
+
+- `sites.json`: Seitah Overlook `min_tri_angle_deg` 0.05 (was 0.10); Chal Rocks large no longer holds 26 and 100 mm
+  (`zcam_hold` removed: they stay in every run and go into the joints); Hidden Harbor leaves out rover site 29
+  (`*RAD_N029????*`), S030D0000 and S031D0000.
+- The pre-freeze-3 run (`Claude outputs\prefreeze3_2026-11-16\run_prefreeze3.bat`, not in the repository): six
+  Mastcam-Z blocks again, then the 26, 100, 63 and 79 mm joints.
+
 ## 0.98.22 — 2026-11-16
 
 Christian (16 Nov): "for the z34 ods, somehow the z34 frames are not projecting on to the rover very well. What is
