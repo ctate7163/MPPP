@@ -16,7 +16,10 @@ REM                                     every step runs again (refused while a f
 REM   freeze.bat --now                  start once the pipeline lock is free (do not wait for the first chain)
 REM   freeze.bat --redo zjoints         a step again;   freeze.bat --only deck   one step
 REM   freeze.bat --zcam-waive-aspect    (default 63 79 110) the zooms whose per-block aspect gate is waived
-REM Root: MPPP_FREEZE_ROOT, else D:\rover_blocks.  Models: MPPP_FREEZE_CMODS, else D:\rover_blocks\cmods_freeze2.
+REM   freeze.bat --fresh --now --cmods D:\rover_blocks\cmods_freeze3 --cmods-from D:\rover_blocks\cmods_freeze2 ^
+REM              --candidate <folder with M2020_N_rig.json>     0.98.15: freeze-3 (the folder and candidate are kept
+REM                                     in the status; a restart without them goes on with them)
+REM Root: MPPP_FREEZE_ROOT, else D:\rover_blocks.  Models: the run's own, else MPPP_FREEZE_CMODS, else cmods_freeze2.
 REM Log: <root>\mppp_pipeline\freeze_log.txt; status freeze_status.json; each step's output freeze_<step>.log.
 REM Stop: Ctrl-C in this window, or stop_mppp.bat - both are logged as "stopped by the user"; start again to go on.
 REM After a reboot the run starts itself again at your next logon (RunOnce "MPPP freeze").
@@ -25,7 +28,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 for %%I in ("%~dp0..\..") do set "MPPP_MAIN=%%~fI"
 if not defined MPPP_FREEZE_ROOT set "MPPP_FREEZE_ROOT=D:\rover_blocks"
 if not defined MPPP_FREEZE_CODE set "MPPP_FREEZE_CODE=D:\code\MPPP_freeze"
-title MPPP freeze (0.97) - %MPPP_FREEZE_ROOT%
+title MPPP freeze (0.98) - %MPPP_FREEZE_ROOT%
 call "%MPPP_MAIN%\scripts\windows\mppp_env.bat"
 if errorlevel 1 (
   echo freeze: no Python with mppp found - not started

@@ -1439,15 +1439,25 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
                     row["lines"].setdefault(eye, {}).setdefault(stt, {})[pn] = {"a": a, "b": b, "bins": len(us_),
                                                                                  "observations": int(w.sum()),
                                                                                  "weak_bins_left_out": len(us) - len(us_)}
+        row["observations"] = int(sum(st_["fx"]["observations"] for e_ in row["lines"].values() for st_ in e_.values() if "fx" in st_))
         rows.append(row)
     fits = {}
-    rrows = rig_rows_by_epoch(rows)                      # 0.97.0: a block's rig epochs each count as a rig
+    rrows_all = rig_rows_by_epoch(rows)                  # 0.97.0: a block's rig epochs each count as a rig
+    # 0.98.15: a block with a handful of frames of this zoom does not constrain its own rig (the 15 Nov 79 mm joint:
+    # Skinner Ridge with 1,015 observations had a roll of 399 mdeg, Wildcat Ridge with 3,399 a yaw of 90 - they were
+    # the "rig scatter" of 164 mdeg that failed the joint).  Such rows stay in the table and out of the scatter and
+    # the trends; with fewer than two rows left, every row counts as before.
+    rrows = [r for r in rrows_all if r.get("observations", RIG_SCATTER_MIN_OBS) >= RIG_SCATTER_MIN_OBS]
+    weak_rig = [r["block"] for r in rrows_all if r not in rrows]
+    if len(rrows) < 2:
+        rrows, weak_rig = rrows_all, []
     for ang in ("yaw", "pitch", "roll"):
         y = np.array([r[f"{ang}_mdeg"] for r in rrows], float)
         S = np.array([np.nan if r["sol"] is None else r["sol"] for r in rrows], float)
         Tz = np.array([np.nan if r["T_optics_degC"] is None else r["T_optics_degC"] for r in rrows], float)
         fits[ang] = {"sd_mdeg": float(np.std(y, ddof=1)) if len(y) > 1 else None, "vs_sol_per_1000": ols(S / 1000.0, y),
-                     "vs_T": ols(Tz, y)}
+                     "vs_T": ols(Tz, y), "blocks": len(y), "left_out_under_min_observations": weak_rig,
+                     "min_observations": RIG_SCATTER_MIN_OBS}
     # 0.95.1 (Christian, 29 Oct: the efl vs focus curves): every bin's own fx, fy in the diagnostic pass (the law held,
     # fx, fy free), for zcam_efl_vs_focus.png
     bins = []
@@ -2496,7 +2506,9 @@ def describe(res: Dict[str, Any]) -> List[str]:
         a, b = fz.get("vs_sol_per_1000") or {}, fz.get("vs_T") or {}
         sl = lambda x, u: (f"{x['slope']:+.2f} +- {x['se']:.2f} {u}" if x.get("slope") is not None else "-")   # noqa: E731
         out.append(f"rig {ang} per block: sd {fz.get('sd_mdeg') or float('nan'):.1f} mdeg; vs sol {sl(a, 'mdeg/1000 sol')}, "
-                   f"vs lens T {sl(b, 'mdeg/degC')}")
+                   f"vs lens T {sl(b, 'mdeg/degC')}"
+                   + (f" ({fz.get('blocks')} blocks; under {fz.get('min_observations')} observations, left out: "
+                      f"{', '.join(fz['left_out_under_min_observations'])})" if fz.get("left_out_under_min_observations") else ""))
     ba_ = res.get("block_aspect") or {}
     if ba_.get("error"):
         out.append(f"per-block aspect vs the Navcam: not run ({ba_['error']})")
@@ -2797,6 +2809,9 @@ def joint_checks(res: Dict[str, Any], chk: Dict[str, Any], limits: Optional[Dict
     return {"ok": all(c["ok"] for c in checks), "checks": checks}
 
 
+RIG_SCATTER_MIN_OBS = 5000        # a block's rig counts in the joint's rig scatter and trends from this many observations
+
+
 def rig_rows_by_epoch(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """The diagnostic pass's rig rows for the model file and the rig figure: one per block, or - 0.97.0 - one per rig
     epoch of a block whose pairs span more than 100 sols (``rig_epochs``): "block [sols a-b]" at the epoch's median
@@ -2805,12 +2820,13 @@ def rig_rows_by_epoch(rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for x in rows:
         eps = x.get("rig_epochs")
         if not eps:
-            out.append({k: x[k] for k in ("block", "sol", "T_optics_degC", "yaw_mdeg", "pitch_mdeg", "roll_mdeg")})
+            out.append({k: x[k] for k in ("block", "sol", "T_optics_degC", "yaw_mdeg", "pitch_mdeg", "roll_mdeg", "observations") if k in x})
             continue
         for e in eps:
             out.append({"block": f"{x['block']} [sols {e['sols'][0]}-{e['sols'][1]}]", "sol": e["sol_median"],
                         "T_optics_degC": x.get("T_optics_degC"), "yaw_mdeg": e["yaw_mdeg"], "pitch_mdeg": e["pitch_mdeg"],
-                        "roll_mdeg": e["roll_mdeg"], "site": x["block"], "rig_epoch": e["index"], "pairs": e["pairs"]})
+                        "roll_mdeg": e["roll_mdeg"], "site": x["block"], "rig_epoch": e["index"], "pairs": e["pairs"],
+                        **({"observations": x["observations"]} if "observations" in x else {})})
     return out
 
 

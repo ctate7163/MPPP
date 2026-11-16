@@ -23,9 +23,10 @@ Steps (each done once; started again after any stop, the run continues where it 
              <file|name> that checkpoint or registry name
            The choice is kept in the status file: a restart keeps it (another choice would change the run key)
   cmods    the run's model folder: seeded from ``--cmods-from`` when it does not exist; ``--candidate DIR`` promoted
-           into it (``promote_cmods``) when the folder does not yet hold a freeze rig
+           into it (``promote_cmods``) unless its files are already there (0.98.15; before: unless the folder held a
+           freeze rig).  The folder and the candidate are kept in the status: a restart without them goes on with them
   zjoints  run_pipeline: every Mastcam-Z block aligned again with the Navcam models of the folder (zcam_runs), then
-           the Z34, Z48, Z63, Z79 and Z110 joints, promoted into the folder when their checks pass; for the zooms
+           the Z34, Z48, Z63, Z79, Z100 (0.98.15) and Z110 joints, promoted into the folder when their checks pass; for the zooms
            of ``--zcam-waive-aspect`` (63 79 110) the per-block aspect gate is waived
   zfinal   the Mastcam-Z blocks again with the models the joints promoted (only those whose models changed)
   ecam     the Navcam blocks with the folder's models, then the Navcam joint and the Hazcam fit as checks (nothing
@@ -74,8 +75,9 @@ from .freeze_chain import (ChainStopped, RUNONCE_KEY, STOP_MARKER, WINDOWS, free
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 STEPS = ("wait", "mask", "cmods", "zjoints", "zfinal", "ecam", "nz", "deck", "ztests", "studies", "report")
-TAG = "freeze_097"            # 0.97.0 (12 Nov): the run restarted from the beginning on the 0.97 rules
-ZOOMS = (34, 48, 63, 79, 110)
+TAG = "freeze_3"              # 0.98.15 (15 Nov): freeze-3 - the deck-joint rig, the 15 Nov backlash relabels, 100 mm
+# (0.97.0, 12 Nov: "freeze_097", the run restarted from the beginning on the 0.97 rules)
+ZOOMS = (34, 48, 63, 79, 100, 110)     # 0.98.15: 100 mm too (a first model from the blocks that have it)
 WAIVE_ASPECT = (63, 79, 110)          # Christian, 8 Nov: "update the z63, z79, z110 models that are good enough"
 DECK_BLOCKS = {                       # the Z34 deck pans (sequence, sol, station) and their blocks
     "threeforks_north": ("ZCAM05086", 692, "S032D1184"),
@@ -89,7 +91,7 @@ JOINT_GROUP = "zcam34_joint,zcam_consensus"
 OLD_CHAIN_ROOT_STEPS = ("studies", "figures", "maps", "aspect_geometry", "s6")
 STALE_S = 900
 LOGON_TASK = "MPPP freeze"
-REQUIRED_VERSION = "0.97"
+REQUIRED_VERSION = "0.98"
 DEFAULT_MASK = "mppp_mask_v3"         # the registry default: what a block without mask_checkpoint was processed with
 STATUS_FILE, LOG_FILE, REPORT_FILE = "freeze_status.json", "freeze_log.txt", "freeze_report.md"
 
@@ -116,6 +118,14 @@ class Run:
                 self.status, self.before, self.resumed = old, dict(old), True
                 if not read_only:
                     self.status.setdefault("restarts", []).append(now())
+        # 0.98.15: a run keeps its model folder and candidate - a restart at logon (no arguments) goes on with them
+        rec = (self.status.get("models") or {}) if self.resumed else {}
+        if getattr(a, "cmods", None) is None:
+            a.cmods = rec.get("cmods") or os.environ.get("MPPP_FREEZE_CMODS") or r"D:\rover_blocks\cmods_freeze2"
+        if getattr(a, "candidate", None) is None and rec.get("candidate"):
+            a.candidate = rec["candidate"]
+        if not read_only:
+            self.status["models"] = {"cmods": str(a.cmods), "candidate": a.candidate}
         self.code = Path(a.code).resolve()
         self.cmods = Path(a.cmods)
         self.redo = set(a.redo or [])
@@ -277,7 +287,7 @@ class Run:
 
     def pipeline(self, name: str, *args: str) -> int:
         cmd = [self.python, "-m", "mppp_studies.calibration.run_pipeline", "--root", self.root, "--jobs",
-               str(self.a.jobs), "--sites-timeout-h", f"{self.a.sites_timeout_h:g}", *args]
+               str(self.a.jobs), "--sites-timeout-h", f"{self.a.sites_timeout_h:g}", "--zooms", *map(str, ZOOMS), *args]
         m = self.mask_set()
         if m:
             cmd += ["--set", f"mask_checkpoint={m}"]
@@ -473,10 +483,16 @@ class Run:
             source = str(json.loads(rig.read_text(encoding="utf-8")).get("source", ""))
         except (OSError, ValueError):
             source = ""
-        if "freeze" in source.lower():
-            return f"{self.cmods}: the freeze Navcam models and rig already in it ({source[:80]})"
         if not self.a.candidate:
             return f"{self.cmods}: the models as they are (no --candidate)"
+        # 0.98.15: a candidate whose files are already in the folder is done (a restart); a candidate that differs is
+        # promoted even when the folder already holds a freeze rig (freeze-3: the deck-joint rig over freeze-2's)
+        cand = Path(self.a.candidate)
+        files = [cand] if cand.is_file() else sorted(cand.glob("M2020_*.json"))
+        same = bool(files) and all((self.cmods / f.name).is_file()
+                                   and (self.cmods / f.name).read_bytes() == f.read_bytes() for f in files)
+        if same:
+            return f"{self.cmods}: the candidate {cand} already in it ({source[:80]})"
         rc = self.run("cmods", [self.python, "-m", "mppp_studies.calibration.promote_cmods", self.a.candidate, "--note",
                                 self.a.candidate_note], timeout_h=0.5)
         if rc != 0:
@@ -899,7 +915,7 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--root", default=os.environ.get("MPPP_FREEZE_ROOT", r"D:\rover_blocks"))
     ap.add_argument("--code", default=os.environ.get("MPPP_FREEZE_CODE", str(REPO)), help="the run's checkout")
     ap.add_argument("--python", default=None, help="the Python of the steps (default: this one)")
-    ap.add_argument("--cmods", default=os.environ.get("MPPP_FREEZE_CMODS", r"D:\rover_blocks\cmods_freeze2"),
+    ap.add_argument("--cmods", default=None,   # 0.98.15: None = the run's own (status), else MPPP_FREEZE_CMODS, else cmods_freeze2
                     help="the run's camera models (MPPP_CMODS of every step)")
     ap.add_argument("--cmods-from", default=r"D:\scapes\cmods", help="the models in use the folder is seeded from")
     ap.add_argument("--candidate", default=None, help="a folder of models promoted into --cmods when it holds no freeze rig")
@@ -948,7 +964,7 @@ def main(argv=None) -> int:
         return update_code(a)
     aside = None
     if a.fresh and not a.dry_run:                            # 0.97.0: the run before set aside, its files kept
-        r0 = Run(a, read_only=True)
+        r0 = Run(argparse.Namespace(**vars(a)), read_only=True)   # 0.98.15: a copy - the old run's folders stay its own
         pid = r0.alive_before()
         if pid:
             print(f"not started: a freeze is running on {r0.root} (pid {pid}) - stop it first (stop_mppp.bat)")

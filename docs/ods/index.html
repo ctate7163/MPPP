@@ -361,7 +361,8 @@ function drawInfo() {
   while (infoPanel.children.length) { const o = infoPanel.children.pop(); o.material.map.dispose(); o.material.dispose(); o.geometry.dispose(); }
   const p = panos[cur.s] || {}, [name, sol, id] = infoLines();
   const hasMap = !!(traverse && traverse.xy && traverse.xy.length > 1);
-  const W = 1024, Hh = hasMap ? 1240 : 420, c = document.createElement('canvas'), g = c.getContext('2d');
+  const W = 1100, Hh = hasMap ? 400 + (W - 120) + 60 : 420, c = document.createElement('canvas'), g = c.getContext('2d');   // 0.98.15: the map
+  //                                                               fits (it ran 64 px past a 1240-px page) and the page is wider
   c.width = W; c.height = Hh;
   g.fillStyle = 'rgba(10,20,40,0.82)'; g.beginPath(); g.roundRect(0, 0, W, Hh, 40); g.fill();
   g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff';
@@ -400,7 +401,7 @@ function drawInfo() {
     g.strokeStyle = '#fff'; g.lineWidth = 6; g.lineCap = 'butt'; g.beginPath(); g.moveTo(x0 + 24, y0 + S - 30); g.lineTo(x0 + 24 + bar * km, y0 + S - 30); g.stroke();
     g.textAlign = 'left'; g.font = '600 36px system-ui, sans-serif'; g.fillStyle = '#fff'; g.fillText(`${bar} km`, x0 + 24, y0 + S - 62);
     g.textAlign = 'right'; g.fillText('N ↑', x0 + S - 20, y0 + 36);
-    if (orthoImage && o && o.credit) { g.font = '500 22px system-ui, sans-serif'; g.fillStyle = 'rgba(255,255,255,0.8)'; g.fillText(o.credit, x0 + S - 14, y0 + S - 16); }
+    if (orthoImage && o && o.credit) { g.font = '500 22px system-ui, sans-serif'; g.fillStyle = 'rgba(255,255,255,0.8)'; g.textAlign = 'left'; g.fillText(o.credit, x0 + 16, y0 + 30); }
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
@@ -415,9 +416,9 @@ const INFO_TILT_RAD = -1.2;      // 0.98.14 (Christian: "Tilt the info window ba
 function toggleInfo() {
   if (infoPanel.visible) { infoPanel.visible = false; return; }
   drawInfo();
-  if (renderer.xr.isPresenting && leftGrip) {                    // on the left hand: 16 cm wide, above the controller
+  if (renderer.xr.isPresenting && leftGrip) {                    // on the left hand: 19 cm wide (16 until 0.98.14), above the controller
     leftGrip.add(infoPanel);
-    infoPanel.position.set(0, 0.10, -0.07); infoPanel.rotation.set(INFO_TILT_RAD, 0, 0); infoPanel.scale.setScalar(0.16);
+    infoPanel.position.set(0, 0.10, -0.07); infoPanel.rotation.set(INFO_TILT_RAD, 0, 0); infoPanel.scale.setScalar(0.19);
   } else {
     scene.add(infoPanel);
     const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;

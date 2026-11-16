@@ -3,6 +3,31 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.15 — 2026-11-15
+
+Christian: "Prepare a new freeze run focused on getting 26, 63, 79, and 100 promoted. Make sure 34 and 48 are the best
+they are. Use the best deck joint parameters to initiate the new zcam runs. Look carefully for any miss classified
+backlash states. judge how reliable the zcam_low_backlash_candidates list is." and "make the info window in the ods
+view a little wider and taller so that none of its graphics are clipped."
+
+- **Backlash relabels** from the 15 Nov joints (`mars2020_mastcam-z_low_backlash_observations.csv`): low at 63 mm
+  `443:ZCAM07107`, `446:ZCAM07107`, `449:ZCAM08463`, `456:ZCAM08471`, `1156:ZCAM09192`, and Wildcat Ridge
+  `507:ZCAM08530`, `513:ZCAM08538` in both eyes (the left eyes were off); low at 79 mm `1149:ZCAM09185`; low at
+  34 mm `ZR:1621:ZCAM09700`.  These sequences sat 3,200-8,500 ppm under the high line while running as high - the
+  cause of the failed "regular ratio" checks at 63 and 79 mm.  ZCAM07114 (the post-drive 34 mm clast survey) comes
+  off the list on its 26 sols without a drive before the frame (`-<sol>:ZCAM07114`; three measured high: 446, 679,
+  688); the frames after a drive stay low.
+- Mastcam-Z joint, rig scatter: a block with fewer than 5,000 observations of the zoom
+  (`ztied.RIG_SCATTER_MIN_OBS`) stays in the rig table and out of the scatter and its trends.  The 15 Nov Z79 joint
+  failed on Skinner Ridge's roll of 399 mdeg from 2,066 observations (sd 164 mdeg; 4.3 without it); Z34's roll sd
+  drops from 43.5 to 4.9 mdeg.
+- `ZCAM_RULES` 3: every Mastcam-Z block runs again at its next run (the list is not in the run key).
+- Freeze-3 (`freeze.py`, tag `freeze_3`, needs 0.98): the joints and the runs at 34, 48, 63, 79, **100** and 110 mm
+  (`--zooms` passed to the pipeline); a `--candidate` is promoted when its files differ from the folder's (before:
+  never once the folder held a freeze rig); the run's `--cmods` and `--candidate` are kept in its status, so the
+  restart at logon goes on with them.  Wildcat Ridge gets 100 mm (sol 510 ZCAM00064, an 8-position focus stack).
+- Viewer: the info page is 1100 px wide and as tall as its map needs (nothing clipped); the map credit at its top left.
+
 ## 0.98.14 — 2026-11-15
 
 Christian: "the pan motion on the joystick should be faster. Tilt the info window back further so that it is easier to

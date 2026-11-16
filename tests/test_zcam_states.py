@@ -27,12 +27,19 @@ def test_found_list_lines_and_exclusions(tmp_path):
     # 0.95.1: the shipped list takes Chal Rocks' 79 mm sequences off (-99:ZCAM08060, -361:ZCAM07105)
     # 0.96 (9 Nov): Rockytop's -507:ZCAM08530 and -513:ZCAM08538, the ZCAM07114 frames of sols 435 and 817; the 29 Oct
     # -99:ZCAM08060 / -361:ZCAM07105 are gone (Chal Rocks' 79 mm sequences are low again)
-    assert {k: len(v) for k, v in lst["excluded"].items()} == {"entries": 2, "sol_sequences": 2, "eye_sol_sequences": 2,
+    assert {k: len(v) for k, v in lst["excluded"].items()} == {"entries": 2, "sol_sequences": 26, "eye_sol_sequences": 0,
                                                               "clocks": 1, "sol_zooms": 0}
-    assert lst["excluded"]["sol_sequences"] == {(435, "ZCAM07114"), (817, "ZCAM07114")}
-    # 0.97.0 (12 Nov): Wildcat Ridge sols 507 / 513 - the left eyes off the list, the right eyes on it
-    assert lst["excluded"]["eye_sol_sequences"] == {("ZL", 507, "ZCAM08530"), ("ZL", 513, "ZCAM08538")}
-    assert {("ZR", 507, "ZCAM08530"), ("ZR", 513, "ZCAM08538")} <= lst["eye_sol_sequences"]
+    # 0.98.15 (the audit of the 15 Nov joints): ZCAM07114 is low after a drive only - its 26 no-drive sols are off
+    assert {(435, "ZCAM07114"), (446, "ZCAM07114"), (679, "ZCAM07114"), (688, "ZCAM07114"), (817, "ZCAM07114"),
+            (1073, "ZCAM07114")} <= lst["excluded"]["sol_sequences"]
+    assert all(q == "ZCAM07114" for _, q in lst["excluded"]["sol_sequences"])
+    assert is_low_backlash(row(_name("R", 684, 728371111, "ZCAM07114"), 684, "ZCAM07114"), lst)       # a drive sol
+    assert not is_low_backlash(row(_name("R", 688, 728700000, "ZCAM07114"), 688, "ZCAM07114"), lst)   # a no-drive sol
+    # 0.98.15: Wildcat Ridge sols 507 / 513 low in BOTH eyes (0.97.0 had the left eyes off), and the 63 / 79 mm
+    # sequences that ran as high in the 15 Nov joints
+    assert {(507, "ZCAM08530"), (513, "ZCAM08538"), (443, "ZCAM07107"), (446, "ZCAM07107"), (449, "ZCAM08463"),
+            (456, "ZCAM08471"), (1156, "ZCAM09192"), (1149, "ZCAM09185")} <= lst["sol_sequences"]
+    assert (448, "ZCAM07107") not in lst["sol_sequences"]         # the same sequence two sols later is high
     assert (361, "ZCAM07105") in lst["sol_sequences"] and (360, "ZCAM08390") in lst["sol_sequences"]
     assert not is_low_backlash({"name": "ZR0_0099_0675741232_223RAD_N0040218ZCAM08060_079085A03", "camera_group": "ZR079"},
                                lst)                              # the sequence from the name (no "sequence" field)
@@ -226,7 +233,9 @@ def test_run_key_of_a_site_without_100mm_ignores_100_in_the_zoom_filter(tmp_path
     def key(site, only):
         _, s = P.resolve_site(site, P.Settings(include_zcam=True, zcam_zooms_only=only, scapes_root=str(tmp_path)))
         return P.run_key(s)
-    assert key("wildcat_ridge", [34, 48, 63, 79, 110]) == key("wildcat_ridge", [34, 48, 63, 79, 100, 110])
+    # (0.98.15: Wildcat Ridge lists 100 mm now - its key changes with the filter; Skinner Ridge lists none)
+    assert key("wildcat_ridge", [34, 48, 63, 79, 110]) != key("wildcat_ridge", [34, 48, 63, 79, 100, 110])
+    assert key("skinner_ridge", [34, 48, 63, 79, 110]) == key("skinner_ridge", [34, 48, 63, 79, 100, 110])
     assert key("seitah_overlook", [34, 48, 63, 79, 110]) != key("seitah_overlook", [34, 48, 63, 79, 100, 110])
     # 0.98.4: Chal Rocks large holds its 26 and 100 mm ("zcam_hold"), so its key does not change either
     assert key("chal_rocks_large", [34, 48, 63, 79, 110]) == key("chal_rocks_large", [34, 48, 63, 79, 100, 110])

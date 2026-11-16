@@ -1735,7 +1735,10 @@ def check_zcam(new: Dict[str, Any], old: Dict[str, Any], limits: Optional[Dict[s
         sds = [float(x) for x in (rig.get("sd_rotvec_mdeg") or []) if x is not None and np.isfinite(float(x))]
         if sds:
             add("rig scatter", max(sds) <= lim["max_rig_scatter_mdeg"],
-                f"rotation sd {', '.join(f'{x:.1f}' for x in sds)} mdeg over {len(rig.get('blocks') or [])} blocks")
+                f"rotation sd {', '.join(f'{x:.1f}' for x in sds)} mdeg over "
+                f"{((rig.get('residuals') or {}).get('fits') or {}).get('yaw', {}).get('blocks') or len(rig.get('blocks') or [])} blocks"
+                + (" (blocks under the observation minimum left out)"
+                   if ((rig.get('residuals') or {}).get('fits') or {}).get('yaw', {}).get('left_out_under_min_observations') else ""))
         elif rig.get("sd_rotvec_mdeg") is not None:   # 0.93.9: too few blocks for a scatter (Z48 of 23 Oct: 2 blocks)
             add("rig scatter", True, f"not measured: {len(rig.get('blocks') or [])} blocks")
         if rig.get("sd_baseline_mm") is not None:
