@@ -139,6 +139,7 @@
    "terrain": "block:rockytop"
   },
   "Sol0686_S032D1184": {
+   "name": "Three Forks North",
    "site": "threeforks_large",
    "station": "32_1184",
    "note": "Three Forks, sols 686 and 688: the 26 half-resolution Navcam frames (NCAM02686, 03686, 12686, 03688, 13688); one pair left out of the panorama (Christian, 10 Nov)",
@@ -150,7 +151,7 @@
    ]
   },
   "Sol0690_S032D1184_Z34": {
-   "name": "Three Forks (Mastcam-Z 34 mm)",
+   "name": "Three Forks North (Z34)",
    "experimental": true,
    "work": "mars2020_sol_0413_threeforks_north_zcam",
    "station": "32_1184",

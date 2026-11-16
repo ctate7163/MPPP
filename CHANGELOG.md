@@ -7,10 +7,11 @@ The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p9
 
 Christian (16 Nov): "how does the z34 show up in the list of ods?"
 
-- `single_sites.json`: the Mastcam-Z station `Sol0690_S032D1184_Z34` gets the name "Three Forks (Mastcam-Z 34 mm)".
-  Without one, its menu entry read "Sol 0690 Sol0690_S032D1184_Z34"; now "Sol 0690 Three Forks (Mastcam-Z 34 mm)",
-  next to the Navcam station's "Sol 0686 Three Forks". The next publish (`run_single_site_ibr.bat --publish-only`)
-  writes the new title.
+- `single_sites.json` names (14:52: "Make both Three Forks North and the zcam one should have an extra (Z34) after
+  it"): `Sol0686_S032D1184` "Three Forks North" (was "Three Forks", from its block), the Mastcam-Z station
+  `Sol0690_S032D1184_Z34` "Three Forks North (Z34)" (it had none: its menu entry read "Sol 0690 Sol0690_S032D1184_Z34").
+  The next publish (`run_single_site_ibr.bat --publish-only`) writes the menu titles; the name on the nadir disc
+  changes at the next rendering of a station's panorama step.
 
 ## 0.98.30 — 2026-11-16
 
