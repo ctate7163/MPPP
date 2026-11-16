@@ -10,8 +10,8 @@ REM   lmst_histogram_<tag>.png + _by_site.csv     the blocks' LMST (Navcam, Mast
 REM   station_maps_<tag>\<block>.png              the blocks' station maps
 REM   zcam_rig_trends_<tag>.png                   Mastcam-Z rig rotations and baseline - CAHV against sol and lens T
 REM   zcam_focus_lines_vs_temperature_<tag>.png   the Mastcam-Z blocks' focus lines against lens temperature
-REM   deck_fiducials_label_vs_constrained_<tag>.png  0.97.0: the deck fiducials of the sol 1642 Navcam frame (_early_: sol 31)
-REM   deck_fiducials_and_vfs_<tag>.png            0.98.10: the same with the vicarious fiducials (_early_: sol 31)
+REM   deck_fiducials_label_vs_constrained_<tag>.png  0.97.0: the deck fiducials of the sol 1642 Navcam frame (_early_: sol 448, all nine)
+REM   deck_fiducials_and_vfs_<tag>.png            0.98.10: the same with the vicarious fiducials (_early_: sol 448)
 REM   navcam_baseline_deck_joint_<tag>.png        0.97.0: the deck joint's Navcam baseline against temperature and sol
 REM   site_map_<tag>.png                          figure 2 of make_maps (crater | traverse, the official blocks)
 REM   zcam<zoom>_efl_vs_focus_<joint>.png         0.95.2: efl vs focus of the newest 34, 48 and 63 mm joints

@@ -1,0 +1,1542 @@
+{
+ "cameras": {
+  "ZL079": {
+   "f0_px": 10718.08992308836,
+   "slope_px_per_count": 0.03262672357061378,
+   "aspect": 0.9992014561133932,
+   "reference_focus": 2808.0,
+   "focus_range": [
+    2448.0,
+    3480.0
+   ],
+   "regular_ratio": 1.0065,
+   "pp0_px": [
+    952.4762935292142,
+    545.5631505860249
+   ],
+   "lines": {
+    "backlash": {
+     "fx": {
+      "a": 10722.371920373243,
+      "b": 0.03262672357061378,
+      "form": "common"
+     },
+     "fy": {
+      "a": 10713.809635826305,
+      "b": 0.03262672357061378,
+      "form": "common"
+     },
+     "k1": {
+      "a": -0.2241923524583046,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "k2": {
+      "a": 0.0,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "p1": {
+      "a": 0.0,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "p2": {
+      "a": 0.0,
+      "b": 0.0,
+      "form": "constant"
+     }
+    },
+    "regular": {
+     "fx": {
+      "a": 10630.196286034881,
+      "b": 0.03262672357061378,
+      "derived": "backlash a / 1.00867, the backlash slope"
+     },
+     "fy": {
+      "a": 10621.707607777238,
+      "b": 0.03262672357061378,
+      "derived": "backlash a / 1.00867, the backlash slope"
+     },
+     "k1": {
+      "a": -0.2241923524583046,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "k2": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "p1": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "p2": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "cx": {
+      "a": 953.8167994475721,
+      "b": 0.0,
+      "derived": "pp0 + the regular-state offset"
+     },
+     "cy": {
+      "a": 543.9538088778339,
+      "b": 0.0,
+      "derived": "pp0 + the regular-state offset"
+     }
+    },
+    "reference_focus": 2808.0
+   },
+   "distortion": {
+    "names": [
+     "k1",
+     "k2",
+     "p1",
+     "p2"
+    ],
+    "params": [
+     -0.2241923524583046,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "sd": [
+     0.002113470265486445,
+     null,
+     null,
+     null
+    ],
+    "note": "k1, k2, p1, p2 constant with focus (the Mastcam-Z joint; k3 = 0 held)"
+   },
+   "pp": {
+    "cx_px_per_count": 0.0,
+    "cy_px_per_count": 0.0
+   },
+   "thermal": {
+    "T0_degC": -15.0,
+    "sensor": "HEAD_FPA",
+    "f_px_per_degC": 0.0,
+    "note": "no temperature term"
+   },
+   "n_bins": 26,
+   "regular_pp_offset_px": [
+    1.340505918357847,
+    -1.609341708190963
+   ],
+   "regular_pp_offset": {
+    "sd_px": [
+     0.01990503287176885,
+     0.00873643894084011
+    ],
+    "held": false,
+    "mixed_exposures": 19,
+    "paired_low_exposures": 49,
+    "note": "fitted: the regular state's principal point minus the backlash state's (the pose shared: the other eye and the rig fix it)"
+   },
+   "regular_ratio_note": "16 Nov 2026 (Christian: \"Promote the latest z63 and z79 models\"): held at the 0.98.16 prior 1.0065; the 15 Nov joint fitted 0.9987, outside its 1.004-1.016 gate, and kept its start ratio",
+   "f0_sd_px": 18.220181652652446,
+   "f0_uncertainty": {
+    "reported_px": 13.214036823870421,
+    "free_sequences": 5,
+    "prior_sd_px": 23.975952493989535,
+    "sequence_scatter_px": 40.741564737725334,
+    "sequence_scatter_ppm": 3799.6783771614523,
+    "from_scatter_px": 18.220181652652446,
+    "adopted_px": 18.220181652652446,
+    "adopted_ppm": 1699.2678287938184,
+    "adopted_source": "the sequences' scatter / sqrt(5)",
+    "prior_bound": false,
+    "note": "f0's sd: the larger of the covariance's (which rests on the sequence-offset prior, 0.5 % of f) and the fitted sequence offsets' sample sd / sqrt(sequences); the scatter is shrunk by the prior where it binds"
+   },
+   "focus_below": {
+    "bins": 2,
+    "bins_also_low": 2,
+    "blocks": [
+     "chal_rocks_large"
+    ],
+    "held": "held at 0: the focus-approach offset is not fitted (0.96; --zcam-focus-below fits it)",
+    "note": "no focus-from-below offset: held at 0: the focus-approach offset is not fitted (0.96; --zcam-focus-below fits it)"
+   },
+   "sequence_offsets": {
+    "note": "each sequence (block, sol, sequence) sits at its own offset on the eye's line (px on fx at the same focus count, fy x aspect), drawn to 0 with sd 0.5 % of f; the line is the sequences' weighted mean; sequences under 5 frames or 500 observations held at 0",
+    "free": 5,
+    "held": 0,
+    "with_focus_span": 1,
+    "sd_ppm": 3799.6783771614523,
+    "max_abs_ppm": 5289.87925963124,
+    "rows": [
+     {
+      "block": "chal_rocks_large",
+      "sol": 360,
+      "sequence": "ZCAM08390",
+      "offset_px": -2.496077449848408,
+      "sd_px": 13.206290956273868,
+      "ppm": -232.7915379530614,
+      "images": 20,
+      "bins": 2,
+      "focus_span": 84.0,
+      "states": [
+       "regular"
+      ],
+      "held": null
+     },
+     {
+      "block": "chal_rocks_large",
+      "sol": 361,
+      "sequence": "ZCAM07105",
+      "offset_px": -41.209193321833084,
+      "sd_px": 13.238620094246647,
+      "ppm": -3843.290796836918,
+      "images": 28,
+      "bins": 5,
+      "focus_span": 354.0,
+      "states": [
+       "backlash",
+       "regular"
+      ],
+      "held": null
+     },
+     {
+      "block": "overlook_mountain",
+      "sol": 1145,
+      "sequence": "ZCAM09179",
+      "offset_px": 52.41523942865686,
+      "sd_px": 13.205544873495993,
+      "ppm": 4888.399676667092,
+      "images": 24,
+      "bins": 2,
+      "focus_span": 78.0,
+      "states": [
+       "backlash"
+      ],
+      "held": null
+     },
+     {
+      "block": "overlook_mountain",
+      "sol": 1147,
+      "sequence": "ZCAM09183",
+      "offset_px": 56.7200528356348,
+      "sd_px": 13.203942143728515,
+      "ppm": 5289.87925963124,
+      "images": 25,
+      "bins": 5,
+      "focus_span": 222.0,
+      "states": [
+       "backlash"
+      ],
+      "held": null
+     },
+     {
+      "block": "overlook_mountain",
+      "sol": 1149,
+      "sequence": "ZCAM09185",
+      "offset_px": 9.214100868696118,
+      "sd_px": 13.205059437832045,
+      "ppm": 859.3341974259159,
+      "images": 15,
+      "bins": 3,
+      "focus_span": 114.0,
+      "states": [
+       "backlash"
+      ],
+      "held": null
+     }
+    ]
+   }
+  },
+  "ZR079": {
+   "f0_px": 10710.716817499053,
+   "slope_px_per_count": 0.06684275445527844,
+   "aspect": 0.9988654928070073,
+   "reference_focus": 2706.0,
+   "focus_range": [
+    2406.0,
+    3306.0
+   ],
+   "regular_ratio": 1.0065,
+   "pp0_px": [
+    959.6270438366946,
+    541.9519734424963
+   ],
+   "lines": {
+    "backlash": {
+     "fx": {
+      "a": 10716.797684714978,
+      "b": 0.06684275445527844,
+      "form": "common"
+     },
+     "fy": {
+      "a": 10704.639400655822,
+      "b": 0.06684275445527844,
+      "form": "common"
+     },
+     "k1": {
+      "a": -0.18590428078707555,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "k2": {
+      "a": 0.0,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "p1": {
+      "a": 0.0,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "p2": {
+      "a": 0.0,
+      "b": 0.0,
+      "form": "constant"
+     },
+     "cx": {
+      "a": 959.6270438366946,
+      "b": 0.0,
+      "form": "pinned"
+     },
+     "cy": {
+      "a": 541.9519734424963,
+      "b": 0.000365335738618009,
+      "form": "pinned_slope"
+     }
+    },
+    "regular": {
+     "fx": {
+      "a": 10579.812801075104,
+      "b": 0.06684275445527844,
+      "derived": "backlash a / 1.01295, the backlash slope"
+     },
+     "fy": {
+      "a": 10567.80992735177,
+      "b": 0.06684275445527844,
+      "derived": "backlash a / 1.01295, the backlash slope"
+     },
+     "k1": {
+      "a": -0.18590428078707555,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "k2": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "p1": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "p2": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "cx": {
+      "a": 959.5912174296011,
+      "b": 0.0,
+      "derived": "pp0 + the regular-state offset"
+     },
+     "cy": {
+      "a": 543.0130097923467,
+      "b": 0.000365335738618009,
+      "derived": "pp0 + the regular-state offset (and the cy slope)"
+     }
+    },
+    "reference_focus": 2706.0
+   },
+   "distortion": {
+    "names": [
+     "k1",
+     "k2",
+     "p1",
+     "p2"
+    ],
+    "params": [
+     -0.18590428078707555,
+     0.0,
+     0.0,
+     0.0
+    ],
+    "sd": [
+     0.001989239418352699,
+     null,
+     null,
+     null
+    ],
+    "note": "k1, k2, p1, p2 constant with focus (the Mastcam-Z joint; k3 = 0 held)"
+   },
+   "pp": {
+    "cx_px_per_count": 0.0,
+    "cy_px_per_count": 0.000365335738618009,
+    "note": "ZR principal point: cx pinned at pp0, cy pinned with its focus slope (the joint)"
+   },
+   "thermal": {
+    "T0_degC": -15.0,
+    "sensor": "HEAD_FPA",
+    "f_px_per_degC": 0.0,
+    "note": "no temperature term"
+   },
+   "n_bins": 23,
+   "regular_pp_offset_px": [
+    -0.03582640709353235,
+    1.061036349850333
+   ],
+   "regular_pp_offset": {
+    "sd_px": [
+     0.01977759028061173,
+     0.008251926425274525
+    ],
+    "held": false,
+    "mixed_exposures": 0,
+    "paired_low_exposures": 30,
+    "note": "fitted: ZR's low-state principal point minus its high state's, relative to ZL's (the reference eye; the pose shared through the rig)"
+   },
+   "regular_ratio_note": "16 Nov 2026 (Christian: \"Promote the latest z63 and z79 models\"): held at the 0.98.16 prior 1.0065; the 15 Nov joint fitted 1.0007, outside its 1.004-1.016 gate, and kept its start ratio",
+   "f0_sd_px": 12.06133157804387,
+   "f0_uncertainty": {
+    "reported_px": 12.06133157804387,
+    "free_sequences": 6,
+    "prior_sd_px": 21.87557167015988,
+    "sequence_scatter_px": 25.919236243260205,
+    "sequence_scatter_ppm": 2418.5616828642733,
+    "from_scatter_px": 10.581483886439978,
+    "adopted_px": 12.06133157804387,
+    "adopted_ppm": 1125.4604157776118,
+    "adopted_source": "the covariance (larger than the sequences' scatter would give)",
+    "prior_bound": false,
+    "note": "f0's sd: the larger of the covariance's (which rests on the sequence-offset prior, 0.5 % of f) and the fitted sequence offsets' sample sd / sqrt(sequences); the scatter is shrunk by the prior where it binds"
+   },
+   "focus_below": {
+    "bins": 3,
+    "bins_also_low": 2,
+    "blocks": [
+     "chal_rocks_large",
+     "seitah_overlook"
+    ],
+    "held": "held at 0: the focus-approach offset is not fitted (0.96; --zcam-focus-below fits it)",
+    "note": "no focus-from-below offset: held at 0: the focus-approach offset is not fitted (0.96; --zcam-focus-below fits it)"
+   },
+   "sequence_offsets": {
+    "note": "each sequence (block, sol, sequence) sits at its own offset on the eye's line (px on fx at the same focus count, fy x aspect), drawn to 0 with sd 0.5 % of f; the line is the sequences' weighted mean; sequences under 5 frames or 500 observations held at 0",
+    "free": 6,
+    "held": 0,
+    "with_focus_span": 1,
+    "sd_ppm": 2418.5616828642733,
+    "max_abs_ppm": 3789.754733419179,
+    "rows": [
+     {
+      "block": "chal_rocks_large",
+      "sol": 360,
+      "sequence": "ZCAM08390",
+      "offset_px": 0.42775732892006163,
+      "sd_px": 12.04983578317402,
+      "ppm": 39.91465935110057,
+      "images": 20,
+      "bins": 2,
+      "focus_span": 90.0,
+      "states": [
+       "regular"
+      ],
+      "held": null
+     },
+     {
+      "block": "chal_rocks_large",
+      "sol": 361,
+      "sequence": "ZCAM07105",
+      "offset_px": -31.459867418058796,
+      "sd_px": 12.075495670659016,
+      "ppm": -2935.566047209138,
+      "images": 31,
+      "bins": 6,
+      "focus_span": 360.0,
+      "states": [
+       "backlash",
+       "regular"
+      ],
+      "held": null
+     },
+     {
+      "block": "overlook_mountain",
+      "sol": 1145,
+      "sequence": "ZCAM09179",
+      "offset_px": 31.414976383061806,
+      "sd_px": 12.048075209285402,
+      "ppm": 2931.3771993538676,
+      "images": 24,
+      "bins": 3,
+      "focus_span": 78.0,
+      "states": [
+       "backlash"
+      ],
+      "held": null
+     },
+     {
+      "block": "overlook_mountain",
+      "sol": 1147,
+      "sequence": "ZCAM09183",
+      "offset_px": 40.61403475274429,
+      "sd_px": 12.046008878396183,
+      "ppm": 3789.754733419179,
+      "images": 20,
+      "bins": 4,
+      "focus_span": 186.0,
+      "states": [
+       "backlash"
+      ],
+      "held": null
+     },
+     {
+      "block": "overlook_mountain",
+      "sol": 1149,
+      "sequence": "ZCAM09185",
+      "offset_px": -3.3335911633131006,
+      "sd_px": 12.047524729046561,
+      "ppm": -311.06224652049684,
+      "images": 15,
+      "bins": 3,
+      "focus_span": 126.0,
+      "states": [
+       "backlash"
+      ],
+      "held": null
+     },
+     {
+      "block": "wildcat_ridge",
+      "sol": 501,
+      "sequence": "ZCAM08522",
+      "offset_px": 10.059176190300855,
+      "sd_px": 12.046061059348558,
+      "ppm": 938.6363805904382,
+      "images": 6,
+      "bins": 1,
+      "focus_span": 0.0,
+      "states": [
+       "backlash"
+      ],
+      "held": null
+     }
+    ]
+   }
+  }
+ },
+ "rig": {
+  "R_sensor_from_ref": [
+   [
+    0.9991249519068706,
+    0.010793609565911933,
+    0.04040827229209851
+   ],
+   [
+    -0.010903849319210032,
+    0.9999374041786001,
+    0.0025087436272306254
+   ],
+   [
+    -0.04037866450388973,
+    -0.0029471540682261183,
+    0.9991801027521419
+   ]
+  ],
+  "t_sensor_from_ref": [
+   -0.24376548051756294,
+   0.0019438061705910998,
+   0.001018879861846247
+  ],
+  "baseline_m": 0.2437753596870694,
+  "note": "the Mastcam-Z joint: one rig for every block and focus (rotation refined, translation refined, 1 cm prior on the start rig's right centre); per_block / residuals from the diagnostic pass (each block's own rig, the early-mission principal-point offset applied)",
+  "translation_source": "refined in the joint (1 cm prior per axis on the start rig's right centre)",
+  "blocks": [
+   "chal_rocks_large",
+   "overlook_mountain",
+   "seitah_overlook",
+   "skinner_ridge",
+   "taylorfjellet",
+   "wildcat_ridge"
+  ],
+  "sd_rotvec_mdeg": [
+   4.06722858061714,
+   37.250680147613046,
+   164.36177130785313
+  ],
+  "residuals": {
+   "per_block": [
+    {
+     "block": "chal_rocks_large",
+     "sol": 96.0,
+     "T_optics_degC": -15.685045485695277,
+     "yaw_mdeg": -8.065593306176522,
+     "pitch_mdeg": -0.3150894284082804,
+     "roll_mdeg": -4.451210855834617
+    },
+    {
+     "block": "overlook_mountain",
+     "sol": 1155.0,
+     "T_optics_degC": -26.955224490950226,
+     "yaw_mdeg": 0.1753955350585217,
+     "pitch_mdeg": 0.05983918380463618,
+     "roll_mdeg": -1.1888065774930683
+    },
+    {
+     "block": "seitah_overlook",
+     "sol": 119.0,
+     "T_optics_degC": -21.187232967032966,
+     "yaw_mdeg": 0.0,
+     "pitch_mdeg": 0.0,
+     "roll_mdeg": 0.0
+    },
+    {
+     "block": "skinner_ridge",
+     "sol": 466.0,
+     "T_optics_degC": -21.875452670349908,
+     "yaw_mdeg": 29.23213467988844,
+     "pitch_mdeg": 9.940186215227273,
+     "roll_mdeg": 399.4115921042645
+    },
+    {
+     "block": "taylorfjellet",
+     "sol": 1617.0,
+     "T_optics_degC": -16.840556302170288,
+     "yaw_mdeg": 0.0,
+     "pitch_mdeg": 0.0,
+     "roll_mdeg": 0.0
+    },
+    {
+     "block": "wildcat_ridge",
+     "sol": 518.0,
+     "T_optics_degC": -17.75583853564547,
+     "yaw_mdeg": 89.8923974811529,
+     "pitch_mdeg": 0.1838729878895138,
+     "roll_mdeg": -9.796168935404491
+    }
+   ],
+   "fits": {
+    "yaw": {
+     "sd_mdeg": 37.250680147613046,
+     "vs_sol_per_1000": {
+      "n": 6,
+      "mean_x": 0.6618333333333334,
+      "intercept": 18.539055731653896,
+      "slope": -7.654768091569134,
+      "se": 30.552728513791575,
+      "z": -0.25054286356499234,
+      "rms": 33.74134330829526
+     },
+     "vs_T": {
+      "n": 6,
+      "mean_x": -20.049891741974022,
+      "intercept": 18.539055731653892,
+      "slope": 1.3395189544434534,
+      "se": 4.41653377304972,
+      "z": 0.30329643636314463,
+      "rms": 33.62067008953887
+     }
+    },
+    "pitch": {
+     "sd_mdeg": 4.06722858061714,
+     "vs_sol_per_1000": {
+      "n": 6,
+      "mean_x": 0.6618333333333334,
+      "intercept": 1.6448014930855246,
+      "slope": -0.9649274739927459,
+      "se": 3.327185362656106,
+      "z": -0.290013139881825,
+      "rms": 3.6744248069706256
+     },
+     "vs_T": {
+      "n": 6,
+      "mean_x": -20.049891741974022,
+      "intercept": 1.6448014930855244,
+      "slope": -0.22448431708583644,
+      "se": 0.4746433195941292,
+      "z": -0.47295370611724724,
+      "rms": 3.6132015010627954
+     }
+    },
+    "roll": {
+     "sd_mdeg": 164.36177130785313,
+     "vs_sol_per_1000": {
+      "n": 6,
+      "mean_x": 0.6618333333333334,
+      "intercept": 63.995900955922075,
+      "slope": -40.928972420702806,
+      "se": 134.31184773817927,
+      "z": -0.3047309162218338,
+      "rms": 148.3292126547615
+     },
+     "vs_T": {
+      "n": 6,
+      "mean_x": -20.049891741974022,
+      "intercept": 63.995900955922075,
+      "slope": -8.775951553343303,
+      "se": 19.215294527094155,
+      "z": -0.45671699390133946,
+      "rms": 146.27558876848687
+     }
+    }
+   }
+  },
+  "per_block": [
+   {
+    "block": "chal_rocks_large",
+    "sol": 96.0,
+    "T_optics_degC": -15.685045485695277
+   },
+   {
+    "block": "overlook_mountain",
+    "sol": 1155.0,
+    "T_optics_degC": -26.955224490950226
+   },
+   {
+    "block": "seitah_overlook",
+    "sol": 119.0,
+    "T_optics_degC": -21.187232967032966
+   },
+   {
+    "block": "skinner_ridge",
+    "sol": 466.0,
+    "T_optics_degC": -21.875452670349908
+   },
+   {
+    "block": "taylorfjellet",
+    "sol": 1617.0,
+    "T_optics_degC": -16.840556302170288
+   },
+   {
+    "block": "wildcat_ridge",
+    "sol": 518.0,
+    "T_optics_degC": -17.75583853564547
+   }
+  ],
+  "translation_change_mm": [
+   -0.5707163150062144,
+   -0.8467475936635954,
+   -0.24927359231818186
+  ],
+  "translation_sd_mm": [
+   0.0072915651333319165,
+   0.004014140384536988,
+   0.06478668297537592
+  ]
+ },
+ "form": "zcam-v2",
+ "state": "calibrated",
+ "pixel_mm": 0.0074,
+ "source": "MPPP Mastcam-Z joint (mppp_studies.calibration.ztied, 2026-11-15): one adjustment over 6 blocks (chal_rocks_large, overlook_mountain, seitah_overlook, skinner_ridge, taylorfjellet, wildcat_ridge), the Navcam held at the models in use; promoted by hand 16 Nov 2026 from zcam79_joint_20261115 (checks failed only on the high/low ratio, and the rig scatter of two blocks under 5,000 observations); ratio held at the 0.98.16 prior",
+ "calibration": {
+  "method": "zcam tied joint (mppp_studies.calibration.ztied)",
+  "when": "2026-11-15",
+  "blocks": [
+   "chal_rocks_large",
+   "overlook_mountain",
+   "seitah_overlook",
+   "skinner_ridge",
+   "taylorfjellet",
+   "wildcat_ridge"
+  ],
+  "eyes": {
+   "ZL079": {
+    "backlash": {
+     "fx": {
+      "a": 10722.371920373243,
+      "b": 0.03262672357061378,
+      "sd_a": 13.214036823870421,
+      "sd_b": 0.001658896798190075,
+      "form": "common"
+     },
+     "fy": {
+      "a": 10713.809635826305,
+      "b": 0.03262672357061378,
+      "sd_a": 13.201920835521802,
+      "sd_b": 0.001658896798190075,
+      "form": "common"
+     },
+     "k1": {
+      "a": -0.2241923524583046,
+      "b": 0.0,
+      "sd_a": 0.002113470265486445,
+      "form": "constant"
+     },
+     "k2": {
+      "a": 0.0,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     },
+     "p1": {
+      "a": 0.0,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     },
+     "p2": {
+      "a": 0.0,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     }
+    },
+    "regular": {
+     "fx": {
+      "a": 10630.196286034881,
+      "b": 0.03262672357061378,
+      "derived": "backlash a / 1.00867, the backlash slope"
+     },
+     "fy": {
+      "a": 10621.707607777238,
+      "b": 0.03262672357061378,
+      "derived": "backlash a / 1.00867, the backlash slope"
+     },
+     "k1": {
+      "a": -0.2241923524583046,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "k2": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "p1": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "p2": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "cx": {
+      "a": 953.8167994475721,
+      "b": 0.0,
+      "derived": "pp0 + the regular-state offset"
+     },
+     "cy": {
+      "a": 543.9538088778339,
+      "b": 0.0,
+      "derived": "pp0 + the regular-state offset"
+     }
+    },
+    "reference_focus": 2808.0,
+    "bins": 17,
+    "regular_bins": 6,
+    "held": [
+     "a_fy_regular",
+     "k2",
+     "p1",
+     "p2",
+     "b_cy"
+    ]
+   },
+   "ZR079": {
+    "backlash": {
+     "fx": {
+      "a": 10716.797684714978,
+      "b": 0.06684275445527844,
+      "sd_a": 12.06133157804387,
+      "sd_b": 0.0017236136107988142,
+      "form": "common"
+     },
+     "fy": {
+      "a": 10704.639400655822,
+      "b": 0.06684275445527844,
+      "sd_a": 12.049368092652129,
+      "sd_b": 0.0017236136107988142,
+      "form": "common"
+     },
+     "k1": {
+      "a": -0.18590428078707555,
+      "b": 0.0,
+      "sd_a": 0.001989239418352699,
+      "form": "constant"
+     },
+     "k2": {
+      "a": 0.0,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     },
+     "p1": {
+      "a": 0.0,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     },
+     "p2": {
+      "a": 0.0,
+      "b": 0.0,
+      "sd_a": null,
+      "form": "constant"
+     },
+     "cx": {
+      "a": 959.6270438366946,
+      "b": 0.0,
+      "form": "pinned"
+     },
+     "cy": {
+      "a": 541.9519734424963,
+      "b": 0.000365335738618009,
+      "sd_b": 1.803274237198244e-05,
+      "form": "pinned_slope"
+     }
+    },
+    "regular": {
+     "fx": {
+      "a": 10579.812801075104,
+      "b": 0.06684275445527844,
+      "derived": "backlash a / 1.01295, the backlash slope"
+     },
+     "fy": {
+      "a": 10567.80992735177,
+      "b": 0.06684275445527844,
+      "derived": "backlash a / 1.01295, the backlash slope"
+     },
+     "k1": {
+      "a": -0.18590428078707555,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "k2": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "p1": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "p2": {
+      "a": 0.0,
+      "b": 0.0,
+      "derived": "backlash"
+     },
+     "cx": {
+      "a": 959.5912174296011,
+      "b": 0.0,
+      "derived": "pp0 + the regular-state offset"
+     },
+     "cy": {
+      "a": 543.0130097923467,
+      "b": 0.000365335738618009,
+      "derived": "pp0 + the regular-state offset (and the cy slope)"
+     }
+    },
+    "reference_focus": 2706.0,
+    "bins": 19,
+    "regular_bins": 4,
+    "held": [
+     "a_fy_regular",
+     "k2",
+     "p1",
+     "p2"
+    ]
+   }
+  },
+  "residuals": {
+   "observations": 2605713,
+   "median_px": 0.16772809862168817,
+   "rms_px": 0.38219310687875996,
+   "corner_median_px": 0.21772659050377574,
+   "p95_px": 0.703266634371861
+  },
+  "zcam": {
+   "zcam_observations": 111615,
+   "navcam_zcam_points": 42394,
+   "zcam_nonfinite": 0,
+   "zcam_nonfinite_share": 0.0,
+   "zcam_median_px": 0.26112499608134515,
+   "zcam_rms_px": 0.8750180708570812,
+   "zcam_p95_px": 1.1598583286330464,
+   "zcam_images": 312,
+   "worst_images": [
+    {
+     "image": "ZR0_0501_0711425788_943RAD_N0261154ZCAM08522_0790LMA01.png",
+     "block": "wildcat_ridge",
+     "bin": "ZR079_F02694_s0501_ZCAM08522@wildcat_ridge",
+     "state": "backlash",
+     "sequence": "ZCAM08522",
+     "sol": 501,
+     "rms_px": 7.558677510108749,
+     "median_px": 0.3767155226994113,
+     "observations": 101
+    },
+    {
+     "image": "ZR0_0501_0711425806_943RAD_N0261154ZCAM08522_0790LMA01.png",
+     "block": "wildcat_ridge",
+     "bin": "ZR079_F02694_s0501_ZCAM08522@wildcat_ridge",
+     "state": "backlash",
+     "sequence": "ZCAM08522",
+     "sol": 501,
+     "rms_px": 7.27865394306416,
+     "median_px": 0.3792806473908731,
+     "observations": 96
+    },
+    {
+     "image": "ZR0_0501_0711425727_943RAD_N0261154ZCAM08522_0790LMA01.png",
+     "block": "wildcat_ridge",
+     "bin": "ZR079_F02784_s0501_ZCAM08522@wildcat_ridge",
+     "state": "backlash",
+     "sequence": "ZCAM08522",
+     "sol": 501,
+     "rms_px": 6.455041758816226,
+     "median_px": 0.2077954793674744,
+     "observations": 111
+    },
+    {
+     "image": "ZR0_0501_0711425301_943RAD_N0261154ZCAM08522_0790LMA01.png",
+     "block": "wildcat_ridge",
+     "bin": "ZR079_F02958_s0501_ZCAM08522@wildcat_ridge",
+     "state": "backlash",
+     "sequence": "ZCAM08522",
+     "sol": 501,
+     "rms_px": 6.066127627439898,
+     "median_px": 0.4106254900152767,
+     "observations": 186
+    },
+    {
+     "image": "ZR0_0501_0711425363_943RAD_N0261154ZCAM08522_0790LMA01.png",
+     "block": "wildcat_ridge",
+     "bin": "ZR079_F02958_s0501_ZCAM08522@wildcat_ridge",
+     "state": "backlash",
+     "sequence": "ZCAM08522",
+     "sol": 501,
+     "rms_px": 5.02643888332111,
+     "median_px": 0.3977541404304701,
+     "observations": 259
+    },
+    {
+     "image": "ZR0_0501_0711425602_943RAD_N0261154ZCAM08522_0790LMA01.png",
+     "block": "wildcat_ridge",
+     "bin": "ZR079_F02856_s0501_ZCAM08522@wildcat_ridge",
+     "state": "backlash",
+     "sequence": "ZCAM08522",
+     "sol": 501,
+     "rms_px": 4.976627172707129,
+     "median_px": 0.33183517704977034,
+     "observations": 214
+    },
+    {
+     "image": "ZR0_0484_0709905785_943RAD_N0261004ZCAM03396_0790LMA01.png",
+     "block": "skinner_ridge",
+     "bin": "ZR079_F03258_s0484_ZCAM03396@skinner_ridge",
+     "state": "backlash",
+     "sequence": "ZCAM03396",
+     "sol": 484,
+     "rms_px": 4.964572089684522,
+     "median_px": 3.5525831762013746,
+     "observations": 2
+    },
+    {
+     "image": "ZL0_0484_0709905785_943RAD_N0261004ZCAM03396_0790LMA01.png",
+     "block": "skinner_ridge",
+     "bin": "ZL079_F03312_s0484_ZCAM03396@skinner_ridge",
+     "state": "backlash",
+     "sequence": "ZCAM03396",
+     "sol": 484,
+     "rms_px": 4.3098520579483335,
+     "median_px": 3.1762028487899547,
+     "observations": 2
+    },
+    {
+     "image": "ZR0_0501_0711425569_943RAD_N0261154ZCAM08522_0790LMA01.png",
+     "block": "wildcat_ridge",
+     "bin": "ZR079_F02856_s0501_ZCAM08522@wildcat_ridge",
+     "state": "backlash",
+     "sequence": "ZCAM08522",
+     "sol": 501,
+     "rms_px": 4.173191911522388,
+     "median_px": 0.3129019183459328,
+     "observations": 233
+    },
+    {
+     "image": "ZL0_0360_0698912671_928RAD_N0101114ZCAM08390_0790LMA02.png",
+     "block": "chal_rocks_large",
+     "bin": "ZL079_F03270_s0360_ZCAM08390_reg@chal_rocks_large",
+     "state": "regular",
+     "sequence": "ZCAM08390",
+     "sol": 360,
+     "rms_px": 3.6461711971357746,
+     "median_px": 0.26038974786397684,
+     "observations": 180
+    },
+    {
+     "image": "ZL0_0501_0711425602_943RAD_N0261154ZCAM08522_0790LMA01.png",
+     "block": "wildcat_ridge",
+     "bin": "ZL079_F02910_s0501_ZCAM08522@wildcat_ridge",
+     "state": "backlash",
+     "sequence": "ZCAM08522",
+     "sol": 501,
+     "rms_px": 3.3216666085996644,
+     "median_px": 0.2943175356420201,
+     "observations": 206
+    },
+    {
+     "image": "ZR0_0501_0711425384_943RAD_N0261154ZCAM08522_0790LMA02.png",
+     "block": "wildcat_ridge",
+     "bin": "ZR079_F02958_s0501_ZCAM08522@wildcat_ridge",
+     "state": "backlash",
+     "sequence": "ZCAM08522",
+     "sol": 501,
+     "rms_px": 2.7136932748365568,
+     "median_px": 0.23808969458232132,
+     "observations": 205
+    },
+    {
+     "image": "ZR0_0093_0675191183_363RAD_N0040136ZCAM00033_0790LUA03.png",
+     "block": "chal_rocks_large",
+     "bin": "ZR079_F02772_s0093_ZCAM00033_fb_reg@chal_rocks_large",
+     "state": "regular",
+     "sequence": "ZCAM00033",
+     "sol": 93,
+     "rms_px": 2.5748272639464678,
+     "median_px": 2.5029136550355697,
+     "observations": 255
+    },
+    {
+     "image": "ZR0_0092_0675116969_348RAD_N0040136ZCAM00033_0790LUA03.png",
+     "block": "chal_rocks_large",
+     "bin": "ZR079_F02778_s0092_ZCAM00033_fb_reg@chal_rocks_large",
+     "state": "regular",
+     "sequence": "ZCAM00033",
+     "sol": 92,
+     "rms_px": 2.414740839461295,
+     "median_px": 2.4177461564469107,
+     "observations": 430
+    },
+    {
+     "image": "ZR0_0501_0711425412_943RAD_N0261154ZCAM08522_0790LMA01.png",
+     "block": "wildcat_ridge",
+     "bin": "ZR079_F02958_s0501_ZCAM08522@wildcat_ridge",
+     "state": "backlash",
+     "sequence": "ZCAM08522",
+     "sol": 501,
+     "rms_px": 2.38769155590962,
+     "median_px": 0.21805865920039996,
+     "observations": 164
+    },
+    {
+     "image": "ZR0_0501_0711425525_943RAD_N0261154ZCAM08522_0790LMA01.png",
+     "block": "wildcat_ridge",
+     "bin": "ZR079_F02892_s0501_ZCAM08522@wildcat_ridge",
+     "state": "backlash",
+     "sequence": "ZCAM08522",
+     "sol": 501,
+     "rms_px": 2.211094225974058,
+     "median_px": 0.1817172768990099,
+     "observations": 146
+    },
+    {
+     "image": "ZR0_0501_0711425539_943RAD_N0261154ZCAM08522_0790LMA01.png",
+     "block": "wildcat_ridge",
+     "bin": "ZR079_F02856_s0501_ZCAM08522@wildcat_ridge",
+     "state": "backlash",
+     "sequence": "ZCAM08522",
+     "sol": 501,
+     "rms_px": 2.0413168202257155,
+     "median_px": 0.21469483076548515,
+     "observations": 222
+    },
+    {
+     "image": "ZR0_0360_0698912502_928RAD_N0101114ZCAM08390_0790LMA03.png",
+     "block": "chal_rocks_large",
+     "bin": "ZR079_F03306_s0360_ZCAM08390_reg@chal_rocks_large",
+     "state": "regular",
+     "sequence": "ZCAM08390",
+     "sol": 360,
+     "rms_px": 1.746889620769961,
+     "median_px": 0.41412180852115904,
+     "observations": 167
+    },
+    {
+     "image": "ZR0_1149_0768937342_973RAD_N0522540ZCAM09185_0790LMA01.png",
+     "block": "overlook_mountain",
+     "bin": "ZR079_F03300_s1149_ZCAM09185@overlook_mountain",
+     "state": "backlash",
+     "sequence": "ZCAM09185",
+     "sol": 1149,
+     "rms_px": 1.718114440636777,
+     "median_px": 1.5503871385212051,
+     "observations": 373
+    },
+    {
+     "image": "ZR0_0501_0711425694_943RAD_N0261154ZCAM08522_0790LMA01.png",
+     "block": "wildcat_ridge",
+     "bin": "ZR079_F02784_s0501_ZCAM08522@wildcat_ridge",
+     "state": "backlash",
+     "sequence": "ZCAM08522",
+     "sol": 501,
+     "rms_px": 1.6231547765672922,
+     "median_px": 0.2327952523423555,
+     "observations": 119
+    }
+   ],
+   "images_over_1px": 51
+  },
+  "navcam_models": "D:\\rover_blocks\\cmods_freeze2",
+  "diagnostics": {
+   "blocks": [
+    {
+     "block": "chal_rocks_large",
+     "sol": 96.0,
+     "T_optics_degC": -15.685045485695277,
+     "pitch_mdeg": -0.3150894284082804,
+     "yaw_mdeg": -8.065593306176522,
+     "roll_mdeg": -4.451210855834617,
+     "lines": {
+      "ZL079": {
+       "backlash": {
+        "fx": {
+         "a": 10771.93045687117,
+         "b": 0.2292659496277404,
+         "bins": 4,
+         "observations": 2825,
+         "weak_bins_left_out": 0
+        },
+        "fy": {
+         "a": 10723.71675976913,
+         "b": 0.03262672357061378,
+         "bins": 3,
+         "observations": 2783,
+         "weak_bins_left_out": 1
+        }
+       },
+       "regular": {
+        "fx": {
+         "a": 10732.475752380735,
+         "b": 0.05220881694398674,
+         "bins": 10,
+         "observations": 23342,
+         "weak_bins_left_out": 0
+        },
+        "fy": {
+         "a": 10698.582022113043,
+         "b": -0.059743949003480186,
+         "bins": 6,
+         "observations": 18148,
+         "weak_bins_left_out": 4
+        }
+       }
+      },
+      "ZR079": {
+       "backlash": {
+        "fx": {
+         "a": 10731.542663322278,
+         "b": 0.14833881646073302,
+         "bins": 5,
+         "observations": 14398,
+         "weak_bins_left_out": 0
+        },
+        "fy": {
+         "a": 10711.782552265257,
+         "b": 0.06684275445527844,
+         "bins": 4,
+         "observations": 14342,
+         "weak_bins_left_out": 1
+        }
+       },
+       "regular": {
+        "fx": {
+         "a": 10719.652707311625,
+         "b": 0.06311254472497786,
+         "bins": 7,
+         "observations": 11697,
+         "weak_bins_left_out": 0
+        },
+        "fy": {
+         "a": 10671.010316373522,
+         "b": 0.06684275445527844,
+         "bins": 3,
+         "observations": 6513,
+         "weak_bins_left_out": 4
+        }
+       }
+      }
+     }
+    },
+    {
+     "block": "overlook_mountain",
+     "sol": 1155.0,
+     "T_optics_degC": -26.955224490950226,
+     "pitch_mdeg": 0.05983918380463618,
+     "yaw_mdeg": 0.1753955350585217,
+     "roll_mdeg": -1.1888065774930683,
+     "lines": {
+      "ZL079": {
+       "backlash": {
+        "fx": {
+         "a": 10768.383678886252,
+         "b": 0.03262672357061378,
+         "bins": 13,
+         "observations": 24652,
+         "weak_bins_left_out": 0
+        },
+        "fy": {
+         "a": 10775.095969550155,
+         "b": 0.03262672357061378,
+         "bins": 13,
+         "observations": 24652,
+         "weak_bins_left_out": 0
+        }
+       }
+      },
+      "ZR079": {
+       "backlash": {
+        "fx": {
+         "a": 10744.366941822203,
+         "b": 0.06684275445527844,
+         "bins": 14,
+         "observations": 24666,
+         "weak_bins_left_out": 0
+        },
+        "fy": {
+         "a": 10753.034296848573,
+         "b": 0.06684275445527844,
+         "bins": 14,
+         "observations": 24666,
+         "weak_bins_left_out": 0
+        }
+       }
+      }
+     }
+    },
+    {
+     "block": "seitah_overlook",
+     "sol": 119.0,
+     "T_optics_degC": -21.187232967032966,
+     "pitch_mdeg": 0.0,
+     "yaw_mdeg": 0.0,
+     "roll_mdeg": 0.0,
+     "lines": {
+      "ZR079": {
+       "backlash": {
+        "fx": {
+         "a": 10716.797684714978,
+         "b": 0.06684275445527844,
+         "bins": 1,
+         "observations": 48,
+         "weak_bins_left_out": 0
+        },
+        "fy": {
+         "a": 10704.639400655822,
+         "b": 0.06684275445527844,
+         "bins": 1,
+         "observations": 48,
+         "weak_bins_left_out": 0
+        }
+       }
+      }
+     }
+    },
+    {
+     "block": "skinner_ridge",
+     "sol": 466.0,
+     "T_optics_degC": -21.875452670349908,
+     "pitch_mdeg": 9.940186215227273,
+     "yaw_mdeg": 29.23213467988844,
+     "roll_mdeg": 399.4115921042645,
+     "lines": {
+      "ZL079": {
+       "backlash": {
+        "fx": {
+         "a": 10887.747133987137,
+         "b": -0.13585985590509334,
+         "bins": 3,
+         "observations": 1015,
+         "weak_bins_left_out": 0
+        },
+        "fy": {
+         "a": 10894.380746202616,
+         "b": -0.12357972704613948,
+         "bins": 3,
+         "observations": 1015,
+         "weak_bins_left_out": 0
+        }
+       }
+      },
+      "ZR079": {
+       "backlash": {
+        "fx": {
+         "a": 10819.866098834877,
+         "b": -0.0026637075227713297,
+         "bins": 3,
+         "observations": 1051,
+         "weak_bins_left_out": 0
+        },
+        "fy": {
+         "a": 10833.925009376157,
+         "b": -0.004464310946787059,
+         "bins": 3,
+         "observations": 1051,
+         "weak_bins_left_out": 0
+        }
+       }
+      }
+     }
+    },
+    {
+     "block": "taylorfjellet",
+     "sol": 1617.0,
+     "T_optics_degC": -16.840556302170288,
+     "pitch_mdeg": 0.0,
+     "yaw_mdeg": 0.0,
+     "roll_mdeg": 0.0,
+     "lines": {
+      "ZL079": {
+       "backlash": {
+        "fx": {
+         "a": 10722.371920373243,
+         "b": 0.03262672357061378,
+         "bins": 2,
+         "observations": 572,
+         "weak_bins_left_out": 0
+        },
+        "fy": {
+         "a": 10713.809635826303,
+         "b": 0.03262672357061378,
+         "bins": 2,
+         "observations": 572,
+         "weak_bins_left_out": 0
+        }
+       }
+      },
+      "ZR079": {
+       "backlash": {
+        "fx": {
+         "a": 10716.797684714978,
+         "b": 0.06684275445527844,
+         "bins": 1,
+         "observations": 507,
+         "weak_bins_left_out": 0
+        },
+        "fy": {
+         "a": 10704.639400655822,
+         "b": 0.06684275445527844,
+         "bins": 1,
+         "observations": 507,
+         "weak_bins_left_out": 0
+        }
+       }
+      }
+     }
+    },
+    {
+     "block": "wildcat_ridge",
+     "sol": 518.0,
+     "T_optics_degC": -17.75583853564547,
+     "pitch_mdeg": 0.1838729878895138,
+     "yaw_mdeg": 89.8923974811529,
+     "roll_mdeg": -9.796168935404491,
+     "lines": {
+      "ZL079": {
+       "backlash": {
+        "fx": {
+         "a": 10742.970155184501,
+         "b": -0.010372018455860004,
+         "bins": 6,
+         "observations": 3399,
+         "weak_bins_left_out": 0
+        },
+        "fy": {
+         "a": 10699.124623964524,
+         "b": 0.17524323833191605,
+         "bins": 6,
+         "observations": 3399,
+         "weak_bins_left_out": 0
+        }
+       }
+      },
+      "ZR079": {
+       "backlash": {
+        "fx": {
+         "a": 10730.52312144684,
+         "b": 0.06684275445527844,
+         "bins": 5,
+         "observations": 3443,
+         "weak_bins_left_out": 0
+        },
+        "fy": {
+         "a": 10697.5955969346,
+         "b": 0.06684275445527844,
+         "bins": 5,
+         "observations": 3443,
+         "weak_bins_left_out": 0
+        }
+       }
+      }
+     }
+    }
+   ],
+   "fits": {
+    "yaw": {
+     "sd_mdeg": 37.250680147613046,
+     "vs_sol_per_1000": {
+      "n": 6,
+      "mean_x": 0.6618333333333334,
+      "intercept": 18.539055731653896,
+      "slope": -7.654768091569134,
+      "se": 30.552728513791575,
+      "z": -0.25054286356499234,
+      "rms": 33.74134330829526
+     },
+     "vs_T": {
+      "n": 6,
+      "mean_x": -20.049891741974022,
+      "intercept": 18.539055731653892,
+      "slope": 1.3395189544434534,
+      "se": 4.41653377304972,
+      "z": 0.30329643636314463,
+      "rms": 33.62067008953887
+     }
+    },
+    "pitch": {
+     "sd_mdeg": 4.06722858061714,
+     "vs_sol_per_1000": {
+      "n": 6,
+      "mean_x": 0.6618333333333334,
+      "intercept": 1.6448014930855246,
+      "slope": -0.9649274739927459,
+      "se": 3.327185362656106,
+      "z": -0.290013139881825,
+      "rms": 3.6744248069706256
+     },
+     "vs_T": {
+      "n": 6,
+      "mean_x": -20.049891741974022,
+      "intercept": 1.6448014930855244,
+      "slope": -0.22448431708583644,
+      "se": 0.4746433195941292,
+      "z": -0.47295370611724724,
+      "rms": 3.6132015010627954
+     }
+    },
+    "roll": {
+     "sd_mdeg": 164.36177130785313,
+     "vs_sol_per_1000": {
+      "n": 6,
+      "mean_x": 0.6618333333333334,
+      "intercept": 63.995900955922075,
+      "slope": -40.928972420702806,
+      "se": 134.31184773817927,
+      "z": -0.3047309162218338,
+      "rms": 148.3292126547615
+     },
+     "vs_T": {
+      "n": 6,
+      "mean_x": -20.049891741974022,
+      "intercept": 63.995900955922075,
+      "slope": -8.775951553343303,
+      "se": 19.215294527094155,
+      "z": -0.45671699390133946,
+      "rms": 146.27558876848687
+     }
+    }
+   }
+  }
+ }
+}

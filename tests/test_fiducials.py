@@ -373,3 +373,13 @@ def test_tdf4_as_an_extra_rigid_target():
     fr = [{"sclk_key": "1", "eye": "L", "scale": 0.5, "version": 1, "n_rigid": 2, "pred": {"TDF4": [0, 0]}},
           {"sclk_key": "1", "eye": "R", "scale": 0.5, "version": 1, "n_rigid": 3, "pred": {}}]
     assert F.pds_pairs(fr) == [] and len(F.pds_pairs(fr, extra_rigid=("TDF4",))) == 1
+
+
+def test_deck_figure_insets_doubled_and_the_second_frame_shows_all_nine():
+    """0.98.21 (Christian, 16 Nov 2026: "Double the window patch window on the fiducial images. Replace the sol 31 image
+    with another that shows all nine fiducials"): +-16 px insets; the second frame is sol 448's right Navcam frame."""
+    from mppp_studies.calibration import fiducials as FD
+    from mppp_studies.paper import paper_figures as PF
+    assert FD.DECK_INSET_HALF_PX == 16
+    assert "NRF_0448_0706724176" in PF.DECK_FRAME_EARLY and "0031" not in PF.DECK_FRAME_EARLY
+    assert len(FD.RIGID) + len(FD.BAR) + len(FD.UNSURVEYED) == 9
