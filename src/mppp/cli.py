@@ -93,7 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--root", default=None, metavar="DIR", help="folder: the scapes root (default: MPPP_SCAPES)")
     p.add_argument("--zcam", action="store_true", help="folder: the Navcam + Mastcam-Z block")
 
-    p = sub.add_parser("gui", help="write the COLMAP GUI files (open_in_colmap.bat ...) into finished projects")
+    p = sub.add_parser("gui", help="write the viewer files (open_in_colmap.bat, open_in_metashape.bat ...) into finished projects")
     p.add_argument("works", nargs="*", help="WORK folders (default: every WORK folder under --root with a model)")
     p.add_argument("--root", default=None, metavar="DIR", help="the scapes root (default: MPPP_SCAPES)")
     p.add_argument("--variant", default="", help="the project colmap_<variant> instead of colmap")
@@ -196,6 +196,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--metashape", default=os.environ.get("MPPP_METASHAPE"),
                    help="metashape.exe (default MPPP_METASHAPE, else the standard Metashape Pro install)")
     p.add_argument("--run", action="store_true", help="build the project now (runs make_metashape_project.bat)")
+    p.add_argument("--open", action="store_true", help="0.98.18: convert and build when missing or older than the "
+                   "model, then open the .psx in Metashape (what open_in_metashape.bat runs)")
     p = sub.add_parser("nerfstudio", help="0.95.2: a finished block for Nerfstudio (splatfacto): every frame "
                        "undistorted through COLMAP's model into one pinhole size, the masks likewise, transforms.json "
                        "and the tie points as sparse_pc.ply, in <project>/nerfstudio")
@@ -419,8 +421,8 @@ def cmd_sites(a: argparse.Namespace) -> int:
 
 
 def cmd_gui(a: argparse.Namespace) -> int:
-    """``gui``: ``open_in_colmap.bat``, ``open_in_colmap_fullres.bat`` and ``colmap_gui.ini`` for projects aligned
-    without ``--gui`` (batch runs before 0.92.2 did not write them)."""
+    """``gui``: ``open_in_colmap.bat``, ``open_in_metashape.bat`` (0.98.18; ``open_in_colmap_fullres.bat`` removed)
+    and ``colmap_gui.ini`` for finished projects.  The project files are not rewritten."""
     from .sfm.database import write_gui_project
     from .sfm.project import SfmProject
     from .sfm.workdir import project_dir
@@ -438,8 +440,7 @@ def cmd_gui(a: argparse.Namespace) -> int:
             continue
         proj = SfmProject.load(pd)
         model = "cahv_ba" if (pd / "sparse" / "cahv_ba").is_dir() else None
-        out = write_gui_project(proj, model=model)
-        proj.save()
+        out = write_gui_project(proj, model=model)        # 0.98.18: project.json left as it is
         n += 1
         print(f"  {w.name}: {Path(out.get('bat', pd)).name if isinstance(out, dict) else 'written'}")
     print(f"{n} project(s) with COLMAP GUI files")
@@ -677,6 +678,16 @@ def cmd_metashape(a: argparse.Namespace) -> int:
     if not (proj_dir / "project.json").is_file():
         print(f"metashape: no project at {proj_dir}", file=sys.stderr)
         return 2
+    if getattr(a, "open", False):
+        from .sfm.metashape import open_in_metashape
+        try:
+            done = open_in_metashape(proj_dir, metashape_exe=a.metashape, max_points=a.max_points)
+        except (OSError, RuntimeError) as e:
+            print(f"metashape: {e}", file=sys.stderr)
+            return 1
+        print(("converted, " if done["converted"] else "") + ("built, " if done["built"] else "")
+              + f"opening {done['psx']}")
+        return 0
     res = write_metashape_job(SfmProject.load(proj_dir), out_dir=a.out, model_dir=a.model, max_points=a.max_points,
                               metashape_exe=a.metashape)
     tp = res["tie_points"]

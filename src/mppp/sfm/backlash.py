@@ -45,6 +45,10 @@ STATES = calib.ZCAM_STATES
 REGULAR_SUFFIX = "_reg"
 DEFAULT_BACKLASH_RATIO = 1.0095      # f / label f in the backlash state when no focus model is at hand
 SINGLE_STATE_ZOOMS = calib.ZCAM_SINGLE_STATE_ZOOMS   # (110,): no backlash state at the end of the zoom's range
+# 0.98.18: 26 mm is the other end of the range - every move to it is a move down, so it is always in the high
+# (backlash) state and no list entry puts it low (Chal Rocks ZCAM00033 sol 92-93: the sequence entry had its 26 mm
+# frames low).  It stays two-state for the models (0.97.0: not "single", nothing anchors on it).
+ALWAYS_HIGH_ZOOMS = (26,)
 
 
 LOW_BACKLASH_FILE = "mars2020_mastcam-z_low_backlash_observations.csv"   # in mppp/data
@@ -337,7 +341,7 @@ def low_backlash_fingerprint(path: Any = None, found: Any = None) -> Optional[st
 def is_low_backlash(row: Dict[str, Any], lst: Dict[str, Any]) -> bool:
     """Whether an image row (``stem``/``name``, ``sequence``, ``sol``, ``camera_group``) is on the list (never at
     110 mm, which has one focus state)."""
-    if group_zoom(row.get("camera_group", row.get("instrument"))) in SINGLE_STATE_ZOOMS:
+    if group_zoom(row.get("camera_group", row.get("instrument"))) in SINGLE_STATE_ZOOMS + ALWAYS_HIGH_ZOOMS:
         return False
     pin = lst.get("pinned")
     if pin and _matches(row, pin):                       # 0.98.15: "+" entries win over "-" lines

@@ -317,7 +317,7 @@ options:
 
 ## mppp gui
 
-Writes `open_in_colmap.bat`, `open_in_colmap_fullres.bat`, `colmap_gui.ini` and (0.95.0) `dense_reconstruct.bat`
+Writes `open_in_colmap.bat`, `open_in_metashape.bat` (0.98.18; it replaces `open_in_colmap_fullres.bat`, which it deletes), `colmap_gui.ini` and (0.95.0) `dense_reconstruct.bat`
 into finished projects.
 
 ## mppp single-sites
@@ -483,7 +483,7 @@ the photos linked from the COLMAP project's `images\`.
 
 ```text
 usage: mppp metashape [-h] [--variant VARIANT] [--model MODEL] [--out OUT] [--max-points MAX_POINTS]
-                      [--metashape METASHAPE] [--run] work
+                      [--metashape METASHAPE] [--run] [--open] work
 ```
 
 Writes `<project>\metashape\`: `metashape_job.json`, the tie points as Bundler v0.3 (`<block>.bundler.out` and
@@ -494,6 +494,11 @@ sensors (one per COLMAP camera of `gui_native\sparse`) have their calibration fi
 pose. The chunk's coordinate system is local and metric - MPPP's world frame of the block (x east, y north, z up;
 the chunk transform adds the block offset). `metashape_check.json` reports COLMAP's observations and the imported
 tie points reprojected by Metashape (they should match COLMAP's residuals, about 0.15 px median).
+
+`--open` (0.98.18) is what `open_in_metashape.bat` in every project folder runs: the job is written when it is missing
+or older than the block's model, the project built without a window when the `.psx` is missing or older than the
+job, and Metashape opened on the `.psx`. `MPPP_PYTHON` and `MPPP_METASHAPE` override the Python and Metashape the
+batch file names.
 
 | COLMAP | Metashape |
 |---|---|

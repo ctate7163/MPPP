@@ -3,6 +3,38 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.18 — 2026-11-16
+
+Christian: "for chal rocks and large, do not align ZCAM05099, ZCAM03142 and ZCAM03143. ZCAM08051 needs to align if at
+all possible. Same with ZCAM00033 and ZCAM00034. What can we do to encourage them to align? ZCAM08055 is surprising
+and should stay in because it has z34 coverage. ... In each block/colmap file remove open_in_colmap_fullres.bat. Add
+open_in_metashape.bat which starts by converting the points and building the metashape project if it isn't already
+done then opens the psx file."
+
+- Chal Rocks and Chal Rocks large: ZCAM05099, ZCAM03142 and ZCAM03143 (110 mm) left out; ZCAM08055 back in (0.98.17
+  had it out). Mastcam-Z position prior +-0.02 m there (`zcam_station_prior_sigma_m`; default 0.1): the three
+  sequences of S004D0136 looking north (ZCAM08052, ZCAM08055, ZCAM08056; the rest look south-west) slid 0.42-0.46 m
+  while tied by 2,700-7,600 observations at 0.18-0.49 px, at 34 and 110 mm alike.
+- Anchoring (`ALIGN_RULES` 93): a Mastcam-Z frame of any zoom counts as anchored through the Mastcam-Z frames of any
+  zoom it shares 50 points with (`ZCAM_MOSAIC_TIES`) that are anchored. Before: only 63-110 mm frames, through their
+  own zoom; the stare tests' 26-48 mm frames (ZCAM00033, ZCAM00034) were dropped for want of Navcam ties while their
+  63-110 mm frames stayed.
+- 26 mm is always in the high state (`backlash.ALWAYS_HIGH_ZOOMS`; `ZCAM_RULES` 4): ZCAM00033's 26 mm frames ran low
+  through the sequence entry.
+- `open_in_metashape.bat` in every project replaces `open_in_colmap_fullres.bat` (deleted when the files are written):
+  `mppp metashape <project> --open` converts and builds `metashape\<block>.psx` when it is missing or older than the
+  model, then opens it. `mppp gui` writes the files into finished projects without rewriting `project.json`.
+
+## 0.98.17 — 2026-11-16
+
+Christian: "which images is Chal Rocks large loosing and why? If they are z110, then we can drop most of those"
+
+- Chal Rocks large and Chal Rocks leave out four 110 mm sequences (`settings.exclude`): sol 368 ZCAM05099 (right eye
+  only, 181 frames 27-89 deg down; none tied in the 15 Nov zfinal run), sol 96 ZCAM08055 (19 + 19, all dropped as
+  0.4 m off their station), sol 92 ZCAM03142 / ZCAM03143 (1 + 1 each; their right-eye bins moved the principal point
+  168 / 216 px, the block's only FAIL checks). Of the run's 358 dropped images, 226 were at 110 mm and 219 of those
+  are in these sequences.
+
 ## 0.98.16 — 2026-11-15
 
 Christian: "let's make an exception for z 26 and 100 letting it be promoted with just two blocks. I expect the

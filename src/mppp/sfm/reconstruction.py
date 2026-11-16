@@ -1909,8 +1909,8 @@ def navcam_tie_counts(rec, min_mixed_track_length: int = MIN_MIXED_TRACK_LENGTH,
 def zcam_anchor_ties(rec, min_mixed_track_length: int = MIN_MIXED_TRACK_LENGTH,
                      navcam_only_max_zoom: Optional[int] = ZCAM_NAVCAM_ONLY_MAX_ZOOM,
                      min_wider_track_length: int = MIN_WIDER_ZOOM_TRACK_LENGTH):
-    """(:func:`navcam_tie_counts`, {image: {same-zoom image: shared points}} of the zooms above
-    ``navcam_only_max_zoom``)."""
+    """(:func:`navcam_tie_counts`, {image: {Mastcam-Z image: shared points}}; 0.98.18: every zoom, with frames of
+    any zoom - before, the zooms above ``navcam_only_max_zoom`` with frames of their own zoom)."""
     fam = {int(i): rec.images[i].name[:1] for i in rec.reg_image_ids()}
     zoom = {i: _zoom_of(rec.images[i].name) for i, f in fam.items() if f == "Z"}
     out = {i: 0 for i in zoom}
@@ -1931,11 +1931,14 @@ def zcam_anchor_ties(rec, min_mixed_track_length: int = MIN_MIXED_TRACK_LENGTH,
                 out[i] += 1
             elif long_zoom and L >= min_wider_track_length and widest is not None and widest < zoom[i]:
                 out[i] += 1                                   # tied through a wider Mastcam-Z zoom
-            if long_zoom:
-                for j in zs:
-                    if j != i and zoom[j] == zoom[i]:
-                        d = share.setdefault(i, {})
-                        d[j] = d.get(j, 0) + 1
+            # 0.98.18 (Christian, 16 Nov: "ZCAM08051 needs to align if at all possible. Same with ZCAM00033 and
+            # ZCAM00034"): every zoom is anchored through the Mastcam-Z frames it shares points with, of any zoom -
+            # a stare test's 34 / 48 mm frame through its own 63-110 mm frames (Chal Rocks sol 92-93: the long
+            # zooms anchored through the short ones, the short ones then dropped for want of Navcam ties)
+            for j in zs:
+                if j != i:
+                    d = share.setdefault(i, {})
+                    d[j] = d.get(j, 0) + 1
     return out, share
 
 
