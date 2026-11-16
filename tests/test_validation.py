@@ -55,8 +55,9 @@ def test_workspace_station_warns_and_sites_of_0p97():
     assert "rockytop_skinner" not in t["groups"]["zcam_consensus"]
     assert s["overlook_mountain"]["sols"] == [[1145, 1157]] and s["overlook_mountain"]["zcam"] == [48, 63, 79, 110]
     assert s["hippo_pools"]["zcam"] == [34, 48, 63, 110]
-    for n in ("rose_river_falls", "knob_mountain_large", "taylorfjellet", "overlook_mountain", "hippo_pools"):
+    for n in ("rose_river_falls", "taylorfjellet", "overlook_mountain", "hippo_pools"):
         assert n in t["groups"]["zcam_consensus"]
+    assert "knob_mountain_large" not in t["groups"]["zcam_consensus"]          # 16 Nov 2026: Enchanted Lake covers it
 
 
 def test_zooms_26_and_100_and_the_zoom_ladder(tmp_path):

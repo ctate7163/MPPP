@@ -59,6 +59,25 @@ software was called then.
   history; that `import mppp` gives the `rpp` modules and old pickles load; that `MPPP_SCAPES` alone still works; that
   an `mppp_mask_v3` configuration and a v0p98 WORK folder are reused; and that the run keys did not change.
 
+## 0.98.31 — 2026-11-16
+
+Christian (16 Nov): "how does the z34 show up in the list of ods?"
+
+- `single_sites.json` names (14:52: "Make both Three Forks North and the zcam one should have an extra (Z34) after
+  it"): `Sol0686_S032D1184` "Three Forks North" (was "Three Forks", from its block), the Mastcam-Z station
+  `Sol0690_S032D1184_Z34` "Three Forks North (Z34)" (it had none: its menu entry read "Sol 0690 Sol0690_S032D1184_Z34").
+  The next publish (`run_single_site_ibr.bat --publish-only`) writes the menu titles; the name on the nadir disc
+  changes at the next rendering of a station's panorama step.
+
+## 0.98.30 — 2026-11-16
+
+Christian (16 Nov): "remove knob mountain from the zcam consensus list since enchanted lake covers the most important site".
+
+- `sites.json`: `knob_mountain_large` is out of `zcam_consensus` (17 blocks now) and `zcam63_consensus`. The
+  Mastcam-Z joints (`--group zcam34_joint,zcam_consensus`) and the freeze's Z block runs no longer use it. Enchanted
+  Lake stays in the joints through `zcam34_joint` (34 and 63 mm). The site entry itself is unchanged.
+- The pre-freeze batch file (`run_prefreeze3b.bat`, outside git) no longer realigns it (5.1 h in the last freeze).
+
 ## 0.98.29 — 2026-11-16
 
 Christian (16 Nov): "I renamed the github repo. change https://ctate7163.github.io/RPP/ods/ to

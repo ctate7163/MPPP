@@ -164,7 +164,11 @@ def test_groups_and_block_sites():
     assert g["zcam_consensus"] == ["butler_landing", "chal_rocks_large", "wildcat_ridge", "skinner_ridge", "taylorfjellet",
                                    "seitah_overlook", "threeforks_north", "threeforks_south", "belva_crater_large",
                                    "marble_mountain", "bright_angel", "pico_turquino", "south_arm", "overlook_mountain",
-                                   "airey_hill", "rose_river_falls", "knob_mountain_large", "hippo_pools"]
+                                   "airey_hill", "rose_river_falls", "hippo_pools"]
+    # 16 Nov (Christian): "remove knob mountain from the zcam consensus list since enchanted lake covers the most
+    # important site" - out of zcam_consensus and zcam63_consensus; Enchanted Lake is in the joints through zcam34_joint
+    assert not any("knob_mountain_large" in g[k] for k in ("zcam_consensus", "zcam63_consensus"))
+    assert "enchanted_lake" in g["zcam34_joint"] and "enchanted_lake" in g["zcam63_consensus"]
     # 12 Nov (Christian): Three Forks South in, to read the backlash state of its 34 mm 360
     assert "threeforks_south" in g["zcam34_consensus"]
     # 2 Nov (Christian): Cannery Passage, an unofficial 48 / 63 / 110 mm block (sols 543-552), in no group
