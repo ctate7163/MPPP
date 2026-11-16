@@ -499,7 +499,8 @@ def cast_station(project, rec, station, scene: Scene, out_dir: PathLike, familie
         C = np.asarray(im.projection_center(), float)
         s = zcam_scale if name[:1].upper() == "Z" else scale
         mask = None
-        mf = Path(project.root) / "masks" / (name + ".png")
+        from .rover_masks import mask_file
+        mf = mask_file(project.root, name)        # 0.98.25: the panorama's own mask first
         if use_masks and mf.is_file():
             import cv2
             mask = cv2.imread(str(mf), cv2.IMREAD_GRAYSCALE) > 0

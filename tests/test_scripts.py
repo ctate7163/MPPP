@@ -547,6 +547,10 @@ def test_sync_code_runs_from_a_copy_the_merge_cannot_touch():
     assert 'if "%~1"=="" call :newest_bundle' in t and ':newest_bundle' in t and '/o-d "%MPPP_TRANSFER%\\mppp_*.bundle"' in t
     assert t.index('call :newest_bundle') < t.index('git bundle verify')
     assert "--ff-only" in t and 'MKL_THREADING_LAYER=SEQUENTIAL' in t and "-m pytest" in t
+    # 0.98.25 (16 Nov: "fast-forward failed - main has commits the bundle does not"): the viewer's publish commits
+    # on the PC - the bundle is merged then, and a merge with conflicts is aborted
+    ff = t.index("--ff-only refs/remotes/bundle")
+    assert ff < t.index("git merge -q --no-edit refs/remotes/bundle") < t.index("git merge --abort")
     assert "mppp_studies.calibration.freeze" in t and "--update-code" in t
     assert not (ROOT / "scripts" / "windows" / "claude_sync.bat").exists()
 

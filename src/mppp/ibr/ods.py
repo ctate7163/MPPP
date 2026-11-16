@@ -59,6 +59,8 @@ import numpy as np
 from .mesh import tau_m
 from .raycast import LABEL_FAR, LABEL_MESH, LABEL_NONE, LABEL_PLANE, Scene
 
+from .rover_masks import mask_file
+
 log = logging.getLogger("mppp.ibr.ods")
 PathLike = Union[str, Path]
 
@@ -481,7 +483,7 @@ def station_sources(project, rec, station, families: str = "N", scale: float = 1
             continue
         cw = im.cam_from_world()
         s = zcam_scale if name[:1].upper() == "Z" else scale
-        mf = Path(project.root) / "masks" / (name + ".png")
+        mf = mask_file(project.root, name)                      # 0.98.25: the panorama's own mask first
         out.append(SourceImage(name, rec.cameras[im.camera_id], np.asarray(cw.rotation.matrix(), float),
                                np.asarray(im.projection_center(), float), Path(project.root) / "images" / name,
                                mf if ((use_masks or name in ctx) and mf.is_file()) else None, s))
@@ -500,7 +502,7 @@ def station_sources(project, rec, station, families: str = "N", scale: float = 1
         ms = []
         own = [s_ for s_ in out if not s_.context]            # the context frames are masked already
         for src in own:
-            mf = Path(project.root) / "masks" / (src.name + ".png")
+            mf = mask_file(project.root, src.name)
             m = cv2.imread(str(mf), cv2.IMREAD_GRAYSCALE) if mf.is_file() else None
             if m is not None and (m.shape[1] != src.W or m.shape[0] != src.H):
                 m = cv2.resize(m, (src.W, src.H), interpolation=cv2.INTER_NEAREST)
@@ -1914,6 +1916,11 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         log.warning("ods: no rover pose for the model masks (%s)", e)
     if not use_masks and mask_mast:
         mast_pose = pose
+    from .rover_masks import ensure_rover_masks
+    mask_rep = ensure_rover_masks(project, own + fill_names)      # 0.98.25: the mask model where the block had it off
+    if mask_rep["skipped"]:
+        log.info("ods: %d frame(s) made without the mask model in the block: %d with its mask now (%d made), %d without",
+                 mask_rep["skipped"], len(mask_rep["have"]), mask_rep["made"], len(mask_rep["failed"]))
     sources = station_sources(project, rec, station, families=families, scale=scale, zcam_scale=zcam_scale, images=images,
                               use_masks=use_masks, mask_head_hardware=mask_head_hardware, linear16=lin,
                               mast_pose=mast_pose, fill_images=fill_names, context_images=ctx_names, rover_pose=pose)

@@ -3,6 +3,22 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.25 — 2026-11-16
+
+Christian (16 Nov): "the z34 without the rover still has a lot of hardware. you may need to rerun those images with
+the mask inference enabled."
+
+- `ibr.rover_masks` (new): a frame the block processed with the mask model off (`no_mask_inference_at`; at Three
+  Forks north ZCAM08692 and the sol 688 Navcam 360, kept with the rover for the deck-fiducial work) gets the mask
+  model's rover mask for the panoramas in `colmap/masks_ibr/` - from the block's 8-bit image (the model's own input
+  during processing), the block's no-data and exclusions kept. Made once and reused until the image changes. The
+  block's `masks/`, its alignment and its run key are untouched.
+- `ibr.ods` (sources, mast-head hardware) and `ibr.raycast` (the per-image maps) read `masks_ibr` first. The rover
+  model's silhouette (0.98.22) still covers a frame whose mask leaves the rover in - now only where the mask model
+  is not available.
+- `sync_code.bat`: when main cannot fast-forward (the PC's own "Viewer: panoramas" publish commits) the bundle is
+  merged; it stops only when the merge has conflicts (the merge aborted, nothing changed).
+
 ## 0.98.24 — 2026-11-16
 
 Christian (16 Nov): "for the z34 ods, why does it say: ods --bits 16: 214 of 214 frames have no 16-bit image - THE
