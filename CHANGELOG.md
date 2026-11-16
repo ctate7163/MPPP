@@ -3,6 +3,16 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.17 — 2026-11-16
+
+Christian: "which images is Chal Rocks large loosing and why? If they are z110, then we can drop most of those"
+
+- Chal Rocks large and Chal Rocks leave out four 110 mm sequences (`settings.exclude`): sol 368 ZCAM05099 (right eye
+  only, 181 frames 27-89 deg down; none tied in the 15 Nov zfinal run), sol 96 ZCAM08055 (19 + 19, all dropped as
+  0.4 m off their station), sol 92 ZCAM03142 / ZCAM03143 (1 + 1 each; their right-eye bins moved the principal point
+  168 / 216 px, the block's only FAIL checks). Of the run's 358 dropped images, 226 were at 110 mm and 219 of those
+  are in these sequences.
+
 ## 0.98.16 — 2026-11-15
 
 Christian: "let's make an exception for z 26 and 100 letting it be promoted with just two blocks. I expect the
