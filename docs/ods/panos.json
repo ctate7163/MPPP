@@ -5,7 +5,7 @@
    "id": "welcome",
    "title": "Welcome",
    "welcome": true,
-   "site_name": "Rover Photogrammetry Viewer",
+   "site_name": "Rover Photogrammetry Viewer (RPV)",
    "yaw_deg": 270.0,
    "variants": [
     {
@@ -19,7 +19,7 @@
   },
   {
    "id": "Sol0009_S003D0000",
-   "title": "Butler Landing Site Sol0009_S003D0000",
+   "title": "Butler Landing Site",
    "variants": [
     {
      "key": "masked",
@@ -36,7 +36,8 @@
       "mark_radius_m": 0.3424,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 267.71
+      "text_centre_azimuth_deg": 267.71,
+      "rover_forward_azimuth_deg": 132.71
      }
     },
     {
@@ -46,6 +47,16 @@
       "standard": "panos/Sol0009_S003D0000_rover_360_3DTD.jpg",
       "normal": "panos/Sol0009_S003D0000_rover_normal_360_3DTD.jpg",
       "range log": "panos/Sol0009_S003D0000_rover_range_log_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0009_S003D0000_nadir_mark.png",
+      "depth_m": 1.942,
+      "radius_m": 0.4452,
+      "mark_radius_m": 0.3424,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 267.71,
+      "rover_forward_azimuth_deg": 132.71
      }
     },
     {
@@ -63,7 +74,8 @@
       "mark_radius_m": 0.3424,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 267.71
+      "text_centre_azimuth_deg": 267.71,
+      "rover_forward_azimuth_deg": 132.71
      },
      "rover_surface": {
       "file": "panos/Sol0009_S003D0000_rover_rover_surface.glb",
@@ -72,7 +84,7 @@
      }
     }
    ],
-   "mppp": "0.98.18",
+   "mppp": "0.98.30",
    "published": "2026-11-16",
    "map": [
     13099.1,
@@ -85,7 +97,7 @@
   },
   {
    "id": "Sol0052_S003D2046",
-   "title": "Van Zyl Overlook Sol0052_S003D2046",
+   "title": "Van Zyl Overlook",
    "variants": [
     {
      "key": "masked",
@@ -102,7 +114,8 @@
       "mark_radius_m": 0.3462,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 310.51
+      "text_centre_azimuth_deg": 310.51,
+      "rover_forward_azimuth_deg": 175.51
      }
     },
     {
@@ -112,6 +125,16 @@
       "standard": "panos/Sol0052_S003D2046_rover_360_3DTD.jpg",
       "normal": "panos/Sol0052_S003D2046_rover_normal_360_3DTD.jpg",
       "range log": "panos/Sol0052_S003D2046_rover_range_log_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0052_S003D2046_nadir_mark.png",
+      "depth_m": 1.9633,
+      "radius_m": 0.45,
+      "mark_radius_m": 0.3462,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 310.51,
+      "rover_forward_azimuth_deg": 175.51
      }
     },
     {
@@ -129,7 +152,8 @@
       "mark_radius_m": 0.3462,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 310.51
+      "text_centre_azimuth_deg": 310.51,
+      "rover_forward_azimuth_deg": 175.51
      },
      "rover_surface": {
       "file": "panos/Sol0052_S003D2046_rover_rover_surface.glb",
@@ -138,7 +162,7 @@
      }
     }
    ],
-   "mppp": "0.98.18",
+   "mppp": "0.98.30",
    "published": "2026-11-16",
    "map": [
     13169.6,
@@ -151,7 +175,7 @@
   },
   {
    "id": "Sol0180_S007D0000",
-   "title": "Rochette Sol0180_S007D0000",
+   "title": "Rochette",
    "variants": [
     {
      "key": "masked",
@@ -168,7 +192,8 @@
       "mark_radius_m": 0.3434,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 43.21
+      "text_centre_azimuth_deg": 43.21,
+      "rover_forward_azimuth_deg": 268.21
      }
     },
     {
@@ -178,6 +203,16 @@
       "standard": "panos/Sol0180_S007D0000_rover_360_3DTD.jpg",
       "normal": "panos/Sol0180_S007D0000_rover_normal_360_3DTD.jpg",
       "range log": "panos/Sol0180_S007D0000_rover_range_log_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0180_S007D0000_nadir_mark.png",
+      "depth_m": 1.9477,
+      "radius_m": 0.4465,
+      "mark_radius_m": 0.3434,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 43.21,
+      "rover_forward_azimuth_deg": 268.21
      }
     },
     {
@@ -195,7 +230,8 @@
       "mark_radius_m": 0.3434,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 43.21
+      "text_centre_azimuth_deg": 43.21,
+      "rover_forward_azimuth_deg": 268.21
      },
      "rover_surface": {
       "file": "panos/Sol0180_S007D0000_rover_rover_surface.glb",
@@ -204,7 +240,7 @@
      }
     }
    ],
-   "mppp": "0.98.18",
+   "mppp": "0.98.30",
    "published": "2026-11-16",
    "map": [
     12732.5,
@@ -217,7 +253,7 @@
   },
   {
    "id": "Sol0361_S011D0000",
-   "title": "Chal Rocks and Sid Sol0361_S011D0000",
+   "title": "Chal Rocks and Sid",
    "variants": [
     {
      "key": "masked",
@@ -234,7 +270,8 @@
       "mark_radius_m": 0.3434,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 352.48
+      "text_centre_azimuth_deg": 352.48,
+      "rover_forward_azimuth_deg": 217.48
      }
     },
     {
@@ -244,6 +281,16 @@
       "standard": "panos/Sol0361_S011D0000_rover_360_3DTD.jpg",
       "normal": "panos/Sol0361_S011D0000_rover_normal_360_3DTD.jpg",
       "range log": "panos/Sol0361_S011D0000_rover_range_log_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0361_S011D0000_nadir_mark.png",
+      "depth_m": 1.9473,
+      "radius_m": 0.4464,
+      "mark_radius_m": 0.3434,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 352.48,
+      "rover_forward_azimuth_deg": 217.48
      }
     },
     {
@@ -261,7 +308,8 @@
       "mark_radius_m": 0.3434,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 352.48
+      "text_centre_azimuth_deg": 352.48,
+      "rover_forward_azimuth_deg": 217.48
      },
      "rover_surface": {
       "file": "panos/Sol0361_S011D0000_rover_rover_surface.glb",
@@ -270,7 +318,7 @@
      }
     }
    ],
-   "mppp": "0.98.18",
+   "mppp": "0.98.30",
    "published": "2026-11-16",
    "map": [
     13186.4,
@@ -283,7 +331,7 @@
   },
   {
    "id": "Sol0461_S026D0630",
-   "title": "Rockytop Sol0461_S026D0630",
+   "title": "Rockytop",
    "variants": [
     {
      "key": "masked",
@@ -300,7 +348,8 @@
       "mark_radius_m": 0.3467,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 24.97
+      "text_centre_azimuth_deg": 24.97,
+      "rover_forward_azimuth_deg": 249.97
      }
     },
     {
@@ -310,6 +359,16 @@
       "standard": "panos/Sol0461_S026D0630_rover_360_3DTD.jpg",
       "normal": "panos/Sol0461_S026D0630_rover_normal_360_3DTD.jpg",
       "range log": "panos/Sol0461_S026D0630_rover_range_log_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0461_S026D0630_nadir_mark.png",
+      "depth_m": 1.9665,
+      "radius_m": 0.4508,
+      "mark_radius_m": 0.3467,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 24.97,
+      "rover_forward_azimuth_deg": 249.97
      }
     },
     {
@@ -327,7 +386,8 @@
       "mark_radius_m": 0.3467,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 24.97
+      "text_centre_azimuth_deg": 24.97,
+      "rover_forward_azimuth_deg": 249.97
      },
      "rover_surface": {
       "file": "panos/Sol0461_S026D0630_rover_rover_surface.glb",
@@ -336,7 +396,7 @@
      }
     }
    ],
-   "mppp": "0.98.18",
+   "mppp": "0.98.30",
    "published": "2026-11-16",
    "map": [
     10583.6,
@@ -349,7 +409,7 @@
   },
   {
    "id": "Sol0474_S026D0850",
-   "title": "Rockytop Sol0474_S026D0850",
+   "title": "Rockytop",
    "variants": [
     {
      "key": "masked",
@@ -366,7 +426,8 @@
       "mark_radius_m": 0.3653,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 165.68
+      "text_centre_azimuth_deg": 165.68,
+      "rover_forward_azimuth_deg": 30.68
      }
     },
     {
@@ -376,6 +437,16 @@
       "standard": "panos/Sol0474_S026D0850_rover_360_3DTD.jpg",
       "normal": "panos/Sol0474_S026D0850_rover_normal_360_3DTD.jpg",
       "range log": "panos/Sol0474_S026D0850_rover_range_log_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0474_S026D0850_nadir_mark.png",
+      "depth_m": 2.0719,
+      "radius_m": 0.4749,
+      "mark_radius_m": 0.3653,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 165.68,
+      "rover_forward_azimuth_deg": 30.68
      }
     },
     {
@@ -393,7 +464,8 @@
       "mark_radius_m": 0.3653,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 165.68
+      "text_centre_azimuth_deg": 165.68,
+      "rover_forward_azimuth_deg": 30.68
      },
      "rover_surface": {
       "file": "panos/Sol0474_S026D0850_rover_rover_surface.glb",
@@ -402,7 +474,7 @@
      }
     }
    ],
-   "mppp": "0.98.18",
+   "mppp": "0.98.30",
    "published": "2026-11-16",
    "map": [
     10581.1,
@@ -415,7 +487,7 @@
   },
   {
    "id": "Sol0565_S029D0000",
-   "title": "Enchanted Lake Sol0565_S029D0000",
+   "title": "Enchanted Lake",
    "variants": [
     {
      "key": "masked",
@@ -432,7 +504,8 @@
       "mark_radius_m": 0.3428,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 324.28
+      "text_centre_azimuth_deg": 324.28,
+      "rover_forward_azimuth_deg": 189.28
      }
     },
     {
@@ -442,6 +515,16 @@
       "standard": "panos/Sol0565_S029D0000_rover_360_3DTD.jpg",
       "normal": "panos/Sol0565_S029D0000_rover_normal_360_3DTD.jpg",
       "range log": "panos/Sol0565_S029D0000_rover_range_log_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0565_S029D0000_nadir_mark.png",
+      "depth_m": 1.9441,
+      "radius_m": 0.4456,
+      "mark_radius_m": 0.3428,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 324.28,
+      "rover_forward_azimuth_deg": 189.28
      }
     },
     {
@@ -459,7 +542,8 @@
       "mark_radius_m": 0.3428,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 324.28
+      "text_centre_azimuth_deg": 324.28,
+      "rover_forward_azimuth_deg": 189.28
      },
      "rover_surface": {
       "file": "panos/Sol0565_S029D0000_rover_rover_surface.glb",
@@ -468,7 +552,7 @@
      }
     }
    ],
-   "mppp": "0.98.18",
+   "mppp": "0.98.30",
    "published": "2026-11-16",
    "map": [
     10319.1,
@@ -481,7 +565,7 @@
   },
   {
    "id": "Sol0686_S032D1184",
-   "title": "Three Forks Sol0686_S032D1184",
+   "title": "Three Forks",
    "variants": [
     {
      "key": "masked",
@@ -498,7 +582,8 @@
       "mark_radius_m": 0.3421,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 305.52
+      "text_centre_azimuth_deg": 305.52,
+      "rover_forward_azimuth_deg": 170.52
      }
     },
     {
@@ -508,6 +593,16 @@
       "standard": "panos/Sol0686_S032D1184_rover_360_3DTD.jpg",
       "normal": "panos/Sol0686_S032D1184_rover_normal_360_3DTD.jpg",
       "range log": "panos/Sol0686_S032D1184_rover_range_log_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol0686_S032D1184_nadir_mark.png",
+      "depth_m": 1.94,
+      "radius_m": 0.4447,
+      "mark_radius_m": 0.3421,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 305.52,
+      "rover_forward_azimuth_deg": 170.52
      }
     },
     {
@@ -525,7 +620,8 @@
       "mark_radius_m": 0.3421,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 305.52
+      "text_centre_azimuth_deg": 305.52,
+      "rover_forward_azimuth_deg": 170.52
      },
      "rover_surface": {
       "file": "panos/Sol0686_S032D1184_rover_rover_surface.glb",
@@ -534,7 +630,7 @@
      }
     }
    ],
-   "mppp": "0.98.18",
+   "mppp": "0.98.30",
    "published": "2026-11-16",
    "map": [
     10713.1,
@@ -565,7 +661,8 @@
       "mark_radius_m": 0.3455,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 39.92
+      "text_centre_azimuth_deg": 39.92,
+      "rover_forward_azimuth_deg": 264.92
      }
     },
     {
@@ -584,6 +681,7 @@
       "radius_deg": 10.0,
       "split": 0.488,
       "text_centre_azimuth_deg": 39.92,
+      "rover_forward_azimuth_deg": 264.92,
       "at": "the terrain's level"
      }
     },
@@ -602,7 +700,8 @@
       "mark_radius_m": 0.3455,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 39.92
+      "text_centre_azimuth_deg": 39.92,
+      "rover_forward_azimuth_deg": 264.92
      },
      "rover_surface": {
       "file": "panos/Sol1177_S054D0000_rover_rover_surface.glb",
@@ -611,7 +710,7 @@
      }
     }
    ],
-   "mppp": "0.98.25",
+   "mppp": "0.98.30",
    "published": "2026-11-16",
    "map": [
     4831.5,
@@ -641,7 +740,8 @@
       "mark_radius_m": 0.3559,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 44.99
+      "text_centre_azimuth_deg": 44.99,
+      "rover_forward_azimuth_deg": 269.99
      }
     },
     {
@@ -660,6 +760,7 @@
       "radius_deg": 10.0,
       "split": 0.488,
       "text_centre_azimuth_deg": 44.99,
+      "rover_forward_azimuth_deg": 269.99,
       "at": "the terrain's level"
      }
     },
@@ -678,7 +779,8 @@
       "mark_radius_m": 0.3559,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 44.99
+      "text_centre_azimuth_deg": 44.99,
+      "rover_forward_azimuth_deg": 269.99
      },
      "rover_surface": {
       "file": "panos/Sol1183_S054D0866_rover_rover_surface.glb",
@@ -687,7 +789,7 @@
      }
     }
    ],
-   "mppp": "0.98.25",
+   "mppp": "0.98.30",
    "published": "2026-11-16",
    "map": [
     4915.1,
@@ -700,7 +802,7 @@
   },
   {
    "id": "Sol1189_S054D1152",
-   "title": "Bright Angel Sol1189_S054D1152",
+   "title": "Bright Angel",
    "variants": [
     {
      "key": "masked",
@@ -717,7 +819,8 @@
       "mark_radius_m": 0.352,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 155.99
+      "text_centre_azimuth_deg": 155.99,
+      "rover_forward_azimuth_deg": 20.99
      }
     },
     {
@@ -727,6 +830,16 @@
       "standard": "panos/Sol1189_S054D1152_rover_360_3DTD.jpg",
       "normal": "panos/Sol1189_S054D1152_rover_normal_360_3DTD.jpg",
       "range log": "panos/Sol1189_S054D1152_rover_range_log_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1189_S054D1152_nadir_mark.png",
+      "depth_m": 1.9965,
+      "radius_m": 0.4576,
+      "mark_radius_m": 0.352,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 155.99,
+      "rover_forward_azimuth_deg": 20.99
      }
     },
     {
@@ -744,7 +857,8 @@
       "mark_radius_m": 0.352,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 155.99
+      "text_centre_azimuth_deg": 155.99,
+      "rover_forward_azimuth_deg": 20.99
      },
      "rover_surface": {
       "file": "panos/Sol1189_S054D1152_rover_rover_surface.glb",
@@ -753,7 +867,7 @@
      }
     }
    ],
-   "mppp": "0.98.18",
+   "mppp": "0.98.30",
    "published": "2026-11-16",
    "map": [
     4904.6,
@@ -766,7 +880,7 @@
   },
   {
    "id": "Sol1411_S068D0142",
-   "title": "Witch Hazel Hill Sol1411_S068D0142",
+   "title": "Witch Hazel Hill",
    "variants": [
     {
      "key": "masked",
@@ -783,7 +897,8 @@
       "mark_radius_m": 0.3496,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 357.12
+      "text_centre_azimuth_deg": 357.12,
+      "rover_forward_azimuth_deg": 222.12
      }
     },
     {
@@ -793,6 +908,16 @@
       "standard": "panos/Sol1411_S068D0142_rover_360_3DTD.jpg",
       "normal": "panos/Sol1411_S068D0142_rover_normal_360_3DTD.jpg",
       "range log": "panos/Sol1411_S068D0142_rover_range_log_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1411_S068D0142_nadir_mark.png",
+      "depth_m": 1.9826,
+      "radius_m": 0.4545,
+      "mark_radius_m": 0.3496,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 357.12,
+      "rover_forward_azimuth_deg": 222.12
      }
     },
     {
@@ -810,7 +935,8 @@
       "mark_radius_m": 0.3496,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 357.12
+      "text_centre_azimuth_deg": 357.12,
+      "rover_forward_azimuth_deg": 222.12
      },
      "rover_surface": {
       "file": "panos/Sol1411_S068D0142_rover_rover_surface.glb",
@@ -819,7 +945,7 @@
      }
     }
    ],
-   "mppp": "0.98.18",
+   "mppp": "0.98.30",
    "published": "2026-11-16",
    "map": [
     2644.3,
@@ -832,7 +958,7 @@
   },
   {
    "id": "Sol1454_S071D0056",
-   "title": "Bell Island Sol1454_S071D0056",
+   "title": "Bell Island",
    "variants": [
     {
      "key": "masked",
@@ -849,7 +975,8 @@
       "mark_radius_m": 0.3656,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 28.61
+      "text_centre_azimuth_deg": 28.61,
+      "rover_forward_azimuth_deg": 253.61
      }
     },
     {
@@ -859,6 +986,16 @@
       "standard": "panos/Sol1454_S071D0056_rover_360_3DTD.jpg",
       "normal": "panos/Sol1454_S071D0056_rover_normal_360_3DTD.jpg",
       "range log": "panos/Sol1454_S071D0056_rover_range_log_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1454_S071D0056_nadir_mark.png",
+      "depth_m": 2.0735,
+      "radius_m": 0.4753,
+      "mark_radius_m": 0.3656,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 28.61,
+      "rover_forward_azimuth_deg": 253.61
      }
     },
     {
@@ -876,7 +1013,8 @@
       "mark_radius_m": 0.3656,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 28.61
+      "text_centre_azimuth_deg": 28.61,
+      "rover_forward_azimuth_deg": 253.61
      },
      "rover_surface": {
       "file": "panos/Sol1454_S071D0056_rover_rover_surface.glb",
@@ -885,7 +1023,7 @@
      }
     }
    ],
-   "mppp": "0.98.18",
+   "mppp": "0.98.30",
    "published": "2026-11-16",
    "map": [
     2235.9,
@@ -898,7 +1036,7 @@
   },
   {
    "id": "Sol1635_S079D0732",
-   "title": "Taylorfjellet Sol1635_S079D0732",
+   "title": "Taylorfjellet",
    "variants": [
     {
      "key": "masked",
@@ -915,7 +1053,8 @@
       "mark_radius_m": 0.3572,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 98.29
+      "text_centre_azimuth_deg": 98.29,
+      "rover_forward_azimuth_deg": 323.29
      }
     },
     {
@@ -925,6 +1064,16 @@
       "standard": "panos/Sol1635_S079D0732_rover_360_3DTD.jpg",
       "normal": "panos/Sol1635_S079D0732_rover_normal_360_3DTD.jpg",
       "range log": "panos/Sol1635_S079D0732_rover_range_log_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1635_S079D0732_nadir_mark.png",
+      "depth_m": 2.0258,
+      "radius_m": 0.4644,
+      "mark_radius_m": 0.3572,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 98.29,
+      "rover_forward_azimuth_deg": 323.29
      }
     },
     {
@@ -942,7 +1091,8 @@
       "mark_radius_m": 0.3572,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 98.29
+      "text_centre_azimuth_deg": 98.29,
+      "rover_forward_azimuth_deg": 323.29
      },
      "rover_surface": {
       "file": "panos/Sol1635_S079D0732_rover_rover_surface.glb",
@@ -951,7 +1101,7 @@
      }
     }
    ],
-   "mppp": "0.98.18",
+   "mppp": "0.98.30",
    "published": "2026-11-16",
    "map": [
     2604.2,
@@ -964,7 +1114,7 @@
   },
   {
    "id": "Sol1792_S087D0000",
-   "title": "Origny Sol1792_S087D0000",
+   "title": "Origny",
    "variants": [
     {
      "key": "masked",
@@ -981,7 +1131,8 @@
       "mark_radius_m": 0.3526,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 155.27
+      "text_centre_azimuth_deg": 155.27,
+      "rover_forward_azimuth_deg": 20.27
      }
     },
     {
@@ -991,6 +1142,16 @@
       "standard": "panos/Sol1792_S087D0000_rover_360_3DTD.jpg",
       "normal": "panos/Sol1792_S087D0000_rover_normal_360_3DTD.jpg",
       "range log": "panos/Sol1792_S087D0000_rover_range_log_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1792_S087D0000_nadir_mark.png",
+      "depth_m": 1.9995,
+      "radius_m": 0.4583,
+      "mark_radius_m": 0.3526,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 155.27,
+      "rover_forward_azimuth_deg": 20.27
      }
     },
     {
@@ -1008,7 +1169,8 @@
       "mark_radius_m": 0.3526,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 155.27
+      "text_centre_azimuth_deg": 155.27,
+      "rover_forward_azimuth_deg": 20.27
      },
      "rover_surface": {
       "file": "panos/Sol1792_S087D0000_rover_rover_surface.glb",
@@ -1017,7 +1179,7 @@
      }
     }
    ],
-   "mppp": "0.98.18",
+   "mppp": "0.98.30",
    "published": "2026-11-16",
    "map": [
     492.5,
@@ -1047,7 +1209,8 @@
       "mark_radius_m": 0.3473,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 139.12
+      "text_centre_azimuth_deg": 139.12,
+      "rover_forward_azimuth_deg": 4.12
      }
     },
     {
@@ -1066,6 +1229,7 @@
       "radius_deg": 10.0,
       "split": 0.488,
       "text_centre_azimuth_deg": 139.12,
+      "rover_forward_azimuth_deg": 4.12,
       "at": "the terrain's level"
      }
     },
@@ -1084,7 +1248,8 @@
       "mark_radius_m": 0.3473,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 139.12
+      "text_centre_azimuth_deg": 139.12,
+      "rover_forward_azimuth_deg": 4.12
      },
      "rover_surface": {
       "file": "panos/Sol1947_S091D0000_rover_rover_surface.glb",
@@ -1093,7 +1258,7 @@
      }
     }
    ],
-   "mppp": "0.98.25",
+   "mppp": "0.98.30",
    "published": "2026-11-16",
    "map": [
     843.8,
@@ -1106,7 +1271,7 @@
   },
   {
    "id": "Sol1955_S091D0124",
-   "title": "Hippo Pools Sol1955_S091D0124",
+   "title": "Hippo Pools",
    "variants": [
     {
      "key": "masked",
@@ -1123,7 +1288,8 @@
       "mark_radius_m": 0.3518,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 136.03
+      "text_centre_azimuth_deg": 136.03,
+      "rover_forward_azimuth_deg": 1.03
      }
     },
     {
@@ -1133,6 +1299,16 @@
       "standard": "panos/Sol1955_S091D0124_rover_360_3DTD.jpg",
       "normal": "panos/Sol1955_S091D0124_rover_normal_360_3DTD.jpg",
       "range log": "panos/Sol1955_S091D0124_rover_range_log_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1955_S091D0124_nadir_mark.png",
+      "depth_m": 1.995,
+      "radius_m": 0.4573,
+      "mark_radius_m": 0.3518,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 136.03,
+      "rover_forward_azimuth_deg": 1.03
      }
     },
     {
@@ -1150,7 +1326,8 @@
       "mark_radius_m": 0.3518,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 136.03
+      "text_centre_azimuth_deg": 136.03,
+      "rover_forward_azimuth_deg": 1.03
      },
      "rover_surface": {
       "file": "panos/Sol1955_S091D0124_rover_rover_surface.glb",
@@ -1159,7 +1336,7 @@
      }
     }
    ],
-   "mppp": "0.98.18",
+   "mppp": "0.98.30",
    "published": "2026-11-16",
    "map": [
     841.7,
@@ -1172,7 +1349,7 @@
   },
   {
    "id": "Sol1965_S091D0806",
-   "title": "Marble Mountain Sol1965_S091D0806",
+   "title": "Marble Mountain",
    "variants": [
     {
      "key": "masked",
@@ -1189,7 +1366,8 @@
       "mark_radius_m": 0.3528,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 32.16
+      "text_centre_azimuth_deg": 32.16,
+      "rover_forward_azimuth_deg": 257.16
      }
     },
     {
@@ -1199,6 +1377,16 @@
       "standard": "panos/Sol1965_S091D0806_rover_360_3DTD.jpg",
       "normal": "panos/Sol1965_S091D0806_rover_normal_360_3DTD.jpg",
       "range log": "panos/Sol1965_S091D0806_rover_range_log_360_3DTD.jpg"
+     },
+     "ground_mark": {
+      "file": "panos/Sol1965_S091D0806_nadir_mark.png",
+      "depth_m": 2.0009,
+      "radius_m": 0.4587,
+      "mark_radius_m": 0.3528,
+      "radius_deg": 10.0,
+      "split": 0.488,
+      "text_centre_azimuth_deg": 32.16,
+      "rover_forward_azimuth_deg": 257.16
      }
     },
     {
@@ -1216,7 +1404,8 @@
       "mark_radius_m": 0.3528,
       "radius_deg": 10.0,
       "split": 0.488,
-      "text_centre_azimuth_deg": 32.16
+      "text_centre_azimuth_deg": 32.16,
+      "rover_forward_azimuth_deg": 257.16
      },
      "rover_surface": {
       "file": "panos/Sol1965_S091D0806_rover_rover_surface.glb",
@@ -1225,7 +1414,7 @@
      }
     }
    ],
-   "mppp": "0.98.18",
+   "mppp": "0.98.30",
    "published": "2026-11-16",
    "map": [
     785.3,
