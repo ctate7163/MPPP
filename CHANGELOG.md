@@ -17,6 +17,8 @@ program aborting due to control-C event`), `run_sites` logged nothing more, the 
   counts as failed (and is retried once, as any failure).
 - The pre-freeze batch file was rewritten outside the repository (`run_prefreeze3b.bat`): the handler off, and the
   joints only when every block finished.
+- `test_zcam_focus_models_per_zoom` assumed there is no 79 mm model (stale since 0.98.21, when Z79 was shipped): it
+  now takes the first zoom without a model. The full suite passes on 0.98.26 apart from the tests that need torch.
 
 ## 0.98.25 — 2026-11-16
 
