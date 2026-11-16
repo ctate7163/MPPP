@@ -1112,7 +1112,8 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert new98p6 <= set(cfg["stations"]) and all(cfg["stations"][k]["frames"]["images"] and cfg["stations"][k]["context"] for k in new98p6)
     assert len(cfg["stations"]["Sol0474_S026D0850"]["context"]) == 68   # 0.98.19
     assert set(cfg["stations"]) - {"Sol0690_S032D1184_Z34"} - new98p6 == {"Sol0052_S003D2046", "Sol0461_S026D0630", "Sol0686_S032D1184", "Sol0474_S026D0850",
-                                    "Sol1635_S079D0732", "Sol1411_S068D0142", "Sol1792_S087D0000", "Sol1454_S071D0056", "Sol0477_S026D1004", "Sol0502_S026D1222", "Sol2009_S092D0000", "Sol2022_S093D0000"}   # 0.98.19: + Skinner Ridge, Wildcat Ridge, Hippo Pools 2009 / 2022
+                                    "Sol1635_S079D0732", "Sol1411_S068D0142", "Sol1792_S087D0000", "Sol1454_S071D0056", "Sol0477_S026D1004", "Sol0502_S026D1222", "Sol2009_S092D0000", "Sol2022_S093D0000", "Sol1947_S091D0000",
+                                    "Sol1177_S054D0000", "Sol1183_S054D0866", "Sol1308_S061D1678", "Sol0609_S030D1172"}   # 0.98.19: + Skinner Ridge, Wildcat Ridge, Hippo Pools 1947 / 2009 / 2022, Bright Angel 1177 / 1183, Pico Turquino 1308, Hidden Harbor 609
     assert len(cfg["stations"]["Sol0052_S003D2046"]["frames"]["images"]) == 12
     sa = cfg["stations"]["Sol1411_S068D0142"]                                 # 0.97.14: South Arm, sol 1411
     assert sa["site"] == "witch_hazel_large" and sa["station"] == "68_142" and len(sa["frames"]["images"]) == 18
@@ -1122,7 +1123,8 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
         (root / f).mkdir(parents=True)
     runs = SS.plan(cfg, root)
     runs = runs[::-1]                                    # 0.98.3: with no station named the last one runs first
-    runs = [r for r in runs if r["label"] not in ("Sol0477_S026D1004", "Sol0502_S026D1222", "Sol2009_S092D0000", "Sol2022_S093D0000")]     # 0.98.19's four (they run first)
+    runs = [r for r in runs if r["label"] not in ("Sol0477_S026D1004", "Sol0502_S026D1222", "Sol2009_S092D0000", "Sol2022_S093D0000", "Sol1947_S091D0000",
+                                                   "Sol1177_S054D0000", "Sol1183_S054D0866", "Sol1308_S061D1678", "Sol0609_S030D1172")]     # 0.98.19's nine (they run first)
     assert [Path(r["work"]).name for r in runs][8:] == [
         "mars2020_sol_0001_butler_landing_zcam", "mars2020_sol_0178_rochette_zcam", "mars2020_sol_0201_seitah_huge",
         "mars2020_sol_0201_seitah_huge", "mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0421_enchanted_lake_large",
@@ -2665,8 +2667,9 @@ def test_context_frames_are_masked_fill_only_and_stay_off_the_rover(tmp_path):
     cfg2 = json.loads(json.dumps(cfg)); cfg2["stations"]["Sol0461_S026D0630"].pop("terrain")
     d2 = SS.plan(cfg2, root, labels=["Sol0461_S026D0630"])[0]["commands"][0]["argv"]
     assert d2[d2.index("--add-images") + 1:d2.index("--add-images") + 1 + len(cfg["stations"]["Sol0461_S026D0630"]["context"])] == cfg["stations"]["Sol0461_S026D0630"]["context"]
-    assert cfg["stations"]["Sol0052_S003D2046"]["context"] == ["NLF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png",
-                                                               "NRF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png"]
+    assert cfg["stations"]["Sol0052_S003D2046"]["context"][:2] == ["NLF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png",
+                                                                   "NRF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png"]
+    assert all("_0033_" in n for n in cfg["stations"]["Sol0052_S003D2046"]["context"][2:])      # 0.98.19: + sol 33
 
 
 def test_geometry_panoramas_masked_black_and_image_copies(tmp_path):
@@ -3019,7 +3022,8 @@ def test_block_terrain_station_plan():
     with pytest.raises(KeyError):
         SS.plan(dict(cfg, stations={"X": dict(cfg["stations"]["Sol0474_S026D0850"], terrain="block:nope")}), "R", labels=["X"])
     # Hippo Pools: one terrain set for its three stations
-    hp = ("Sol1955_S091D0124", "Sol2009_S092D0000", "Sol2022_S093D0000")
+    hp = ("Sol1955_S091D0124", "Sol2009_S092D0000", "Sol2022_S093D0000", "Sol1947_S091D0000")
+    assert len(cfg["stations"]["Sol1947_S091D0000"]["context"]) == 26 and all(f in cfg["terrain_sets"]["hippo_pools"]["images"] for f in cfg["stations"]["Sol1947_S091D0000"]["frames"]["images"])
     assert all(cfg["stations"][k]["terrain"] == "block:hippo_pools" and cfg["stations"][k]["context"] for k in hp)
     assert len(cfg["terrain_sets"]["hippo_pools"]["images"]) == 92
     assert not any("_2010_" in n for n in cfg["stations"]["Sol2009_S092D0000"]["frames"]["images"])
@@ -3103,3 +3107,70 @@ def test_rover_variant_gets_a_turning_disc_and_the_page_faces(tmp_path):
     page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
     assert "Rover Photogrammetry Viewer" in page and "MPPP stereo viewer" not in page and "WELCOME_AZ_DEG = 270" in page
     assert all(f'id="face{k}"' in page for k in "NESWO") and "lookKeys" in page and "-Math.PI / 4" in page
+
+
+def test_info_map_is_the_blank_panel_d_and_the_menu_says_sol_then_name(tmp_path, monkeypatch):
+    """0.98.19 (Christian, 16 Nov 2026): "The drop down list of ods should start with Sol 0xxx then have the site name
+    ... put the site and drive numbers in the info window.  The map in the info tab should be the same background as
+    m20_mars_to_rover_sites_dtm figure D ... with the traverse and 2 km scale bar.  Put an orange x over the ods'
+    particular location" - mapplot3 figure 8 is that picture (its extent beside it); publish takes the newest, puts its
+    extent into the traverse map's metres, and the page draws the x on it."""
+    import cv2
+    from mppp.ibr import web, single_sites as SS
+    wp, tr = web.traverse_map()
+    if not tr:
+        pytest.skip("no waypoint table")
+    ce, cn = web._lonlat_fit(wp)
+    lon0, lon1, lat0, lat1 = 77.3, 77.42, 18.40, 18.46
+    root = tmp_path / "rover_blocks"
+    maps = web.dtm_map_dir(root)
+    maps.mkdir(parents=True)
+    png = maps / f"{web.DTM_MAP_NAME}.png"
+    cv2.imwrite(str(png), np.full((100, 200, 3), 128, np.uint8))
+    png.with_suffix(".json").write_text(json.dumps({"extent_lonlat": [lon0, lon1, lat0, lat1], "px": [200, 100],
+                                                    "key": web.dtm_map_key(wp, root)}))
+    w = tmp_path / "repo" / "docs" / "ods"
+    (w / "panos").mkdir(parents=True)
+    monkeypatch.delenv("MPPP_ODS_MAP", raising=False)
+    assert web.dtm_map_source(w, root) == png
+    called = []
+    monkeypatch.setattr(web, "render_dtm_map", lambda *a, **k: called.append(a))
+    d = web.traverse_dtm(wp, tr, w, root=root)                 # the kept map is current: not drawn again
+    assert not called
+    e0, n0 = tr["origin_en"]
+    assert d and (w / d["file"]).is_file() and d["px"] == [200, 100]
+    assert abs(d["extent"][0] - (np.polyval(ce, lon0) - e0)) < 0.2 and abs(d["extent"][3] - (np.polyval(cn, lat1) - n0)) < 0.2
+    assert web.traverse_dtm(wp, tr, w, root=root, old=d) is d                   # the same picture: kept
+    (root / "dem" / "msr_trn").mkdir(parents=True)
+    (root / "dem" / "msr_trn" / "DTM_new.tif").write_bytes(b"x")
+    web.traverse_dtm(wp, tr, w, root=root)                      # another DTM: drawn again
+    assert called
+    page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    assert "menuLabel(q)" in page and "Sol ${String(sols[0]).padStart(4, '0')} ${siteName(p)}" in page
+    assert "Site ${parseInt(sd[1], 10)}, Drive ${parseInt(sd[2], 10)}" in page and "#ff9500" in page and "strokeRect(mx - r, my - r" in page and "traverse.dtm" in page
+    study = Path(SS.__file__).resolve().parents[2] / "mppp_studies" / "sites" / "m20_sites"
+    src = (study / "mapplot3.py").read_text(encoding="utf-8")
+    assert "def fig8(out):" in src and "'8': (fig8, 'm20_ods_traverse_map.png')" in src and "'2 km'" in src
+
+
+def test_stations_of_16_nov_and_context_patterns(tmp_path):
+    """0.98.19 (Christian, 16 Nov 2026): sol 1177 with its mid-drive pair, sol 1183 with sols 1182 and 1185, sol 1308 with
+    the sol 1307-1308 mid-drive pairs and the sol 1307 360, sol 609 with sol 606 (a pattern: the block was not made yet),
+    and sol 33 as context at the first station."""
+    from mppp.ibr import single_sites as SS
+    from mppp.ibr.ods import expand_names
+    cfg = SS.load_config()
+    st = cfg["stations"]
+    assert len(st["Sol1177_S054D0000"]["frames"]["images"]) == 12 and any("N0530198NCAM00301" in n for n in st["Sol1177_S054D0000"]["context"])
+    c = st["Sol1183_S054D0866"]["context"]
+    assert any("_1182_" in n for n in c) and any("_1185_" in n and "N0541010" in n for n in c) and len(c) == 32
+    c = st["Sol1308_S061D1678"]["context"]
+    assert {n.split("_")[1] for n in c} == {"1307", "1308"} and sum("NCAM00301" in n for n in c) == 4 and len(c) == 22
+    assert st["Sol0609_S030D1172"]["site"] == "hidden_harbor" and st["Sol0609_S030D1172"]["context"] == ["N?F_0606_*RAD_N0301096NCAM*"]
+    assert sum("_0033_" in n for n in st["Sol0052_S003D2046"]["context"]) == 10
+    have = {"NLF_0606_0001_222RAD_N0301096NCAM03606_0A0195J01.png", "NLF_0609_0002_222RAD_N0301172NCAM03609_0A0195J01.png"}
+    assert expand_names(["N?F_0606_*RAD_N0301096NCAM*.png", "nope*.png"], have) == ["NLF_0606_0001_222RAD_N0301096NCAM03606_0A0195J01.png", "nope*.png"]
+    runs = SS.plan(cfg, tmp_path, labels=["Sol0609_S030D1172"])
+    assert Path(runs[0]["work"]).name == "mars2020_sol_0606_hidden_harbor"
+    bat = (Path(SS.__file__).resolve().parents[3] / "scripts" / "windows" / "run_sites.bat").read_bytes()
+    assert b'findstr /i /c:"--sites" /c:"--group" >nul && set "WHICH="' in bat and bat.count(b"\n") == bat.count(b"\r\n")

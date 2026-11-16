@@ -88,6 +88,7 @@ All figures are rendered at 300 dpi (set with `M20_DPI`) and use a global font s
 | 4 | `m20_jezero_traverse_sites_regions_wide.png` | `fig4` | 7200 × 3367 | A \| B \| one-column table; a row of six regional panels D–I in reverse chronological order |
 | 5 | `m20_mars_to_rover_sites.png` | `fig5` | 5400 × 7112 | Mars to rover sites, four rows (below) |
 | 6 | `m20_mars_to_rover_sites_no_I.png` | `fig6` = `fig5(out, with_I=False)` | 5400 × 6794 | Same rows 1–2; E–H two over two with the block list on the right (below) |
+| 8 | `m20_ods_traverse_map.png` | `fig8` | 2048 × 1024 | Figure 5's panel D blank (terrain, traverse, 2 km scale bar; no axes or markers) for the panorama viewer's info page, with a `.json` of its extent (0.98.19) |
 
 **Figure 1 panel details:** every waypoint is labelled by sol, the title gives the visits, and the footer gives the counts. "Relative northing [m]" labels the left column, and "Relative easting [m]" labels the bottom panel of each column. The text is enlarged (titles 9.6 pt, sol labels 7.2 pt).
 

@@ -570,6 +570,37 @@ def fig5(out, with_I=True):
              'small squares = mid-drive partial Navcam; triangles = Mastcam-Z 360°s; diamonds = sample cores acquired.', fontsize=8.5*FS, color=INK2)
     out = save_figure(fig, out, dpi=dpi5, facecolor=fig.get_facecolor()); print('saved', out, dpi5, 'dpi')
 
+ODS_MAP_PX = int(os.environ.get('M20_ODS_MAP_PX', '2048'))      # the viewer's info map: this many pixels wide
+def fig8(out):
+    """0.98.19 (Christian, 16 Nov 2026: "The map in the info tab should be the same background as
+    m20_mars_to_rover_sites_dtm figure D. Render a blank version of that with the traverse and 2 km scale bar"): figure
+    5's panel D (BOX_B5, the same terrain, tint and contours) with the traverse and a 2 km scale bar only - no axes,
+    blocks, markers or legend; the axes fill the picture, so its edges are BOX_B5.  Beside it <name>.json: the extent
+    (lon0, lon1, lat0, lat1) and the pixels, for the viewer (mppp.ibr.web.traverse_dtm puts the x of a station on it)."""
+    bb = BOX_B5
+    gx, gy, Z, hasdtm = terrain(bb, 0.00005, [12, 13])
+    nB = plt.Normalize(np.nanpercentile(Z, 1), np.nanpercentile(Z, 99))
+    dpi = 200; W = ODS_MAP_PX / dpi; H = W * (bb[3] - bb[2]) / ((bb[1] - bb[0]) * COS)
+    fig = plt.figure(figsize=(W, H), facecolor='white')
+    ax = fig.add_axes([0, 0, 1, 1])
+    draw_terrain(ax, gx, gy, Z, nB, 100)
+    ax.plot(lon, lat, color='white', lw=3.0, zorder=2, solid_joinstyle='round')
+    ax.plot(lon, lat, color=C1, lw=1.4, zorder=3, solid_joinstyle='round')
+    dl = 2000/M_LON; x0, y0 = bb[0] + 0.04*(bb[1]-bb[0]), bb[2] + 0.07*(bb[3]-bb[2])     # the 2 km bar, large enough
+    halo = [pe.withStroke(linewidth=4, foreground='white')]                              # to read on the page's map
+    ax.plot([x0, x0+dl], [y0, y0], color=INK, lw=7, zorder=9, solid_capstyle='butt', path_effects=[pe.withStroke(linewidth=10, foreground='white')])
+    ax.text(x0+dl/2, y0 + 0.035*(bb[3]-bb[2]), '2 km', ha='center', va='bottom', fontsize=22, fontweight='bold', color=INK, zorder=9, path_effects=halo)
+    ax.set_xlim(bb[0], bb[1]); ax.set_ylim(bb[2], bb[3]); ax.set_aspect('auto'); ax.axis('off')
+    out = save_figure(fig, out, dpi=dpi, facecolor='white')
+    w, h = fig.canvas.get_width_height()
+    meta = {'image': os.path.basename(out), 'extent_lonlat': [float(v) for v in bb], 'px': [int(round(W * dpi)), int(round(H * dpi))],
+            'background': 'HiRISE DTM (' + ', '.join(sorted(used_all)) + ') where it covers, ~70 m terrain tiles elsewhere' if used_all
+                          else '~70 m HiRISE+MOLA terrain tiles (no HiRISE DTM found)',
+            'sols': [int(S.min()), int(S.max())], 'note': 'figure 5 panel D, blank: the traverse and a 2 km scale bar'}
+    with open(os.path.splitext(out)[0] + '.json', 'w') as f:
+        json.dump(meta, f, indent=1)
+    print('saved', out, meta['px'], 'DTM files:', sorted(used_all) or 'none')
+
 def fig6(out):
     """Figure 5 without row 4 (panel I)."""
     fig5(out, with_I=False)
@@ -579,7 +610,7 @@ if __name__ == '__main__':
     which = sys.argv[2:] or ['2', '3', '4', '5', '6']
     names = {'2': (fig2, 'm20_jezero_traverse_clusters_map.png'), '3': (fig3, 'm20_jezero_traverse_sites_regions.png'),
              '4': (fig4, 'm20_jezero_traverse_sites_regions_wide.png'), '5': (fig5, 'm20_mars_to_rover_sites.png'),
-             '6': (fig6, 'm20_mars_to_rover_sites_no_I.png'), '7': (fig7, 'm20_traverse_banner.png')}
+             '6': (fig6, 'm20_mars_to_rover_sites_no_I.png'), '7': (fig7, 'm20_traverse_banner.png'), '8': (fig8, 'm20_ods_traverse_map.png')}
     if len(which) > 1:   # one process per figure keeps peak memory down at 300 dpi
         import subprocess
         for w in which: subprocess.run([sys.executable, __file__, od, w], check=True)

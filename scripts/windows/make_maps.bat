@@ -16,6 +16,7 @@ REM   m20_jezero_traverse_sites_regions_wide_<tag>.png  figure 4
 REM   m20_mars_to_rover_sites_<tag>.png                 figure 5   Mars -> Isidis -> Jezero -> traverse -> regions
 REM   m20_mars_to_rover_sites_no_I_<tag>.png            figure 6   figure 5 with the block list instead of panel I
 REM   m20_traverse_banner_<tag>.png                     figure 7   the GitHub banner (terrain and the pipeline name)
+REM   m20_ods_traverse_map_<tag>.png (+ .json)          figure 8   figure 5's panel D blank: the panorama viewer's map
 REM   m20_cluster_zooms_white.png                       the zooms on white (with dtm / both)
 REM One set per background: tag "dtm" (1 m HiRISE DTM where it covers, ~70 m tiles elsewhere) and, when an
 REM orthomosaic is found, tag "ortho".  Arguments: make_maps.bat [dtm|ortho|both] [DPI] [study]   (default: both 200;
