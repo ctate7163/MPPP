@@ -179,6 +179,7 @@ def main(argv=None) -> int:
         return 4
 
     todo = []
+    keys = {}                              # 0.98.26: site -> (variant, run key), to check an exit code 0
     for s in sites:
         st, settings = site_settings(root, s, a.zcam, a, dict(sets, source=a.source, variant=a.variant))
         work = st.work
@@ -191,6 +192,7 @@ def main(argv=None) -> int:
             log(f"  {s}: skipped - {why}")
             continue
         todo.append((s, work))
+        keys[s] = (settings.variant, key)
         log(f"  {s}: {'would run' if a.dry_run else 'queued'} ({why}) -> {work}")
     if a.dry_run:
         return 0
@@ -247,10 +249,19 @@ def main(argv=None) -> int:
                 if p.returncode == 5:                                        # align_scape: SKIP file
                     log(f"site {s}: skipped - {work / 'SKIP'} exists")
                     continue
-                results[s] = p.returncode == 0
-                log(f"site {s}: {'finished' if p.returncode == 0 else f'FAILED, exit {p.returncode} (see its log)'} "
+                rc = p.returncode
+                if rc == 0 and s in keys:
+                    # 0.98.26 (16 Nov: the pre-freeze blocks killed by a Ctrl-C at 11:20 "finished"): the Intel Fortran
+                    # runtime of numpy/scipy ends a process with exit code 0 on Ctrl-C - exit 0 counts only with the
+                    # block's finished record for this run key
+                    fin, why = finished(work, *keys[s])
+                    if not fin:
+                        log(f"site {s}: exit code 0 but the block is not finished ({why}) - killed? counted as failed")
+                        rc = 1
+                results[s] = rc == 0
+                log(f"site {s}: {'finished' if rc == 0 else f'FAILED, exit {p.returncode} (see its log)'} "
                     f"after {(time.time() - t0) / 3600:.2f} h")
-                if p.returncode != 0 and tries.get(s, 0) < max(0, a.retries):
+                if rc != 0 and tries.get(s, 0) < max(0, a.retries):
                     tries[s] = tries.get(s, 0) + 1
                     retry.append((s, work))
                     log(f"site {s}: will run again on its own when the others are done "

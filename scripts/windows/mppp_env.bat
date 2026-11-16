@@ -11,6 +11,10 @@ REM      then every environment in their envs\ folder.
 if not defined MPPP_HOME for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
 if not defined MPPP_ENV set "MPPP_ENV=base"
 set "KMP_DUPLICATE_LIB_OK=TRUE"
+REM 0.98.26: the Intel Fortran runtime of numpy/scipy catches Ctrl-C and ends the process with exit code 0 (16 Nov: the
+REM pre-freeze blocks killed at 11:20, "blocks done (exit 0)", the joints run on).  Off: a Ctrl-C is a Python
+REM KeyboardInterrupt and the exit code says the run did not finish.
+set "FOR_DISABLE_CONSOLE_CTRL_HANDLER=1"
 set "_MPPP_CHECK=%~dp0..\check_env.py"
 if not defined MPPP_PYTHON if exist "%~dp0mppp_python.txt" for /f "usebackq eol=# delims=" %%L in ("%~dp0mppp_python.txt") do set "MPPP_PYTHON=%%~L"
 REM 0.90: the scapes root and the PDS folder may also come from one-line files next to this script (git-ignored),
