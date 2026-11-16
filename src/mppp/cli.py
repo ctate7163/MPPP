@@ -161,6 +161,10 @@ def build_parser() -> argparse.ArgumentParser:
                         "families (all stations, all sizes) in the workspace dense_block_<cameras>, which the block's "
                         "stations share; with --station, that station's own frames (--scale, --sequence, --images) are "
                         "recorded in dense_<station>_block/mppp_dense.json for the panorama")
+    p.add_argument("--block-images", nargs="+", default=None, metavar="NAME",
+                   help="0.98.19: with --whole-block, the block's cloud from these frames only (a terrain set of the "
+                        "single-sites config), in the workspace dense_block_<--block-name>")
+    p.add_argument("--block-name", default=None, help="0.98.19: the name of the --block-images set (its workspace)")
     p.add_argument("--scale", type=float, default=None, help="--station: only frames at this downsample (0.5: half-res)")
     p.add_argument("--images", nargs="+", default=None, help="0.96: only these image names (instead of --station)")
     p.add_argument("--add-images", nargs="+", default=None, metavar="NAME",
@@ -723,6 +727,17 @@ def cmd_dense(a: argparse.Namespace) -> int:
             print(f"dense --whole-block: no frames of the families {a.cameras!r} in {proj_dir}", file=sys.stderr)
             return 2
         ws = proj_dir / f"{DENSE_DIR}_block_{''.join(sorted(fam))}"
+        pick = [n if str(n).lower().endswith(".png") else f"{n}.png" for n in (getattr(a, "block_images", None) or [])]
+        if pick:                                                 # 0.98.19: a named set of the block's frames
+            known = set(subset)
+            gone = [n for n in pick if n not in known]
+            if gone:
+                print(f"dense --block-images: {len(gone)} not among the block's {a.cameras} frames, left out: {gone[:3]}",
+                      file=sys.stderr)
+            subset = sorted(set(pick) & known)
+            if not subset:
+                return 2
+            ws = proj_dir / f"{DENSE_DIR}_block_{a.block_name or 'set'}"
         if getattr(a, "station", None) or getattr(a, "images", None):
             own = subset_images(proj, station=a.station, families=a.cameras, sequences=a.sequence, names=a.images, scale=a.scale)
             if not own:

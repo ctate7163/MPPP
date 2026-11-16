@@ -3,6 +3,30 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.19 — 2026-11-16
+
+Christian (16 Nov): Rockytop panoramas "rendered from one large 3d model that includes all the medium res eod images
+and the lowres mid drive imaging frames"; "Hippo pools should also have a full block 3d model. include the sol 2009 and
+2022 eod locations"; "Rochette should include sol 178 eod Site 6, Drive 2666 as context"; "the blue disk in the
+projected rover ods does not spin"; the welcome view "Rover Photogrammetry Viewer", opening west; an N E S W O cross,
+their hotkeys and WASD; "I can just run sync_code.bat without needing to install specific bundles".
+
+- Panorama list: terrain sets (`"terrain": "block:<name>"`, top-level `terrain_sets`; `mppp dense --whole-block
+  --block-name --block-images`). `rockytop`: 119 frames (the half-res end-of-drive 360s of sols 460-502 and the
+  quarter-res mid-drive pairs) for Sol0461_S026D0630, Sol0474_S026D0850 and the new **Sol0477_S026D1004 (Skinner
+  Ridge)** and **Sol0502_S026D1222 (Wildcat Ridge)**. `hippo_pools`: 92 frames for Sol1955_S091D0124 and the new
+  **Sol2009_S092D0000** and **Sol2022_S093D0000**. Their context frames: the end-of-drive and mid-drive sets within
+  20 m taken within 45 minutes of the station's local time (else the two within 20 m closest in time).
+- Rochette: the whole sol 178 end-of-drive 360 at S006D2666 as context (5 pairs; one before).
+- Panoramas: the nadir mark's texture is written for the rover variant too (its last eye, the pivot's, carries no
+  mark, so 0.98.4-0.98.18 wrote none and the page drew no disc). Publishing gives a rover variant without a texture
+  the terrain-only variant's disc.
+- Viewer: the welcome view says "Rover Photogrammetry Viewer" under WEST and opens facing west; an N E S W cross with
+  O in the middle at the right of the screen (O: the rover's front, 45 degrees down); Shift+N/E/S/W and N, O as keys;
+  W A S D held look up, left, down, right.
+- `sync_code.bat` with no argument takes the newest `mppp_*.bundle` in `MPPP_TRANSFER` (default
+  `D:\rover_blocks\_transfer`).
+
 ## 0.98.18 — 2026-11-16
 
 Christian: "for chal rocks and large, do not align ZCAM05099, ZCAM03142 and ZCAM03143. ZCAM08051 needs to align if at

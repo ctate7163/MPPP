@@ -2056,7 +2056,9 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                 (out / n).unlink()
                 log.info("ods: removed the stale %s (now %s_%s)", n, prefix, n)
     rec_out["prefix"] = prefix
-    if mark is not None:
+    if mark0 is not None and "nadir_mark" in rec_out:   # 0.98.19: not "mark" - the last eye (the pivot's, with the rover
+        #   shown) carries no mark, so the rover variant had no texture and the page no disc: the mark baked into
+        #   the panorama showed, and its text did not turn (Christian, 16 Nov 2026)
         try:                                             # 0.97.24: the mark seen from above, for a viewer's ground surface
             tex = out / f"{(prefix + '_') if prefix else ''}{_nadir.TEXTURE_SUFFIX}"
             _nadir.write_texture(mark0, tex)

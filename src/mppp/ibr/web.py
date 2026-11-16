@@ -103,9 +103,12 @@ WELCOME_MUTE = (0.60, 0.85, 0.08)          # the welcome picture (0.98.14; Chris
 OLD_TEST_ID = "orientation_test"           # the labelled test pair of before 0.98.4: taken off the list
 
 
+WELCOME_YAW_DEG = 270.0      # 0.98.19: the welcome view opens looking west, where its title is
+
+
 def welcome_pano(web: Path, station_entry: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """0.98.4 (Christian, 14 Nov 2026: "Remove the fake ods. In its stead put van zyl grayed out with north south and
-    east in the sky in white letters ... MPPP stereo viewer for Mars 2020 Perseverance Rover in bold welcoming
+    east in the sky in white letters ... Rover Photogrammetry Viewer (0.98.19; was MPPP stereo viewer) for Mars 2020 Perseverance Rover in bold welcoming
     letters a few meters from the viewer"): the list's first entry - Van Zyl Overlook's standard panorama, its colours
     muted a little (WELCOME_MUTE; grey until 0.98.13), reduced to WELCOME_WIDTH.  The page draws the words over it (an entry with "welcome": true).  None when
     Van Zyl is not published."""
@@ -137,8 +140,8 @@ def welcome_pano(web: Path, station_entry: Optional[Dict[str, Any]]) -> Optional
             tag_stereo(dst, extra={"Station": WELCOME_STATION})
         except Exception:                                    # noqa: BLE001
             pass
-    return {"id": WELCOME_ID, "title": "Welcome", "welcome": True, "site_name": "MPPP stereo viewer",
-            "yaw_deg": station_entry.get("yaw_deg"),
+    return {"id": WELCOME_ID, "title": "Welcome", "welcome": True, "site_name": "Rover Photogrammetry Viewer",
+            "yaw_deg": WELCOME_YAW_DEG,                       # 0.98.19 (Christian, 16 Nov 2026): it opens looking west
             "variants": [{"key": "welcome", "label": "welcome", "views": {"standard": "panos/" + dst.name}}]}
 
 
@@ -386,6 +389,11 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
         # variants - the terrain-only variant's depth, the disc as wide there as it looks in the panorama
         ground = next((v["ground_mark"] for v in entry["variants"] if v["key"] == "masked" and v.get("ground_mark")), None)
         for v in entry["variants"]:
+            if ground and not v.get("ground_mark") and v["key"] != "masked":
+                # 0.98.19 (Christian, 16 Nov 2026: "the blue disk in the projected rover ods does not spin"): a rover
+                # panorama of 0.98.4-0.98.18 wrote no mark texture (its last eye, the pivot's, carries none) - the
+                # terrain-only variant's disc, at the terrain's level, covers the mark baked into the picture
+                v["ground_mark"] = dict(ground)
             gm = v.get("ground_mark")
             if ground and gm and v["key"] != "masked" and ground["depth_m"] > gm["depth_m"]:
                 r = float(ground["depth_m"]) * float(np.tan(np.radians(gm.get("radius_deg", 10.0))))
