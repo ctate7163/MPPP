@@ -12,7 +12,7 @@
      "key": "welcome",
      "label": "welcome",
      "views": {
-      "standard": "panos/welcome_360_3DTD.jpg"
+      "standard": "panos/welcome_muted_360_3DTD.jpg"
      }
     }
    ]
@@ -26,7 +26,8 @@
      "label": "terrain only",
      "views": {
       "standard": "panos/Sol0009_S003D0000_360_3DTD.jpg",
-      "normal": "panos/Sol0009_S003D0000_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0009_S003D0000_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0009_S003D0000_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol0009_S003D0000_nadir_mark.png",
@@ -43,7 +44,8 @@
      "label": "terrain with rover (projected)",
      "views": {
       "standard": "panos/Sol0009_S003D0000_rover_360_3DTD.jpg",
-      "normal": "panos/Sol0009_S003D0000_rover_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0009_S003D0000_rover_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0009_S003D0000_rover_range_log_360_3DTD.jpg"
      }
     },
     {
@@ -51,7 +53,8 @@
      "label": "terrain with rover (3D model)",
      "views": {
       "standard": "panos/Sol0009_S003D0000_360_3DTD.jpg",
-      "normal": "panos/Sol0009_S003D0000_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0009_S003D0000_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0009_S003D0000_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol0009_S003D0000_nadir_mark.png",
@@ -64,13 +67,13 @@
      },
      "rover_surface": {
       "file": "panos/Sol0009_S003D0000_rover_rover_surface.glb",
-      "triangles": 1238837,
+      "triangles": 179426,
       "experimental": true
      }
     }
    ],
-   "mppp": "0.98.8",
-   "published": "2026-11-14",
+   "mppp": "0.98.18",
+   "published": "2026-11-16",
    "map": [
     13099.1,
     1461.6
@@ -89,7 +92,8 @@
      "label": "terrain only",
      "views": {
       "standard": "panos/Sol0052_S003D2046_360_3DTD.jpg",
-      "normal": "panos/Sol0052_S003D2046_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0052_S003D2046_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0052_S003D2046_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol0052_S003D2046_nadir_mark.png",
@@ -106,7 +110,8 @@
      "label": "terrain with rover (projected)",
      "views": {
       "standard": "panos/Sol0052_S003D2046_rover_360_3DTD.jpg",
-      "normal": "panos/Sol0052_S003D2046_rover_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0052_S003D2046_rover_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0052_S003D2046_rover_range_log_360_3DTD.jpg"
      }
     },
     {
@@ -114,7 +119,8 @@
      "label": "terrain with rover (3D model)",
      "views": {
       "standard": "panos/Sol0052_S003D2046_360_3DTD.jpg",
-      "normal": "panos/Sol0052_S003D2046_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0052_S003D2046_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0052_S003D2046_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol0052_S003D2046_nadir_mark.png",
@@ -127,13 +133,13 @@
      },
      "rover_surface": {
       "file": "panos/Sol0052_S003D2046_rover_rover_surface.glb",
-      "triangles": 1228066,
+      "triangles": 179426,
       "experimental": true
      }
     }
    ],
-   "mppp": "0.98.8",
-   "published": "2026-11-15",
+   "mppp": "0.98.18",
+   "published": "2026-11-16",
    "map": [
     13169.6,
     1469.0
@@ -152,7 +158,8 @@
      "label": "terrain only",
      "views": {
       "standard": "panos/Sol0180_S007D0000_360_3DTD.jpg",
-      "normal": "panos/Sol0180_S007D0000_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0180_S007D0000_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0180_S007D0000_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol0180_S007D0000_nadir_mark.png",
@@ -169,7 +176,8 @@
      "label": "terrain with rover (projected)",
      "views": {
       "standard": "panos/Sol0180_S007D0000_rover_360_3DTD.jpg",
-      "normal": "panos/Sol0180_S007D0000_rover_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0180_S007D0000_rover_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0180_S007D0000_rover_range_log_360_3DTD.jpg"
      }
     },
     {
@@ -177,7 +185,8 @@
      "label": "terrain with rover (3D model)",
      "views": {
       "standard": "panos/Sol0180_S007D0000_360_3DTD.jpg",
-      "normal": "panos/Sol0180_S007D0000_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0180_S007D0000_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0180_S007D0000_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol0180_S007D0000_nadir_mark.png",
@@ -190,13 +199,13 @@
      },
      "rover_surface": {
       "file": "panos/Sol0180_S007D0000_rover_rover_surface.glb",
-      "triangles": 1222224,
+      "triangles": 179426,
       "experimental": true
      }
     }
    ],
-   "mppp": "0.98.8",
-   "published": "2026-11-14",
+   "mppp": "0.98.18",
+   "published": "2026-11-16",
    "map": [
     12732.5,
     638.4
@@ -215,7 +224,8 @@
      "label": "terrain only",
      "views": {
       "standard": "panos/Sol0361_S011D0000_360_3DTD.jpg",
-      "normal": "panos/Sol0361_S011D0000_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0361_S011D0000_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0361_S011D0000_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol0361_S011D0000_nadir_mark.png",
@@ -232,7 +242,8 @@
      "label": "terrain with rover (projected)",
      "views": {
       "standard": "panos/Sol0361_S011D0000_rover_360_3DTD.jpg",
-      "normal": "panos/Sol0361_S011D0000_rover_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0361_S011D0000_rover_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0361_S011D0000_rover_range_log_360_3DTD.jpg"
      }
     },
     {
@@ -240,7 +251,8 @@
      "label": "terrain with rover (3D model)",
      "views": {
       "standard": "panos/Sol0361_S011D0000_360_3DTD.jpg",
-      "normal": "panos/Sol0361_S011D0000_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0361_S011D0000_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0361_S011D0000_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol0361_S011D0000_nadir_mark.png",
@@ -253,13 +265,13 @@
      },
      "rover_surface": {
       "file": "panos/Sol0361_S011D0000_rover_rover_surface.glb",
-      "triangles": 1217842,
+      "triangles": 179426,
       "experimental": true
      }
     }
    ],
-   "mppp": "0.98.8",
-   "published": "2026-11-14",
+   "mppp": "0.98.18",
+   "published": "2026-11-16",
    "map": [
     13186.4,
     1418.1
@@ -278,7 +290,8 @@
      "label": "terrain only",
      "views": {
       "standard": "panos/Sol0461_S026D0630_360_3DTD.jpg",
-      "normal": "panos/Sol0461_S026D0630_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0461_S026D0630_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0461_S026D0630_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol0461_S026D0630_nadir_mark.png",
@@ -295,7 +308,8 @@
      "label": "terrain with rover (projected)",
      "views": {
       "standard": "panos/Sol0461_S026D0630_rover_360_3DTD.jpg",
-      "normal": "panos/Sol0461_S026D0630_rover_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0461_S026D0630_rover_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0461_S026D0630_rover_range_log_360_3DTD.jpg"
      }
     },
     {
@@ -303,7 +317,8 @@
      "label": "terrain with rover (3D model)",
      "views": {
       "standard": "panos/Sol0461_S026D0630_360_3DTD.jpg",
-      "normal": "panos/Sol0461_S026D0630_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0461_S026D0630_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0461_S026D0630_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol0461_S026D0630_nadir_mark.png",
@@ -316,13 +331,13 @@
      },
      "rover_surface": {
       "file": "panos/Sol0461_S026D0630_rover_rover_surface.glb",
-      "triangles": 1286521,
+      "triangles": 179426,
       "experimental": true
      }
     }
    ],
-   "mppp": "0.98.8",
-   "published": "2026-11-15",
+   "mppp": "0.98.18",
+   "published": "2026-11-16",
    "map": [
     10583.6,
     2295.3
@@ -341,7 +356,8 @@
      "label": "terrain only",
      "views": {
       "standard": "panos/Sol0474_S026D0850_360_3DTD.jpg",
-      "normal": "panos/Sol0474_S026D0850_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0474_S026D0850_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0474_S026D0850_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol0474_S026D0850_nadir_mark.png",
@@ -358,7 +374,8 @@
      "label": "terrain with rover (projected)",
      "views": {
       "standard": "panos/Sol0474_S026D0850_rover_360_3DTD.jpg",
-      "normal": "panos/Sol0474_S026D0850_rover_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0474_S026D0850_rover_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0474_S026D0850_rover_range_log_360_3DTD.jpg"
      }
     },
     {
@@ -366,7 +383,8 @@
      "label": "terrain with rover (3D model)",
      "views": {
       "standard": "panos/Sol0474_S026D0850_360_3DTD.jpg",
-      "normal": "panos/Sol0474_S026D0850_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0474_S026D0850_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0474_S026D0850_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol0474_S026D0850_nadir_mark.png",
@@ -379,13 +397,13 @@
      },
      "rover_surface": {
       "file": "panos/Sol0474_S026D0850_rover_rover_surface.glb",
-      "triangles": 1217443,
+      "triangles": 179426,
       "experimental": true
      }
     }
    ],
-   "mppp": "0.98.8",
-   "published": "2026-11-15",
+   "mppp": "0.98.18",
+   "published": "2026-11-16",
    "map": [
     10581.1,
     2305.0
@@ -404,7 +422,8 @@
      "label": "terrain only",
      "views": {
       "standard": "panos/Sol0565_S029D0000_360_3DTD.jpg",
-      "normal": "panos/Sol0565_S029D0000_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0565_S029D0000_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0565_S029D0000_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol0565_S029D0000_nadir_mark.png",
@@ -421,7 +440,8 @@
      "label": "terrain with rover (projected)",
      "views": {
       "standard": "panos/Sol0565_S029D0000_rover_360_3DTD.jpg",
-      "normal": "panos/Sol0565_S029D0000_rover_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0565_S029D0000_rover_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0565_S029D0000_rover_range_log_360_3DTD.jpg"
      }
     },
     {
@@ -429,7 +449,8 @@
      "label": "terrain with rover (3D model)",
      "views": {
       "standard": "panos/Sol0565_S029D0000_360_3DTD.jpg",
-      "normal": "panos/Sol0565_S029D0000_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0565_S029D0000_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0565_S029D0000_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol0565_S029D0000_nadir_mark.png",
@@ -442,13 +463,13 @@
      },
      "rover_surface": {
       "file": "panos/Sol0565_S029D0000_rover_rover_surface.glb",
-      "triangles": 1263837,
+      "triangles": 179426,
       "experimental": true
      }
     }
    ],
-   "mppp": "0.98.8",
-   "published": "2026-11-14",
+   "mppp": "0.98.18",
+   "published": "2026-11-16",
    "map": [
     10319.1,
     1823.1
@@ -467,7 +488,8 @@
      "label": "terrain only",
      "views": {
       "standard": "panos/Sol0686_S032D1184_360_3DTD.jpg",
-      "normal": "panos/Sol0686_S032D1184_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0686_S032D1184_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0686_S032D1184_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol0686_S032D1184_nadir_mark.png",
@@ -484,7 +506,8 @@
      "label": "terrain with rover (projected)",
      "views": {
       "standard": "panos/Sol0686_S032D1184_rover_360_3DTD.jpg",
-      "normal": "panos/Sol0686_S032D1184_rover_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0686_S032D1184_rover_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0686_S032D1184_rover_range_log_360_3DTD.jpg"
      }
     },
     {
@@ -492,7 +515,8 @@
      "label": "terrain with rover (3D model)",
      "views": {
       "standard": "panos/Sol0686_S032D1184_360_3DTD.jpg",
-      "normal": "panos/Sol0686_S032D1184_normal_360_3DTD.jpg"
+      "normal": "panos/Sol0686_S032D1184_normal_360_3DTD.jpg",
+      "range log": "panos/Sol0686_S032D1184_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol0686_S032D1184_nadir_mark.png",
@@ -505,13 +529,13 @@
      },
      "rover_surface": {
       "file": "panos/Sol0686_S032D1184_rover_rover_surface.glb",
-      "triangles": 1228526,
+      "triangles": 179426,
       "experimental": true
      }
     }
    ],
-   "mppp": "0.98.8",
-   "published": "2026-11-15",
+   "mppp": "0.98.18",
+   "published": "2026-11-16",
    "map": [
     10713.1,
     1979.9
@@ -531,7 +555,8 @@
      "label": "terrain only",
      "views": {
       "standard": "panos/Sol1189_S054D1152_360_3DTD.jpg",
-      "normal": "panos/Sol1189_S054D1152_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1189_S054D1152_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1189_S054D1152_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol1189_S054D1152_nadir_mark.png",
@@ -548,7 +573,8 @@
      "label": "terrain with rover (projected)",
      "views": {
       "standard": "panos/Sol1189_S054D1152_rover_360_3DTD.jpg",
-      "normal": "panos/Sol1189_S054D1152_rover_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1189_S054D1152_rover_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1189_S054D1152_rover_range_log_360_3DTD.jpg"
      }
     },
     {
@@ -556,7 +582,8 @@
      "label": "terrain with rover (3D model)",
      "views": {
       "standard": "panos/Sol1189_S054D1152_360_3DTD.jpg",
-      "normal": "panos/Sol1189_S054D1152_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1189_S054D1152_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1189_S054D1152_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol1189_S054D1152_nadir_mark.png",
@@ -569,13 +596,13 @@
      },
      "rover_surface": {
       "file": "panos/Sol1189_S054D1152_rover_rover_surface.glb",
-      "triangles": 1270593,
+      "triangles": 179426,
       "experimental": true
      }
     }
    ],
-   "mppp": "0.98.8",
-   "published": "2026-11-14",
+   "mppp": "0.98.18",
+   "published": "2026-11-16",
    "map": [
     4904.6,
     4592.5
@@ -594,7 +621,8 @@
      "label": "terrain only",
      "views": {
       "standard": "panos/Sol1411_S068D0142_360_3DTD.jpg",
-      "normal": "panos/Sol1411_S068D0142_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1411_S068D0142_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1411_S068D0142_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol1411_S068D0142_nadir_mark.png",
@@ -611,7 +639,8 @@
      "label": "terrain with rover (projected)",
      "views": {
       "standard": "panos/Sol1411_S068D0142_rover_360_3DTD.jpg",
-      "normal": "panos/Sol1411_S068D0142_rover_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1411_S068D0142_rover_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1411_S068D0142_rover_range_log_360_3DTD.jpg"
      }
     },
     {
@@ -619,7 +648,8 @@
      "label": "terrain with rover (3D model)",
      "views": {
       "standard": "panos/Sol1411_S068D0142_360_3DTD.jpg",
-      "normal": "panos/Sol1411_S068D0142_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1411_S068D0142_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1411_S068D0142_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol1411_S068D0142_nadir_mark.png",
@@ -632,13 +662,13 @@
      },
      "rover_surface": {
       "file": "panos/Sol1411_S068D0142_rover_rover_surface.glb",
-      "triangles": 1098760,
+      "triangles": 179426,
       "experimental": true
      }
     }
    ],
-   "mppp": "0.98.8",
-   "published": "2026-11-15",
+   "mppp": "0.98.18",
+   "published": "2026-11-16",
    "map": [
     2644.3,
     2296.1
@@ -657,7 +687,8 @@
      "label": "terrain only",
      "views": {
       "standard": "panos/Sol1454_S071D0056_360_3DTD.jpg",
-      "normal": "panos/Sol1454_S071D0056_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1454_S071D0056_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1454_S071D0056_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol1454_S071D0056_nadir_mark.png",
@@ -674,7 +705,8 @@
      "label": "terrain with rover (projected)",
      "views": {
       "standard": "panos/Sol1454_S071D0056_rover_360_3DTD.jpg",
-      "normal": "panos/Sol1454_S071D0056_rover_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1454_S071D0056_rover_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1454_S071D0056_rover_range_log_360_3DTD.jpg"
      }
     },
     {
@@ -682,7 +714,8 @@
      "label": "terrain with rover (3D model)",
      "views": {
       "standard": "panos/Sol1454_S071D0056_360_3DTD.jpg",
-      "normal": "panos/Sol1454_S071D0056_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1454_S071D0056_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1454_S071D0056_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol1454_S071D0056_nadir_mark.png",
@@ -695,13 +728,13 @@
      },
      "rover_surface": {
       "file": "panos/Sol1454_S071D0056_rover_rover_surface.glb",
-      "triangles": 1336759,
+      "triangles": 179426,
       "experimental": true
      }
     }
    ],
-   "mppp": "0.98.8",
-   "published": "2026-11-15",
+   "mppp": "0.98.18",
+   "published": "2026-11-16",
    "map": [
     2235.9,
     2509.4
@@ -720,7 +753,8 @@
      "label": "terrain only",
      "views": {
       "standard": "panos/Sol1635_S079D0732_360_3DTD.jpg",
-      "normal": "panos/Sol1635_S079D0732_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1635_S079D0732_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1635_S079D0732_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol1635_S079D0732_nadir_mark.png",
@@ -737,7 +771,8 @@
      "label": "terrain with rover (projected)",
      "views": {
       "standard": "panos/Sol1635_S079D0732_rover_360_3DTD.jpg",
-      "normal": "panos/Sol1635_S079D0732_rover_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1635_S079D0732_rover_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1635_S079D0732_rover_range_log_360_3DTD.jpg"
      }
     },
     {
@@ -745,7 +780,8 @@
      "label": "terrain with rover (3D model)",
      "views": {
       "standard": "panos/Sol1635_S079D0732_360_3DTD.jpg",
-      "normal": "panos/Sol1635_S079D0732_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1635_S079D0732_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1635_S079D0732_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol1635_S079D0732_nadir_mark.png",
@@ -758,13 +794,13 @@
      },
      "rover_surface": {
       "file": "panos/Sol1635_S079D0732_rover_rover_surface.glb",
-      "triangles": 1280862,
+      "triangles": 179426,
       "experimental": true
      }
     }
    ],
-   "mppp": "0.98.8",
-   "published": "2026-11-15",
+   "mppp": "0.98.18",
+   "published": "2026-11-16",
    "map": [
     2604.2,
     1643.0
@@ -783,7 +819,8 @@
      "label": "terrain only",
      "views": {
       "standard": "panos/Sol1792_S087D0000_360_3DTD.jpg",
-      "normal": "panos/Sol1792_S087D0000_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1792_S087D0000_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1792_S087D0000_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol1792_S087D0000_nadir_mark.png",
@@ -800,7 +837,8 @@
      "label": "terrain with rover (projected)",
      "views": {
       "standard": "panos/Sol1792_S087D0000_rover_360_3DTD.jpg",
-      "normal": "panos/Sol1792_S087D0000_rover_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1792_S087D0000_rover_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1792_S087D0000_rover_range_log_360_3DTD.jpg"
      }
     },
     {
@@ -808,7 +846,8 @@
      "label": "terrain with rover (3D model)",
      "views": {
       "standard": "panos/Sol1792_S087D0000_360_3DTD.jpg",
-      "normal": "panos/Sol1792_S087D0000_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1792_S087D0000_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1792_S087D0000_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol1792_S087D0000_nadir_mark.png",
@@ -821,13 +860,13 @@
      },
      "rover_surface": {
       "file": "panos/Sol1792_S087D0000_rover_rover_surface.glb",
-      "triangles": 1255596,
+      "triangles": 179426,
       "experimental": true
      }
     }
    ],
-   "mppp": "0.98.8",
-   "published": "2026-11-15",
+   "mppp": "0.98.18",
+   "published": "2026-11-16",
    "map": [
     492.5,
     459.7
@@ -846,7 +885,8 @@
      "label": "terrain only",
      "views": {
       "standard": "panos/Sol1955_S091D0124_360_3DTD.jpg",
-      "normal": "panos/Sol1955_S091D0124_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1955_S091D0124_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1955_S091D0124_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol1955_S091D0124_nadir_mark.png",
@@ -863,7 +903,8 @@
      "label": "terrain with rover (projected)",
      "views": {
       "standard": "panos/Sol1955_S091D0124_rover_360_3DTD.jpg",
-      "normal": "panos/Sol1955_S091D0124_rover_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1955_S091D0124_rover_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1955_S091D0124_rover_range_log_360_3DTD.jpg"
      }
     },
     {
@@ -871,7 +912,8 @@
      "label": "terrain with rover (3D model)",
      "views": {
       "standard": "panos/Sol1955_S091D0124_360_3DTD.jpg",
-      "normal": "panos/Sol1955_S091D0124_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1955_S091D0124_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1955_S091D0124_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol1955_S091D0124_nadir_mark.png",
@@ -884,13 +926,13 @@
      },
      "rover_surface": {
       "file": "panos/Sol1955_S091D0124_rover_rover_surface.glb",
-      "triangles": 1305759,
+      "triangles": 179426,
       "experimental": true
      }
     }
    ],
-   "mppp": "0.98.8",
-   "published": "2026-11-14",
+   "mppp": "0.98.18",
+   "published": "2026-11-16",
    "map": [
     841.7,
     926.4
@@ -909,7 +951,8 @@
      "label": "terrain only",
      "views": {
       "standard": "panos/Sol1965_S091D0806_360_3DTD.jpg",
-      "normal": "panos/Sol1965_S091D0806_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1965_S091D0806_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1965_S091D0806_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol1965_S091D0806_nadir_mark.png",
@@ -926,7 +969,8 @@
      "label": "terrain with rover (projected)",
      "views": {
       "standard": "panos/Sol1965_S091D0806_rover_360_3DTD.jpg",
-      "normal": "panos/Sol1965_S091D0806_rover_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1965_S091D0806_rover_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1965_S091D0806_rover_range_log_360_3DTD.jpg"
      }
     },
     {
@@ -934,7 +978,8 @@
      "label": "terrain with rover (3D model)",
      "views": {
       "standard": "panos/Sol1965_S091D0806_360_3DTD.jpg",
-      "normal": "panos/Sol1965_S091D0806_normal_360_3DTD.jpg"
+      "normal": "panos/Sol1965_S091D0806_normal_360_3DTD.jpg",
+      "range log": "panos/Sol1965_S091D0806_range_log_360_3DTD.jpg"
      },
      "ground_mark": {
       "file": "panos/Sol1965_S091D0806_nadir_mark.png",
@@ -947,13 +992,13 @@
      },
      "rover_surface": {
       "file": "panos/Sol1965_S091D0806_rover_rover_surface.glb",
-      "triangles": 1272912,
+      "triangles": 179426,
       "experimental": true
      }
     }
    ],
-   "mppp": "0.98.8",
-   "published": "2026-11-14",
+   "mppp": "0.98.18",
+   "published": "2026-11-16",
    "map": [
     785.3,
     1018.2
@@ -3803,6 +3848,22 @@
     926.2
    ]
   ],
-  "note": "metres east and north of origin_en (the mission's map frame); the rover's waypoints in order"
+  "note": "metres east and north of origin_en (the mission's map frame); the rover's waypoints in order",
+  "ortho": {
+   "file": "panos/traverse_ortho.jpg",
+   "extent": [
+    -551.5,
+    -5083.5,
+    14339.2,
+    9807.3
+   ],
+   "px": 1024,
+   "m_per_px": 14.54,
+   "source": [
+    "JEZ_hirise_soc_006_orthoMosaic_25cm_Eqc_latTs0_lon0_first.tif",
+    "MSR_hirise_soc_003_Orthomosaic_0.25m_Eqc_latTs0_lon0_First_NoBlend.tif"
+   ],
+   "credit": "HiRISE orthomosaic (NASA/JPL-Caltech/UArizona/USGS)"
+  }
  }
 }
