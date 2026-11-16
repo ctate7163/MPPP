@@ -113,3 +113,7 @@
 ## 20261023-142018 - Hazcam fit of 2 blocks (chal_rocks_tiny, seitah_overlook_tiny)
   - `M2020_RL.json` 65c4a274490e from `D:\scapes\camera_analysis\hazcam_fit_tiny_20261023\candidate\M2020_RL.json` (THIN_PRISM_FISHEYE 5120x3840, fx 2156.86 at -20.0 degC)
   - `M2020_RR.json` 5b5342f5a8b0 from `D:\scapes\camera_analysis\hazcam_fit_tiny_20261023\candidate\M2020_RR.json` (THIN_PRISM_FISHEYE 5120x3840, fx 2148.31 at -20.0 degC)
+
+## 20261116-092714 - Mastcam-Z 63 and 79 mm from the 15 Nov freeze joints (zcam63_joint_20261115: 13 blocks; zcam79_joint_20261115: 6 blocks), promoted by hand (Christian, 16 Nov 2026: "Promote the latest z63 and z79 models"); only the high/low ratio failed (and the 79 mm rig scatter of two blocks under 5,000 observations); ratio held at the 0.98.16 prior (63 mm 1.0045, 79 mm 1.0065)
+  - `M2020_ZCAM063_focus_model.json` 6e8d66fa8ff8 from `D:\rover_blocks\camera_analysis\zcam63_joint_20261115\M2020_ZCAM063_focus_model.json`, ratio set to 1.0045 (focus model for ['ZL063', 'ZR063'] and rig)
+  - `M2020_ZCAM079_focus_model.json` 82567c69253c from `D:\rover_blocks\camera_analysis\zcam79_joint_20261115\M2020_ZCAM079_focus_model.json`, ratio set to 1.0065 (focus model for ['ZL079', 'ZR079'] and rig)

@@ -500,3 +500,20 @@ def test_freeze3_candidate_over_a_freeze_rig_the_zooms_and_the_folder_kept(tmp_p
     a = fz.parser().parse_args(["--root", str(root), "--dry-run"])
     r = fz.Run(a)
     assert r.cmods == root / "cmods" and a.candidate == str(cand)
+
+
+def test_freeze3_ladder_step_runs_seitahs_states_with_100mm(tmp_path):
+    """0.98.21 (Christian, 16 Nov 2026: "The zcam_zoom_ladder_seitah_sol121_zcam_states plot should also include 100"):
+    a step after the studies runs Seitah Overlook's states variant (each Mastcam-Z image its own camera) and its states
+    report into camera_analysis/zcam_states_<day>_seitah - the newest states study, which the figures draw the ladder
+    from; Seitah Overlook's block lists 100 mm."""
+    import inspect
+    from mppp_studies.calibration import freeze as fz
+    from mppp.paths import data_file
+    assert fz.STEPS[-2:] == ("ladder", "report") and fz.LADDER_SITES == ("seitah_overlook",)
+    src = inspect.getsource(fz.Run.s_ladder)
+    assert "--variant\", \"states\"" in src and "zcam_states_{self.day()}_seitah" in src and "ZCAM_STATES_SETS" in src
+    sites = json.loads(Path(data_file("sites.json")).read_text(encoding="utf-8"))["sites"]
+    assert 100 in sites["seitah_overlook"]["zcam"]
+    for k in ("seitah_overlook", "skinner_ridge", "taylorfjellet", "chal_rocks_large"):     # 0.98.21: position priors
+        assert sites[k]["settings"]["zcam_station_prior_sigma_m"] == 0.02

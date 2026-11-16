@@ -27,7 +27,7 @@ Writes, into ``--out`` (default ``<MPPP>/Claude outputs``):
                                               through the deck_joint chain (mppp_studies.calibration.zcam_mast_head) - --mast-chain
   zcam_mast_head_vs_zoom_<tag>.png            0.95.5: centre and image-centre pointing against zoom (+ the station
                                               table and the Z mount per zoom: zcam_mast_head_<tag>.json)
-  deck_fiducials_label_vs_constrained[_early]_<tag>.png   0.97.0: the deck fiducials of one Navcam frame (sol 1642; _early:
+  deck_fiducials_label_vs_constrained[_early]_<tag>.png   0.97.0: the deck fiducials of one Navcam frame (sol 1642; _early: sol 448 since 0.98.21, was
                                          sol 31) through the label CAHVORE and the law + mast chain (+ .json) - --deck-frame
   deck_fiducials_and_vfs[_early]_<tag>.png    0.98.10: the same with the vicarious fiducials of the deck joint
                                          (data/vf_points_20261115.json: the 15 Nov replacements green, the tag corners
@@ -58,9 +58,13 @@ SHIPPED_MAST_CHAIN = "deck_joint_mast_model_DJ32_20261107.json"
 DECK_FRAME = (r"D:\data\m2020\datadrive\01642\ids\rdr\ncam"
               r"\NRF_1642_0812712250_112RAD_N0790870NCAM03642_0A0095J01.IMG")
 
-# 12 Nov (Christian: "a second plot using an image in the first 100 sols"): the sol-31 full-resolution left frame
-DECK_FRAME_EARLY = (r"D:\data\m2020\datadrive\00031\ids\rdr\ncam"
-                    r"\NLF_0031_0669701705_000RAD_N0031044NCAM00600_0A00LLJ03.IMG")
+# 12 Nov (Christian: "a second plot using an image in the first 100 sols"): the sol-31 full-resolution left frame.
+# 16 Nov (Christian: "Replace the sol 31 image with another that shows all nine fiducials"): sol 31 showed six. No
+# frame of sols 0-100 on the PC shows all nine (the best: 7, quarter resolution); the earliest that does is this sol
+# 448 half-resolution right frame - AFT1, RPFA1, RPFA2, TDF1-4, LDIFF, RDIFF all detected (constrained rms 0.76 px).
+# The figure keeps its "_early" name.
+DECK_FRAME_EARLY = (r"D:\data\m2020\datadrive\00448\ids\rdr\ncam"
+                    r"\NRF_0448_0706724176_506RAD_N0250446NCAM03448_0A0195J02.IMG")
 
 def finished_blocks(root: Path, group: str = "ecam_consensus"):
     """The block folders of a site group under ``root`` whose alignment finished (``colmap/run_done.json``)."""
@@ -190,7 +194,7 @@ def main(argv=None) -> int:
                     help="0.97.0: one full-resolution Navcam RAD product (.IMG) of the deck for the fiducial figure "
                          "(default MPPP_DECK_FRAME or the sol-1642 frame under D:\\data\\m2020\\datadrive); - for none")
     ap.add_argument("--deck-frame-early", default=os.environ.get("MPPP_DECK_FRAME_EARLY", DECK_FRAME_EARLY),
-                    help="0.97.2: a second deck frame from the first 100 sols for the same figure (_early); - for none")
+                    help="0.97.2: a second deck frame for the same figure (_early; 0.98.21: sol 448, all nine targets); - for none")
     ap.add_argument("--deck-joint", default=os.environ.get("EOD_WORK", r"D:\rover_frame_eod"),
                     help="0.97.0: the deck_joint work folder (jr_<run>.json, eod_report.json) for the Navcam baseline "
                          "figure (default EOD_WORK or D:\\rover_frame_eod); without it the shipped DJ32 fit alone")

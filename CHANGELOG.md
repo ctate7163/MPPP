@@ -3,6 +3,24 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.21 — 2026-11-16
+
+Christian (16 Nov): "Promote the latest z63 and z79 models. Is the 100 model also good enough? prepare an updated
+freeze run that fixes and realigns chal rocks large and any others. In the standard make figures, Double the window
+patch window on the fiducial images. Replace the sol 31 image with another that shows all nine fiducials. The
+zcam_zoom_ladder_seitah_sol121_zcam_states plot should also include 100."
+
+- Camera models: Mastcam-Z 63 and 79 mm from the 15 Nov freeze joints (13 and 6 blocks) promoted by hand - their
+  checks failed only on the high/low ratio (and, at 79 mm, the rig scatter of two blocks under 5,000 observations,
+  which 0.98.16 leaves out); the ratio is held at the 0.98.16 prior (63 mm 1.0045, 79 mm 1.0065). There is no
+  100 mm model yet: freeze-3's joint is the first.
+- `sites.json`: the Mastcam-Z position prior 0.02 m at Seitah Overlook, Skinner Ridge and Taylorfjellet (as at Chal
+  Rocks, 0.98.18): their sequences that slid 1-3.8 m from their Navcam stations in the 15 Nov final pass.
+- Freeze: a `ladder` step - Seitah Overlook's states run with its 100 mm frames and its states report
+  (`camera_analysis/zcam_states_<day>_seitah`), which the figures' sol 121 zoom ladder is drawn from.
+- Figures: the deck fiducial insets +-16 px (were +-8); the second deck frame is sol 448's right Navcam frame, the
+  earliest on the PC with all nine targets detected (sol 31 showed six; no frame of sols 0-100 shows more than 7).
+
 ## 0.98.20 — 2026-11-16
 
 Christian (16 Nov): "add sol 1947 eod ods"; sols 1177, 1183, 1308 and 609 with their context, sol 33 as context at the

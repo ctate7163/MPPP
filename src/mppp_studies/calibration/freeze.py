@@ -36,6 +36,8 @@ Steps (each done once; started again after any stop, the run continues where it 
            Hill, Chal Rocks large): the Navcam and Z34 baselines against the survey
   ztests   comparison joints, never promoted: Z34 and Z110 with fy / fx held at 1, Z110 without Marble Mountain
   studies  run_pipeline's error_analysis, rover_frame and report on the final blocks (no states run)
+  ladder   0.98.21: Seitah Overlook's states run with its 100 mm frames and its states report (the sol 121 zoom
+           ladder of make_figures.bat; the found list is not changed)
   report   ``freeze_report.md`` in the root's ``mppp_pipeline`` folder
 
 Faults: a step that fails is logged and the run goes on; a child past its time limit is stopped with its process
@@ -74,10 +76,11 @@ from .freeze_chain import (ChainStopped, RUNONCE_KEY, STOP_MARKER, WINDOWS, free
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
-STEPS = ("wait", "mask", "cmods", "zjoints", "zfinal", "ecam", "nz", "deck", "ztests", "studies", "report")
+STEPS = ("wait", "mask", "cmods", "zjoints", "zfinal", "ecam", "nz", "deck", "ztests", "studies", "ladder", "report")
 TAG = "freeze_3"              # 0.98.15 (15 Nov): freeze-3 - the deck-joint rig, the 15 Nov backlash relabels, 100 mm
 # (0.97.0, 12 Nov: "freeze_097", the run restarted from the beginning on the 0.97 rules)
 ZOOMS = (26, 34, 48, 63, 79, 100, 110)     # 0.98.15: 26 and 100 mm too (promoted from two blocks)
+LADDER_SITES = ("seitah_overlook",)       # 0.98.21: the states run for the sol 121 zoom ladder (step ladder)
 WAIVE_ASPECT = (63, 79, 110)          # Christian, 8 Nov: "update the z63, z79, z110 models that are good enough"
 DECK_BLOCKS = {                       # the Z34 deck pans (sequence, sol, station) and their blocks
     "threeforks_north": ("ZCAM05086", 692, "S032D1184"),
@@ -569,6 +572,24 @@ class Run:
     def s_studies(self) -> str:
         rc = self.pipeline("studies", "--from", "error_analysis", "--redo", "error_analysis", "rover_frame", "--no-zcam-states")
         return f"{self.passed('studies', rc)} ({self.dir / 'REPORT.md'})"
+
+    def s_ladder(self) -> str:
+        """0.98.21 (Christian, 16 Nov 2026: "The zcam_zoom_ladder_seitah_sol121_zcam_states plot should also include
+        100"): Seitah Overlook's states run (every Mastcam-Z image its own camera; ZCAM08114 of sol 121 steps the zoom
+        26-34-48-63-79-100 up and down) with its 100 mm frames, then ``mppp zcam-states`` into
+        ``camera_analysis/zcam_states_<day>_seitah``: the newest states study, which make_figures.bat draws the ladder
+        from.  The found list is not changed."""
+        from .run_pipeline import ZCAM_STATES_SETS
+        sets = []
+        for x in ZCAM_STATES_SETS:
+            sets += ["--set", x]
+        rc = self.run("ladder_states", [self.python, str(self.code / "scripts" / "run_sites.py"), "--root", self.root,
+                                        "--sites", *LADDER_SITES, "--zcam", "--variant", "states", "--jobs", "1", *sets],
+                      timeout_h=24)
+        out = self.root / "camera_analysis" / f"zcam_states_{self.day()}_seitah"
+        rc2 = self.mppp("ladder_report", "zcam-states", "--root", self.root, "--variant", "states", "--sites", *LADDER_SITES,
+                        "--out", out, timeout_h=2)
+        return f"states run exit {rc}, report exit {rc2} ({out})"
 
     def s_report(self) -> str:
         md = report_md(self)
