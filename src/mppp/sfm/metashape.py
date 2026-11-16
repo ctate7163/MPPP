@@ -399,6 +399,75 @@ def write_metashape_bat(out_dir: PathLike, metashape_exe: Optional[str] = None) 
     return p
 
 
+def _model_mtime(root: Path) -> float:
+    """The newest model file of a project (``sparse/cahv_ba`` or ``gui_native/sparse``), 0 when none."""
+    ts = [f.stat().st_mtime for d in (root / "sparse" / "cahv_ba", root / "gui_native" / "sparse")
+          for f in (d / "images.bin", d / "cameras.bin") if f.is_file()]
+    return max(ts) if ts else 0.0
+
+
+def open_in_metashape(project_dir: PathLike, metashape_exe: Optional[str] = None, max_points: Optional[int] = None,
+                      start: bool = True) -> Dict[str, Any]:
+    """0.98.18 (Christian, 16 Nov: "open_in_metashape.bat which starts by converting the points and building the
+    metashape project if it isn't already done then opens the psx file"): the job (:func:`write_metashape_job`) when
+    it is missing or older than the block's model, the project built without a window when the ``.psx`` is missing
+    or older than the job, then Metashape started on the ``.psx``.  Returns what was done."""
+    import os
+    import subprocess
+    root = Path(project_dir)
+    out = root / METASHAPE_DIR
+    exe = metashape_exe or os.environ.get("MPPP_METASHAPE") or DEFAULT_METASHAPE
+    job = out / "metashape_job.json"
+    done: Dict[str, Any] = {"folder": str(out), "converted": False, "built": False, "started": False}
+    model_t = _model_mtime(root)
+    if not job.is_file() or job.stat().st_mtime < model_t:
+        res = write_metashape_job(SfmProject.load(root), max_points=max_points, metashape_exe=exe)
+        done["converted"] = True
+        done["tie_points"] = res["tie_points"]
+    psx = Path(json.loads(job.read_text(encoding="utf-8"))["psx"])
+    done["psx"] = str(psx)
+    if not psx.is_file() or psx.stat().st_mtime < job.stat().st_mtime:
+        if not Path(exe).is_file():
+            raise FileNotFoundError(f"Metashape not found: {exe} (set MPPP_METASHAPE to metashape.exe)")
+        subprocess.run([exe, "-platform", "offscreen", "-r", str(out / "build_metashape_project.py"), str(job),
+                        "--quit"], check=False)
+        if not psx.is_file():
+            raise RuntimeError(f"the Metashape build did not write {psx}")
+        done["built"] = True
+    if start:
+        if not Path(exe).is_file():
+            raise FileNotFoundError(f"Metashape not found: {exe} (set MPPP_METASHAPE to metashape.exe)")
+        subprocess.Popen([exe, str(psx)], close_fds=True)
+        done["started"] = True
+    return done
+
+
+def write_open_in_metashape_bat(project_root: PathLike, python_exe: Optional[str] = None,
+                                metashape_exe: Optional[str] = None) -> Path:
+    """``<project>/open_in_metashape.bat``: double-click - converts the block for Metashape and builds
+    ``metashape/<block>.psx`` the first time (and after a new alignment), then opens it
+    (``python -m mppp metashape <project> --open``).  ``MPPP_PYTHON`` overrides the Python that wrote it,
+    ``MPPP_METASHAPE`` the Metashape executable."""
+    import sys
+    from .. import __version__
+    py = python_exe or sys.executable
+    exe = metashape_exe or DEFAULT_METASHAPE
+    lines = ["@echo off", "setlocal",
+             f"rem MPPP {__version__}: open this block in Agisoft Metashape Professional. Double-click.",
+             "rem The first time (and after a new alignment) it converts the COLMAP alignment - cameras, tie points,",
+             "rem masks - and builds the block's .psx in metashape\\ without a window; then it opens the project.",
+             f'if not defined MPPP_PYTHON set "MPPP_PYTHON={py}"',
+             f'if not defined MPPP_METASHAPE set "MPPP_METASHAPE={exe}"',
+             'if not exist "%MPPP_METASHAPE%" (echo Metashape not found: %MPPP_METASHAPE% - set MPPP_METASHAPE to metashape.exe & pause & exit /b 1)',
+             'if not exist "%MPPP_PYTHON%" (echo Python not found: %MPPP_PYTHON% - set MPPP_PYTHON to the python.exe with MPPP & pause & exit /b 1)',
+             '"%MPPP_PYTHON%" -m mppp metashape "%~dp0." --open --metashape "%MPPP_METASHAPE%"',
+             "if errorlevel 1 (echo The conversion or the build failed: see the messages above. & pause & exit /b 1)",
+             "exit /b 0"]
+    p = Path(project_root) / "open_in_metashape.bat"
+    p.write_bytes(("\r\n".join(lines) + "\r\n").encode("utf-8"))
+    return p
+
+
 def _version() -> str:
     try:
         from .. import __version__

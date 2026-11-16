@@ -47,8 +47,9 @@ This builds `<block>.psx` with the following:
 - the masks;
 - a local metric frame: MPPP's world frame (x east, y north, z up), with the block offset in the chunk transform.
 
-Nothing is aligned or optimised in Metashape. Double-click `make_metashape_project.bat` (Metashape Professional)
-and continue with *Build Depth Maps* or *Build Mesh*. `metashape_check.json` compares Metashape's reprojection of
+Nothing is aligned or optimised in Metashape. Double-click `open_in_metashape.bat` in the project folder (0.98.18:
+it converts and builds the project the first time, then opens it) or `make_metashape_project.bat` (Metashape
+Professional), and continue with *Build Depth Maps* or *Build Mesh*. `metashape_check.json` compares Metashape's reprojection of
 the tie points with COLMAP's residuals. The calibration mapping (THIN_PRISM_FISHEYE → Fisheye,
 FULL_OPENCV → Frame) is in the table under [mppp metashape](cli.md#mppp-metashape).
 

@@ -679,10 +679,10 @@ def write_gui_project(project: SfmProject, model: Optional[str] = "cahv_ba",
       opens the full-resolution project.  It calls ``COLMAP.bat`` from the
       environment variable ``COLMAP_BAT`` (set it once, e.g.
       ``setx COLMAP_BAT C:\\path\\to\\COLMAP.bat``), else from the PATH;
-    * ``open_in_colmap_fullres.bat`` - the full-resolution project and
-      ``sparse/<model>`` (what the bundle adjustment works on: keypoints are in
-      full-resolution pixels, so on half/quarter-resolution images the GUI's 2-D
-      overlay is off by 2x/4x; the 3-D view is right);
+    * ``open_in_metashape.bat`` (0.98.18, replacing ``open_in_colmap_fullres.bat``) -
+      converts the block for Agisoft Metashape and builds ``metashape/<block>.psx``
+      when it is not there yet (or older than the model), then opens it
+      (:func:`mppp.sfm.metashape.open_in_metashape`);
     * ``colmap_gui.ini`` / ``gui_native/colmap_gui.ini`` - COLMAP project files
       for File > Open project (then File > Import model).
 
@@ -733,9 +733,20 @@ def write_gui_project(project: SfmProject, model: Optional[str] = "cahv_ba",
     m = model or "cahv_ba"
     ini(root / "colmap_gui.ini", project.database.resolve(), root / "sparse" / m if model else None,
         "full-resolution keypoints")
-    bat(root / "open_in_colmap_fullres.bat", "database.db", f"sparse\\{m}",
-        f"full-resolution project and sparse\\{m}")
-    out = {"ini": str(root / "colmap_gui.ini"), "bat_fullres": str(root / "open_in_colmap_fullres.bat")}
+    # 0.98.18 (Christian, 16 Nov: "remove open_in_colmap_fullres.bat. Add open_in_metashape.bat"): the full-
+    # resolution batch file is gone (colmap_gui.ini still opens that project); the Metashape one takes its place
+    old = root / "open_in_colmap_fullres.bat"
+    if old.is_file():
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    out = {"ini": str(root / "colmap_gui.ini")}
+    try:
+        from .metashape import write_open_in_metashape_bat
+        out["bat_metashape"] = str(write_open_in_metashape_bat(root))
+    except OSError as e:                                   # a viewing aid; never stop the run
+        out["bat_metashape_error"] = str(e)
     if has_native:
         ini(native / "colmap_gui.ini", (native / "database.db").resolve(), (native / "sparse").resolve(),
             "native pixels, for viewing")

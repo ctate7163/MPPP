@@ -217,3 +217,46 @@ def test_a_track_that_sees_an_image_twice_keeps_one_observation(tmp_path):
     assert n["points"] == 1 and n["observations"] == 2 and n["duplicate_image_observations_dropped"] == 1
     obs = (tmp_path / "b.out").read_text().splitlines()[-1].split()
     assert obs[0] == "2" and obs[1:3] == ["0", "0"]            # image 1: keypoint 0 (on the projection), not 1
+
+
+def test_open_in_metashape_bat_and_the_gui_files(tmp_path, monkeypatch):
+    """0.98.18 (Christian, 16 Nov): open_in_metashape.bat replaces open_in_colmap_fullres.bat; open_in_metashape
+    converts and builds only when the job / .psx are missing or older than the model, then starts Metashape."""
+    import json
+    import os
+    import subprocess
+    import time
+    from mppp.sfm import metashape as MS
+    p = MS.write_open_in_metashape_bat(tmp_path, python_exe=r"C:\py\python.exe")
+    t = p.read_bytes().decode("utf-8")
+    assert p.name == "open_in_metashape.bat" and "\r\n" in t
+    assert '-m mppp metashape "%~dp0." --open' in t and "MPPP_PYTHON=C:\\py\\python.exe" in t
+    # the staleness logic, without pycolmap or Metashape: a job and a .psx newer than the model -> only started
+    (tmp_path / "sparse" / "cahv_ba").mkdir(parents=True)
+    (tmp_path / "sparse" / "cahv_ba" / "images.bin").write_bytes(b"x")
+    out = tmp_path / MS.METASHAPE_DIR
+    out.mkdir()
+    psx = out / "blk.psx"
+    time.sleep(0.02)
+    (out / "metashape_job.json").write_text(json.dumps({"psx": str(psx)}), encoding="utf-8")
+    time.sleep(0.02)
+    psx.write_text("psx", encoding="utf-8")
+    exe = tmp_path / "metashape.exe"
+    exe.write_text("", encoding="utf-8")
+    calls = []
+    monkeypatch.setattr(subprocess, "Popen", lambda args, **k: calls.append(("open", args)))
+    monkeypatch.setattr(subprocess, "run", lambda args, **k: calls.append(("build", args)))
+    done = MS.open_in_metashape(tmp_path, metashape_exe=str(exe))
+    assert done == dict(done, converted=False, built=False, started=True) and calls == [("open", [str(exe), str(psx)])]
+    # a newer model: the job is written again (stubbed) and the project rebuilt
+    time.sleep(0.02)
+    os.utime(tmp_path / "sparse" / "cahv_ba" / "images.bin")
+    def fake_job(project, **k):
+        time.sleep(0.02)
+        (out / "metashape_job.json").write_text(json.dumps({"psx": str(psx)}), encoding="utf-8")
+        return {"tie_points": {"points": 1}}
+    monkeypatch.setattr(MS, "write_metashape_job", fake_job)
+    monkeypatch.setattr(MS.SfmProject, "load", classmethod(lambda cls, root: None))
+    calls.clear()
+    done = MS.open_in_metashape(tmp_path, metashape_exe=str(exe))
+    assert done["converted"] and calls[0][0] == "build" and calls[-1][0] == "open"
