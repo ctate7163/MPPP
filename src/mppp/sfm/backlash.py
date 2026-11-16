@@ -131,7 +131,7 @@ def load_low_backlash(path: Any = None, found: Any = None) -> Dict[str, Any]:
     sol (Chal Rocks sol 78 at 63 mm: the left eye low, the right high), key ``eye_sol_sequences``.  0.95.0: ``1150-1155:048`` (or ``1150:048``) - every frame of that zoom on
     those sols (Christian, 28 Oct: Overlook Mountain's 48 mm images are low-state), key ``sol_zooms``.  0.94.4: an
     entry starting with ``-`` takes frames OFF the list (any of
-    the forms above; it wins over every match, in either file): ``-0121_0677678972_053`` (sol 121 pointing 2).  A full product name also matches the same eye and spacecraft clock
+    the forms above; it wins over every match, in either file, except a ``+`` entry: 0.98.15, pinned low): ``-0121_0677678972_053`` (sol 121 pointing 2).  A full product name also matches the same eye and spacecraft clock
     whatever its product type and version (``ZL0_0091_0675031997_228RAD_...A03`` matches ``ZLF_0091_0675031997_228EBY_...J01``,
     key ``clocks``).  Every other Mastcam-Z image is in the high-backlash state, except at
     110 mm, which has a single state.  Returns {"entries", "sol_sequences", "clocks", "uncertain", "file"}.
@@ -167,10 +167,16 @@ def load_low_backlash(path: Any = None, found: Any = None) -> Dict[str, Any]:
             if tok.startswith("-"):                    # 0.94.4: off the list
                 tok = tok[1:].strip()
                 dst = out["excluded"]
+            elif tok.startswith("+"):                  # 0.98.15: pinned low - a "-" line of the other file does not
+                tok = tok[1:].strip()                  # take it off (Chal Rocks 361:ZCAM07105 against the found list's
+                dst = out.setdefault("pinned", {"entries": set(), "sol_sequences": set(),   # 29 Oct stems)
+                                                "eye_sol_sequences": set(), "clocks": set(), "sol_zooms": []})
             if tok.endswith("?"):
                 tok = tok.rstrip("?").strip()
                 if dst is out:
                     out["uncertain"].append(tok)
+            if dst is not out and dst is not out["excluded"]:  # 0.98.15: a pinned entry is an entry too
+                _add_entry(out, tok)
             m = re.fullmatch(r"(Z[LR]):(\d+):(ZCAM\d{5})", tok, re.I)        # 0.96: one eye of a sequence
             if m:
                 dst["eye_sol_sequences"].add((m.group(1).upper(), int(m.group(2)), m.group(3).upper()))
@@ -197,6 +203,33 @@ def load_low_backlash(path: Any = None, found: Any = None) -> Dict[str, Any]:
 
 
 # ------------------------------------------------------------------ 0.94.4: the focus approach (second backlash)
+
+def _add_entry(dst: Dict[str, Any], tok: str) -> None:
+    """One list token into ``dst`` (the forms of :func:`load_low_backlash`, no sign)."""
+    import re
+    m = re.fullmatch(r"(Z[LR]):(\d+):(ZCAM\d{5})", tok, re.I)
+    if m:
+        dst["eye_sol_sequences"].add((m.group(1).upper(), int(m.group(2)), m.group(3).upper()))
+        return
+    m = re.fullmatch(r"(\d+):(ZCAM\d{5})", tok, re.I)
+    if m:
+        dst["sol_sequences"].add((int(m.group(1)), m.group(2).upper()))
+        return
+    m = re.fullmatch(r"(\d+)(?:-(\d+))?:(\d{3})", tok)
+    if m:
+        lo, hi, z = int(m.group(1)), int(m.group(2) or m.group(1)), int(m.group(3))
+        if (lo, hi, z) not in dst["sol_zooms"]:
+            dst["sol_zooms"].append((lo, hi, z))
+        return
+    for ext in (".IMG", ".PNG", ".LBL"):
+        if tok.upper().endswith(ext):
+            tok = tok[: -len(ext)]
+    if len(tok) >= 6:
+        dst["entries"].add(tok.upper())
+    c = _clock_key(tok)
+    if c:
+        dst["clocks"].add(c)
+
 FOCUS_BELOW_FILE = "zcam_focus_from_below.csv"        # next to the WORK folders, like the found list
 FOCUS_BELOW_SHIPPED = "mars2020_mastcam-z_focus_from_below.csv"   # in mppp/data
 
@@ -306,6 +339,9 @@ def is_low_backlash(row: Dict[str, Any], lst: Dict[str, Any]) -> bool:
     110 mm, which has one focus state)."""
     if group_zoom(row.get("camera_group", row.get("instrument"))) in SINGLE_STATE_ZOOMS:
         return False
+    pin = lst.get("pinned")
+    if pin and _matches(row, pin):                       # 0.98.15: "+" entries win over "-" lines
+        return True
     ex = lst.get("excluded")
     if ex and _matches(row, ex):                         # 0.94.4: a "-" entry takes the frame off the list
         return False

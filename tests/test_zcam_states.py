@@ -27,12 +27,12 @@ def test_found_list_lines_and_exclusions(tmp_path):
     # 0.95.1: the shipped list takes Chal Rocks' 79 mm sequences off (-99:ZCAM08060, -361:ZCAM07105)
     # 0.96 (9 Nov): Rockytop's -507:ZCAM08530 and -513:ZCAM08538, the ZCAM07114 frames of sols 435 and 817; the 29 Oct
     # -99:ZCAM08060 / -361:ZCAM07105 are gone (Chal Rocks' 79 mm sequences are low again)
-    assert {k: len(v) for k, v in lst["excluded"].items()} == {"entries": 2, "sol_sequences": 26, "eye_sol_sequences": 0,
+    assert {k: len(v) for k, v in lst["excluded"].items()} == {"entries": 2, "sol_sequences": 27, "eye_sol_sequences": 0,
                                                               "clocks": 1, "sol_zooms": 0}
     # 0.98.15 (the audit of the 15 Nov joints): ZCAM07114 is low after a drive only - its 26 no-drive sols are off
     assert {(435, "ZCAM07114"), (446, "ZCAM07114"), (679, "ZCAM07114"), (688, "ZCAM07114"), (817, "ZCAM07114"),
             (1073, "ZCAM07114")} <= lst["excluded"]["sol_sequences"]
-    assert all(q == "ZCAM07114" for _, q in lst["excluded"]["sol_sequences"])
+    assert {q for _, q in lst["excluded"]["sol_sequences"]} == {"ZCAM07114", "ZCAM08474"}   # 08474: 63 mm, measured high
     assert is_low_backlash(row(_name("R", 684, 728371111, "ZCAM07114"), 684, "ZCAM07114"), lst)       # a drive sol
     assert not is_low_backlash(row(_name("R", 688, 728700000, "ZCAM07114"), 688, "ZCAM07114"), lst)   # a no-drive sol
     # 0.98.15: Wildcat Ridge sols 507 / 513 low in BOTH eyes (0.97.0 had the left eyes off), and the 63 / 79 mm
@@ -263,3 +263,16 @@ def test_five_weak_vfs_replaced_by_the_15_nov_red_dots():
         assert d["points"][k]["screen_found"] >= 15
     assert min(v["rnav_mm"][0] for v in d["points"].values()) < -1200        # past the old aft-most point (-894 mm)
     assert [k for k in d["points"] if k.startswith("VF01")] == ["VF01a", "VF01b", "VF01c", "VF01d"]
+
+
+def test_pinned_entries_win_over_the_found_lists_removals(tmp_path):
+    """0.98.15: Chal Rocks 361:ZCAM07105 (low again on 9 Nov) ran as high in 29 frames because the found list's 29 Oct
+    "-" stems won over the shipped entry; "+361:ZCAM07105" pins it.  A "-" still wins over an ordinary entry."""
+    from mppp.sfm.backlash import is_low_backlash, load_low_backlash
+    stem = "ZR0_0361_0698991845_898RAD_N0110000ZCAM07105_0790LMA02"
+    g = tmp_path / "found.csv"
+    g.write_text(f"-{stem}  # 29 Oct states\n456:ZCAM08474  # drive rule\n", encoding="utf-8")
+    lst = load_low_backlash(found=g)
+    assert is_low_backlash({"stem": stem, "camera_group": "ZR079", "sol": 361, "sequence": "ZCAM07105"}, lst)
+    assert not is_low_backlash({"stem": "ZL0_0456_0710000000_000RAD_N0260000ZCAM08474_0630LMA01", "camera_group": "ZL063",
+                                "sol": 456, "sequence": "ZCAM08474"}, lst)     # the shipped -456:ZCAM08474 wins

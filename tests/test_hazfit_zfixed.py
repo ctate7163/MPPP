@@ -436,7 +436,7 @@ def test_lightglue_ab_report_and_chal_rocks_tiny(tmp_path):
     import importlib.util
     from mppp.waypoints.sites import load_site_table
     t = load_site_table()["sites"]
-    assert t["chal_rocks_tiny"]["sols"] == [[91, 98]] and set(t["chal_rocks_tiny"]["zcam"]) <= set(t["chal_rocks"]["zcam"])   # (the tiny copy without 79, 110)
+    assert t["chal_rocks_tiny"]["sols"] == [[91, 98]] and set(t["chal_rocks_tiny"]["zcam"]) - {26} <= set(t["chal_rocks"]["zcam"])   # (the tiny copy without 79, 110; 26 mm since 0.97.22)
     for s in ("chal_rocks", "chal_rocks_large", "chal_rocks_tiny"):
         assert t[s]["no_mask_inference_at"][-3:] == ["ZCAM00034", "ZCAM08060", "RHAZ0*"]
     assert t["bell_island"]["no_mask_inference_at"] == ["RHAZ0*"] == t["bell_island_large"]["no_mask_inference_at"]
@@ -660,3 +660,22 @@ def test_marble_mountain_leaves_out_zcam10008_at_110mm():
     assert exclusion_matches(mk(110), s.exclude[0]) and not exclusion_matches(mk(63), s.exclude[0])
     assert s.replace(include_zcam=False).key_dict()["exclude"] == []
     assert s.replace(include_zcam=True).key_dict()["exclude"] == ["*ZCAM10008_110*"]
+
+
+def test_check_zcam_per_zoom_ratio_window_and_two_block_promotion():
+    """0.98.15 (Christian, 15 Nov): the 63 mm high / low ratio sits lowest in the zoom range (prior 1.0045, window
+    from 1.0015) - 34 and 48 mm keep 1.004..1.016; 26 and 100 mm promote from two blocks (others need three)."""
+    from mppp_studies.calibration import fit as F
+    ln = {"fx": {"a": 8600.0, "b": 0.0}, "fy": {"a": 8601.0, "b": 0.0}}
+
+    def checks(key, ratio, nb, old_cams=True):
+        new = {"cameras": {key: {"f0_px": 8600.5, "aspect": 1.0001, "lines": {"backlash": ln}, "regular_ratio": ratio}},
+               "calibration": {"blocks": [f"b{i}" for i in range(nb)], "eyes": {key: {"backlash": ln}}}}
+        old = {"cameras": {key: {"f0_px": 8600.0}}} if old_cams else {"cameras": {}}
+        return {x["check"]: x for x in F.check_zcam(new, old)["checks"]}
+    assert checks("ZL063", 1.0045, 3)["ZL063 regular ratio"]["ok"]
+    assert not checks("ZL048", 1.0030, 3)["ZL048 regular ratio"]["ok"]
+    assert not checks("ZL063", 1.0010, 3)["ZL063 regular ratio"]["ok"]
+    assert checks("ZL100", 1.0075, 2)["blocks"]["ok"] and checks("ZL026", 1.0095, 2)["blocks"]["ok"]
+    assert not checks("ZL079", 1.0065, 2)["blocks"]["ok"]
+    assert F.regular_ratio_default("ZR063") == 1.0045 and F.regular_ratio_default("ZR034") == F.REGULAR_RATIO_DEFAULT

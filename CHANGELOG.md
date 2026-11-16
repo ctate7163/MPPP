@@ -3,6 +3,23 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.16 — 2026-11-15
+
+Christian: "let's make an exception for z 26 and 100 letting it be promoted with just two blocks. I expect the
+high/low ratio for 63 to be lower than the shorter and longer zooms. The middle of the zoom range has a minima of
+focus and zoom efl dependence."
+
+- Mastcam-Z promotion: 26 and 100 mm need two blocks (`fit.ZCAM_MIN_BLOCKS_BY_ZOOM`; other zooms three).
+- High / low ratio per zoom (`fit.ZCAM_RATIO_PRIOR`, `ZCAM_RATIO_RANGE_BY_ZOOM`): 63 mm prior 1.0045, window
+  1.0015-1.016; 79 mm 1.0065, from 1.003; 100 mm 1.0075 (a guess), from 1.003. 34 and 48 mm keep 1.0095 and
+  1.004-1.016. The prior is the start ratio, the held ratio of an eye with few low frames (was the 34 mm model's
+  ratio) and the fallback when the blocks do not measure it. Source: the Seitah ladder and the 15 Nov joints' bins
+  (gap 1.0 / 0.7 / 0.45 / 0.6-0.7 % at 34 / 48 / 63 / 79 mm).
+- Low-backlash list: `+` pins an entry against the other file's `-` lines. `+361:ZCAM07105` and `+360:ZCAM08390`
+  (Chal Rocks 79 mm): 29 frames of ZCAM07105 ran as high in the 15 Nov joints on the found list's 29 Oct removals.
+  `-456:ZCAM08474` (Knob Mountain 63 mm, measured high in both eyes; the found list had it low by the drive rule).
+- Freeze-3 joints include 26 mm.
+
 ## 0.98.15 — 2026-11-15
 
 Christian: "Prepare a new freeze run focused on getting 26, 63, 79, and 100 promoted. Make sure 34 and 48 are the best

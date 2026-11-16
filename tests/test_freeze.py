@@ -490,7 +490,7 @@ def test_freeze3_candidate_over_a_freeze_rig_the_zooms_and_the_folder_kept(tmp_p
     assert st["models"] == {"cmods": str(root / "cmods"), "candidate": str(cand)}
     assert 100 in fz.ZOOMS
     log = (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
-    assert "--zooms 34 48 63 79 100 110" in log
+    assert "--zooms 26 34 48 63 79 100 110" in log
     # the candidate's files already in the folder: nothing promoted
     (root / "cmods" / "M2020_N_rig.json").write_bytes((cand / "M2020_N_rig.json").read_bytes())
     r = fz.Run(fz.parser().parse_args(["--root", str(root), "--dry-run", "--candidate", str(cand),

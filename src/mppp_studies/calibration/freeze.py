@@ -26,7 +26,7 @@ Steps (each done once; started again after any stop, the run continues where it 
            into it (``promote_cmods``) unless its files are already there (0.98.15; before: unless the folder held a
            freeze rig).  The folder and the candidate are kept in the status: a restart without them goes on with them
   zjoints  run_pipeline: every Mastcam-Z block aligned again with the Navcam models of the folder (zcam_runs), then
-           the Z34, Z48, Z63, Z79, Z100 (0.98.15) and Z110 joints, promoted into the folder when their checks pass; for the zooms
+           the Z26, Z34, Z48, Z63, Z79, Z100 (26, 100: 0.98.15) and Z110 joints, promoted into the folder when their checks pass; for the zooms
            of ``--zcam-waive-aspect`` (63 79 110) the per-block aspect gate is waived
   zfinal   the Mastcam-Z blocks again with the models the joints promoted (only those whose models changed)
   ecam     the Navcam blocks with the folder's models, then the Navcam joint and the Hazcam fit as checks (nothing
@@ -77,7 +77,7 @@ REPO = HERE.parents[2]
 STEPS = ("wait", "mask", "cmods", "zjoints", "zfinal", "ecam", "nz", "deck", "ztests", "studies", "report")
 TAG = "freeze_3"              # 0.98.15 (15 Nov): freeze-3 - the deck-joint rig, the 15 Nov backlash relabels, 100 mm
 # (0.97.0, 12 Nov: "freeze_097", the run restarted from the beginning on the 0.97 rules)
-ZOOMS = (34, 48, 63, 79, 100, 110)     # 0.98.15: 100 mm too (a first model from the blocks that have it)
+ZOOMS = (26, 34, 48, 63, 79, 100, 110)     # 0.98.15: 26 and 100 mm too (promoted from two blocks)
 WAIVE_ASPECT = (63, 79, 110)          # Christian, 8 Nov: "update the z63, z79, z110 models that are good enough"
 DECK_BLOCKS = {                       # the Z34 deck pans (sequence, sol, station) and their blocks
     "threeforks_north": ("ZCAM05086", 692, "S032D1184"),

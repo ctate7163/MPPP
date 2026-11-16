@@ -712,6 +712,11 @@ def make_zties(sg: Dict[str, Any], zunits: Dict[int, Dict[str, Any]], tie: bool 
     return hook, g
 
 
+def _ratio_default(g: str) -> float:
+    from .fit import regular_ratio_default
+    return regular_ratio_default(g)
+
+
 def start_model_from_blocks(scapes: Sequence[Any], zoom: int) -> Dict[str, Any]:
     """A start focus model (zcam-v2 layout) for a zoom without one, from the blocks' refined focus-bin cameras
     (:func:`mppp_studies.calibration.joint.load_scape` scapes): per eye the median fx, fy at the median focus with one slope fitted
@@ -751,7 +756,7 @@ def start_model_from_blocks(scapes: Sequence[Any], zoom: int) -> Dict[str, Any]:
         k = [float(np.median(P[:, i])) for i in (_K1, _K2, _P1, _P2)]
         cams[g] = {"f0_px": float(np.sqrt(fx * fy)), "slope_px_per_count": b, "aspect": fy / fx, "reference_focus": ref,
                    "focus_range": [float(F.min()), float(F.max())],
-                   "regular_ratio": 1.0 if is_single_state(g) else 1.0095,   # 0.94.0: the default, not 1
+                   "regular_ratio": 1.0 if is_single_state(g) else _ratio_default(g),   # 0.94.0: the default, not 1; 0.98.15 per zoom
                    "pp0_px": [float(np.median(P[:, _CX])), float(np.median(P[:, _CY]))],
                    "lines": {"reference_focus": ref, "backlash": {"fx": {"a": fx, "b": b, "form": "common"},
                                                                   "fy": {"a": fy, "b": b, "form": "common"}}},
@@ -1503,8 +1508,13 @@ def set_ratio_holds(sg: Dict[str, Any], zoom: int, verbose: bool = True) -> Dict
             continue
         side = f"{eye[:2]}{RATIO_HOLD_ZOOM:03d}"
         r = ((ref or {}).get("cameras") or {}).get(side, {}).get("regular_ratio")
-        e["ratio_hold"] = float(r) if r else float(REGULAR_RATIO_DEFAULT)
-        e["ratio_hold_source"] = (f"the {RATIO_HOLD_ZOOM} mm model ({side})" if r else "the default")
+        from .fit import ZCAM_RATIO_PRIOR
+        if int(zoom) in ZCAM_RATIO_PRIOR:            # 0.98.15: the zoom's own prior, not the 34 mm ratio
+            e["ratio_hold"] = float(ZCAM_RATIO_PRIOR[int(zoom)])
+            e["ratio_hold_source"] = f"the {int(zoom)} mm prior"
+        else:
+            e["ratio_hold"] = float(r) if r else float(REGULAR_RATIO_DEFAULT)
+            e["ratio_hold_source"] = (f"the {RATIO_HOLD_ZOOM} mm model ({side})" if r else "the default")
         out[eye] = e["ratio_hold"]
         if verbose:
             log.info(f"Mastcam-Z joint: {eye} has {n} low-state images (< {MIN_LOW_IMAGES}): its high / low ratio held "
@@ -2011,8 +2021,8 @@ def low_state_step_ppm(res: Dict[str, Any], eye: str) -> Optional[float]:
     else:
         ratio = float(e.get("ratio_start") or 1.0)
     if abs(ratio - 1.0) < 1e-9:
-        from .fit import REGULAR_RATIO_DEFAULT
-        ratio = float(REGULAR_RATIO_DEFAULT)
+        from .fit import regular_ratio_default
+        ratio = regular_ratio_default(eye)
     return 1e6 * (1.0 / ratio - 1.0)
 
 
@@ -2570,19 +2580,20 @@ def candidate_model(res: Dict[str, Any], model: Dict[str, Any]) -> Dict[str, Any
             if abs(ratio - 1.0) < 1e-9 and not single:
                 # 0.94.0: a first calibration without low-state bins (its start from the blocks had ratio 1): the
                 # default high / low ratio, not "no state change" (Z63 of 23 Oct failed its ratio check on 1.0000)
-                from .fit import REGULAR_RATIO_DEFAULT
-                ratio = float(REGULAR_RATIO_DEFAULT)
+                from .fit import regular_ratio_default
+                ratio = regular_ratio_default(eye)
                 ratio_note = (f"no low-state bins: the default high / low ratio {ratio:.4f} (no measurement)")
         else:                                         # 0.93.5: fx only (fy follows the aspect)
             ratio = float(tm["a_fx_backlash"] / tm["a_fx_regular"])
-            lo, hi = REGULAR_RATIO_RANGE
+            from .fit import regular_ratio_window
+            lo, hi = regular_ratio_window(eye, REGULAR_RATIO_RANGE)     # 0.98.15: per zoom
             if not lo <= ratio <= hi:                 # not a focus state: the start ratio kept
                 ratio_note = (f"fitted regular ratio {ratio:.4f} outside {lo:g}..{hi:g} (the states are ~0.95 % apart): "
                               f"the start ratio {float(e['ratio_start']):.4f} kept")
                 ratio = float(e["ratio_start"])
                 if abs(ratio - 1.0) < 1e-9:           # a start without a ratio: the default
-                    from .fit import REGULAR_RATIO_DEFAULT
-                    ratio = float(REGULAR_RATIO_DEFAULT)
+                    from .fit import regular_ratio_default
+                    ratio = regular_ratio_default(eye)
         bk = {"fx": {"a": tm["a_fx_backlash"], "b": tm["b"], "sd_a": sdv("a_fx_backlash"), "sd_b": sdv("b"), "form": "common"},
               "fy": {"a": tm["a_fy_backlash"], "b": tm["b"], "sd_a": sdv("a_fy_backlash"), "sd_b": sdv("b"), "form": "common"}}
         for k in ("k1", "k2", "p1", "p2"):
