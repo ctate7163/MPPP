@@ -1,9 +1,9 @@
 # MPPP — Mars Photogrammetry Preprocessing Pipeline
 
-[![docs](https://github.com/ctate7163/MPPP/actions/workflows/docs.yml/badge.svg)](https://ctate7163.github.io/MPPP/)
+[![docs](https://github.com/ctate7163/RPP/actions/workflows/docs.yml/badge.svg)](https://ctate7163.github.io/RPP/)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXXX)
 
-Documentation: <https://ctate7163.github.io/MPPP/>
+Documentation: <https://ctate7163.github.io/RPP/>
 <!-- DOI badge: replace XXXXXXX with the Zenodo concept DOI after the first archived release (docs/RELEASING.md) -->
 
 *Beyond the stereo baseline with Mars rover images.*
@@ -40,11 +40,11 @@ distortion and the stereo rig to about 0.2 px, so the blocks across the mission 
 no single sol can provide. MPPP versions those refined models, checks them across blocks, and feeds them back as
 the default cameras for the next run.
 
-Version **0.98.28** (`v0p97`): the core (`mppp`, the pipeline) and the research studies (`mppp_studies`) apart, the
+Version **0.98.29** (`v0p97`): the core (`mppp`, the pipeline) and the research studies (`mppp_studies`) apart, the
 freeze run as a driver of its own, and the products of one rover station past the block - a cleaned mesh with a
 model of the rover, per-image depth and photometric maps, and a stereoscopic 360 degree panorama with a web
 viewer (below). The paper's freeze release is 0.95 (`paper/paper.md`). Versions before 1.0 are
-development releases; see [CHANGELOG.md](https://github.com/ctate7163/MPPP/blob/main/CHANGELOG.md).
+development releases; see [CHANGELOG.md](https://github.com/ctate7163/RPP/blob/main/CHANGELOG.md).
 
 ## Install
 
@@ -58,7 +58,7 @@ mppp doctor                            # what is installed, which camera models 
 From the repository, with the tests, studies, notebooks and Windows scripts:
 
 ```bash
-git clone https://github.com/ctate7163/MPPP.git
+git clone https://github.com/ctate7163/RPP.git
 cd MPPP
 pip install -e ".[all]"        # mask (torch, timm), sfm (pycolmap 4.2, pyceres 2.6, kornia), plots, notebooks, dev
 pytest -q                      # the test suite runs on the two PDS products in tests/data/m20
@@ -151,11 +151,11 @@ model in it, per-image depth, normal, incidence, emission, phase and shadow maps
 panorama, 8192 x 4096 per eye (16K with `--width 16384`), as PNG (8-bit and 16-bit linear) and JPEG. The stacked left-over-right files are
 named `..._360_3DTD` and carry XMP metadata for headset viewers.
 
-* The panoramas in a browser or a headset: **<https://ctate7163.github.io/MPPP/ods/>** (`docs/ods/`, a prototype;
+* The panoramas in a browser or a headset: **<https://ctate7163.github.io/RPV/>** (`docs/ods/`, a prototype;
   `mppp single-sites --publish docs/ods` adds stations).
-* How they are made and what the files are: [docs/station-products.md](https://ctate7163.github.io/MPPP/station-products/).
+* How they are made and what the files are: [docs/station-products.md](https://ctate7163.github.io/RPP/station-products/).
 * The rover model (derived from NASA's Perseverance model, credit NASA/JPL-Caltech), for use by others:
-  [docs/rover-model.md](https://ctate7163.github.io/MPPP/rover-model/).
+  [docs/rover-model.md](https://ctate7163.github.io/RPP/rover-model/).
 
 ## GPU on Windows
 
@@ -202,5 +202,5 @@ waypoint table. The package contains no sensitive or non-public data.
 
 ## License and citation
 
-Apache-2.0 (see [LICENSE](https://github.com/ctate7163/MPPP/blob/main/LICENSE) and [NOTICE](https://github.com/ctate7163/MPPP/blob/main/NOTICE)); released as open source with the approval of Malin Space
-Science Systems. If you use MPPP, please cite it as described in [CITATION.cff](https://github.com/ctate7163/MPPP/blob/main/CITATION.cff).
+Apache-2.0 (see [LICENSE](https://github.com/ctate7163/RPP/blob/main/LICENSE) and [NOTICE](https://github.com/ctate7163/RPP/blob/main/NOTICE)); released as open source with the approval of Malin Space
+Science Systems. If you use MPPP, please cite it as described in [CITATION.cff](https://github.com/ctate7163/RPP/blob/main/CITATION.cff).

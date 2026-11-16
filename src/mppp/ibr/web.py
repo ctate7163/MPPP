@@ -576,6 +576,25 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
     return doc
 
 
+VIEWER_URL = "https://ctate7163.github.io/RPV/"        # 0.98.29: the viewer's own repository, ctate7163/RPV
+
+
+def viewer_dir() -> Path:
+    """Where ``single-sites --upload`` publishes when no ``--publish`` folder is given (0.98.29; Christian, 16 Nov 2026:
+    "change https://ctate7163.github.io/RPP/ods/ to https://ctate7163.github.io/RPV/"): ``MPPP_VIEWER_DIR``; else a git
+    checkout named ``RPV`` beside this one (``D:\\code\\RPV`` beside ``D:\\code\\MPPP``), whose pushes publish
+    VIEWER_URL; else this checkout's ``docs/ods`` (as before 0.98.29 - on GitHub that page now sends visitors to
+    VIEWER_URL, so panoramas published there are not seen)."""
+    env = os.environ.get("MPPP_VIEWER_DIR")
+    if env:
+        return Path(env)
+    home = Path(__file__).resolve().parents[3]
+    sib = home.parent / "RPV"
+    if (sib / ".git").exists():
+        return sib
+    return home / "docs" / "ods"
+
+
 def install_viewer(web_dir: PathLike, source: Optional[PathLike] = None) -> bool:
     """The page (``index.html`` and ``vendor/``) from the checkout's ``docs/ods`` into ``web_dir`` when that is another
     folder.  False when the checkout has no ``docs/ods`` (an installed package: take the page from the repository)."""

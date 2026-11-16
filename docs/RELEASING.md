@@ -2,7 +2,7 @@
 
 This covers four things:
 
-1. the code, pushed to `https://github.com/ctate7163/MPPP`;
+1. the code, pushed to `https://github.com/ctate7163/RPP`;
 2. the released mask model, exported to **safetensors** and attached to a **GitHub release**;
 3. the same model on **Hugging Face**;
 4. the package on **PyPI**, <https://pypi.org/project/mppp/> (section 8).
@@ -30,7 +30,7 @@ The release was prepared as a git bundle: one file holding the repository and it
 cd /d D:\code
 git clone D:\code\MPPP\release_v0p21\mppp_v0p21.bundle MPPP_git
 cd MPPP_git
-git remote set-url origin https://github.com/ctate7163/MPPP.git
+git remote set-url origin https://github.com/ctate7163/RPP.git
 git push -u origin main
 git push origin --tags
 ```
@@ -77,7 +77,7 @@ print(card["backbone"], card["val_iou"], card["exported_from"])
 
 ## 3. Attach the model to a GitHub release
 
-The registry URL is `https://github.com/ctate7163/MPPP/releases/download/mask-v2/mppp_mask_convnext_tiny_s4_v2.safetensors`. That means a release with the tag **`mask-v2`**, and the file name unchanged. A model-specific tag keeps the URL stable across code versions.
+The registry URL is `https://github.com/ctate7163/RPP/releases/download/mask-v2/mppp_mask_convnext_tiny_s4_v2.safetensors`. That means a release with the tag **`mask-v2`**, and the file name unchanged. A model-specific tag keeps the URL stable across code versions.
 
 With the GitHub CLI:
 
@@ -165,7 +165,7 @@ automated from the repository.
    requires a repository that can be cloned without registration and an issue tracker readable without
    registration [1].
 2. **Enable GitHub Pages.** GitHub: *Settings > Pages > Build and deployment > Source: GitHub Actions*. The next push
-   to `main` runs the `docs` workflow and publishes <https://ctate7163.github.io/MPPP/>. Check the run under
+   to `main` runs the `docs` workflow and publishes <https://ctate7163.github.io/RPP/>. Check the run under
    *Actions > docs*.
 3. **Log in to Zenodo with GitHub.** Open <https://zenodo.org>, *Log in > Log in with GitHub*, and authorise the
    Zenodo application.
@@ -201,7 +201,7 @@ automated from the repository.
 
 ### JOSS submission
 
-10. Submit at <https://joss.theoj.org/papers/new> with the repository URL `https://github.com/ctate7163/MPPP`, the
+10. Submit at <https://joss.theoj.org/papers/new> with the repository URL `https://github.com/ctate7163/RPP`, the
     version (`0.92.0`) and the archive DOI from step 9. The paper (`paper/paper.md`, `paper/paper.bib`) must be in
     the same repository [1].
 11. **At acceptance**, JOSS asks for a tagged release of the reviewed software and its archive DOI [1]. Make the

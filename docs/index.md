@@ -63,5 +63,5 @@ baseline together with the waypoint position priors. The alignment-health thresh
 MPPP is released under the Apache-2.0 license. All Mars 2020 images used by MPPP are public PDS products (Navcam:
 NASA/JPL-Caltech; Mastcam-Z: NASA/JPL-Caltech/ASU/MSSS). The rover model is derived from NASA's Perseverance model
 (credit NASA/JPL-Caltech; see [Rover model](rover-model.md)). Source code:
-[github.com/ctate7163/MPPP](https://github.com/ctate7163/MPPP). To cite MPPP, see [Citing](citing.md).
+[github.com/ctate7163/RPP](https://github.com/ctate7163/RPP). To cite MPPP, see [Citing](citing.md).
 

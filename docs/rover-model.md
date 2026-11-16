@@ -7,8 +7,8 @@ to the station mesh at the rover's pose and the station's images are projected o
 | file | what |
 |---|---|
 | [`perseverance_rmech.glb`](rover/perseverance_rmech.glb) | glTF binary, one mesh per part, 197,539 triangles, 3.6 MB |
-| [`perseverance_rmech.npz`](https://github.com/ctate7163/MPPP/raw/main/src/mppp/data/rover/perseverance_rmech.npz) | what `mppp.ibr.rover_model` loads: `vertices`, `faces`, `part`, `meta` |
-| [`scripts/build_rover_model.py`](https://github.com/ctate7163/MPPP/blob/main/scripts/build_rover_model.py) | builds the `.npz` from NASA's file; every number below is a named constant in it. `scripts/export_rover_glb.py` writes the `.glb` from the `.npz` |
+| [`perseverance_rmech.npz`](https://github.com/ctate7163/RPP/raw/main/src/mppp/data/rover/perseverance_rmech.npz) | what `mppp.ibr.rover_model` loads: `vertices`, `faces`, `part`, `meta` |
+| [`scripts/build_rover_model.py`](https://github.com/ctate7163/RPP/blob/main/scripts/build_rover_model.py) | builds the `.npz` from NASA's file; every number below is a named constant in it. `scripts/export_rover_glb.py` writes the `.glb` from the `.npz` |
 
 ## Source and credit
 

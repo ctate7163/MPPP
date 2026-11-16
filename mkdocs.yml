@@ -1,9 +1,9 @@
 site_name: MPPP
 site_description: "Mars Photogrammetry Preprocessing Pipeline: Mars 2020 PDS images to COLMAP and Metashape"
 site_author: Christian Tate
-site_url: https://ctate7163.github.io/MPPP/
-repo_url: https://github.com/ctate7163/MPPP
-repo_name: ctate7163/MPPP
+site_url: https://ctate7163.github.io/RPP/
+repo_url: https://github.com/ctate7163/RPP
+repo_name: ctate7163/RPP
 edit_uri: ""
 copyright: "Copyright 2026 Christian Tate, Malin Space Science Systems. Apache-2.0."
 docs_dir: docs

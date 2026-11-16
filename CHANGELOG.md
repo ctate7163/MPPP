@@ -3,6 +3,24 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.29 — 2026-11-16
+
+Christian (16 Nov): "I renamed the github repo. change https://ctate7163.github.io/RPP/ods/ to
+https://ctate7163.github.io/RPV/".
+
+- **The viewer has its own repository**, `ctate7163/RPV`, published at <https://ctate7163.github.io/RPV/>.
+  - `single-sites --upload` without `--publish` writes into `web.viewer_dir()`: `MPPP_VIEWER_DIR`, else a git checkout
+    `RPV` beside this one (`D:\code\RPV`), else `docs/ods` as before. The upload commits and pushes in the repository
+    that holds that folder (unchanged), so panoramas no longer go into the pipeline's `main`.
+  - `install_viewer` copies the page there as before.
+  - On `ctate7163.github.io`, `docs/ods/index.html` at `/RPP/ods/` (or `/MPPP/ods/`) sends the visitor on to
+    `/RPV/`, with the station link (`#...`) and `?index=`.
+- **Addresses for the renamed repository (MPPP -> RPP):** README, `mkdocs.yml`, `CITATION.cff`, `.zenodo.json`,
+  `pyproject.toml`, `CONTRIBUTING.md`, `MANIFEST.in`, the docs pages, the Hugging Face card source, the example data
+  URL, the rover model's notes, and the viewer's code link.
+- Left as they were: the changelog history, the XMP namespace identifiers (old products are read by them), the mask
+  registry's download links (GitHub forwards them) and the rover GLB.
+
 ## 0.98.28 — 2026-11-16
 
 Christian (16 Nov): "the N,E,S,W,O should be in the upper right. O should take you to the looking straight ahead of

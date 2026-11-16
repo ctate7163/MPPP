@@ -32,7 +32,7 @@ def main() -> int:
         used, inv = np.unique(F, return_inverse=True)
         scene.add_geometry(trimesh.Trimesh(V[used], inv.reshape(F.shape), process=False), geom_name=part, node_name=part)
     scene.metadata.update({"credit": CREDIT, "source": meta.get("url"), "frame": meta.get("frame"),
-                           "changes": "https://ctate7163.github.io/MPPP/rover-model/"})
+                           "changes": "https://ctate7163.github.io/RPP/rover-model/"})
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(trimesh.exchange.gltf.export_glb(scene))

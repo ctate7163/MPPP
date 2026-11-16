@@ -1,7 +1,7 @@
 # Roadmap
 
 What is being worked on and planned. Release notes are in the
-[changelog](https://github.com/ctate7163/MPPP/blob/main/CHANGELOG.md).
+[changelog](https://github.com/ctate7163/RPP/blob/main/CHANGELOG.md).
 
 ## Now: the freeze run
 

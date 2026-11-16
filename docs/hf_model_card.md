@@ -14,8 +14,8 @@ tags:
 
 # MPPP mask models (`mppp_mask_v4`, `mppp_mask_v3`, ...)
 
-These are the reconstruction-mask models of [MPPP](https://github.com/ctate7163/MPPP), the Mars Photogrammetry
-Preprocessing Pipeline ([documentation](https://ctate7163.github.io/MPPP/)). For each pixel of a Mars 2020
+These are the reconstruction-mask models of [MPPP](https://github.com/ctate7163/RPP), the Mars Photogrammetry
+Preprocessing Pipeline ([documentation](https://ctate7163.github.io/RPP/)). For each pixel of a Mars 2020
 Perseverance image, a model predicts whether that pixel should be used for photogrammetric reconstruction:
 
 - **Include** means terrain and sky.
@@ -111,4 +111,4 @@ work.
 ## Citation
 
 Please cite MPPP as described in its
-[CITATION.cff](https://github.com/ctate7163/MPPP/blob/main/CITATION.cff).
+[CITATION.cff](https://github.com/ctate7163/RPP/blob/main/CITATION.cff).

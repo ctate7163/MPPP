@@ -11,7 +11,7 @@ The DOI is a placeholder until the first release is archived on Zenodo. Zenodo a
 - a **version DOI** for each release; use it to cite the exact version you ran (`mppp version` prints the version).
 
 Both are listed on the Zenodo record, which is linked from the DOI badge in the
-[README](https://github.com/ctate7163/MPPP#readme).
+[README](https://github.com/ctate7163/RPP#readme).
 
 When the JOSS paper is published, please cite the paper as well; its reference will be added here.
 
@@ -22,7 +22,7 @@ Mastcam-Z NASA/JPL-Caltech/ASU/MSSS.
 
 ## CITATION.cff
 
-The repository's [`CITATION.cff`](https://github.com/ctate7163/MPPP/blob/main/CITATION.cff) holds the same
+The repository's [`CITATION.cff`](https://github.com/ctate7163/RPP/blob/main/CITATION.cff) holds the same
 information in the Citation File Format; GitHub shows it as "Cite this repository". Its current content:
 
 ```yaml
