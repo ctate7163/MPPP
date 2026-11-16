@@ -1193,6 +1193,34 @@ ZCAM_MODEL_LIMITS = {"max_f0_change_pct": 1.5, "max_k1": 1.5, "baseline_m": (0.2
                      "fail_ratio_out_of_range": True,    # 0.94.4: a fitted high / low ratio outside the range fails (was: start kept, ok)
                      "max_sequence_offset_pct": 1.0}     # 0.95.0: a sequence's focus offset beyond this is a mis-tie, not a focus offset
 REGULAR_RATIO_DEFAULT = 1.0095          # backlash / regular focal length when the blocks do not measure it
+# 0.98.15 (Christian, 15 Nov: "I expect the high/low ratio for 63 to be lower than the shorter and longer zooms. The
+# middle of the zoom range has a minima of focus and zoom efl dependence"): per-zoom priors and windows.  The gap
+# (high - low) / high from the Seitah ladder (12 Nov) and the 15 Nov joints' diagnostic bins: 34 mm 1.0 %, 48 mm
+# 0.7 %, 63 mm 0.45 %, 79 mm 0.6-0.7 %, each +- 0.15 %.  34 and 48 mm keep the global default and window.
+ZCAM_RATIO_PRIOR = {63: 1.0045, 79: 1.0065, 100: 1.0075}       # 100 mm: no measurement - a guess above 79 mm
+# (26 mm is always high: its regular state is never used; it keeps the default)
+ZCAM_RATIO_RANGE_BY_ZOOM = {63: (1.0015, 1.016), 79: (1.003, 1.016), 100: (1.003, 1.016)}   # the prior - 2 sd and up
+# 0.98.15 (Christian, 15 Nov: "let's make an exception for z 26 and 100 letting it be promoted with just two blocks")
+ZCAM_MIN_BLOCKS_BY_ZOOM = {26: 2, 100: 2}
+
+
+def _zoom_of(key: Any) -> Optional[int]:
+    k = str(key)
+    try:
+        return int(k[2:5]) if k.startswith("Z") else int(k)
+    except ValueError:
+        return None
+
+
+def regular_ratio_default(key: Any = None) -> float:
+    """The high / low focal-length ratio of a zoom (a camera key ``ZL063`` or a zoom) when the blocks do not measure
+    it: :data:`ZCAM_RATIO_PRIOR`, else :data:`REGULAR_RATIO_DEFAULT`."""
+    return float(ZCAM_RATIO_PRIOR.get(_zoom_of(key), REGULAR_RATIO_DEFAULT)) if key is not None else REGULAR_RATIO_DEFAULT
+
+
+def regular_ratio_window(key: Any, default=(1.004, 1.016)):
+    """The physical window of a fitted high / low ratio for a zoom (:data:`ZCAM_RATIO_RANGE_BY_ZOOM`)."""
+    return tuple(ZCAM_RATIO_RANGE_BY_ZOOM.get(_zoom_of(key), default))
 
 
 def block_info(work: PathLike, model: str = "cahv_ba") -> Dict[str, Any]:
@@ -1309,7 +1337,8 @@ def regular_ratio(infos: Sequence[Dict[str, Any]], group: str, min_regular_group
     if per:
         return {"ratio": float(np.median([p["ratio"] for p in per])), "n_blocks": len(per), "per_block": per,
                 "source": "measured (backlash / regular groups)"}
-    return {"ratio": REGULAR_RATIO_DEFAULT, "n_blocks": 0, "per_block": [], "source": "default"}
+    return {"ratio": regular_ratio_default(group), "n_blocks": 0, "per_block": [],
+            "source": "default" if regular_ratio_default(group) == REGULAR_RATIO_DEFAULT else "the zoom's prior (0.98.15)"}
 
 
 def zcam_leave_one_out(infos: Sequence[Dict[str, Any]], params: Sequence[str] = ("fx", "fy")) -> Dict[str, Any]:
@@ -1649,6 +1678,9 @@ def check_zcam(new: Dict[str, Any], old: Dict[str, Any], limits: Optional[Dict[s
     # 0.93: the first calibration of a zoom (no model in use: its start came from the blocks) needs min_blocks_start
     first = cal is not None and not (old.get("cameras") and old.get("state") != "start (block results)")
     need = lim["min_blocks_start"] if (cal is None or first) else lim["min_blocks"]
+    zooms_ = {_zoom_of(g) for g in (new.get("cameras") or {})} - {None}
+    if zooms_ and not (limits or {}).get("min_blocks"):      # 0.98.15: 26 and 100 mm promote from two blocks
+        need = min([need] + [ZCAM_MIN_BLOCKS_BY_ZOOM[z] for z in zooms_ if z in ZCAM_MIN_BLOCKS_BY_ZOOM])
     add("blocks", nb >= need, f"{nb} blocks (>= {need}" + (", a first calibration of the zoom" if first else "") + ")")
     for g, c in (new.get("cameras") or {}).items():
         o = (old.get("cameras") or {}).get(g) or {}
@@ -1674,7 +1706,8 @@ def check_zcam(new: Dict[str, Any], old: Dict[str, Any], limits: Optional[Dict[s
             add(f"{g} single state", not regl and not c.get("regular_ratio") and not c.get("regular_pp_offset_px"),
                 "no regular state (110 mm)" if not regl else "a regular state was written for a single-state zoom")
         elif c.get("regular_ratio"):
-            lo, hi = lim["regular_ratio_range"]
+            lo, hi = (lim["regular_ratio_range"] if (limits or {}).get("regular_ratio_range")
+                      else regular_ratio_window(g, lim["regular_ratio_range"]))      # 0.98.15: per zoom
             rr_ = float(c["regular_ratio"])
             note_ = str(c.get("regular_ratio_note") or "")
             # 0.94.4: the fit put the states outside their physical range (Z48 of 27 Oct: 0.9939 and 1.0231) - the
@@ -1735,7 +1768,10 @@ def check_zcam(new: Dict[str, Any], old: Dict[str, Any], limits: Optional[Dict[s
         sds = [float(x) for x in (rig.get("sd_rotvec_mdeg") or []) if x is not None and np.isfinite(float(x))]
         if sds:
             add("rig scatter", max(sds) <= lim["max_rig_scatter_mdeg"],
-                f"rotation sd {', '.join(f'{x:.1f}' for x in sds)} mdeg over {len(rig.get('blocks') or [])} blocks")
+                f"rotation sd {', '.join(f'{x:.1f}' for x in sds)} mdeg over "
+                f"{((rig.get('residuals') or {}).get('fits') or {}).get('yaw', {}).get('blocks') or len(rig.get('blocks') or [])} blocks"
+                + (" (blocks under the observation minimum left out)"
+                   if ((rig.get('residuals') or {}).get('fits') or {}).get('yaw', {}).get('left_out_under_min_observations') else ""))
         elif rig.get("sd_rotvec_mdeg") is not None:   # 0.93.9: too few blocks for a scatter (Z48 of 23 Oct: 2 blocks)
             add("rig scatter", True, f"not measured: {len(rig.get('blocks') or [])} blocks")
         if rig.get("sd_baseline_mm") is not None:

@@ -10,6 +10,7 @@ static server).  ``test_pano`` draws a labelled pair for checking the viewer's o
 from __future__ import annotations
 
 import json
+import os
 import logging
 import re
 import shutil
@@ -29,8 +30,9 @@ VARIANTS = (("masked", "", "terrain only"), ("rover", "with_rover", "terrain wit
 #   (Christian, 14 Nov 2026: "a third mode after the terrain only, terrain with rover, and terrain with 3D rover"): this
 #   order, and a third variant "rover3d" - the terrain-only pictures with the rover's surface - where a surface was made
 ROVER_3D = ("rover3d", "terrain with rover (3D model)")     # 0.98.8 (Christian: "terrain only, terrain with rover proj, terrain with rover model")
-DEFAULT_VIEWS = ("standard", "normal")   # 0.98.5 (Christian: "Uploaded the normal maps too"); ("standard",) since 0.97.18 (Christian, 13 Nov 2026: "don't upload the enhanced version to github");
+DEFAULT_VIEWS = ("standard", "normal", "range log")   # 0.98.12 (Christian, 15 Nov 2026: "Uploaded the range map too in log scale"); ("standard", "normal") from 0.98.5 (Christian: "Uploaded the normal maps too"); ("standard",) since 0.97.18 (Christian, 13 Nov 2026: "don't upload the enhanced version to github");
 #                                      ("standard", "enhanced") before; mppp single-sites --publish-views brings it back
+GEOMETRY_WIDTH = 4096              # 0.98.12: the range and normal views are published at most this wide (the colour ones at width)
 DEFAULT_WIDTH = 8192               # the square's side: 8192 x 8192 holds two 8192 x 4096 eyes (Quest 3: fine)
 
 
@@ -94,15 +96,18 @@ def rover_surface(folder: Path, web: Path) -> Optional[Dict[str, Any]]:
 WELCOME_ID = "welcome"
 WELCOME_STATION = "Sol0052_S003D2046"      # Van Zyl Overlook
 WELCOME_WIDTH = 4096
-WELCOME_GREY = (0.55, 0.20)                # the welcome picture: this x the grey of the station + this x white (washed out)
+WELCOME_MUTE = (0.60, 0.85, 0.08)          # the welcome picture (0.98.14; Christian, 15 Nov 2026: "the welcome screen should
+#                                            have color, just be a little more muted than the true van zyl ods"): the colours'
+#                                            distance from grey x the first, then x the second + the third x white
+#                                            (0.98.4-0.98.13: grey, 0.55 x grey + 0.20 x white)
 OLD_TEST_ID = "orientation_test"           # the labelled test pair of before 0.98.4: taken off the list
 
 
 def welcome_pano(web: Path, station_entry: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """0.98.4 (Christian, 14 Nov 2026: "Remove the fake ods. In its stead put van zyl grayed out with north south and
     east in the sky in white letters ... MPPP stereo viewer for Mars 2020 Perseverance Rover in bold welcoming
-    letters a few meters from the viewer"): the list's first entry - Van Zyl Overlook's standard panorama in washed-out
-    grey, reduced to WELCOME_WIDTH.  The page draws the words over it (an entry with "welcome": true).  None when
+    letters a few meters from the viewer"): the list's first entry - Van Zyl Overlook's standard panorama, its colours
+    muted a little (WELCOME_MUTE; grey until 0.98.13), reduced to WELCOME_WIDTH.  The page draws the words over it (an entry with "welcome": true).  None when
     Van Zyl is not published."""
     import cv2
     if not station_entry:
@@ -113,16 +118,20 @@ def welcome_pano(web: Path, station_entry: Optional[Dict[str, Any]]) -> Optional
     src = web / var["views"]["standard"]
     if not src.is_file():
         return None
-    dst = web / "panos" / f"{WELCOME_ID}{STACK}"
+    dst = web / "panos" / f"{WELCOME_ID}_muted{STACK}"
+    old = web / "panos" / f"{WELCOME_ID}{STACK}"                 # the grey one of before 0.98.14
+    if old.is_file():
+        old.unlink()
     if not (dst.is_file() and dst.stat().st_mtime >= src.stat().st_mtime):
         img = cv2.imread(str(src), cv2.IMREAD_COLOR)
         if img is None:
             return None
         if img.shape[1] > WELCOME_WIDTH:
             img = cv2.resize(img, (WELCOME_WIDTH, WELCOME_WIDTH), interpolation=cv2.INTER_AREA)
-        g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32)
-        g = np.clip(WELCOME_GREY[0] * g + WELCOME_GREY[1] * 255.0, 0, 255).astype(np.uint8)
-        cv2.imwrite(str(dst), cv2.merge([g, g, g]), [cv2.IMWRITE_JPEG_QUALITY, 85])
+        g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32)[..., None]
+        sat, gain, lift = WELCOME_MUTE
+        m = np.clip(gain * (g + sat * (img.astype(np.float32) - g)) + lift * 255.0, 0, 255).astype(np.uint8)
+        cv2.imwrite(str(dst), m, [cv2.IMWRITE_JPEG_QUALITY, 85])
         try:
             from .xmp import tag_stereo
             tag_stereo(dst, extra={"Station": WELCOME_STATION})
@@ -162,6 +171,97 @@ def traverse_map() -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         return None, None
 
 
+ORTHO_FILE = "traverse_ortho.jpg"
+ORTHO_PX = 1024                # the orthomosaic under the info page's map: this many pixels a side (low resolution)
+ORTHO_MARGIN = 0.04            # ... a square this share wider on each side than the traverse's longer extent
+
+
+def ortho_sources(root: Optional[PathLike] = None) -> List[str]:
+    """The orthomosaic GeoTIFFs for the map: ``M20_ORTHOS`` (an os.pathsep list, as make_maps.bat sets it), else the
+    files under ``<root>/dem`` - the Mars 2020 TRN mosaic (``m2020_trn``: the whole traverse) before the MSR ones."""
+    env = [x for x in os.environ.get("M20_ORTHOS", "").split(os.pathsep) if x and Path(x).is_file()]
+    if env or not root:
+        return env
+    out: List[str] = []
+    for sub in ("m2020_trn", "msr_trn"):
+        out += sorted(str(f) for f in (Path(root) / "dem" / sub).glob("*rtho*.tif"))
+    return out
+
+
+def traverse_ortho(wp: Dict[str, Any], traverse: Dict[str, Any], web: Path, root: Optional[PathLike] = None,
+                   size: int = ORTHO_PX, old: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """0.98.14 (Christian, 15 Nov 2026: "Add low res ortho to the info map"): the orbital orthomosaic under the
+    traverse, ``size`` pixels a side, as ``web/panos/traverse_ortho.jpg`` - {"file", "extent": [x0, y0, x1, y1] in
+    the traverse map's metres (north up), "m_per_px", "source"}.  ``old``: the record of the list there; when it has
+    the same extent and its file is there, nothing is read again (the mosaic is 7 GB).  None without an orthomosaic,
+    rasterio or pyproj - the map is then the line alone."""
+    xy = np.asarray(traverse["xy"], float)
+    c = 0.5 * (xy.min(axis=0) + xy.max(axis=0))
+    h = 0.5 * float(np.ptp(xy, axis=0).max()) * (1.0 + 2.0 * ORTHO_MARGIN)
+    extent = [round(float(v), 1) for v in (c[0] - h, c[1] - h, c[0] + h, c[1] + h)]
+    dst = web / "panos" / ORTHO_FILE
+    if old and old.get("extent") == extent and old.get("px") == int(size) and dst.is_file():
+        return old
+    srcs = ortho_sources(root)
+    if not srcs:
+        log.info("publish: no orthomosaic for the map (M20_ORTHOS, or <root>/dem/m2020_trn/*rtho*.tif)")
+        return None
+    try:
+        import cv2
+        import rasterio
+        from pyproj import Transformer
+        from scipy.ndimage import map_coordinates
+        from ..waypoints.table import _props
+        P = [_props(f) for f in wp.get("features", [])]
+        P = [q for q in P if all(q.get(k) is not None for k in ("lon", "lat", "easting", "northing"))]
+        ce = np.polyfit([q["lon"] for q in P], [q["easting"] for q in P], 1)        # the map frame is linear in lon and lat
+        cn = np.polyfit([q["lat"] for q in P], [q["northing"] for q in P], 1)
+        e0, n0 = traverse["origin_en"]
+        gx = extent[0] + (np.arange(size) + 0.5) / size * 2 * h + e0
+        gy = extent[3] - (np.arange(size) + 0.5) / size * 2 * h + n0               # row 0 is the north edge
+        E, N = np.meshgrid(gx, gy)
+        lon, lat = (E - ce[1]) / ce[0], (N - cn[1]) / cn[0]
+        img = np.full((size, size), np.nan)
+        used = []
+        for path in srcs:
+            todo = np.isnan(img)
+            if not todo.any():
+                break
+            with rasterio.open(path) as src:
+                x, y = Transformer.from_crs("+proj=longlat +R=3396190 +no_defs", src.crs, always_xy=True).transform(lon[todo], lat[todo])
+                r, cc = rasterio.transform.rowcol(src.transform, x, y, op=lambda v: v)
+                r, cc = np.asarray(r, float) - 0.5, np.asarray(cc, float) - 0.5
+                ok = (r >= 0) & (cc >= 0) & (r <= src.height - 1) & (cc <= src.width - 1)
+                if not ok.any():
+                    continue
+                r0, r1 = int(np.floor(r[ok].min())), min(int(np.ceil(r[ok].max())) + 1, src.height - 1)
+                c0, c1 = int(np.floor(cc[ok].min())), min(int(np.ceil(cc[ok].max())) + 1, src.width - 1)
+                win = rasterio.windows.Window(c0, r0, c1 - c0 + 1, r1 - r0 + 1)
+                k = max(1, int(max(win.height, win.width) / (2 * size)))             # read at about twice the output
+                arr = src.read(1, window=win, out_shape=(max(1, int(win.height // k)), max(1, int(win.width // k))), masked=True)
+                arr = arr.astype(float).filled(np.nan)
+                arr[arr == 0] = np.nan                                               # 0 = no data in the USGS mosaics
+                v = map_coordinates(np.nan_to_num(arr), [(r[ok] - r0) / k, (cc[ok] - c0) / k], order=1, mode="nearest")
+                v[map_coordinates(np.isnan(arr).astype(float), [(r[ok] - r0) / k, (cc[ok] - c0) / k], order=0, mode="nearest") > 0] = np.nan
+                sub = img[todo]
+                sub[ok] = v
+                img[todo] = sub
+                used.append(Path(path).name)
+        if not np.isfinite(img).any():
+            log.info("publish: the orthomosaics do not cover the traverse")
+            return None
+        lo, hi = np.nanpercentile(img, [0.5, 99.5])
+        g = np.clip((img - lo) / max(hi - lo, 1e-6), 0, 1) * 215 + 20
+        g[~np.isfinite(img)] = 0
+        cv2.imwrite(str(dst), g.astype(np.uint8), [cv2.IMWRITE_JPEG_QUALITY, 82])
+        log.info("publish: the map's orthomosaic %s (%d px, %.1f m a pixel, from %s)", dst.name, size, 2 * h / size, ", ".join(used))
+        return {"file": "panos/" + ORTHO_FILE, "extent": extent, "px": int(size), "m_per_px": round(2 * h / size, 2),
+                "source": used, "credit": "HiRISE orthomosaic (NASA/JPL-Caltech/UArizona/USGS)"}
+    except Exception as e:                                   # noqa: BLE001 - the picture is an extra
+        log.info("publish: no orthomosaic under the map (%s: %s)", type(e).__name__, e)
+        return None
+
+
 def station_on_map(label: str, wp: Optional[Dict[str, Any]]) -> Optional[List[float]]:
     """[x, y] of a station ("...S003D2046...") in the traverse map's metres, or None."""
     m = re.search(r"S(\d{3})D(\d{4})", label)
@@ -181,7 +281,7 @@ def station_on_map(label: str, wp: Optional[Dict[str, Any]]) -> Optional[List[fl
 
 
 def station_info(folder: Path) -> Dict[str, Any]:
-    """{"site_name", "sols"} of a variant's folder, from its panorama record's mark (the page's A button shows them)."""
+    """{"site_name", "sols"} of a variant's folder, from its panorama record's mark (the page's X button (A before 0.98.13) shows them)."""
     for j in sorted(folder.glob("*ods.json")):
         try:
             m = json.loads(j.read_text(encoding="utf-8")).get("nadir_mark") or {}
@@ -222,11 +322,13 @@ def _copy(src: Path, dst: Path, width: int, quality: int) -> Dict[str, Any]:
 
 def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[str]] = None,
             views: Sequence[str] = DEFAULT_VIEWS, width: int = DEFAULT_WIDTH, quality: int = 88,
-            titles: Optional[Dict[str, Dict[str, Any]]] = None, title: str = "MPPP stereo panoramas") -> Dict[str, Any]:
+            titles: Optional[Dict[str, Dict[str, Any]]] = None, title: str = "MPPP stereo panoramas",
+            ortho_root: Optional[PathLike] = None) -> Dict[str, Any]:
     """Every station folder of ``out_root`` (the output of ``mppp single-sites``) that has a stereo JPEG, into
     ``web_dir``.  ``titles``: {station label: {"title", "note", "yaw_deg"}} (``yaw_deg``: the azimuth, degrees east
     of north, straight ahead when the page opens).  Stations already in ``panos.json`` and not in ``out_root`` stay
-    listed.  Returns the list written."""
+    listed.  ``ortho_root``: the folder whose ``dem/`` holds the orthomosaics for the map (default: ``out_root``'s
+    parent, the blocks' root).  Returns the list written."""
     from .. import __version__
     out_root, web = Path(out_root), Path(web_dir)
     (web / "panos").mkdir(parents=True, exist_ok=True)
@@ -236,6 +338,14 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
     except (OSError, ValueError):
         old = {}
     wp, traverse = traverse_map()
+    if traverse:                                                 # 0.98.14: the orbital picture under the map's line
+        try:
+            was = (json.loads(index.read_text(encoding="utf-8")).get("traverse") or {}).get("ortho")
+        except (OSError, ValueError):
+            was = None
+        ortho = traverse_ortho(wp, traverse, web, root=ortho_root if ortho_root is not None else out_root.parent, old=was)
+        if ortho:
+            traverse["ortho"] = ortho
     bad = [v for v in views if v not in VIEWS]
     if bad:
         raise ValueError(f"views {bad}: one of {list(VIEWS)}")
@@ -252,7 +362,8 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
             got = {}
             for v in views:
                 if v in files:
-                    got[v] = "panos/" + _copy(files[v], web / "panos" / files[v].name, width, quality)["file"]
+                    got[v] = "panos/" + _copy(files[v], web / "panos" / files[v].name,
+                                              min(width, GEOMETRY_WIDTH) if v.startswith(("range", "normal")) else width, quality)["file"]
                     try:                                         # a reduced copy was encoded again: its XMP with it
                         from .xmp import read_xmp, tag_stereo
                         if read_xmp(web / "panos" / files[v].name) is None:
@@ -284,7 +395,7 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
         xy = traverse and station_on_map(d.name, wp)
         if xy:
             entry["map"] = xy
-        for key, sub, label in VARIANTS:                         # the A button's words
+        for key, sub, label in VARIANTS:                         # the X button's words (info)
             info = station_info(d / sub) if (d / sub).is_dir() else {}
             if info:
                 entry.update({k: v for k, v in info.items() if k not in entry})

@@ -3,6 +3,125 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.16 — 2026-11-15
+
+Christian: "let's make an exception for z 26 and 100 letting it be promoted with just two blocks. I expect the
+high/low ratio for 63 to be lower than the shorter and longer zooms. The middle of the zoom range has a minima of
+focus and zoom efl dependence."
+
+- Mastcam-Z promotion: 26 and 100 mm need two blocks (`fit.ZCAM_MIN_BLOCKS_BY_ZOOM`; other zooms three).
+- High / low ratio per zoom (`fit.ZCAM_RATIO_PRIOR`, `ZCAM_RATIO_RANGE_BY_ZOOM`): 63 mm prior 1.0045, window
+  1.0015-1.016; 79 mm 1.0065, from 1.003; 100 mm 1.0075 (a guess), from 1.003. 34 and 48 mm keep 1.0095 and
+  1.004-1.016. The prior is the start ratio, the held ratio of an eye with few low frames (was the 34 mm model's
+  ratio) and the fallback when the blocks do not measure it. Source: the Seitah ladder and the 15 Nov joints' bins
+  (gap 1.0 / 0.7 / 0.45 / 0.6-0.7 % at 34 / 48 / 63 / 79 mm).
+- Low-backlash list: `+` pins an entry against the other file's `-` lines. `+361:ZCAM07105` and `+360:ZCAM08390`
+  (Chal Rocks 79 mm): 29 frames of ZCAM07105 ran as high in the 15 Nov joints on the found list's 29 Oct removals.
+  `-456:ZCAM08474` (Knob Mountain 63 mm, measured high in both eyes; the found list had it low by the drive rule).
+- Freeze-3 joints include 26 mm.
+
+## 0.98.15 — 2026-11-15
+
+Christian: "Prepare a new freeze run focused on getting 26, 63, 79, and 100 promoted. Make sure 34 and 48 are the best
+they are. Use the best deck joint parameters to initiate the new zcam runs. Look carefully for any miss classified
+backlash states. judge how reliable the zcam_low_backlash_candidates list is." and "make the info window in the ods
+view a little wider and taller so that none of its graphics are clipped."
+
+- **Backlash relabels** from the 15 Nov joints (`mars2020_mastcam-z_low_backlash_observations.csv`): low at 63 mm
+  `443:ZCAM07107`, `446:ZCAM07107`, `449:ZCAM08463`, `456:ZCAM08471`, `1156:ZCAM09192`, and Wildcat Ridge
+  `507:ZCAM08530`, `513:ZCAM08538` in both eyes (the left eyes were off); low at 79 mm `1149:ZCAM09185`; low at
+  34 mm `ZR:1621:ZCAM09700`.  These sequences sat 3,200-8,500 ppm under the high line while running as high - the
+  cause of the failed "regular ratio" checks at 63 and 79 mm.  ZCAM07114 (the post-drive 34 mm clast survey) comes
+  off the list on its 26 sols without a drive before the frame (`-<sol>:ZCAM07114`; three measured high: 446, 679,
+  688); the frames after a drive stay low.
+- Mastcam-Z joint, rig scatter: a block with fewer than 5,000 observations of the zoom
+  (`ztied.RIG_SCATTER_MIN_OBS`) stays in the rig table and out of the scatter and its trends.  The 15 Nov Z79 joint
+  failed on Skinner Ridge's roll of 399 mdeg from 2,066 observations (sd 164 mdeg; 4.3 without it); Z34's roll sd
+  drops from 43.5 to 4.9 mdeg.
+- `ZCAM_RULES` 3: every Mastcam-Z block runs again at its next run (the list is not in the run key).
+- Freeze-3 (`freeze.py`, tag `freeze_3`, needs 0.98): the joints and the runs at 34, 48, 63, 79, **100** and 110 mm
+  (`--zooms` passed to the pipeline); a `--candidate` is promoted when its files differ from the folder's (before:
+  never once the folder held a freeze rig); the run's `--cmods` and `--candidate` are kept in its status, so the
+  restart at logon goes on with them.  Wildcat Ridge gets 100 mm (sol 510 ZCAM00064, an 8-position focus stack).
+- Viewer: the info page is 1100 px wide and as tall as its map needs (nothing clipped); the map credit at its top left.
+
+## 0.98.14 — 2026-11-15
+
+Christian: "the pan motion on the joystick should be faster. Tilt the info window back further so that it is easier to
+read from the wrist. Add low res ortho to the info map. for rockytop use a model made from the full ncam block
+alignment. The 3d model of the rover still has many occluded surfaces. The resolution of it looks good, but the edges
+look pixelated. the rover should not have a hole visible from any where within the 0.15 m radius. for the blue circle,
+make the middle line a little smaller font." and "the welcome screen should have color, just be a little more muted".
+
+- **The 3D rover is the Perseverance model itself** (`mppp.ibr.rover_surface`, rewritten): the model's triangles as
+  `mppp mesh --rover` placed them (179,426 at a station), coloured in the viewer from the pivot's panorama where the
+  pivot sees them (a per-pixel test against the panorama's range, bias 12 mm + 1.2 %, smooth over four range pixels)
+  and rover grey, lightly shaded, where no camera saw them.  No holes from any viewpoint; the edges are the model's.
+  The file drops from about 37 MB to about 5 MB a station.  The grid mesh with its second layer is gone.
+  The panorama record's key for the azimuth of column 0 was read under a wrong name before (always 0).
+- Viewer: antialiasing on; the stick turns at 150 deg/s (60); the info page leans back 69 deg (40); the map on it
+  lies over a low-resolution orbital picture (`web.traverse_ortho`: `panos/traverse_ortho.jpg`, 1024 px, from
+  `M20_ORTHOS` or `<root>/dem/m2020_trn/*rtho*.tif`; made once); on a screen `?head=x,y,z` moves the eye off the pivot.
+- The welcome picture keeps Van Zyl's colours, muted (`WELCOME_MUTE`); the grey one is removed.
+- `"terrain": "block"` in `single_sites.json` (both Rockytop stations): `mppp dense --whole-block` makes one cloud
+  from every Navcam frame of the block (`colmap/dense_block_N`, shared by the block's stations); the mesh is made
+  from it, the panorama from the station's own frames (`dense_<station>_block/mppp_dense.json`).
+- Nadir disc: the middle row at most 0.125 of the radius tall (0.15).
+
+## 0.98.13 — 2026-11-15
+
+- The viewer (Christian: "switch the A and the X buttons"): X (left hand, where the page appears) opens the info page;
+  A (right hand) steps to the next view (standard, normal, range log).  The welcome text says so.
+
+## 0.98.12 — 2026-11-15
+
+Christian: "Include a version of the vf figure in the official make figures list. The normal map should not include
+the flat plane. Make those extra channels 4k and the same with the range map. Uploaded the range map too in log
+scale ... The 3d rover models should not interpolate colors across the rover especially at the bottom pole. Make in
+images mars rover grey."
+
+- `make_figures.bat` and `paper_figures` list `deck_fiducials_and_vfs[_early]_<tag>.png` (made since 0.98.10 with the
+  deck fiducial figure), the label-vs-constrained deck figure and the deck-joint baseline figure.
+- `ods.geometry_panorama`: the range and normal panoramas are 4096 wide (`GEOMETRY_WIDTH`; the colour ones stay
+  8192), and the normal panorama shows the mesh and the rover model only - the ground plane is black.
+- `web.publish` uploads `range log` with `standard` and `normal` (`DEFAULT_VIEWS`), and publishes the range and normal
+  views at most 4096 wide, so the 8k ones of earlier runs go up at 4k too.  The viewer's X button steps through all three.
+- The rover model where no frame coloured it is one flat neutral grey (`ROVER_GREY_REL` x the ground's median level),
+  painted before the crack fill, so no colour is carried across the rover in the panoramas.
+  `rover_surface.grey_unseen` does the same to the 3D rover's texture (it replaces `heal_unseen`, the nearest colour
+  smoothed, which smeared colours over the bottom pole), and the layer behind is no longer blurred.
+
+## 0.98.11 — 2026-11-15
+
+Christian: "remove vf 19, 21, 05, 09 and 03.  Replace them with red dot candidates from this image ... replace the
+removed numbers ... VF01a-d as four distinct vf."
+
+- `data/vf_points_20261115.json`: VF03, VF05, VF09, VF19 and VF21 are new points from the red dots on the sol 1642 NRF
+  frame (VF03 <- C15, VF05 <- C08, VF09 <- C10, VF19 <- C07, VF21 <- C01, the aft-most point so far at x = -1265 mm),
+  screened in 51 archive frames: found in 25/29, 32/49, 29/29, 18/27 and 22/27 of the frames where the rover model
+  leaves them visible, station jackknife 0.28-0.83 mm.  The old points are kept under `replaced_20261114`.
+- The deck fiducial figure draws the new points green and labels the tag corners VF01a-d one by one; the note moved
+  into four short lines so it no longer hides points at the top.
+- The deck-joint package side (`deck_joint_vf6_2026-11-15`, outside the repository): `vf_selected6.json` and
+  `vf6_migrate.py`, which drops the old marks under the reused names and measures the new points (and the tag
+  corners, with the AprilTag detector) in the station and archive frames on the drive.
+
+## 0.98.10 — 2026-11-15
+
+Christian: "make a version of the deck fiducial figure that also shows the locations of the vfs".
+
+- `make_figures` also writes `deck_fiducials_and_vfs_<tag>.png` (and `_early_`): the deck fiducial figure with the
+  vicarious fiducials drawn where the constrained model puts them (blue; the weak ones orange; the tag corners white).
+  They are not measured in the frame and not checked for hiding by the mast or arm.
+- `mppp_studies/calibration/data/vf_points_ALL_20261114.json`: the VFs of the 101-station deck joint of 14 Nov, with
+  their station-jackknife sd, archive residual and station-frame finds; `fiducials.load_vf_points()`.
+
+## 0.98.9 — 2026-11-15
+
+- `Sol0204_S007D1836` and `Sol0248_S008D0000` use the Seitah huge block: they failed at once on 14 Nov because
+  Seitah North large has never been aligned ("no model at ...seitah_north_large\colmap\sparse\cahv_ba"). Their
+  frames and context frames are all in Seitah huge.
+
 ## 0.98.8 — 2026-11-14
 
 Christian: "are there three modes? they should be: terrain only, terrain with rover proj, terrain with rover model.

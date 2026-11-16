@@ -1,0 +1,409 @@
+{
+ "_about": "The vicarious deck fiducials (VFs) as solved in the 101-station deck joint jr_ALL of 14 Nov 2026 (D:\\rover_frame_eod_early): RNAV positions in mm, the delete-station-group jackknife sd (5 groups; the archive jackknifes were not run), the archive-frame residual rms and how often each was found in the station frames (vfst.jsonl). 'weak': archive rms > 0.9 px or jackknife |sd| > 0.15 mm or found in < 35 % of station frames (VF01a-d, the tag corners, are found in only 18 % of station frames but are sharp in the archive frames: 'tag').",
+ "source": "jr_ALL.json, jr_ALL_st0..4.json, vfst.jsonl",
+ "date": "2026-11-14",
+ "weak": [
+  "VF03",
+  "VF05",
+  "VF09",
+  "VF19",
+  "VF21"
+ ],
+ "tag": [
+  "VF01a",
+  "VF01b",
+  "VF01c",
+  "VF01d"
+ ],
+ "TDF4_mm": [
+  336.099,
+  127.056,
+  -1134.102
+ ],
+ "points": {
+  "VF01a": {
+   "rnav_mm": [
+    1009.138,
+    84.399,
+    -1398.141
+   ],
+   "station_jackknife_sd_mm": [
+    0.042,
+    0.037,
+    0.023
+   ],
+   "archive_rms_px": 0.397,
+   "archive_n": 25,
+   "station_frames_kept": 44,
+   "station_frames_tried": 244
+  },
+  "VF01b": {
+   "rnav_mm": [
+    1016.981,
+    67.282,
+    -1398.337
+   ],
+   "station_jackknife_sd_mm": [
+    0.042,
+    0.051,
+    0.039
+   ],
+   "archive_rms_px": 0.628,
+   "archive_n": 27,
+   "station_frames_kept": 43,
+   "station_frames_tried": 251
+  },
+  "VF01c": {
+   "rnav_mm": [
+    1033.959,
+    75.249,
+    -1398.603
+   ],
+   "station_jackknife_sd_mm": [
+    0.042,
+    0.052,
+    0.04
+   ],
+   "archive_rms_px": 0.616,
+   "archive_n": 26,
+   "station_frames_kept": 42,
+   "station_frames_tried": 245
+  },
+  "VF01d": {
+   "rnav_mm": [
+    1026.151,
+    92.325,
+    -1398.307
+   ],
+   "station_jackknife_sd_mm": [
+    0.039,
+    0.031,
+    0.022
+   ],
+   "archive_rms_px": 0.655,
+   "archive_n": 25,
+   "station_frames_kept": 44,
+   "station_frames_tried": 239
+  },
+  "VF02": {
+   "rnav_mm": [
+    271.5,
+    593.386,
+    -1133.089
+   ],
+   "station_jackknife_sd_mm": [
+    0.069,
+    0.016,
+    0.098
+   ],
+   "archive_rms_px": 0.837,
+   "archive_n": 18,
+   "station_frames_kept": 66,
+   "station_frames_tried": 139
+  },
+  "VF03": {
+   "rnav_mm": [
+    866.37,
+    -1.992,
+    -1251.511
+   ],
+   "station_jackknife_sd_mm": [
+    0.028,
+    0.065,
+    0.064
+   ],
+   "archive_rms_px": 1.139,
+   "archive_n": 19,
+   "station_frames_kept": 107,
+   "station_frames_tried": 239
+  },
+  "VF04": {
+   "rnav_mm": [
+    358.712,
+    467.346,
+    -1262.566
+   ],
+   "station_jackknife_sd_mm": [
+    0.03,
+    0.02,
+    0.036
+   ],
+   "archive_rms_px": 0.732,
+   "archive_n": 45,
+   "station_frames_kept": 43,
+   "station_frames_tried": 128
+  },
+  "VF05": {
+   "rnav_mm": [
+    724.873,
+    -131.362,
+    -1138.882
+   ],
+   "station_jackknife_sd_mm": [
+    0.011,
+    0.071,
+    0.155
+   ],
+   "archive_rms_px": 0.961,
+   "archive_n": 27,
+   "station_frames_kept": 76,
+   "station_frames_tried": 254
+  },
+  "VF06": {
+   "rnav_mm": [
+    209.051,
+    178.572,
+    -1133.166
+   ],
+   "station_jackknife_sd_mm": [
+    0.016,
+    0.015,
+    0.026
+   ],
+   "archive_rms_px": 0.586,
+   "archive_n": 198,
+   "station_frames_kept": 175,
+   "station_frames_tried": 238
+  },
+  "VF07": {
+   "rnav_mm": [
+    668.466,
+    -507.801,
+    -1270.871
+   ],
+   "station_jackknife_sd_mm": [
+    0.013,
+    0.058,
+    0.039
+   ],
+   "archive_rms_px": 0.646,
+   "archive_n": 125,
+   "station_frames_kept": 207,
+   "station_frames_tried": 287
+  },
+  "VF08": {
+   "rnav_mm": [
+    -500.696,
+    623.152,
+    -1303.022
+   ],
+   "station_jackknife_sd_mm": [
+    0.092,
+    0.025,
+    0.049
+   ],
+   "archive_rms_px": 0.596,
+   "archive_n": 47,
+   "station_frames_kept": 216,
+   "station_frames_tried": 270
+  },
+  "VF09": {
+   "rnav_mm": [
+    -456.747,
+    561.915,
+    -1302.386
+   ],
+   "station_jackknife_sd_mm": [
+    0.071,
+    0.021,
+    0.038
+   ],
+   "archive_rms_px": 1.016,
+   "archive_n": 108,
+   "station_frames_kept": 181,
+   "station_frames_tried": 270
+  },
+  "VF10": {
+   "rnav_mm": [
+    -231.358,
+    233.944,
+    -1153.564
+   ],
+   "station_jackknife_sd_mm": [
+    0.038,
+    0.009,
+    0.025
+   ],
+   "archive_rms_px": 0.386,
+   "archive_n": 209,
+   "station_frames_kept": 271,
+   "station_frames_tried": 297
+  },
+  "VF11": {
+   "rnav_mm": [
+    345.177,
+    -394.213,
+    -1266.155
+   ],
+   "station_jackknife_sd_mm": [
+    0.037,
+    0.037,
+    0.027
+   ],
+   "archive_rms_px": 0.744,
+   "archive_n": 133,
+   "station_frames_kept": 65,
+   "station_frames_tried": 296
+  },
+  "VF12": {
+   "rnav_mm": [
+    185.383,
+    -317.117,
+    -1283.166
+   ],
+   "station_jackknife_sd_mm": [
+    0.021,
+    0.033,
+    0.037
+   ],
+   "archive_rms_px": 0.838,
+   "archive_n": 176,
+   "station_frames_kept": 112,
+   "station_frames_tried": 287
+  },
+  "VF13": {
+   "rnav_mm": [
+    492.798,
+    -648.85,
+    -1133.246
+   ],
+   "station_jackknife_sd_mm": [
+    0.011,
+    0.015,
+    0.024
+   ],
+   "archive_rms_px": 0.371,
+   "archive_n": 63,
+   "station_frames_kept": 270,
+   "station_frames_tried": 289
+  },
+  "VF14": {
+   "rnav_mm": [
+    -748.09,
+    523.034,
+    -1345.652
+   ],
+   "station_jackknife_sd_mm": [
+    0.09,
+    0.02,
+    0.017
+   ],
+   "archive_rms_px": 0.616,
+   "archive_n": 149,
+   "station_frames_kept": 224,
+   "station_frames_tried": 256
+  },
+  "VF15": {
+   "rnav_mm": [
+    426.511,
+    -658.547,
+    -1131.953
+   ],
+   "station_jackknife_sd_mm": [
+    0.057,
+    0.164,
+    0.127
+   ],
+   "archive_rms_px": 0.695,
+   "archive_n": 58,
+   "station_frames_kept": 245,
+   "station_frames_tried": 294
+  },
+  "VF16": {
+   "rnav_mm": [
+    -213.28,
+    -161.765,
+    -1182.185
+   ],
+   "station_jackknife_sd_mm": [
+    0.033,
+    0.028,
+    0.049
+   ],
+   "archive_rms_px": 0.74,
+   "archive_n": 185,
+   "station_frames_kept": 136,
+   "station_frames_tried": 272
+  },
+  "VF17": {
+   "rnav_mm": [
+    -891.745,
+    480.315,
+    -1589.181
+   ],
+   "station_jackknife_sd_mm": [
+    0.044,
+    0.013,
+    0.03
+   ],
+   "archive_rms_px": 0.781,
+   "archive_n": 138,
+   "station_frames_kept": 235,
+   "station_frames_tried": 238
+  },
+  "VF18": {
+   "rnav_mm": [
+    -893.541,
+    479.31,
+    -1622.239
+   ],
+   "station_jackknife_sd_mm": [
+    0.078,
+    0.013,
+    0.035
+   ],
+   "archive_rms_px": 0.539,
+   "archive_n": 47,
+   "station_frames_kept": 232,
+   "station_frames_tried": 238
+  },
+  "VF19": {
+   "rnav_mm": [
+    -788.603,
+    356.966,
+    -1264.497
+   ],
+   "station_jackknife_sd_mm": [
+    0.218,
+    0.031,
+    0.086
+   ],
+   "archive_rms_px": 0.829,
+   "archive_n": 95,
+   "station_frames_kept": 86,
+   "station_frames_tried": 258
+  },
+  "VF20": {
+   "rnav_mm": [
+    -800.561,
+    14.45,
+    -1480.442
+   ],
+   "station_jackknife_sd_mm": [
+    0.084,
+    0.031,
+    0.015
+   ],
+   "archive_rms_px": 0.879,
+   "archive_n": 153,
+   "station_frames_kept": 146,
+   "station_frames_tried": 229
+  },
+  "VF21": {
+   "rnav_mm": [
+    -795.229,
+    -376.326,
+    -1407.874
+   ],
+   "station_jackknife_sd_mm": [
+    0.133,
+    0.066,
+    0.091
+   ],
+   "archive_rms_px": 0.952,
+   "archive_n": 49,
+   "station_frames_kept": 49,
+   "station_frames_tried": 235
+  }
+ }
+}

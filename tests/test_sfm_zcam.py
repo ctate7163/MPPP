@@ -381,12 +381,16 @@ def test_low_backlash_list_shipped_and_matching(tmp_path):
     assert is_low_backlash(row("ZLF_0078_0673880000_000EBY_N0032430ZCAM08038_063085J01", "ZL063"), lst)
     assert not is_low_backlash(row("ZRF_0078_0673880000_000EBY_N0032430ZCAM08038_063085J01", "ZR063"), lst)
     assert is_low_backlash(row("ZRF_0556_0716300000_000EBY_N0270000ZCAM08577_063085J01", "ZR063"), lst)
-    assert ("ZL", 507, "ZCAM08530") in lst["excluded"]["eye_sol_sequences"] and ("ZR", 513, "ZCAM08538") in lst["eye_sol_sequences"]   # 0.97.0, 12 Nov: the left eyes off, the right eyes low
+    # 0.98.15 (the 15 Nov joints): Wildcat Ridge sols 507 / 513 low in both eyes (0.97.0: the left eyes off)
+    assert (507, "ZCAM08530") in lst["sol_sequences"] and (513, "ZCAM08538") in lst["sol_sequences"]
+    assert is_low_backlash(row("ZLF_0507_0712000000_000EBY_N0260000ZCAM08530_063085J01", "ZL063"), lst)
+    assert is_low_backlash(row("ZRF_0507_0712000000_000EBY_N0260000ZCAM08530_063085J01", "ZR063"), lst)
+    # a "-" entry of the shipped list wins over the found list: a no-drive ZCAM07114 frame stays high
     g = tmp_path / "found.csv"
-    g.write_text("ZL0_0507_0712000000_000RAD_N0260000ZCAM08530_063085A01  # found 20 Oct\n")
+    g.write_text("ZL0_0688_0728700000_000RAD_N0320000ZCAM07114_0340LMA01  # found\n")
     both = load_low_backlash(found=g)
-    assert not is_low_backlash(row("ZLF_0507_0712000000_000EBY_N0260000ZCAM08530_063085J01", "ZL063"), both)
-    assert is_low_backlash(row("ZRF_0507_0712000000_000EBY_N0260000ZCAM08530_063085J01", "ZR063"), both)
+    assert not is_low_backlash(row("ZLF_0688_0728700000_000EBY_N0320000ZCAM07114_0340LMJ01", "ZL034"), both)
+    assert is_low_backlash(row("ZLF_0684_0728371111_000EBY_N0320000ZCAM07114_0340LMJ01", "ZL034"), both)
     # the eye-qualified entry in an own list, with the eye from the row when the stem has none
     f2 = tmp_path / "eye.csv"
     f2.write_text("ZR:12:ZCAM00001\n-ZL:12:ZCAM00001\n")

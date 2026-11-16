@@ -156,6 +156,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--nearby-m", type=float, default=None, metavar="M",
                    help="0.97.0, with --station: also the frames of the block's other stations within M metres (they "
                         "see the ground under this station's rover); its own workspace dense_<station>..._near<M>")
+    p.add_argument("--whole-block", action="store_true",
+                   help="0.98.14: the terrain from the whole alignment - every frame of the block of the --cameras "
+                        "families (all stations, all sizes) in the workspace dense_block_<cameras>, which the block's "
+                        "stations share; with --station, that station's own frames (--scale, --sequence, --images) are "
+                        "recorded in dense_<station>_block/mppp_dense.json for the panorama")
     p.add_argument("--scale", type=float, default=None, help="--station: only frames at this downsample (0.5: half-res)")
     p.add_argument("--images", nargs="+", default=None, help="0.96: only these image names (instead of --station)")
     p.add_argument("--add-images", nargs="+", default=None, metavar="NAME",
@@ -699,7 +704,23 @@ def cmd_dense(a: argparse.Namespace) -> int:
     size = int(a.max_image_size or DENSE_MAX_IMAGE_SIZE)
     from .sfm.dense import DENSE_DIR, subset_images, subset_label
     subset, ws = None, proj_dir / DENSE_DIR
-    if getattr(a, "station", None) or getattr(a, "images", None):
+    stub = None
+    if getattr(a, "whole_block", False):                         # 0.98.14: one cloud for the block, shared by its stations
+        fam = set((a.cameras or "N").upper())
+        subset = sorted(r["name"] for r in proj.images if str(r.get("camera_group") or r.get("instrument") or "?")[:1] in fam)
+        if not subset:
+            print(f"dense --whole-block: no frames of the families {a.cameras!r} in {proj_dir}", file=sys.stderr)
+            return 2
+        ws = proj_dir / f"{DENSE_DIR}_block_{''.join(sorted(fam))}"
+        if getattr(a, "station", None) or getattr(a, "images", None):
+            own = subset_images(proj, station=a.station, families=a.cameras, sequences=a.sequence, names=a.images, scale=a.scale)
+            if not own:
+                print(f"dense: no frames for --station {a.station} --cameras {a.cameras} --sequence {a.sequence}", file=sys.stderr)
+                return 2
+            stub = (proj_dir / (subset_label(a.station, a.sequence, a.images) + "_block"), own)
+        print(f"dense: the whole block - {len(subset)} frames of {a.cameras} -> {ws}"
+              + (f"; {len(stub[1])} of them are the station's own" if stub else ""))
+    elif getattr(a, "station", None) or getattr(a, "images", None):
         subset = subset_images(proj, station=a.station, families=a.cameras, sequences=a.sequence, names=a.images,
                                scale=a.scale)
         if not subset:
@@ -732,6 +753,11 @@ def cmd_dense(a: argparse.Namespace) -> int:
               f"masks; beyond {r['max_depth_m']:g} m left out) -> {r['folder']}")
         return 0 if (r["depth_maps"] or r["normal_maps"]) else 1
     steps = [s for s, on in (("stereo", a.stereo), ("fusion", a.fusion), ("mesh", a.mesh)) if on]
+    if stub is not None:                                         # the station's own frames, for mppp depthmaps / ods
+        stub[0].mkdir(parents=True, exist_ok=True)
+        (stub[0] / "mppp_dense.json").write_text(json.dumps(
+            {"subset": stub[1], "terrain": "block", "block_workspace": ws.name, "points": str(ws / "fused.ply"),
+             "note": "the station's own frames; the cloud is the block's (mppp dense --whole-block)"}, indent=1), encoding="utf-8")
     if a.prepare or not steps:
         res = prepare_dense(proj, ws, max_image_size=size, overwrite=a.overwrite, images=subset,
                             full_fov=bool(getattr(a, "full_fov", False)))

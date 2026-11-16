@@ -91,14 +91,50 @@ ZCAM08045_034
 586:ZCAM08602  # Enchanted Lake 34 mm, both eyes (Christian, 9 Nov 2026; zcam-states 9 Nov: -0.86 / -0.92 %)
 556:ZCAM08577  # Enchanted Lake 63 mm, both eyes (Christian, 9 Nov 2026; the 4 Nov Z63 joint's bins -3,760 / -5,000 ppm = 90 / 88 % of the gap; the block-relative states study could not see it - the only 63 mm sequence of its block)
 ZL:78:ZCAM08038  # Chal Rocks large 63 mm, LEFT eye only (Christian, 5 and 9 Nov 2026; the mini-block of 5 Nov: ZL on its low line, ZR on its high line; the 4 Nov joint's bins ZL -3,600 ppm, ZR +640); the found list has the 24 stems since 5 Nov
--ZL:507:ZCAM08530  # Wildcat Ridge 63 mm, LEFT eye off the list (high). 9 Nov 2026 (Christian): both eyes off (the 4 Nov Z63 joint's bins: ZL 0 ppm, ZR -1,270 ppm = 0 / 22 % of the gap); the found list names the sequence, so the left eye needs this line
-ZR:507:ZCAM08530  # Wildcat Ridge 63 mm, RIGHT eye only, low (Christian, 12 Nov 2026: "put the right eyes of ZCAM08530 and ZCAM08538 in the low state"; the 12 Nov Wildcat Ridge block: f / label f ZL 1.0035, ZR 0.9996, the eyes 0.36 % apart against a 0.45 % gap - a test: one eye low, or a label offset between the eyes)
--ZL:513:ZCAM08538  # Wildcat Ridge 63 mm, LEFT eye off the list (high); 9 Nov 2026: both eyes off (the 4 Nov Z63 joint's bins: ZL -530 ppm, ZR -1,720 ppm = 13 / 30 % of the gap)
-ZR:513:ZCAM08538  # Wildcat Ridge 63 mm, RIGHT eye only, low (Christian, 12 Nov 2026; the 12 Nov block: ZL 1.0034, ZR 1.0000) - as ZR:507:ZCAM08530
-361:ZCAM07105  # Chal Rocks large 79 mm, both eyes, LOW again (9 Nov 2026): the 29 Oct removal rested on a block-relative states fit that cannot see a block entirely in one state; the 4 Nov Z79 joint puts Chal Rocks 0.34-0.43 % below Rockytop (the 0.4 % gap Seitah measured) and the zoom history (frame list of 9 Nov) says low; the freeze-2 Z79 joint (ratio fitted globally) is the test
-360:ZCAM08390  # Chal Rocks large 79 mm, both eyes, low (9 Nov 2026): as ZCAM07105; its bins have fy/fx +20,000 ppm (weak vertical geometry), so ZCAM07105 is the evidence that counts
+507:ZCAM08530  # Wildcat Ridge 63 mm, BOTH eyes low (15 Nov 2026, 0.98.15). History: 9 Nov both off, 12 Nov the right eye low (Christian). The 15 Nov Z63 joint puts the left eye where the right is: ZL -6,289 ppm (z -17, run as high), ZR -6,559, against the same block's high ZCAM08541 (sol 518) at -844 / -407 - 0.55 % apart inside one block, in both eyes; the first zoom-history list (zcam_low_backlash_candidates.csv) had it low
+513:ZCAM08538  # Wildcat Ridge 63 mm, BOTH eyes low (15 Nov 2026): ZL -6,826 ppm (z -18, run as high), ZR -7,007; the zoom history (48 -> 63) agrees - as 507:ZCAM08530
++361:ZCAM07105  # (0.98.15: "+" pins it - 29 of its frames ran as high in the 15 Nov joints on the found list's 29 Oct "-" stems) Chal Rocks large 79 mm, both eyes, LOW again (9 Nov 2026): the 29 Oct removal rested on a block-relative states fit that cannot see a block entirely in one state; the 4 Nov Z79 joint puts Chal Rocks 0.34-0.43 % below Rockytop (the 0.4 % gap Seitah measured) and the zoom history (frame list of 9 Nov) says low; the freeze-2 Z79 joint (ratio fitted globally) is the test
++360:ZCAM08390  # Chal Rocks large 79 mm, both eyes, low (9 Nov 2026): as ZCAM07105; its bins have fy/fx +20,000 ppm (weak vertical geometry), so ZCAM07105 is the evidence that counts
 -435:ZCAM07114  # Three Forks North 34 mm clast-survey frame found HIGH (zcam-states 9 Nov; the zoom history agrees): the sequence-wide ZCAM07114_034 entry is too broad - one frame per sol, the state varies by sol
 -817:ZCAM07114  # Belva 34 mm clast-survey frame found HIGH (zcam-states 9 Nov; the zoom history agrees)
 483:ZCAM03394  # Skinner Ridge 79 mm, both eyes, low (Christian, 13 Nov 2026): the 0.97.4 freeze block's states report - ZL 0.9978, ZR 0.9981 of the label f (sequence z -9.6); it ran as high
 484:ZCAM03396  # Skinner Ridge 79 mm, both eyes, low (13 Nov 2026): ZL 0.9973, ZR 0.9979 (sequence z -10.7); it ran as high
 492:ZCAM03399  # Skinner Ridge 79 mm, both eyes, low (13 Nov 2026): ZL 1.0013, ZR 0.9989 (sequence z -6.6); it ran as high
+# --- 15 Nov 2026 (0.98.15): the audit of the 15 Nov joints (Z63 and Z79 failed "regular ratio": low sequences ran as high). Offsets are the joint's sequence
+# offsets in ppm from the high line; the true highs sit at -850...+3,250, these at -3,200...-8,500. Every one is low in the zoom history (48 or 34 -> 63 / 79)
+# and in the first candidates list. Project doc: claude/backlash-audit-2026-11-15-...
+443:ZCAM07107  # Knob Mountain 63 mm, both eyes: ZL -8,050 (z -22), ZR -7,694 (z -12); ran as high. Sol 448 of the same sequence is high (+1,979 / +2,684) and stays off
+446:ZCAM07107  # Knob Mountain 63 mm, both eyes: ZL -7,102 (z -20), ZR -7,030 (z -11); ran as high
+449:ZCAM08463  # Knob Mountain and Rose River Falls 63 mm, both eyes: -5,174 / -3,963 and -5,446 / -4,071 (z -14 / -6); ran as high
+456:ZCAM08471  # Knob Mountain 63 mm, both eyes: ZL -7,980 (z -22), ZR -8,507 (z -13); ran as high
+1156:ZCAM09192  # Overlook Mountain 63 mm, both eyes: ZL -3,216 (z -9), ZR -3,370 (z -5); ran as high (the site's 48 mm frames of sols 1150-1155 are low too)
+1149:ZCAM09185  # Overlook Mountain 79 mm, both eyes: +859 / -311 against the block's highs ZCAM09179 and ZCAM09183 at +2,931...+5,290 (0.3-0.45 % below); ran as high
+# ZCAM07114 (the post-drive 34 mm clast survey, one frame per sol): the sequence-wide ZCAM07114_034 entry above is right after a drive and wrong on the sols
+# without one. Measured on 44 sols 413-960: low on every sol the zoom history's drive rule calls low, high on every no-drive sol (435, 446, 679, 688, 817).
+# The no-drive sols of the history come off the list: three measured here, the rest by the rule (44 of 44 right where measured).
+-351:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+-446:ZCAM07114  # no drive before the frame: found HIGH (15 Nov audit)
+-552:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+-606:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+-641:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+-644:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+-679:ZCAM07114  # no drive before the frame: found HIGH (15 Nov audit)
+-688:ZCAM07114  # no drive before the frame: found HIGH (15 Nov audit)
+-708:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+-709:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+-713:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+-715:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+-765:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+-768:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+-869:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+-925:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+-933:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+-1002:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+-1008:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+-1022:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+-1025:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+-1032:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+-1033:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+-1073:ZCAM07114  # no drive before the frame: high by the drive rule (not in a block yet)
+ZR:1621:ZCAM09700  # Taylorfjellet 34 mm, RIGHT eye only, low (15 Nov 2026 audit): 8 of 12 frames in-block at f / label f below the low threshold, joint ZR -3,417 ppm (z -172) against ZL +5,745 - the eyes 0.92 % apart, one state gap; no rule (zoom history, drive) explains it
+-456:ZCAM08474  # Knob Mountain large 63 mm, both eyes HIGH (15 Nov 2026 frame-list audit: both estimators of the 15 Nov Z63 joint read high; joint ZL +2,223 ppm) - overrides the found list's drive-rule entry; the drive rule is a 34 mm rule

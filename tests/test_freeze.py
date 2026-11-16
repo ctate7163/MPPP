@@ -57,7 +57,7 @@ def test_explicit_mask_model_sets_the_checkpoint_on_every_pipeline_call(tmp_path
     log = (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
     assert log.count(f"--set mask_checkpoint={ck}") == 4                    # zjoints, zfinal, ecam, studies
     assert "every image is processed again" in log
-    assert st["steps"]["cmods"]["note"].startswith(str(root / "cmods")) and "already in it" in st["steps"]["cmods"]["note"]
+    assert st["steps"]["cmods"]["note"].startswith(str(root / "cmods")) and "no --candidate" in st["steps"]["cmods"]["note"]
 
 
 def test_blocks_mask_reads_the_finished_blocks(tmp_path):
@@ -214,7 +214,7 @@ def test_version_gate(tmp_path, monkeypatch):
     monkeypatch.setattr(fz, "code_version", lambda r: "0.95.5 D:\\code\\MPPP_freeze2\\src\\mppp\\__init__.py")
     assert _run(root) == 1
     assert _status(root)["state"] == "failed"
-    assert "needs MPPP 0.97.x" in (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
+    assert f"needs MPPP {fz.REQUIRED_VERSION}.x" in (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
     (root / "cmods").mkdir()
     (root / "cmods" / "M2020_N_rig.json").write_text(json.dumps({"source": "freeze"}), encoding="utf-8")
     assert _run(root, "--any-version") == 0
@@ -329,7 +329,7 @@ def test_pc_like_root_auto_with_the_live_training_in_a_dry_run(tmp_path):
     assert _run(root, "--mask-model", "auto", "--mask-home", str(home), "--cmods", str(root / "cmods_freeze2")) == 0
     st = _status(root)
     assert st["steps"]["wait"]["note"].startswith("pipeline idle")
-    assert "already in it" in st["steps"]["cmods"]["note"]
+    assert "no --candidate" in st["steps"]["cmods"]["note"]          # 0.98.15: no candidate, the folder as it is
     assert st["mask"]["tag"] == "v9_v4.4" and st["mask"]["set"] is None and "not finished" in st["mask"]["choice"]
     log = (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
     assert "mask auto: waiting for the training 'v9_v4.4'" in log and "mask_checkpoint=" not in log
@@ -435,7 +435,7 @@ def test_fresh_sets_the_old_status_aside(tmp_path, monkeypatch):
     d.mkdir(parents=True, exist_ok=True)
     (d / fz.STATUS_FILE).write_text(json.dumps({"started": "2026-11-09T00:00:00", "tag": "freeze_096", "state": "stopped",
                                                 "steps": {"zjoints": {"state": "done"}}}), encoding="utf-8")
-    monkeypatch.setattr(fz, "code_version", lambda r: "0.97.0 x")
+    monkeypatch.setattr(fz, "code_version", lambda r: fz.REQUIRED_VERSION + ".0 x")
     monkeypatch.setattr(fz.Run, "guarded", lambda self, s, f: None)
     for n in ("keep_awake", "logon_task_register", "logon_task_delete", "free_gb"):
         monkeypatch.setattr(fz, n, lambda *a, **k: None)
@@ -443,7 +443,7 @@ def test_fresh_sets_the_old_status_aside(tmp_path, monkeypatch):
     old = list(d.glob("freeze_status_before_*.json"))
     assert len(old) == 1 and json.loads(old[0].read_text(encoding="utf-8"))["tag"] == "freeze_096"
     new = json.loads((d / fz.STATUS_FILE).read_text(encoding="utf-8"))
-    assert new["tag"] == "freeze_097" and "zjoints" not in new["steps"]
+    assert new["tag"] == fz.TAG and "zjoints" not in new["steps"]
 
 
 def test_seitah_overlook_parallax():
@@ -472,3 +472,31 @@ def test_window_shows_the_block_being_aligned(tmp_path):
     log = (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
     assert log.count("aligning wildcat_ridge") == 1 and "stage 1: Navcam only" in log
     assert "wildcat_ridge finished after 3.5 h: warn, 683 of 697 images, 0.44 px" in log
+
+
+def test_freeze3_candidate_over_a_freeze_rig_the_zooms_and_the_folder_kept(tmp_path, monkeypatch):
+    """0.98.15 (freeze-3): a candidate rig that differs from the folder's freeze rig is promoted (before: the freeze
+    rig in the folder stopped it); the pipeline gets the freeze's zooms with 100 mm; a restart without --cmods or
+    --candidate goes on with the run's own."""
+    root = _root(tmp_path)
+    (root / "cmods").mkdir()
+    (root / "cmods" / "M2020_N_rig.json").write_text(json.dumps({"source": "freeze-2 (8 Nov)"}), encoding="utf-8")
+    cand = tmp_path / "cand"
+    cand.mkdir()
+    (cand / "M2020_N_rig.json").write_text(json.dumps({"source": "freeze-3 rig (deck joint)"}), encoding="utf-8")
+    assert _run(root, "--candidate", str(cand)) == 0
+    st = _status(root)
+    assert "promote_cmods" in (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
+    assert st["models"] == {"cmods": str(root / "cmods"), "candidate": str(cand)}
+    assert 100 in fz.ZOOMS
+    log = (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
+    assert "--zooms 26 34 48 63 79 100 110" in log
+    # the candidate's files already in the folder: nothing promoted
+    (root / "cmods" / "M2020_N_rig.json").write_bytes((cand / "M2020_N_rig.json").read_bytes())
+    r = fz.Run(fz.parser().parse_args(["--root", str(root), "--dry-run", "--candidate", str(cand),
+                                       "--cmods", str(root / "cmods")]))
+    assert "already in it" in r.s_cmods()
+    # a restart with no folder arguments (the logon restart) keeps the run's folder and candidate
+    a = fz.parser().parse_args(["--root", str(root), "--dry-run"])
+    r = fz.Run(a)
+    assert r.cmods == root / "cmods" and a.candidate == str(cand)

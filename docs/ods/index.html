@@ -12,7 +12,7 @@
   Another image list: .../ods/?index=https://<same origin or CORS-enabled host>/panos.json
   Keys: left / right arrows = station, V = variant, E = view, I = info, L = the other eye (on a screen), drag = look, wheel = zoom.
   Headset (0.98.4): right trigger = next station, left trigger = the one before, thumbstick left / right = turn,
-  A = info page on the left hand (site, sol, map), X = the next view (standard, normal), grip = variant
+  X = info page on the left hand (site, sol, map), A = the next view (standard, normal, range log), grip = variant   (0.98.13: A and X swapped)
   (terrain only, terrain with rover (projected), terrain with rover (3D model)).
 -->
 <style>
@@ -50,7 +50,7 @@ const $ = id => document.getElementById(id);
 const msg = t => { $('msg').textContent = t || ''; };
 
 // ---------------------------------------------------------------- scene: one sphere per eye, the viewer at its centre
-const renderer = new THREE.WebGLRenderer({ antialias: false });
+const renderer = new THREE.WebGLRenderer({ antialias: true });   // 0.98.14: the rover model's edges (false until then)
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.xr.enabled = true;
@@ -169,21 +169,57 @@ async function showMark(gm) {
   } catch (e) { console.warn('ground mark', e); }
 }
 
-// ---------------------------------------------------------------- the rover as a surface (0.98.2, experimental)
-// panos.json may give the terrain-only variant a "rover_surface": {file}: a binary glTF written by
-// mppp.ibr.rover_surface - the rover as the Navcam saw it from the mast, a mesh in metres about the eyes' pivot
-// (x east, y up, z south: this page's frame) with the panorama from the pivot as its texture.  Unlike the spheres it
-// is a real surface, so it shifts against the terrain when the head moves.  The file is read here directly (one
-// mesh, float positions and texture coordinates, 32-bit indices, one JPEG).  R shows and hides it.
-// It hangs in "fixed", a group that stays where the head was when the surface appeared (the spheres follow the head).
+// ---------------------------------------------------------------- the rover as a 3D model (0.98.14)
+// panos.json may give a variant a "rover_surface": {file}: a binary glTF written by mppp.ibr.rover_surface - the
+// Perseverance model where it stands at this station, in metres about the eyes' pivot (x east, y up, z south: this
+// page's frame), with two images: the panorama from the pivot (the rows that hold the rover) and its range.
+// A point of the model takes the panorama's colour in its direction when it is the surface the pivot sees there
+// (its distance against the range image, weighted over the four range pixels around it: a smooth border); what the
+// pivot does not see - no camera saw it - is the rover grey, shaded a little by its slope.  The model is a real
+// surface with all its sides, so it shifts against the terrain when the head moves and has no holes.  R shows and
+// hides it.  It hangs in "fixed", a group that stays where the head was when it appeared (the spheres follow the head).
+// (A file of 0.98.2-0.98.13 - a grid mesh with its own texture coordinates - is still shown, as it was.)
 const fixed = new THREE.Group();
 scene.add(fixed);
 let roverParts = [], roverOn = true, roverId = 0, anchored = false;
 renderer.xr.addEventListener('sessionstart', () => { anchored = false; });
+const ROVER_VERT = `
+  varying vec3 vP;
+  void main() { vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+const ROVER_FRAG = `
+  precision highp float;
+  varying vec3 vP;
+  uniform sampler2D colourMap, rangeMap;
+  uniform vec2 panoSize, rangeSize;      // the panorama (px); the range image (px)
+  uniform vec2 rows;                     // the first panorama row of the images, and their number of rows
+  uniform float az0, rangeStep, rangeOffset, unitsPerM, biasM, biasRel, greyShade;
+  uniform vec3 grey;
+  float seen(vec2 ij, float dist) {      // one range pixel: is the point the surface the pivot sees there?
+    if (ij.y < 0.0 || ij.y > rangeSize.y - 1.0) return 0.0;
+    vec4 t = texture2D(rangeMap, vec2(fract((ij.x + 0.5) / rangeSize.x), (ij.y + 0.5) / rangeSize.y));
+    float z = (floor(t.r * 255.0 + 0.5) * 256.0 + floor(t.g * 255.0 + 0.5)) / unitsPerM;
+    return (z > 0.0 && dist <= z * (1.0 + biasRel) + biasM) ? 1.0 : 0.0;
+  }
+  void main() {
+    float dist = length(vP);
+    vec3 d = vP / dist;
+    float ua = (atan(d.x, -d.z) - az0) / 6.283185307179586;
+    float u1 = fract(ua), u2 = fract(ua + 0.5) - 0.5;                 // two ways round: the one without the jump here
+    float u = fwidth(u1) <= fwidth(u2) ? u1 : u2;
+    float row = (0.5 - asin(clamp(d.y, -1.0, 1.0)) / 3.141592653589793) * panoSize.y;
+    vec3 c = texture2D(colourMap, vec2(u, (row - rows.x) / rows.y)).rgb;
+    vec2 q = vec2((fract(ua) * panoSize.x - 0.5 - rangeOffset) / rangeStep, (row - 0.5 - rows.x - rangeOffset) / rangeStep);
+    vec2 i0 = floor(q), f = q - i0;
+    float lit = mix(mix(seen(i0, dist), seen(i0 + vec2(1.0, 0.0), dist), f.x),
+                    mix(seen(i0 + vec2(0.0, 1.0), dist), seen(i0 + vec2(1.0, 1.0), dist), f.x), f.y);
+    vec3 n = normalize(cross(dFdx(vP), dFdy(vP)));
+    vec3 g = grey * (1.0 - greyShade * (1.0 - abs(n.y)));
+    gl_FragColor = vec4(mix(g, c, lit), 1.0);
+  }`;
 function dropRover() {
   for (const m of roverParts) {
     fixed.remove(m); m.geometry.dispose();
-    const o = m.material.map; if (o) { o.dispose(); if (o.image && o.image.close) o.image.close(); }
+    for (const o of (m.userData.textures || [])) { o.dispose(); if (o.image && o.image.close) o.image.close(); }
     m.material.dispose();
   }
   roverParts = [];
@@ -199,24 +235,45 @@ async function showRover(rs) {
     const n = dv.getUint32(12, true), doc = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 20, n)));
     const bin = 28 + n, view = i => doc.bufferViews[i];
     const arr = (acc, T, k) => { const a = doc.accessors[acc], v = view(a.bufferView); return new T(buf.slice(bin + (v.byteOffset || 0), bin + (v.byteOffset || 0) + a.count * k * T.BYTES_PER_ELEMENT)); };
+    const image = async (i, opt) => { const iv = view(doc.images[i].bufferView); return createImageBitmap(new Blob([new Uint8Array(buf, bin + (iv.byteOffset || 0), iv.byteLength)], { type: doc.images[i].mimeType }), opt); };
+    const pr = doc.asset && doc.asset.extras && doc.asset.extras.projection;
     const made = [];
-    for (const prim of doc.meshes[0].primitives) {              // 0.98.4: the front layer, then the layer behind
+    for (const prim of doc.meshes[0].primitives) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(arr(prim.attributes.POSITION, Float32Array, 3), 3));
-      g.setAttribute('uv', new THREE.BufferAttribute(arr(prim.attributes.TEXCOORD_0, Float32Array, 2), 2));
       g.setIndex(new THREE.BufferAttribute(arr(prim.indices, Uint32Array, 1), 1));
-      const img = doc.images[doc.textures[doc.materials[prim.material].pbrMetallicRoughness.baseColorTexture.index].source];
-      const iv = view(img.bufferView);
-      const bmp = await createImageBitmap(new Blob([new Uint8Array(buf, bin + (iv.byteOffset || 0), iv.byteLength)], { type: 'image/jpeg' }));
-      const t = new THREE.Texture(bmp);
-      t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; t.generateMipmaps = true;
-      t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-      t.needsUpdate = true;
-      const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, map: t }));
+      let mat, textures;
+      if (pr) {                                                  // 0.98.14: the model, coloured from the pivot
+        const col = new THREE.Texture(await image(0));
+        col.flipY = false; col.colorSpace = THREE.NoColorSpace; col.wrapS = THREE.RepeatWrapping; col.generateMipmaps = true;
+        col.minFilter = THREE.LinearMipmapLinearFilter; col.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+        col.needsUpdate = true;
+        const rng = new THREE.Texture(await image(1, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' }));
+        rng.flipY = false; rng.colorSpace = THREE.NoColorSpace; rng.wrapS = THREE.RepeatWrapping; rng.generateMipmaps = false;
+        rng.minFilter = THREE.NearestFilter; rng.magFilter = THREE.NearestFilter; rng.needsUpdate = true;
+        mat = new THREE.ShaderMaterial({ vertexShader: ROVER_VERT, fragmentShader: ROVER_FRAG, side: THREE.DoubleSide, uniforms: {
+          colourMap: { value: col }, rangeMap: { value: rng },
+          panoSize: { value: new THREE.Vector2(pr.width, pr.height) }, rangeSize: { value: new THREE.Vector2(pr.depth_px[0], pr.depth_px[1]) },
+          rows: { value: new THREE.Vector2(pr.rows[0], pr.rows[1] - pr.rows[0]) }, az0: { value: THREE.MathUtils.degToRad(pr.azimuth0_deg || 0) },
+          rangeStep: { value: pr.depth_step }, rangeOffset: { value: pr.depth_offset_px || 0 }, unitsPerM: { value: pr.depth_units_per_m },
+          biasM: { value: pr.bias_m }, biasRel: { value: pr.bias_rel }, greyShade: { value: pr.grey_shade || 0 },
+          grey: { value: new THREE.Vector3(pr.grey_rgb[0] / 255, pr.grey_rgb[1] / 255, pr.grey_rgb[2] / 255) } } });
+        textures = [col, rng];
+      } else {                                                   // a file of before 0.98.14
+        g.setAttribute('uv', new THREE.BufferAttribute(arr(prim.attributes.TEXCOORD_0, Float32Array, 2), 2));
+        const t = new THREE.Texture(await image(doc.textures[doc.materials[prim.material].pbrMetallicRoughness.baseColorTexture.index].source));
+        t.flipY = false; t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; t.generateMipmaps = true;
+        t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+        t.needsUpdate = true;
+        mat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, map: t });
+        textures = [t];
+      }
+      const m = new THREE.Mesh(g, mat);
+      m.userData.textures = textures;
       m.renderOrder = 1; m.frustumCulled = false; m.visible = roverOn;
       made.push(m);
     }
-    if (id !== roverId) { for (const m of made) { m.geometry.dispose(); m.material.map.dispose(); m.material.dispose(); } return; }
+    if (id !== roverId) { for (const m of made) { m.geometry.dispose(); for (const o of m.userData.textures) o.dispose(); m.material.dispose(); } return; }
     roverParts = made;
     for (const m of made) fixed.add(m);
     anchored = false;
@@ -257,7 +314,7 @@ function place(m, azDeg, elDeg, dist, width) {                   // in the page'
   return m;
 }
 
-// The welcome view (panos.json: an entry with "welcome": true; its picture is Van Zyl Overlook in grey): the four
+// The welcome view (panos.json: an entry with "welcome": true; its picture is Van Zyl Overlook, its colours muted a little): the four
 // directions in the sky in white, 40 m away, and the title a few metres ahead.  The words hang in "world", so they
 // keep their directions as the viewer turns.
 const welcome = new THREE.Group();
@@ -273,19 +330,20 @@ function showWelcome(on) {
     welcome.add(place(textPanel([{ text: 'MPPP stereo viewer', px: 230, weight: 900 },
                                  { text: 'Mars 2020 Perseverance rover', px: 150, weight: 700 }]), az0, 14, 5, 4.2));
     welcome.add(place(textPanel([{ text: 'trigger: next site   |   left trigger: back   |   stick: turn', px: 84, weight: 600 },
-                                 { text: 'A: info and map   |   X: view   |   grip: rover on, off or 3D', px: 84, weight: 600 }],
+                                 { text: 'X: info and map   |   A: view   |   grip: rover on, off or 3D', px: 84, weight: 600 }],
                                 { back: 'rgba(0,0,0,0.35)' }), az0, -6, 5, 3.6));
   }
   welcome.visible = !!on;
 }
 
-// A (key I): a small page with the site, the sol and a map of the traverse with an x at this station.  In a headset
+// X (key I): a small page with the site, the sol and a map of the traverse (over a low-resolution orbital picture,
+// 0.98.14) with an x at this station.  In a headset
 // it is attached to the left hand, above the controller and tilted towards the eyes; without a left controller, and
 // on a screen, it hangs 2 m ahead of where the viewer looks.  A again puts it away.  (0.98.5)
 const infoPanel = new THREE.Group();
 infoPanel.visible = false;
 scene.add(infoPanel);
-let traverse = null, leftGrip = null;
+let traverse = null, leftGrip = null, orthoImage = null;
 for (let i = 0; i < 2; i++) {
   const g = renderer.xr.getControllerGrip(i);
   g.addEventListener('connected', e => { if (e.data && e.data.handedness === 'left') leftGrip = g; });
@@ -303,7 +361,8 @@ function drawInfo() {
   while (infoPanel.children.length) { const o = infoPanel.children.pop(); o.material.map.dispose(); o.material.dispose(); o.geometry.dispose(); }
   const p = panos[cur.s] || {}, [name, sol, id] = infoLines();
   const hasMap = !!(traverse && traverse.xy && traverse.xy.length > 1);
-  const W = 1024, Hh = hasMap ? 1240 : 420, c = document.createElement('canvas'), g = c.getContext('2d');
+  const W = 1100, Hh = hasMap ? 400 + (W - 120) + 60 : 420, c = document.createElement('canvas'), g = c.getContext('2d');   // 0.98.15: the map
+  //                                                               fits (it ran 64 px past a 1240-px page) and the page is wider
   c.width = W; c.height = Hh;
   g.fillStyle = 'rgba(10,20,40,0.82)'; g.beginPath(); g.roundRect(0, 0, W, Hh, 40); g.fill();
   g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff';
@@ -320,9 +379,19 @@ function drawInfo() {
     const k = (S - 60) / Math.max(bx - ax, by - ay, 1), ox = x0 + (S - k * (bx - ax)) / 2, oy = y0 + (S - k * (by - ay)) / 2;
     const X = x => ox + k * (x - ax), Y = y => oy + k * (by - y);
     g.fillStyle = 'rgba(255,255,255,0.07)'; g.fillRect(x0, y0, S, S);
-    g.strokeStyle = '#9ab'; g.lineWidth = 5; g.lineJoin = 'round'; g.beginPath();
-    xy.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y))));
-    g.stroke();
+    const o = traverse.ortho;
+    if (orthoImage && o && o.extent) {                           // 0.98.14: the orbital picture under the line
+      g.save(); g.beginPath(); g.rect(x0, y0, S, S); g.clip();
+      g.drawImage(orthoImage, X(o.extent[0]), Y(o.extent[3]), k * (o.extent[2] - o.extent[0]), k * (o.extent[3] - o.extent[1]));
+      g.restore();
+    }
+    const line = (colour, width) => {
+      g.strokeStyle = colour; g.lineWidth = width; g.lineJoin = 'round'; g.beginPath();
+      xy.forEach(([x, y], i) => (i ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y))));
+      g.stroke();
+    };
+    if (orthoImage) line('rgba(0,0,0,0.55)', 9);                  // a dark edge, so the line reads on the picture
+    line(orthoImage ? '#fff' : '#9ab', 4);
     if (p.map) {
       const mx = X(p.map[0]), my = Y(p.map[1]), r = 26;
       g.strokeStyle = '#ff5a3c'; g.lineWidth = 12; g.lineCap = 'round'; g.beginPath();
@@ -332,6 +401,7 @@ function drawInfo() {
     g.strokeStyle = '#fff'; g.lineWidth = 6; g.lineCap = 'butt'; g.beginPath(); g.moveTo(x0 + 24, y0 + S - 30); g.lineTo(x0 + 24 + bar * km, y0 + S - 30); g.stroke();
     g.textAlign = 'left'; g.font = '600 36px system-ui, sans-serif'; g.fillStyle = '#fff'; g.fillText(`${bar} km`, x0 + 24, y0 + S - 62);
     g.textAlign = 'right'; g.fillText('N ↑', x0 + S - 20, y0 + 36);
+    if (orthoImage && o && o.credit) { g.font = '500 22px system-ui, sans-serif'; g.fillStyle = 'rgba(255,255,255,0.8)'; g.textAlign = 'left'; g.fillText(o.credit, x0 + 16, y0 + 30); }
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
@@ -341,12 +411,14 @@ function drawInfo() {
   infoPanel.add(m);
 }
 const fwd = new THREE.Vector3();
+const INFO_TILT_RAD = -1.2;      // 0.98.14 (Christian: "Tilt the info window back further so that it is easier to read from the
+//                                  wrist"): the page leans back 69 deg from upright on the controller (40 deg before)
 function toggleInfo() {
   if (infoPanel.visible) { infoPanel.visible = false; return; }
   drawInfo();
-  if (renderer.xr.isPresenting && leftGrip) {                    // on the left hand: 16 cm wide, above the controller
+  if (renderer.xr.isPresenting && leftGrip) {                    // on the left hand: 19 cm wide (16 until 0.98.14), above the controller
     leftGrip.add(infoPanel);
-    infoPanel.position.set(0, 0.13, -0.04); infoPanel.rotation.set(-0.7, 0, 0); infoPanel.scale.setScalar(0.16);
+    infoPanel.position.set(0, 0.10, -0.07); infoPanel.rotation.set(INFO_TILT_RAD, 0, 0); infoPanel.scale.setScalar(0.19);
   } else {
     scene.add(infoPanel);
     const cam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
@@ -500,7 +572,7 @@ for (let i = 0; i < 2; i++) {
   scene.add(c);
 }
 const held = new Map();
-const TURN_DEG_S = 60, STICK_DEAD = 0.25;
+const TURN_DEG_S = 150, STICK_DEAD = 0.25;                     // 0.98.14: 150 deg / s at full stick (60 before: "should be faster")
 function buttons(dt) {                                           // button 4 is A on the right hand and X on the left
   const session = renderer.xr.getSession();
   if (!session) return;
@@ -509,7 +581,7 @@ function buttons(dt) {                                           // button 4 is 
     if (!gp) continue;
     const b = gp.buttons[4];
     const was = held.get(src) || false, is = !!(b && b.pressed);
-    if (is && !was) { if (src.handedness === 'left') step('w', 1); else toggleInfo(); }      // X: the next view (standard, normal ...); A: info
+    if (is && !was) { if (src.handedness === 'left') toggleInfo(); else step('w', 1); }      // 0.98.13: X (left): info; A (right): the next view
     held.set(src, is);
     const x = gp.axes.length >= 4 ? gp.axes[2] : (gp.axes[0] || 0);                          // thumbstick left / right
     if (Math.abs(x) > STICK_DEAD) {                                                          // right: the view turns to the right
@@ -519,6 +591,7 @@ function buttons(dt) {                                           // button 4 is 
   }
 }
 
+const headOffset = new THREE.Vector3(...((new URLSearchParams(location.search).get('head') || '0,0,0').split(',').map(Number).concat([0, 0, 0]).slice(0, 3).map(v => v || 0)));
 const head = new THREE.Vector3(), gaze = new THREE.Vector3(), upv = new THREE.Vector3(), clock = new THREE.Clock();
 function turnMarkText() {                                        // the ring's text upright for the viewer: its middle ahead of them
   if (!markDisc.visible) return;
@@ -540,7 +613,10 @@ renderer.setAnimationLoop(() => {
     world.position.copy(head);
     if (!anchored) { fixed.position.copy(head); anchored = true; }   // the rover surface stays there: it has parallax
     buttons(dt);
-  } else { world.position.set(0, 0, 0); fixed.position.set(0, 0, 0); }
+  } else {                                                       // on a screen: ?head=x,y,z (m: east, up, south) moves the eye off
+    camera.position.copy(headOffset);                            // the pivot, to look at the 3D rover's parallax (0.98.14)
+    world.position.copy(headOffset); fixed.position.set(0, 0, 0);
+  }
   fixed.rotation.y = world.rotation.y;
   renderer.render(scene, camera);
 });
@@ -569,6 +645,9 @@ diagnostics();
     const j = await (await fetch(index, { cache: 'no-cache' })).json();
     panos = j.panos || j;
     traverse = j.traverse || null;
+    if (traverse && traverse.ortho && traverse.ortho.file)       // the map's orbital picture: small, fetched once
+      fetch(new URL(traverse.ortho.file, base).href).then(r => r.blob()).then(createImageBitmap)
+        .then(b => { orthoImage = b; if (infoPanel.visible) drawInfo(); }).catch(e => console.warn('map picture', e));
     if (j.title) { $('title').textContent = j.title; document.title = j.title; }
   } catch (e) { msg(`no image list at ${index.href} (${e.message || e})`); return; }
   if (!panos.length) { msg('the image list is empty'); return; }

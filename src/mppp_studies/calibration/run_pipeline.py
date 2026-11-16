@@ -77,8 +77,8 @@ STOP_ON_FAIL = ("ecam_runs", "zcam_runs")        # 0.96.1: block runs that did n
 #                                                  Sites that failed on their own still leave the stage "done"
 ZCAM_GROUP, ECAM_GROUP, ZCAM34_JOINT = "zcam_consensus", "ecam_consensus", "zcam34_joint"
 NAVCAM_GROUP = ECAM_GROUP                        # the name before 0.94.4
-ZOOMS = (34, 48, 63, 79, 110)       # 0.95.1 (Christian, 29 Oct: "leave z79 on so that we get a first promotable model"; Z110 too); 26 Oct-0.95.0: 34, 48, 63
-ALL_ZOOMS = (34, 48, 63, 79, 110)
+ZOOMS = (34, 48, 63, 79, 110)       # (the freeze passes --zooms 34 48 63 79 100 110 since 0.98.15); 0.95.1 (Christian, 29 Oct: "leave z79 on so that we get a first promotable model"; Z110 too); 26 Oct-0.95.0: 34, 48, 63
+ALL_ZOOMS = (34, 48, 63, 79, 100, 110)
 SITE_ZOOMS_WITHOUT_JOINT = (26, 100)   # 0.97.22 (Christian, 13 Nov 2026: "Add z100 to it [Seitah Overlook] and chal rocks regular, tiny and
 #                                     large"): no joint and no focus model, but a site that lists it keeps it in its run - the
 #                                     filter below dropped it (and 26 mm, which stays dropped) from every freeze run since 0.97.0
