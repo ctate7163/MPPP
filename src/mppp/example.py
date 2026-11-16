@@ -21,7 +21,7 @@ PathLike = Union[str, Path]
 
 EXAMPLE_NAME = "mppp_example_m2020_rockytop"
 EXAMPLE_TAG = "example-data-v1"
-EXAMPLE_URL = f"https://github.com/ctate7163/MPPP/releases/download/{EXAMPLE_TAG}/{EXAMPLE_NAME}.zip"
+EXAMPLE_URL = f"https://github.com/ctate7163/RPP/releases/download/{EXAMPLE_TAG}/{EXAMPLE_NAME}.zip"
 EXAMPLE_SOLS = (461, 464)
 ZCAM_SEQUENCE = "ZCAM03381"
 

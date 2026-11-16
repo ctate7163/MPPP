@@ -3143,6 +3143,27 @@ def test_o_looks_along_the_rover_x_and_y_b_home_buttons(tmp_path):
     assert "`Sol ${sols[0]}`" in page and "`sol ${" not in page
 
 
+def test_viewer_moves_to_its_own_repository(tmp_path, monkeypatch):
+    """0.98.29 (Christian, 16 Nov 2026: "I renamed the github repo. change https://ctate7163.github.io/RPP/ods/ to
+    https://ctate7163.github.io/RPV/"): --upload publishes into MPPP_VIEWER_DIR or the RPV checkout beside this one;
+    the pipeline's own docs/ods page sends visitors on GitHub to the RPV site with the station link; the code link
+    names the renamed repository."""
+    from mppp.ibr import web, single_sites as SS
+    monkeypatch.setenv("MPPP_VIEWER_DIR", str(tmp_path / "RPV"))
+    assert web.viewer_dir() == tmp_path / "RPV"
+    monkeypatch.delenv("MPPP_VIEWER_DIR")
+    home = Path(web.__file__).resolve().parents[3]
+    assert web.viewer_dir() in (home.parent / "RPV", home / "docs" / "ods")
+    assert web.VIEWER_URL == "https://ctate7163.github.io/RPV/"
+    page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    head = page[:page.index("</head>")]
+    assert "location.replace('https://ctate7163.github.io/RPV/' + location.search + location.hash)" in head
+    assert "location.hostname === 'ctate7163.github.io'" in head and "(RPP|MPPP)" in head
+    assert "const CODE_URL = 'https://github.com/ctate7163/RPP';" in page
+    # installed into another folder (the RPV checkout), the page is the same file - the redirect only fires on /RPP/ods/
+    assert web.install_viewer(tmp_path / "RPV") and (tmp_path / "RPV" / "index.html").read_text(encoding="utf-8") == page
+
+
 def test_info_map_is_the_blank_panel_d_and_the_menu_says_sol_then_name(tmp_path, monkeypatch):
     """0.98.19 (Christian, 16 Nov 2026): "The drop down list of ods should start with Sol 0xxx then have the site name
     ... put the site and drive numbers in the info window.  The map in the info tab should be the same background as

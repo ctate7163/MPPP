@@ -200,7 +200,7 @@ A = view, X = info and map, Y = home (the welcome view, facing west), B = terrai
 button or H = home, B = terrain only, and the N E S W O cross at the upper right (O = level along the rover's +x). A line at the bottom reports what
 the device can show (maximum texture size, compressed-texture formats).
 
-- On the documentation site: [https://ctate7163.github.io/MPPP/ods/](https://ctate7163.github.io/MPPP/ods/){target="_blank" rel="noopener"}
+- On the documentation site: [https://ctate7163.github.io/RPV/](https://ctate7163.github.io/RPV/){target="_blank" rel="noopener"}
   (opens in a new tab from these pages; GitHub's own rendering of the README does not allow that).
 - To add stations: `mppp single-sites Sol0052_S003D2046 --publish docs/ods --publish-only` copies the stereo JPEGs (the standard view; reduced
   to 8192) into `docs/ods/panos/` and lists them in `docs/ods/panos.json`; commit and push `docs/ods`.

@@ -554,8 +554,10 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
         return 0
     if getattr(a, "no_upload", False) or a.dry_run or a.squares_only:   # 0.97.24: the batch file asks for the upload by default
         a.upload = False
-    if getattr(a, "upload", False) and not a.publish:    # 0.97.21: the checkout's own viewer folder
-        a.publish = str(Path(__file__).resolve().parents[3] / "docs" / "ods")
+    if getattr(a, "upload", False) and not a.publish:    # 0.97.21: the checkout's own viewer folder;
+        from .web import viewer_dir                      # 0.98.29: the RPV checkout (MPPP_VIEWER_DIR, or ..\\RPV)
+        a.publish = str(viewer_dir())
+        print(f"single-sites: publishing to {a.publish}")
     st_cfg = cfg.get("stations") or {}
 
     def finish(labels, quiet=False):

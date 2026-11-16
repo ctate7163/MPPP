@@ -9,7 +9,7 @@ pip install "mppp[mask,sfm,plots]"
 From the repository (the tests, studies, notebooks and Windows scripts are only there):
 
 ```bash
-git clone https://github.com/ctate7163/MPPP.git
+git clone https://github.com/ctate7163/RPP.git
 cd MPPP
 pip install -e ".[all]"
 pytest -q                      # the test suite runs on the two PDS products in tests/data/m20

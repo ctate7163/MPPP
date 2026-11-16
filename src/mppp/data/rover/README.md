@@ -10,4 +10,4 @@ Modified by MPPP (`scripts/build_rover_model.py`): NASA's triangles as they are 
 to its stowed pose from the joint angles in the image labels; the rear deck block, the high-gain antenna and the UHF
 antenna can adjusted to the Navcam images; the camera head kept as a part of its own (turned by the mast angles for shadows), the parts under the belly left out. NASA has not
 reviewed or endorsed this version. The changes are described in `docs/rover-model.md`
-(https://ctate7163.github.io/MPPP/rover-model/).
+(https://ctate7163.github.io/RPP/rover-model/).

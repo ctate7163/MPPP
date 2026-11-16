@@ -61,11 +61,11 @@ mppp_studies = ["validation/*.json", "calibration/data/*.json"]
 mppp = "mppp.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/ctate7163/MPPP"
-Documentation = "https://ctate7163.github.io/MPPP/"
-Repository = "https://github.com/ctate7163/MPPP"
-Issues = "https://github.com/ctate7163/MPPP/issues"
-Changelog = "https://github.com/ctate7163/MPPP/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/ctate7163/RPP"
+Documentation = "https://ctate7163.github.io/RPP/"
+Repository = "https://github.com/ctate7163/RPP"
+Issues = "https://github.com/ctate7163/RPP/issues"
+Changelog = "https://github.com/ctate7163/RPP/blob/main/CHANGELOG.md"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
