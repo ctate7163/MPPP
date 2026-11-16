@@ -3,6 +3,15 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.98.30 — 2026-11-16
+
+Christian (16 Nov): "remove knob mountain from the zcam consensus list since enchanted lake covers the most important site".
+
+- `sites.json`: `knob_mountain_large` is out of `zcam_consensus` (17 blocks now) and `zcam63_consensus`. The
+  Mastcam-Z joints (`--group zcam34_joint,zcam_consensus`) and the freeze's Z block runs no longer use it. Enchanted
+  Lake stays in the joints through `zcam34_joint` (34 and 63 mm). The site entry itself is unchanged.
+- The pre-freeze batch file (`run_prefreeze3b.bat`, outside git) no longer realigns it (5.1 h in the last freeze).
+
 ## 0.98.29 — 2026-11-16
 
 Christian (16 Nov): "I renamed the github repo. change https://ctate7163.github.io/RPP/ods/ to
