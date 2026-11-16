@@ -543,6 +543,9 @@ def test_sync_code_runs_from_a_copy_the_merge_cannot_touch():
     assert 'set "HERE=%~2"' in t and t.index('set "HERE=%~2"') < t.index("shift")
     commands = "\n".join(l for l in t.splitlines() if not l.strip().upper().startswith("REM"))
     assert "git stash pop" in commands and "git push" not in commands.split("echo next:")[0]   # no push by the script
+    # 0.98.19 (Christian, 16 Nov 2026): with no argument, the newest mppp_*.bundle of MPPP_TRANSFER
+    assert 'if "%~1"=="" call :newest_bundle' in t and ':newest_bundle' in t and '/o-d "%MPPP_TRANSFER%\\mppp_*.bundle"' in t
+    assert t.index('call :newest_bundle') < t.index('git bundle verify')
     assert "--ff-only" in t and 'MKL_THREADING_LAYER=SEQUENTIAL' in t and "-m pytest" in t
     assert "mppp_studies.calibration.freeze" in t and "--update-code" in t
     assert not (ROOT / "scripts" / "windows" / "claude_sync.bat").exists()

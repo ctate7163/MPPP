@@ -1110,9 +1110,9 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert [c["argv"][-4:] == ["--eyes", "left", "right", "centre"] for c in rs] == [c["variant"] == "rover" for c in rs]
     new98p6 = {"Sol0009_S003D0000", "Sol0180_S007D0000", "Sol0204_S007D1836", "Sol0248_S008D0000", "Sol0361_S011D0000", "Sol0565_S029D0000", "Sol1955_S091D0124", "Sol1965_S091D0806", "Sol1189_S054D1152"}      # 0.98.6, 0.98.7: eight more stations (Christian, 14 Nov 2026)
     assert new98p6 <= set(cfg["stations"]) and all(cfg["stations"][k]["frames"]["images"] and cfg["stations"][k]["context"] for k in new98p6)
-    assert len(cfg["stations"]["Sol0474_S026D0850"]["context"]) == 6
+    assert len(cfg["stations"]["Sol0474_S026D0850"]["context"]) == 68   # 0.98.19
     assert set(cfg["stations"]) - {"Sol0690_S032D1184_Z34"} - new98p6 == {"Sol0052_S003D2046", "Sol0461_S026D0630", "Sol0686_S032D1184", "Sol0474_S026D0850",
-                                    "Sol1635_S079D0732", "Sol1411_S068D0142", "Sol1792_S087D0000", "Sol1454_S071D0056"}
+                                    "Sol1635_S079D0732", "Sol1411_S068D0142", "Sol1792_S087D0000", "Sol1454_S071D0056", "Sol0477_S026D1004", "Sol0502_S026D1222", "Sol2009_S092D0000", "Sol2022_S093D0000"}   # 0.98.19: + Skinner Ridge, Wildcat Ridge, Hippo Pools 2009 / 2022
     assert len(cfg["stations"]["Sol0052_S003D2046"]["frames"]["images"]) == 12
     sa = cfg["stations"]["Sol1411_S068D0142"]                                 # 0.97.14: South Arm, sol 1411
     assert sa["site"] == "witch_hazel_large" and sa["station"] == "68_142" and len(sa["frames"]["images"]) == 18
@@ -1122,6 +1122,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
         (root / f).mkdir(parents=True)
     runs = SS.plan(cfg, root)
     runs = runs[::-1]                                    # 0.98.3: with no station named the last one runs first
+    runs = [r for r in runs if r["label"] not in ("Sol0477_S026D1004", "Sol0502_S026D1222", "Sol2009_S092D0000", "Sol2022_S093D0000")]     # 0.98.19's four (they run first)
     assert [Path(r["work"]).name for r in runs][8:] == [
         "mars2020_sol_0001_butler_landing_zcam", "mars2020_sol_0178_rochette_zcam", "mars2020_sol_0201_seitah_huge",
         "mars2020_sol_0201_seitah_huge", "mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0421_enchanted_lake_large",
@@ -1152,7 +1153,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert block_name("van_zyl_overlook_huge") == "Van Zyl Overlook" and block_name("witch_hazel_large") == "Witch Hazel Hill"
     assert block_name("taylorfjellet_large") == "Taylorfjellet" and block_name("rockytop") == "Rockytop"
     assert block_name("not_a_site_tiny") == "Not A Site" and block_name(None) is None
-    assert all("name" not in v for v in cfg["stations"].values())
+    assert all("name" not in v for k, v in cfg["stations"].items() if k not in ("Sol0477_S026D1004", "Sol0502_S026D1222"))   # 0.98.19: these two are not "Rockytop"
     names = {k: next(c["argv"][c["argv"].index("--site-name") + 1] for c in r["commands"] if c["step"] == "ods") for k, r in
              ((r["label"], r) for r in runs)}
     assert names["Sol0474_S026D0850"] == "Rockytop" and names["Sol1411_S068D0142"] == "Witch Hazel Hill"
@@ -2659,11 +2660,11 @@ def test_context_frames_are_masked_fill_only_and_stay_off_the_rover(tmp_path):
     assert dense[i + 1:i + 9] == cx and dense.index("--images") < i
     rt = SS.plan(cfg, root, labels=["Sol0461_S026D0630"])[0]                  # a station chosen by --scale has them too
     d2 = rt["commands"][0]["argv"]
-    assert "--scale" in d2 and "--images" not in d2 and len(cfg["stations"]["Sol0461_S026D0630"]["context"]) == 10
+    assert "--scale" in d2 and "--images" not in d2 and len(cfg["stations"]["Sol0461_S026D0630"]["context"]) == 69   # 0.98.19: by distance and local time
     assert "--whole-block" in d2 and "--add-images" not in d2          # 0.98.14: Rockytop's terrain is the whole block's (they are in it)
     cfg2 = json.loads(json.dumps(cfg)); cfg2["stations"]["Sol0461_S026D0630"].pop("terrain")
     d2 = SS.plan(cfg2, root, labels=["Sol0461_S026D0630"])[0]["commands"][0]["argv"]
-    assert d2[d2.index("--add-images") + 1:d2.index("--add-images") + 11] == cfg["stations"]["Sol0461_S026D0630"]["context"]
+    assert d2[d2.index("--add-images") + 1:d2.index("--add-images") + 1 + len(cfg["stations"]["Sol0461_S026D0630"]["context"])] == cfg["stations"]["Sol0461_S026D0630"]["context"]
     assert cfg["stations"]["Sol0052_S003D2046"]["context"] == ["NLF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png",
                                                                "NRF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png"]
 
@@ -2988,18 +2989,44 @@ def test_block_terrain_station_plan():
     rover kept; the shipped Rockytop stations ask for it."""
     from mppp.ibr import single_sites as SS
     cfg = SS.load_config()
-    assert cfg["stations"]["Sol0461_S026D0630"]["terrain"] == cfg["stations"]["Sol0474_S026D0850"]["terrain"] == "block"
+    # 0.98.19 (Christian, 16 Nov 2026): the four Rockytop stations share the terrain set "rockytop" - the half-res
+    # end-of-drive 360s and the quarter-res mid-drive pairs
+    rt = ("Sol0461_S026D0630", "Sol0474_S026D0850", "Sol0477_S026D1004", "Sol0502_S026D1222")
+    assert all(cfg["stations"][k]["terrain"] == "block:rockytop" for k in rt)
+    tset = cfg["terrain_sets"]["rockytop"]["images"]
+    assert len(tset) == 119 and all("_0A0295J" in n or "_0A0195J" in n or "_0A1195J" in n for n in tset)
+    assert sum("NCAM00301" in n for n in tset) == 6
+    assert cfg["stations"]["Sol0477_S026D1004"]["name"] == "Skinner Ridge" and cfg["stations"]["Sol0502_S026D1222"]["name"] == "Wildcat Ridge"
+    for k in rt:                                    # context frames are not the station's own
+        own = set(cfg["stations"][k]["frames"].get("images") or [])
+        assert cfg["stations"][k]["context"] and not own & set(cfg["stations"][k]["context"])
     cmds = SS.plan(cfg, "R", labels=["Sol0474_S026D0850"])[0]["commands"]
     dense = next(c["argv"] for c in cmds if c["step"] == "dense")
     assert "--whole-block" in dense and "--add-images" not in dense and "--nearby-m" not in dense and dense[dense.index("--scale") + 1] == "0.5"
+    assert dense[dense.index("--block-name") + 1] == "rockytop" and len(dense) - dense.index("--block-images") - 1 >= 119
     for c in cmds:
         if c["step"] == "mesh":
             p = Path(c["argv"][c["argv"].index("--points") + 1])
-            assert p.parts[-3:] == ("colmap", SS.BLOCK_WORKSPACE, "fused.ply") and "--keep-under-rover" in c["argv"]
+            assert p.parts[-3:] == ("colmap", SS.block_workspace("rockytop"), "fused.ply") and "--keep-under-rover" in c["argv"]
         if c["step"] == "ods":
             assert "--context-images" in c["argv"] and "--points" not in c["argv"]
     other = SS.plan(cfg, "R", labels=["Sol0052_S003D2046"])[0]["commands"]
     assert not any("--whole-block" in c["argv"] or "--points" in c["argv"] for c in other)
+    # a plain "block" is every Navcam frame of the block, as in 0.98.14
+    cfg2 = dict(cfg, stations={"X": dict(cfg["stations"]["Sol0474_S026D0850"], terrain="block")})
+    d2 = next(c["argv"] for c in SS.plan(cfg2, "R", labels=["X"])[0]["commands"] if c["step"] == "dense")
+    assert "--whole-block" in d2 and "--block-images" not in d2
+    with pytest.raises(KeyError):
+        SS.plan(dict(cfg, stations={"X": dict(cfg["stations"]["Sol0474_S026D0850"], terrain="block:nope")}), "R", labels=["X"])
+    # Hippo Pools: one terrain set for its three stations
+    hp = ("Sol1955_S091D0124", "Sol2009_S092D0000", "Sol2022_S093D0000")
+    assert all(cfg["stations"][k]["terrain"] == "block:hippo_pools" and cfg["stations"][k]["context"] for k in hp)
+    assert len(cfg["terrain_sets"]["hippo_pools"]["images"]) == 92
+    assert not any("_2010_" in n for n in cfg["stations"]["Sol2009_S092D0000"]["frames"]["images"])
+    assert sum("_2010_" in n for n in cfg["stations"]["Sol2009_S092D0000"]["context"]) == 6
+    # Rochette: the whole end-of-drive 360 of sol 178 at S006D2666 as context
+    r = cfg["stations"]["Sol0180_S007D0000"]["context"]
+    assert sum("N0062666NCAM0" in n and n.startswith(("NLF_0178", "NRF_0178")) for n in r) == 10
 
 
 def test_welcome_picture_keeps_its_colour_and_the_map_gets_an_orthomosaic(tmp_path, monkeypatch):
@@ -3050,3 +3077,29 @@ def test_welcome_picture_keeps_its_colour_and_the_map_gets_an_orthomosaic(tmp_pa
     assert np.median(hits) > 200 and np.median(g) < 160                       # the picture is where the line is
     assert web.traverse_ortho(wp, tr, w, root=tmp_path / "none", old=o) is o  # the same extent: not read again
     assert web.traverse_ortho(wp, tr, tmp_path / "w2", root=tmp_path / "none") is None
+
+
+def test_rover_variant_gets_a_turning_disc_and_the_page_faces(tmp_path):
+    """0.98.19 (Christian, 16 Nov 2026): "the blue disk in the projected rover ods does not spin" - a rover panorama
+    run with the pivot's eye last wrote no mark texture, so the page drew no disc; now the texture is written whatever
+    the last eye, and on publishing a rover variant without one takes the terrain-only variant's disc.  The welcome
+    view opens west under its new title; the page has the N E S W O cross and its keys."""
+    import shutil
+    from mppp.ibr import web, single_sites as SS
+    proj, rec, st, scene, P, colours = _station_scene(tmp_path)
+    base = tmp_path / "sites" / "Sol0091_S003D0010"
+    O.render_station(proj, rec, st, scene, base, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, geometry=False)
+    rov = base / "with_rover"
+    rep = O.render_station(proj, rec, st, scene, rov, width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32,
+                           geometry=False, eyes=("left", "right", "centre"))
+    assert rep["nadir_mark"].get("texture") and (rov / rep["nadir_mark"]["texture"]).is_file()
+    # an output of 0.98.4-0.98.18: no texture in the rover folder - publishing gives it the terrain-only disc
+    for f in rov.glob("*nadir_mark.png"):
+        f.unlink()
+    doc = web.publish(tmp_path / "sites", tmp_path / "web")
+    vs = {v["key"]: v for v in doc["panos"][-1]["variants"]}
+    assert vs["rover"]["ground_mark"]["file"] == vs["masked"]["ground_mark"]["file"]
+    assert web.WELCOME_YAW_DEG == 270.0
+    page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    assert "Rover Photogrammetry Viewer" in page and "MPPP stereo viewer" not in page and "WELCOME_AZ_DEG = 270" in page
+    assert all(f'id="face{k}"' in page for k in "NESWO") and "lookKeys" in page and "-Math.PI / 4" in page

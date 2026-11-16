@@ -3,6 +3,10 @@ REM ============================================================================
 REM MPPP 0.96.0 - sync_code.bat (9 Nov 2026, Christian: "let's clean up the MPPP directory so that these conflicts
 REM don't keep happening").  One way to bring code onto this PC, nothing else:
 REM
+REM   sync_code.bat                    0.98.19 (Christian, 16 Nov 2026: "so that I can just run sync_code.bat
+REM                                    without needing to install specific bundles"): the newest bundle Claude
+REM                                    delivered - the latest mppp_*.bundle in MPPP_TRANSFER (default
+REM                                    D:\rover_blocks\_transfer); every bundle holds the whole history since a314fa6
 REM   sync_code.bat BUNDLE [BRANCH]    this tree's main fast-forwarded to BRANCH (default main) of a git bundle
 REM                                    Claude delivered (D:\rover_blocks\_transfer\mppp_<...>.bundle)
 REM   sync_code.bat --github           this tree's main fast-forwarded to origin/main (git pull --ff-only)
@@ -38,11 +42,14 @@ for /f %%h in ('git rev-parse --short HEAD') do set "HEAD0=%%h"
 set "STASHED="
 for /f "delims=" %%s in ('git status --porcelain --untracked-files=no') do set "STASHED=1"
 if defined STASHED ( echo stashing local changes to tracked files & git stash push -q -m "sync_code %DATE% %TIME%" || exit /b 1 )
+set "BUNDLE=%~1"
+if not defined MPPP_TRANSFER set "MPPP_TRANSFER=D:\rover_blocks\_transfer"
+if "%~1"=="" call :newest_bundle
 if /i "%~1"=="--github" (
   git pull -q --ff-only origin main || ( echo fast-forward from GitHub failed - this tree has commits origin/main lacks & goto :unstash_fail )
 ) else (
-  if "%~1"=="" ( echo usage: sync_code.bat BUNDLE [BRANCH]  ^|  sync_code.bat --github & goto :unstash_fail )
-  set "BUNDLE=%~1"
+  if "!BUNDLE!"=="" ( echo no mppp_*.bundle in %MPPP_TRANSFER% - usage: sync_code.bat [BUNDLE [BRANCH]]  ^|  sync_code.bat --github & goto :unstash_fail )
+  echo bundle: !BUNDLE!
   set "BRANCH=%~2"
   if "!BRANCH!"=="" set "BRANCH=main"
   if not exist "!BUNDLE!" ( echo !BUNDLE! not found & goto :unstash_fail )
@@ -73,3 +80,7 @@ exit /b 0
 :unstash_fail
 if defined STASHED git stash pop -q
 exit /b 1
+:newest_bundle
+set "BUNDLE="
+for /f "delims=" %%b in ('dir /b /a-d /o-d "%MPPP_TRANSFER%\mppp_*.bundle" 2^>nul') do if not defined BUNDLE set "BUNDLE=%MPPP_TRANSFER%\%%b"
+exit /b 0

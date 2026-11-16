@@ -36,6 +36,28 @@ VARIANTS = ("masked", "rover")
 from .station import station_key
 STEPS = ("dense", "mesh", "depthmaps", "ods")
 BLOCK_WORKSPACE = "dense_block_N"       # mppp dense --whole-block --cameras N: the block's Navcam cloud ("terrain": "block")
+
+
+def block_terrain(st: Dict[str, Any], cfg: Dict[str, Any]):
+    """The block terrain of a station: None (its own frames), ("", None) for ``"terrain": "block"`` (every Navcam frame
+    of the block), or (name, [frames]) for ``"terrain": "block:<name>"`` - 0.98.19, a set of the config's
+    ``terrain_sets`` (Christian, 16 Nov 2026: the Rockytop panoramas "rendered from one large 3d model that includes
+    all the medium res eod images and the lowres mid drive imaging frames")."""
+    t = st.get("terrain", cfg.get("terrain"))
+    if not t or not str(t).startswith("block"):
+        return None
+    name = str(t).split(":", 1)[1].strip() if ":" in str(t) else ""
+    if not name:
+        return "", None
+    sets = cfg.get("terrain_sets") or {}
+    if name not in sets:
+        raise KeyError(f"terrain {t!r}: no terrain set {name!r} in the config (there: {sorted(sets)})")
+    return name, [n if str(n).lower().endswith(".png") else f"{n}.png" for n in sets[name]["images"]]
+
+
+def block_workspace(name: str = "") -> str:
+    """The block cloud's workspace folder: dense_block_N, or dense_block_<name> for a terrain set."""
+    return f"dense_block_{name}" if name else BLOCK_WORKSPACE
 DEPTHMAPS_VARIANTS = ("masked",)     # 0.97.14: the per-image maps for the terrain only (config: "depthmaps_variants")
 BAT_NAME = "run_single_site_ibr.bat"          # 0.97.0 (Christian, 12 Nov): was update_and_run_single_sites.bat
 OLD_BAT_NAME = "update_and_run_single_sites.bat"
@@ -182,11 +204,14 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
             #                                         chosen by --scale or --sequence can have context frames too)
         fa = fa + [str(x) for x in (cfg.get("dense_args") or []) + (st.get("dense_args") or [])]
         near = st.get("nearby_m", cfg.get("nearby_m"))          # 0.97.0: the neighbours' frames constrain the ground
-        block = st.get("terrain", cfg.get("terrain")) == "block"    # 0.98.14 (Christian, 15 Nov 2026: "for rockytop use a
+        bt = block_terrain(st, cfg)
+        block = bt is not None                                       # 0.98.14 (Christian, 15 Nov 2026: "for rockytop use a
         #   model made from the full ncam block alignment"): the terrain from every Navcam frame of the block - one
         #   cloud (colmap/dense_block_N) shared by the block's stations; the panorama still from the station's frames
         if block:
             fa = frame_args(frames) + [str(x) for x in (cfg.get("dense_args") or []) + (st.get("dense_args") or [])] + ["--whole-block"]
+            if bt[0]:
+                fa += ["--block-name", bt[0], "--block-images", *bt[1]]
             near = None
         elif near:
             fa += ["--nearby-m", f"{float(near):g}"]
@@ -228,7 +253,7 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                     if nm:
                         argv += ["--site-name", str(nm)]
                 if step == "mesh" and block:                 # the block's cloud, not an older one of the station alone
-                    argv += ["--points", str(Path(work) / "colmap" / BLOCK_WORKSPACE / "fused.ply")]
+                    argv += ["--points", str(Path(work) / "colmap" / block_workspace(bt[0]) / "fused.ply")]
                 if step == "mesh" and (near or block):
                     argv += ["--keep-under-rover", f"{float(st.get('keep_under_rover_m', cfg.get('keep_under_rover_m', 0.25))):g}"]
                 argv += [str(x) for x in (cfg.get(f"{step}_args") or [])]      # 0.96.1: for every station
