@@ -1,16 +1,17 @@
 @echo off
 REM ======================================================================================================
 REM RPP 0.96.0 - freeze.bat (9 Nov 2026, Christian: "please prepare a freeze.bat that will run on 0.96").
-REM The freeze run, unattended and resumable, on its own checkout of the code: D:\code\MPPP_freeze (RPP_FREEZE_CODE),
-REM cloned from this tree the first time.  See rpp_studies.calibration.freeze for the steps (wait, mask, cmods,
-REM zjoints, zfinal, ecam, nz, deck, ztests, studies, report) and the faults it rides out.
+REM The freeze run, unattended and resumable, on its own checkout of the code (RPP_FREEZE_CODE): D:\code\RPP_freeze
+REM for v0p99 (this tree on branch rpp), D:\code\MPPP_freeze for v0p98 (main) - cloned from this tree the first
+REM time.  See rpp_studies.calibration.freeze for the steps (wait, mask, cmods, zjoints, zfinal, ecam, nz, deck,
+REM ztests, studies, ladder, report) and the faults it rides out.
 REM
 REM   freeze.bat                        start, or continue after a stop (done steps are skipped)
 REM   freeze.bat --status               where it is: running / stopped by the user / done / not running; nothing started
 REM   freeze.bat --mask-model auto      wait for the mask training under way and its comparison; the new model is used
 REM                                     when it beats the blocks' model by 0.01 exclusion IoU (--mask-margin), else
 REM                                     the blocks' model stays (default --mask-model keep: no image processed again)
-REM   freeze.bat --update-code          the checkout brought up to this tree's main (git pull --ff-only); nothing started
+REM   freeze.bat --update-code          the checkout brought up to this tree's branch (git pull --ff-only); nothing started
 REM   freeze.bat --fresh --now          0.97.0: from the beginning - the status of the run before is set aside,
 REM                                     every step runs again (refused while a freeze is alive)
 REM   freeze.bat --now                  start once the pipeline lock is free (do not wait for the first chain)
@@ -27,18 +28,23 @@ REM ============================================================================
 setlocal EnableExtensions EnableDelayedExpansion
 for %%I in ("%~dp0..\..") do set "RPP_MAIN=%%~fI"
 call "%~dp0rpp_env.bat" --legacy-only
-REM 0.99.0: freeze-3 runs on v0p98 from D:\code\MPPP; a tree on another branch (the rpp worktree D:\code\RPP) does not
-REM start or update a freeze
+REM 0.99.3: a freeze runs from main (v0p98: D:\code\MPPP, its checkout D:\code\MPPP_freeze) or from rpp (v0p99:
+REM D:\code\RPP, its checkout D:\code\RPP_freeze, cloned on branch rpp) - each line keeps its own checkout, so a
+REM v0p98 checkout is never moved to v0p99 or back (freeze.py checks the version: 0.99 here)
 set "FREEZE_BRANCH="
 for /f %%b in ('git -C "%RPP_MAIN%" rev-parse --abbrev-ref HEAD 2^>nul') do set "FREEZE_BRANCH=%%b"
-if defined FREEZE_BRANCH if /i not "!FREEZE_BRANCH!"=="main" (
-  echo freeze: %RPP_MAIN% is on branch !FREEZE_BRANCH!, not main - a freeze runs from the main tree: D:\code\MPPP\scripts\windows\freeze.bat
+if not defined FREEZE_BRANCH set "FREEZE_BRANCH=main"
+set "FREEZE_DEFAULT_CODE="
+if /i "!FREEZE_BRANCH!"=="main" set "FREEZE_DEFAULT_CODE=D:\code\MPPP_freeze"
+if /i "!FREEZE_BRANCH!"=="rpp" set "FREEZE_DEFAULT_CODE=D:\code\RPP_freeze"
+if not defined FREEZE_DEFAULT_CODE (
+  echo freeze: %RPP_MAIN% is on branch !FREEZE_BRANCH! - a freeze runs from main ^(D:\code\MPPP^) or rpp ^(D:\code\RPP^)
   if not defined RPP_NOPAUSE pause
   exit /b 1
 )
 if not defined RPP_FREEZE_ROOT set "RPP_FREEZE_ROOT=D:\rover_blocks"
-if not defined RPP_FREEZE_CODE set "RPP_FREEZE_CODE=D:\code\MPPP_freeze"
-title RPP freeze (0.98) - %RPP_FREEZE_ROOT%
+if not defined RPP_FREEZE_CODE set "RPP_FREEZE_CODE=!FREEZE_DEFAULT_CODE!"
+title RPP freeze (!FREEZE_BRANCH!) - %RPP_FREEZE_ROOT%
 call "%RPP_MAIN%\scripts\windows\rpp_env.bat"
 if errorlevel 1 (
   echo freeze: no Python with rpp found - not started
@@ -47,8 +53,8 @@ if errorlevel 1 (
 )
 if /i "%RPP_FREEZE_CODE%"=="%RPP_MAIN%" goto :have_code
 if not exist "%RPP_FREEZE_CODE%\.git" (
-  echo freeze: cloning %RPP_MAIN% into %RPP_FREEZE_CODE% ...
-  git clone -q "%RPP_MAIN%" "%RPP_FREEZE_CODE%" || ( echo clone failed & if not defined RPP_NOPAUSE pause & exit /b 1 )
+  echo freeze: cloning %RPP_MAIN% ^(branch !FREEZE_BRANCH!^) into %RPP_FREEZE_CODE% ...
+  git clone -q -b !FREEZE_BRANCH! "%RPP_MAIN%" "%RPP_FREEZE_CODE%" || ( echo clone failed & if not defined RPP_NOPAUSE pause & exit /b 1 )
 )
 :have_code
 set "RPP_HOME=%RPP_FREEZE_CODE%"

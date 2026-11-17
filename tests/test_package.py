@@ -83,7 +83,7 @@ def test_cmods_dir_is_the_default_camera_folder(monkeypatch, tmp_path):
 
 def test_version():
     import rpp
-    assert rpp.__version__ == "0.99.2" and rpp.VERSION_TAG == "v0p99"
+    assert rpp.__version__ == "0.99.4" and rpp.VERSION_TAG == "v0p99"
     cff = (ROOT / "CITATION.cff").read_text()
     assert f"version: {rpp.__version__}" in cff
     assert f"## {rpp.__version__}" in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")

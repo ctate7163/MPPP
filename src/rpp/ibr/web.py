@@ -57,7 +57,7 @@ MARK_SCALE = 1.30                  # the viewer's ground disc is this much wider
 #                                    until 0.98.3 (Christian, 14 Nov 2026: "The blue disk should be a little larger")
 
 
-def ground_mark(folder: Path, web: Path) -> Optional[Dict[str, Any]]:
+def ground_mark(folder: Path, web: Path, pano_dir: Optional[Path] = None) -> Optional[Dict[str, Any]]:
     """0.97.24 (Christian, 14 Nov 2026: "in the VR viewer, make that a 3d surface on the ground ... a circle a little
     larger than how it appears in the ods at the level of the ground"): the nadir mark of one variant's folder for the
     page - its picture from above copied into ``web/panos`` and {"file", "depth_m" below the eyes, "radius_m" of the
@@ -70,7 +70,7 @@ def ground_mark(folder: Path, web: Path) -> Optional[Dict[str, Any]]:
             continue
         tex = folder / str(m.get("texture") or "")
         if m.get("texture") and tex.is_file() and m.get("radius_m") and m.get("depth_below_pivot_m"):
-            dst = web / "panos" / tex.name
+            dst = (Path(pano_dir) if pano_dir else web / "panos") / tex.name     # 0.99.3: pano_dir, the Hugging Face stage
             if not (dst.is_file() and dst.stat().st_mtime >= tex.stat().st_mtime):
                 shutil.copyfile(tex, dst)
             return {"file": "panos/" + tex.name, "depth_m": round(float(m["depth_below_pivot_m"]), 4),
@@ -99,14 +99,14 @@ def rover_forward_azimuth(mark: Dict[str, Any]) -> Optional[float]:
     return round((float(mark["text_centre_azimuth_deg"]) - off) % 360.0, 2)
 
 
-def rover_surface(folder: Path, web: Path) -> Optional[Dict[str, Any]]:
+def rover_surface(folder: Path, web: Path, pano_dir: Optional[Path] = None) -> Optional[Dict[str, Any]]:
     """0.98.2 (experimental): the rover's textured surface of a ``with_rover`` folder (``*_rover_surface.glb``,
     :mod:`rpp.ibr.rover_surface`) copied into ``web/panos`` - {"file", "triangles"} for the page, which shows it on
     the terrain-only panorama.  None when the folder has none."""
     glb = next(iter(sorted(folder.glob("*_rover_surface.glb"))), None) if folder.is_dir() else None
     if glb is None:
         return None
-    dst = web / "panos" / glb.name
+    dst = (Path(pano_dir) if pano_dir else web / "panos") / glb.name
     if not (dst.is_file() and dst.stat().st_mtime >= glb.stat().st_mtime):
         shutil.copy2(glb, dst)
     try:
@@ -129,7 +129,7 @@ OLD_TEST_ID = "orientation_test"           # the labeled test pair of before 0.9
 WELCOME_YAW_DEG = 270.0      # 0.98.19: the welcome view opens looking west, where its title is
 
 
-def welcome_pano(web: Path, station_entry: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def welcome_pano(web: Path, station_entry: Optional[Dict[str, Any]], pano_dir: Optional[Path] = None) -> Optional[Dict[str, Any]]:
     """0.98.4 (Christian, 14 Nov 2026: "Remove the fake ods. In its stead put van zyl grayed out with north south and
     east in the sky in white letters ... Rover Photogrammetry Viewer (0.98.19; was MPPP stereo viewer) for Mars 2020 Perseverance Rover in bold welcoming
     letters a few meters from the viewer"): the list's first entry - Van Zyl Overlook's standard panorama, its colors
@@ -141,10 +141,13 @@ def welcome_pano(web: Path, station_entry: Optional[Dict[str, Any]]) -> Optional
     var = next((v for v in station_entry.get("variants", []) if v.get("views", {}).get("standard")), None)
     if var is None:
         return None
-    src = web / var["views"]["standard"]
-    if not src.is_file():
-        return None
+    rel = str(var["views"]["standard"])
+    src = web / rel
+    if pano_dir is not None and rel.startswith("panos/") and (Path(pano_dir) / rel[6:]).is_file():
+        src = Path(pano_dir) / rel[6:]                           # 0.99.3: this run's picture, in the Hugging Face stage
     dst = web / "panos" / f"{WELCOME_ID}_muted{STACK}"
+    if not src.is_file():                                        # 0.99.3: Van Zyl's pictures are on Hugging Face (a URL):
+        return _welcome_entry(dst) if dst.is_file() else None   # the welcome picture made before stays
     old = web / "panos" / f"{WELCOME_ID}{STACK}"                 # the gray one of before 0.98.14
     if old.is_file():
         old.unlink()
@@ -163,6 +166,10 @@ def welcome_pano(web: Path, station_entry: Optional[Dict[str, Any]]) -> Optional
             tag_stereo(dst, extra={"Station": WELCOME_STATION})
         except Exception:                                    # noqa: BLE001
             pass
+    return _welcome_entry(dst)
+
+
+def _welcome_entry(dst: Path) -> Dict[str, Any]:
     return {"id": WELCOME_ID, "title": "Welcome", "welcome": True, "site_name": "Rover Photogrammetry Viewer (RPV)",
             "yaw_deg": WELCOME_YAW_DEG,                       # 0.98.19 (Christian, 16 Nov 2026): it opens looking west
             "variants": [{"key": "welcome", "label": "welcome", "views": {"standard": "panos/" + dst.name}}]}
@@ -476,16 +483,21 @@ def _copy(src: Path, dst: Path, width: int, quality: int) -> Dict[str, Any]:
 def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[str]] = None,
             views: Sequence[str] = DEFAULT_VIEWS, width: int = DEFAULT_WIDTH, quality: int = 88,
             titles: Optional[Dict[str, Dict[str, Any]]] = None, title: str = "RPP stereo panoramas",
-            ortho_root: Optional[PathLike] = None, render_map: bool = False) -> Dict[str, Any]:
+            ortho_root: Optional[PathLike] = None, render_map: bool = False,
+            files_dir: Optional[PathLike] = None) -> Dict[str, Any]:
     """Every station folder of ``out_root`` (the output of ``rpp single-sites``) that has a stereo JPEG, into
     ``web_dir``.  ``titles``: {station label: {"title", "note", "yaw_deg"}} (``yaw_deg``: the azimuth, degrees east
     of north, straight ahead when the page opens).  Stations already in ``panos.json`` and not in ``out_root`` stay
     listed.  ``ortho_root``: the folder whose ``dem/`` holds the orthomosaics for the map (default: ``out_root``'s
     parent, the blocks' root).  ``render_map``: render the info page's map (rpp maps figures 8) when there is none.
+    ``files_dir`` (0.99.3): the stations' pictures go there instead of ``web_dir/panos`` (the entries still say
+    ``panos/<file>``) - the stage :mod:`rpp.ibr.hf` uploads to Hugging Face, outside the viewer's git checkout.
     Returns the list written."""
     from .. import __version__
     out_root, web = Path(out_root), Path(web_dir)
     (web / "panos").mkdir(parents=True, exist_ok=True)
+    pano_dir = Path(files_dir) if files_dir else web / "panos"
+    pano_dir.mkdir(parents=True, exist_ok=True)
     index = web / "panos.json"
     try:
         old = {p["id"]: p for p in json.loads(index.read_text(encoding="utf-8")).get("panos", [])}
@@ -512,7 +524,7 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
     if bad:
         raise ValueError(f"views {bad}: one of {list(VIEWS)}")
     n = 0
-    for d in sorted(p for p in out_root.iterdir() if p.is_dir()):
+    for d in sorted(p for p in out_root.iterdir() if p.is_dir() and not p.name.startswith("_")):   # 0.99.3: not _hf_stage
         if stations and d.name not in stations:
             continue
         third = None
@@ -524,23 +536,23 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
             got = {}
             for v in views:
                 if v in files:
-                    got[v] = "panos/" + _copy(files[v], web / "panos" / files[v].name,
+                    got[v] = "panos/" + _copy(files[v], pano_dir / files[v].name,
                                               min(width, GEOMETRY_WIDTH) if VIEWS[v] in GEOMETRY_PARTS else width, quality)["file"]
                     try:                                         # a reduced copy was encoded again: its XMP with it
                         from .xmp import read_xmp, tag_stereo
-                        if read_xmp(web / "panos" / files[v].name) is None:
-                            tag_stereo(web / "panos" / files[v].name, extra={"Station": d.name})
+                        if read_xmp(pano_dir / files[v].name) is None:
+                            tag_stereo(pano_dir / files[v].name, extra={"Station": d.name})
                     except Exception:                            # noqa: BLE001
                         pass
                     n += 1
             if got:
                 var = {"key": key, "label": label, "views": got}
-                gm = ground_mark(d / sub, web)
+                gm = ground_mark(d / sub, web, pano_dir)
                 if gm:
                     var["ground_mark"] = gm
                 entry["variants"].append(var)
                 if key == "masked":                      # 0.98.2 (experimental): the rover as a surface on the terrain;
-                    rs = rover_surface(d / "with_rover", web)        # 0.98.5: a variant of its own, listed last
+                    rs = rover_surface(d / "with_rover", web, pano_dir)        # 0.98.5: a variant of its own, listed last
                     if rs:
                         third = dict(var, key=ROVER_3D[0], label=ROVER_3D[1], rover_surface=rs)
         # 0.98.4 (Christian, 14 Nov 2026: "always at ground level even when the rover is displayed"): with the rover in
@@ -574,7 +586,7 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
         for f in (web / "panos").glob(OLD_TEST_ID + "*"):
             f.unlink()
     old.pop(WELCOME_ID, None)
-    first = welcome_pano(web, old.get(WELCOME_STATION))
+    first = welcome_pano(web, old.get(WELCOME_STATION), pano_dir if files_dir else None)
     doc = {"title": title, "panos": ([first] if first else []) + [old[k] for k in sorted(old)]}
     if traverse:
         doc["traverse"] = traverse

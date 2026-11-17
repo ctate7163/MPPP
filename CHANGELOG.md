@@ -3,6 +3,96 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.4 — 2026-11-16 (branch `rpp`)
+
+Christian (16 Nov): "Prepare a test msl block".
+
+- **`rpp_studies.msl.first_block`**, the first Curiosity block as a study (the v0p99 plan, section 3.3); the M2020
+  pipeline is not touched. It runs in four steps:
+  - `fetch`: the Navcam RDRs (`MSLNAV_1XXX`) of the sols from the PDS Imaging Node into
+    `D:\data\msl\navcam\SOLnnnnn`. It takes the full-frame `RAD` of the site and side (both eyes) and MIPL's rover
+    masks `MXY`. The archive's folder layout is looked up (several tried, the one that answers reported); `--list`
+    downloads nothing.
+  - `prepare`: the block is the station with the most stereo pairs (at least 8) and its neighbors within 50 m. Each
+    frame becomes 8-bit radiance and a COLMAP mask from MXY (255 = rover). The cameras are one per eye and side
+    (NLB, NRB): the `THIN_PRISM_FISHEYE` fitted to the label CAHVOR (0.012-0.018 px rms on the sample). The manifest
+    holds sol, LMST, station and the side's CCD temperature, and the label camera centers in the site frame
+    (`rpp.camera.pose_from_label`).
+  - `align`: COLMAP SIFT with the masks and the label intrinsics held, all pairs matched, the incremental mapper, then
+    a similarity onto the label centers.
+  - `report.txt`: frames registered, reprojection error, scale, residuals to the labels, and the stereo baseline
+    against the label's.
+- MSL names (`NLB_668441715RAD_F0870792NCAM00252M1`: camera, side, SCLK, product, sampling, site, drive, sequence;
+  the sol is in the label), the `Sol-NNNNNM` LMST form and `MSL:`-prefixed keywords are read. Checked on the sample
+  in `D:\code\MPPP\data\msl`: sol 3052 at S087D0792, its camera 10.2 m above the site origin.
+- Delivered beside the bundle: `msl_first_block.bat` (site 87, side B, sols 3047-3056 by default; a listing first,
+  then fetch, prepare and align into `D:\rover_blocks_msl\msl_site87_first`).
+- **Bug fixes from the 0.99.0 rename (three tests failed since then):**
+  - `test_mask_train` started `monitor.py` from `src/rpp/mask/training` (it is in `src/rpp_studies/mask_training`).
+  - The mask registry tests expected only the `ctate7163/rpp-mask` address. Until the Hugging Face repository is
+    renamed, the pre-0.99 `ctate7163/mppp-mask` stays second, and the GitHub release asset keeps its old file name.
+
+## 0.99.3 — 2026-11-16 (branch `rpp`)
+
+Christian (16 Nov): "Prepare ibr run to reprocess everything and upload to hugging face. Is there anything preventing
+freeze3 from running on v0p99? Please test this and resolve any bugs. Promote the latest deck joint parameters".
+
+- **Freeze-3 can run on v0p99.** Tested with a real (not dry) run of every step on an empty root and with
+  `--update-code` on clones of both lines. Before this, two things stopped it:
+  - `freeze.bat` refused any tree not on `main` (0.99.0);
+  - the run refused any RPP but 0.98 (`REQUIRED_VERSION`).
+
+  Now each line has its own freeze checkout:
+  - `freeze.bat` of `D:\code\RPP` (branch `rpp`) uses `D:\code\RPP_freeze`, cloned on branch `rpp`;
+  - the one of `D:\code\MPPP` (`main`) uses `D:\code\MPPP_freeze` as before.
+
+  Related changes:
+  - `REQUIRED_VERSION` is 0.99 here.
+  - `--update-code` pulls the tree's own branch (it always pulled `main`). It refuses a checkout on the other line,
+    so a v0p98 checkout is never moved to v0p99.
+  - `sync_rpp.bat` brings `D:\code\RPP_freeze` up to date when no freeze runs.
+  - A v0p99 run removes the v0p98 freeze's restart entry (RunOnce "MPPP freeze"), so a reboot starts one freeze.
+- **Bug: `run_single_site_ibr.bat` on the `rpp` tree fetched `main` from an `rpp_v*.bundle`.** That bundle has no
+  `main`, so the batch stopped before the run. It now syncs the tree's own line: `rpp` from the newest
+  `rpp_v*.bundle`, `main` from the newest `mppp_v*.bundle`. Its default tree is `D:\code\RPP`.
+- **Bug: `rpp --log <file>` failed when the file's folder did not exist** (a first joint on a new root).
+- **The panoramas on Hugging Face** (`rpp.ibr.hf`; Christian, 16 Nov: "v0p99 should upload rpv products to hugging
+  face near to where the mask CNN are").
+  - `single-sites --upload` now puts the pictures into the public dataset `ctate7163/rpv-panoramas`
+    (`RPP_HF_DATASET`), one commit per station: `<station>/viewer/` holds what the viewer loads, `<station>/record/`
+    the 16-bit stacked panoramas, the pivot's 16-bit depth, `ods.json`, `station.json`, the provenance picture and
+    the tone levels.
+  - `panos.json` stays in the RPV checkout (pushed as before), its addresses pinned to the station's commit.
+  - A station whose upload fails keeps its entry of before. Pictures the GitHub site held for a station are removed
+    once the station is on the dataset.
+  - Options: `--host github` (the old way), `--no-hf-record` (viewer pictures only), `single-sites --all` (the
+    experimental stations too).
+  - `rpp hf-check [--create]` makes the dataset and its card (licence `RPP_HF_LICENSE`, default `cc-by-4.0` as
+    proposed) and checks that the dataset serves the viewer's origin (CORS).
+  - `web.publish(files_dir=)` writes the stations' pictures outside the git checkout.
+  - The `ibr` extra includes `huggingface_hub`.
+  - Delivered beside the bundle: `rerun_all_panoramas.bat` installs `huggingface_hub` if missing, checks the token
+    and the dataset, then runs `run_single_site_ibr.bat --all --force`, which makes every station again and uploads
+    each one as it finishes.
+- **The deck joint's rig as the freeze-3 candidate** (`rpp_studies.calibration.deck_rig`): `M2020_N_rig.json` from a
+  deck joint's `all_rig.json`, made as the 101-station candidate of 15 Nov was (rebuilt from that run's output, the
+  two agree exactly):
+  - rotation `Rot(a) . R(3 Nov NAVJOINT)`, with pitch and yaw from the knee-250 law and roll from the linear law;
+  - drift with the knee at sol 250;
+  - the base rig's translation direction at the joint's mean baseline.
+
+  `check` compares the new law with the candidate it replaces: the angle change over sols 0-2000 (limits 2 / 4 /
+  6 mdeg), the rates in combined errors (3; against a candidate made before `deck_law` was stored, its drift rates
+  with the new law's errors), and the baseline (60 um). `--promote` writes it only when the check passes, keeping
+  the replaced file.
+
+  Promoted on 16 Nov at 16:49: the 164-station joint ALL of 16 Nov (sols 15-2006) is now
+  `freeze3_2026-11-15\cmods_candidate_rig\M2020_N_rig.json`. Against the 101-station rig:
+  - angle change over sols 0-2000: pitch -0.34...+0.22, yaw -1.52...+0.20, roll +0.10...+0.21 mdeg;
+  - rates: pitch +21.0 / +6.1 (was +19.2 / +6.4), yaw -39.4 / +3.9 (-38.9 / +4.8), roll -6.1 (-6.1) mdeg/1000 sol,
+    every one within 1.7 errors;
+  - baseline 423.508 mm (was 423.536).
+
 ## 0.99.2 — 2026-11-16 (branch `rpp`)
 
 Christian (16 Nov): "scrub the code, text, and documentation for `centre` and `colour` and other British-specific

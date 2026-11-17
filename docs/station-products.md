@@ -84,10 +84,25 @@ map shows only the surface meshed from the cloud and the rover model: the fill u
 ground plane's reach, the deck floors and the plane are black (a mesh made before 0.98.30 needs the mesh step again
 for this). The eyes are rendered at 16384 x 8192 (`rpp ods --width`); publishing reduces them to 8192.
 
-`run_single_site_ibr.bat <station>` publishes the station's panoramas into `docs/ods`, commits them and pushes the
-branch to GitHub when the run is done (0.97.24: by default; `--no-upload` skips it; `--publish-only` does it without
-rendering). A push that fails is tried three times, the commit is kept and goes up with the next run, and
-`docs/ods/upload_pending.json` says what did not go through.
+`run_single_site_ibr.bat <station>` publishes and uploads each station when it is done (0.97.24: by default;
+`--no-upload` skips it; `--publish-only` does it without rendering; `--all` takes the experimental stations too).
+Since 0.99.3 the pictures go to the public Hugging Face dataset `ctate7163/rpv-panoramas` (`RPP_HF_DATASET`), one
+commit per station (`rpp.ibr.hf`):
+
+- `<station>/viewer/`: what the viewer loads - the 8K stereo JPEGs of every view and variant, the nadir mark, the
+  rover model;
+- `<station>/record/` (and `record/with_rover/`): the 16-bit stacked panoramas, the pivot's 16-bit depth, `ods.json`,
+  `station.json`, the provenance picture and the tone levels (`--no-hf-record`: the viewer's pictures only).
+
+`panos.json` stays in the viewer's GitHub checkout (`D:\code\RPV`, published at https://ctate7163.github.io/RPV/),
+committed and pushed as before; its addresses point at the station's commit on the dataset
+(`https://huggingface.co/datasets/ctate7163/rpv-panoramas/resolve/<commit>/<station>/viewer/<file>`), so a link
+never changes under a browser's cache. Pictures an earlier upload left in the checkout are removed once the station
+is on the dataset. A station whose upload fails keeps its entry of before; its pictures stay in
+`<output root>/_hf_stage/panos` and go up with the next run. `rpp hf-check [--create]` makes the dataset and its card
+(licence `RPP_HF_LICENSE`, default `cc-by-4.0`) and checks that it serves the viewer's origin (CORS: the page fetches
+the pictures). `--host github` puts the pictures into the checkout as before 0.99.3; a push that fails is tried three
+times, the commit is kept and goes up with the next run, and `upload_pending.json` says what did not go through.
 
 The mark at the nadir is a light blue disc 10 degrees from the nadir with two rows of text and a compass whose solid
 point is the panorama's north (no letters: they would be sideways or upside down for most viewers). `<station>_nadir_mark.png` is the same mark seen from above; the viewer page

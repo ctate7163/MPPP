@@ -183,7 +183,7 @@ def test_viewer_process_runs(tmp_path):
         (tmp_path / sub).mkdir()
         cv2.imwrite(str(tmp_path / sub / "ep1_it00050.png"), np.full((40, 60, 3), 200, np.uint8))
     env = dict(os.environ, MPLBACKEND="Agg")
-    p = subprocess.Popen([sys.executable, str(ROOT / "src/rpp/mask/training/monitor.py"), "watch", str(tmp_path)],
+    p = subprocess.Popen([sys.executable, str(ROOT / "src/rpp_studies/mask_training/monitor.py"), "watch", str(tmp_path)],
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     time.sleep(6)
     alive = p.poll() is None

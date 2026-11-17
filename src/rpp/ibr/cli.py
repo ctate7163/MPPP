@@ -152,6 +152,8 @@ def _rover(a) -> bool:
 def add_parsers(sub) -> None:
     from .single_sites import add_parser as _single_sites_parser
     _single_sites_parser(sub)
+    from .hf import add_parser as _hf_parser               # 0.99.3: rpp hf-check
+    _hf_parser(sub)
     p = sub.add_parser("mesh", help="0.96: the surface of one station of a finished block: a clean mesh to 30 m from the mast "
                        "axis, the ground plane to 100 m, the sky at infinity (rpp.ibr.mesh)")
     p.add_argument("work")
@@ -566,7 +568,13 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
     return run(a)
 
 
-COMMANDS = {"mesh": cmd_mesh, "depthmaps": cmd_depthmaps, "ods": cmd_ods, "single-sites": cmd_single_sites}
+def cmd_hf_check(a: argparse.Namespace) -> int:
+    from .hf import cmd_hf_check as run
+    return run(a)
+
+
+COMMANDS = {"mesh": cmd_mesh, "depthmaps": cmd_depthmaps, "ods": cmd_ods, "single-sites": cmd_single_sites,
+            "hf-check": cmd_hf_check}
 
 
 def main(argv=None) -> int:

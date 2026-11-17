@@ -232,6 +232,7 @@ def setup_logging(a: argparse.Namespace) -> None:
         h._rpp_cli = True                                                # type: ignore[attr-defined]
         root.addHandler(h)
     if getattr(a, "log", None):
+        Path(a.log).parent.mkdir(parents=True, exist_ok=True)      # 0.99.3: a first joint on a root has no camera_analysis yet
         f = logging.FileHandler(a.log, encoding="utf-8")
         f.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
         root.addHandler(f)
@@ -857,7 +858,7 @@ COMMANDS = {"gui": cmd_gui, "process": cmd_process, "align": cmd_align, "run": c
             "mask": cmd_mask, "example": cmd_example, "waypoints": cmd_waypoints, "maps": _study_command("maps"), "calib": _study_command("calib"), "doctor": cmd_doctor,
             "zcam-states": _study_command("zcam-states"), "dense": cmd_dense, "metashape": cmd_metashape, "nerfstudio": cmd_nerfstudio,
             "mesh": _ibr_command("mesh"), "depthmaps": _ibr_command("depthmaps"), "ods": _ibr_command("ods"),
-            "single-sites": _ibr_command("single-sites"),
+            "single-sites": _ibr_command("single-sites"), "hf-check": _ibr_command("hf-check"),
             "version": cmd_version}
 
 

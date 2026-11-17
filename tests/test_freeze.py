@@ -517,3 +517,31 @@ def test_freeze3_ladder_step_runs_seitahs_states_with_100mm(tmp_path):
     assert 100 in sites["seitah_overlook"]["zcam"]
     for k in ("seitah_overlook", "skinner_ridge", "taylorfjellet", "chal_rocks_large"):     # 0.98.21: position priors
         assert sites[k]["settings"]["zcam_station_prior_sigma_m"] == 0.02
+
+
+def test_freeze_runs_on_this_version_and_keeps_its_checkout_on_its_line(tmp_path):
+    """0.99.3 (Christian, 16 Nov 2026: "Is there anything preventing freeze3 from running on v0p99?"): the freeze needs the
+    package's own minor version (0.99 on branch rpp); --update-code pulls the tree's branch, and refuses a checkout on
+    another branch (a v0p98 checkout is never moved to v0p99); freeze.bat runs from main or rpp, each with its checkout."""
+    import subprocess
+    import rpp
+    from rpp_studies.calibration import freeze as F
+    assert F.REQUIRED_VERSION == ".".join(rpp.__version__.split(".")[:2])
+    git = lambda *a: subprocess.run(["git", *a], capture_output=True, text=True, check=True)          # noqa: E731
+    tree = tmp_path / "tree"
+    git("init", "-q", "-b", "rpp", str(tree))
+    git("-C", str(tree), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "one")
+    git("clone", "-q", "-b", "rpp", str(tree), str(tmp_path / "freeze_rpp"))
+    git("-C", str(tree), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "two")
+    git("-C", str(tree), "branch", "-q", "main")
+    git("clone", "-q", "-b", "main", str(tree), str(tmp_path / "freeze_main"))
+    root = tmp_path / "root"
+    root.mkdir()
+    base = ["--root", str(root), "--from-tree", str(tree), "--update-code"]
+    assert F.tree_branch(tree) == "rpp"
+    assert F.main(base + ["--code", str(tmp_path / "freeze_rpp")]) == 0
+    assert "two" in F.git_head(tmp_path / "freeze_rpp")
+    assert F.main(base + ["--code", str(tmp_path / "freeze_main")]) == 1           # main stays main
+    bat = (Path(F.REPO) / "scripts" / "windows" / "freeze.bat").read_text(encoding="ascii")
+    assert r'"FREEZE_DEFAULT_CODE=D:\code\RPP_freeze"' in bat and r'"FREEZE_DEFAULT_CODE=D:\code\MPPP_freeze"' in bat
+    assert "git clone -q -b !FREEZE_BRANCH!" in bat

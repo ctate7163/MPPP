@@ -1,6 +1,6 @@
 @echo off
 REM ======================================================================================================
-REM RPP 0.99.0 - sync_rpp.bat: brings v0p99 code into the rpp worktree D:\code\RPP, nothing else.
+REM RPP 0.99.0 - sync_rpp.bat: brings v0p99 code into the rpp worktree D:\code\RPP (and its freeze checkout).
 REM
 REM   sync_rpp.bat               the newest rpp_v*.bundle in RPP_TRANSFER (default D:\rover_blocks\_transfer)
 REM   sync_rpp.bat BUNDLE        that bundle (its branch rpp)
@@ -8,6 +8,8 @@ REM
 REM This tree's branch rpp is fast-forwarded to the bundle's rpp (merged when this tree has commits of its own; on a
 REM conflict it stops and changes nothing), then the quick tests run.  It never touches main, the checkout in
 REM D:\code\MPPP or the freeze checkout D:\code\MPPP_freeze: sync_code.bat does those, from D:\code\MPPP.
+REM 0.99.3: the v0p99 freeze checkout D:\code\RPP_freeze (RPP_FREEZE_CODE when this tree runs the freeze) is brought
+REM up to this tree's rpp too - unless a freeze is running on it (freeze.bat --update-code refuses then).
 REM Uncommitted changes to tracked files go to a stash and come back after the merge.
 REM Runs from a copy in %TEMP% (cmd.exe reads a batch file line by line, and the merge may replace this file).
 REM Log: %TEMP%\rpp_sync_rpp_<test>.log per test file.
@@ -55,6 +57,12 @@ for %%T in (test_package test_rename test_cli test_scripts test_waypoints_sites 
     python -m pytest "tests\%%T.py" -q -x -p no:cacheprovider > "%TEMP%\rpp_sync_rpp_%%T.log" 2>&1
     if errorlevel 1 ( set "FAILED=!FAILED! %%T" & echo   FAIL %%T  ^(log %TEMP%\rpp_sync_rpp_%%T.log^) ) else ( echo   ok   %%T )
   )
+)
+set "RPP_FREEZE_CODE_RPP=D:\code\RPP_freeze"
+if exist "!RPP_FREEZE_CODE_RPP!\.git" (
+  python -m rpp_studies.calibration.freeze --code "!RPP_FREEZE_CODE_RPP!" --from-tree "%REPO%" --update-code
+) else (
+  echo freeze checkout !RPP_FREEZE_CODE_RPP!: none yet ^(freeze.bat of this tree clones it^)
 )
 echo.
 if defined FAILED ( echo sync done; tests FAILED:!FAILED! - send Claude the logs named above ) else ( echo sync done, the quick tests passed )

@@ -2,7 +2,8 @@
 The freeze run on RPP 0.96 (Christian, 9 Nov 2026: "please prepare a freeze.bat that will run on 0.96"), unattended
 and resumable: the freeze-2 steps (8 Nov) with the robustness of the first chain and a gate on the mask model.
 
-The run uses its own checkout (``--code``, ``D:\\code\\MPPP_freeze``, cloned from ``D:\\code\\MPPP`` by
+The run uses its own checkout (``--code``: ``D:\\code\\RPP_freeze`` on v0p99, cloned from ``D:\\code\\RPP`` (branch
+``rpp``); ``D:\\code\\MPPP_freeze`` from ``D:\\code\\MPPP`` on v0p98 - by
 ``scripts\\windows\\freeze.bat``), its own camera-model folder (``--cmods``, ``D:\\rover_blocks\\cmods_freeze2``:
 the models in use with the 3 Nov Navcam law and the freeze-2 rig promoted into it; ``RPP_CMODS`` for every step),
 and the blocks root ``--root`` (``D:\\rover_blocks``).  ``D:\\code\\MPPP`` and ``D:\\scapes\\cmods`` are not changed.
@@ -49,7 +50,7 @@ by ``--status`` as "stopped by the user" - not as running, not as a failure.
     python -m rpp_studies.calibration.freeze                      start, or continue after a stop
     python -m rpp_studies.calibration.freeze --status             where it is (nothing started)
     python -m rpp_studies.calibration.freeze --mask-model auto    wait for the mask comparison first
-    python -m rpp_studies.calibration.freeze --update-code        the checkout brought up to D:\\code\\MPPP main
+    python -m rpp_studies.calibration.freeze --update-code        the checkout brought up to its tree's branch
                                                                    (git pull --ff-only); nothing started
     python -m rpp_studies.calibration.freeze --redo zjoints       a step again
     python -m rpp_studies.calibration.freeze --only deck          one step
@@ -95,7 +96,11 @@ JOINT_GROUP = "zcam34_joint,zcam_consensus"
 OLD_CHAIN_ROOT_STEPS = ("studies", "figures", "maps", "aspect_geometry", "s6")
 STALE_S = 900
 LOGON_TASK = "RPP freeze"
-REQUIRED_VERSION = "0.98"
+OLD_LOGON_TASK = "MPPP freeze"      # 0.99.3: the RunOnce value of a v0p98 freeze (freeze_097 set it): removed when a v0p99
+#                                   run sets its own, so a reboot starts one freeze, not two
+REQUIRED_VERSION = "0.99"           # 0.99.3 (Christian, 16 Nov 2026: "Is there anything preventing freeze3 from running on v0p99?"):
+#                                   the run on v0p99 - its own checkout D:\code\RPP_freeze on branch rpp (scripts\windows\
+#                                   freeze.bat of D:\code\RPP); v0p98's freeze runs from D:\code\MPPP_freeze ("0.98" there)
 DEFAULT_MASK = "rpp_mask_v3"         # the registry default: what a block without mask_checkpoint was processed with
 STATUS_FILE, LOG_FILE, REPORT_FILE = "freeze_status.json", "freeze_log.txt", "freeze_report.md"
 
@@ -794,6 +799,7 @@ def logon_task_register(r: Run) -> None:
                             encoding="ascii", newline="")
         res = subprocess.run(["reg", "add", RUNONCE_KEY, "/v", LOGON_TASK, "/t", "REG_SZ", "/d", f'"{launcher}"', "/f"],
                              capture_output=True, text=True, timeout=60)
+        subprocess.run(["reg", "delete", RUNONCE_KEY, "/v", OLD_LOGON_TASK, "/f"], capture_output=True, text=True, timeout=60)
         if res.returncode == 0:
             r.log(f"logon task: RunOnce '{LOGON_TASK}' set - after a reboot the run continues at the next logon")
             r.status["logon_task"] = True
@@ -912,9 +918,22 @@ def show_status(r: Run) -> int:
     return 0
 
 
+def tree_branch(tree: Path) -> str:
+    """The branch a tree has checked out (``main`` when git cannot say)."""
+    try:
+        r = subprocess.run(["git", "-C", str(tree), "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True,
+                           timeout=30)
+        b = r.stdout.strip()
+        return b if r.returncode == 0 and b and b != "HEAD" else "main"
+    except Exception:                                                                 # noqa: BLE001
+        return "main"
+
+
 def update_code(a) -> int:
-    """``git pull --ff-only`` of the run's checkout from ``--from-tree`` main.  Nothing is started.  Refused while a
-    run is alive on the root (code must not change under it) unless ``--force-update``."""
+    """``git pull --ff-only`` of the run's checkout from ``--from-tree``'s branch (0.99.3: the branch the tree has
+    checked out - ``rpp`` for D:\\code\\RPP, ``main`` for D:\\code\\MPPP; it was always ``main``).  Nothing is started.
+    Refused while a run is alive on the root (code must not change under it) unless ``--force-update``, and when the
+    checkout is on another branch than the tree (a v0p98 checkout is not moved to v0p99 or back)."""
     r = Run(a, read_only=True)
     pid = r.alive_before()
     if pid and not a.force_update:
@@ -924,9 +943,14 @@ def update_code(a) -> int:
     if not (code / ".git").exists():
         print(f"{code} is not a git checkout: freeze.bat clones it from {a.from_tree}")
         return 1
+    branch, have = tree_branch(Path(a.from_tree)), tree_branch(code)
+    if branch != have:
+        print(f"not updated: {code} is on branch {have}, {a.from_tree} on {branch} - a freeze checkout stays on its line "
+              f"(v0p98: main, D:\\code\\MPPP_freeze; v0p99: rpp, D:\\code\\RPP_freeze)")
+        return 1
     print(f"before: {code}: {git_head(code)}")
-    rc = subprocess.run(["git", "-C", str(code), "pull", "--ff-only", str(a.from_tree), "main"]).returncode
-    print(f"git pull --ff-only {a.from_tree} main: exit {rc}")
+    rc = subprocess.run(["git", "-C", str(code), "pull", "--ff-only", str(a.from_tree), branch]).returncode
+    print(f"git pull --ff-only {a.from_tree} {branch}: exit {rc}")
     print(f"after:  {code}: {git_head(code)}")
     print(f"        {a.from_tree}: {git_head(Path(a.from_tree))}")
     return 0 if rc == 0 else 1
@@ -972,8 +996,10 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--any-version", action="store_true", help=f"run on an RPP that is not {REQUIRED_VERSION}.x")
     ap.add_argument("--dry-run", action="store_true", help="log the commands, run nothing")
     ap.add_argument("--status", action="store_true", help="where the run is; nothing started")
-    ap.add_argument("--update-code", action="store_true", help="git pull --ff-only --from-tree main into --code; nothing started")
-    ap.add_argument("--from-tree", default=r"D:\code\MPPP", help="--update-code: the tree pulled from")
+    ap.add_argument("--update-code", action="store_true",
+                    help="git pull --ff-only of --from-tree's branch into --code; nothing started")
+    ap.add_argument("--from-tree", default=rpp_env.get("RPP_HOME_MAIN") or str(REPO),
+                    help="--update-code: the tree pulled from (default: the tree freeze.bat is in)")
     ap.add_argument("--force-update", action="store_true")
     return ap
 

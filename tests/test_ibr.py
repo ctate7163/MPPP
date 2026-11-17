@@ -1363,8 +1363,10 @@ def test_squares_left_on_top_named_by_station(tmp_path):
     assert r["top"] == "left" and sq.shape == (16, 16, 3) and np.array_equal(sq[:8], L) and np.array_equal(sq[8:], R)
     f = SS.install(tmp_path / "bats")
     b = (tmp_path / "bats" / "make_square.bat").read_text()
-    assert f.name == "run_single_site_ibr.bat" and "single-sites --squares-only %*" in b and "+main:" in b
-    assert "+main:refs/remotes/bundle/main" in f.read_text()
+    assert f.name == "run_single_site_ibr.bat" and "single-sites --squares-only %*" in b and "+!BR!:" in b
+    t = f.read_text()                       # 0.99.3: the tree's own line - rpp from rpp_v*.bundle, main from mppp_v*.bundle
+    assert "+!BR!:refs/remotes/bundle/!BR!" in t and 'set "PAT=rpp_v*.bundle"' in t and 'set "PAT=mppp_v*.bundle"' in t
+    assert "+main:refs/remotes/bundle/main" not in t
 
 
 def test_floating_surface_removed_and_deep_faces_cut(tmp_path):

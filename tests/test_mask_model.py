@@ -244,7 +244,10 @@ def test_mask_model_v2_is_registered():
     v2 = reg["models"]["rpp_mask_v2"]
     assert v2["source_checkpoint"] == "convnext_tiny_s4_seg_20260925.pt" and v2["val_iou"] > 0.977
     assert v2["sha256"] == "227e483369e11d6e36ce3517cf9f6d6ac60a9a50c1e301f9e7ae53d0cef569b9"
-    assert all(u.endswith(v2["file"]) and "mask-v2" in u or "huggingface" in u for u in v2["urls"])
+    # 0.99.4: the RPP repository first, then the pre-0.99 one and the GitHub release asset (both keep the old file name)
+    assert v2["urls"][0] == "https://huggingface.co/ctate7163/rpp-mask/resolve/main/" + v2["file"]
+    assert all("huggingface" in u or "/mask-v2/" in u for u in v2["urls"])
+    assert all(u.rsplit("/", 1)[-1] in [v2["file"]] + v2["old_files"] for u in v2["urls"])
     assert "rpp_mask_v1" in reg["models"]                                         # the previous model stays
 
 
@@ -286,7 +289,9 @@ def test_default_v3_is_on_hugging_face():
     reg = load_registry()
     e = reg["models"][reg["default"]]
     assert reg["default"] == "rpp_mask_v3" and hf_repo() == "ctate7163/rpp-mask"
-    assert e["urls"] == ["https://huggingface.co/ctate7163/rpp-mask/resolve/main/" + e["file"]]
+    # 0.99.4: the pre-0.99 repository stays as the second address until ctate7163/mppp-mask is renamed
+    assert e["urls"] == ["https://huggingface.co/ctate7163/rpp-mask/resolve/main/" + e["file"],
+                         "https://huggingface.co/ctate7163/mppp-mask/resolve/main/" + e["old_files"][0]]
     # the released file carries the real card (stride-4 decoder); 0.31.1's registry hash was a card-less export
     assert e["stride4"] is True and e["sha256"].startswith("46830126") and e["bytes"] == 124826276
 

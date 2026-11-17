@@ -66,8 +66,10 @@ TONE_FILE = "tone_levels.json"                 # one per station, shared by its 
 
 BAT = r"""@echo off
 REM run_single_site_ibr.bat [LABEL ...] [--steps ...]  (written by python -m rpp single-sites --install)
-REM 1. D:\code\MPPP fast-forwarded to the newest git bundle in %TRANSFER% - if that bundle is ahead of it; merged
-REM    when both have commits of their own (0.97.21); left alone when it already holds the bundle; nothing overwritten
+REM 1. the tree fast-forwarded to the newest git bundle in %TRANSFER% - if that bundle is ahead of it; merged
+REM    when both have commits of their own (0.97.21); left alone when it already holds the bundle; nothing overwritten.
+REM    0.99.3: the tree's own line - on branch rpp (D:\code\RPP) the newest rpp_v*.bundle's rpp, on main
+REM    (D:\code\MPPP) the newest mppp_v*.bundle's main (0.99.0-0.99.2 fetched main from an rpp bundle, which has none)
 REM 2. python -m rpp single-sites with the arguments given: the stations of src\rpp\data\single_sites.json
 REM    0.97.0: the Perseverance model in the rover mesh, the panorama blended in 16 bits, ONE 16-to-8-bit scaling per
 REM    station for the rover-shown and rover-masked versions (<station>\tone_levels.json), the per-image pictures as
@@ -78,32 +80,39 @@ REM               run_single_site_ibr.bat --steps ods          the panoramas aga
 REM               run_single_site_ibr.bat --dry-run            the commands, not run
 REM               run_single_site_ibr.bat Sol0052_S003D2046 --no-upload  the run without the upload at its end
 REM               run_single_site_ibr.bat --publish-only                 no rendering: publish and push what is there
-REM    0.97.24: when the run is done its panoramas are published into docs\ods, committed and pushed to GitHub with
-REM    the code (--upload is given here; --no-upload after it wins).  A push that fails is tried three times and
-REM    the commit goes up with the next run: see "NOT uploaded" at the end and docs\ods\upload_pending.json.
+REM    0.97.24: when the run is done its panoramas are published and uploaded (--upload is given here; --no-upload
+REM    after it wins).  0.99.3: the pictures go to the Hugging Face dataset ctate7163/rpv-panoramas, station by station,
+REM    and panos.json to the viewer's GitHub checkout (D:\code\RPV), committed and pushed; --host github puts the
+REM    pictures into that checkout as before.  A push that fails is tried three times and goes up with the next run:
+REM    see "NOT (all) uploaded" at the end and upload_pending.json in the viewer's folder.
 REM set RPP_NO_PAUSE=1 before it: no pause at the end, and the exit code is the run's (for unattended chains)
 REM Nothing in this file names a version, so it never needs replacing.
 REM It also lives in scripts\windows of the repository (0.97.0): there it works on the tree it is in.  Everything
 REM after the settings is one parenthesized block, read whole before it runs - the merge may replace this file.
 REM A copy put into scripts\windows by hand (untracked) is removed before the merge, which brings the tracked one.
 setlocal EnableDelayedExpansion
-set "REPO=%RPP_HOME%"
-if not defined REPO if exist "%~dp0rpp_env.bat" for %%I in ("%~dp0..\..") do set "REPO=%%~fI"
-if not defined REPO set "REPO=D:\code\MPPP"
+set "REPO="
+if exist "%~dp0rpp_env.bat" for %%I in ("%~dp0..\..") do set "REPO=%%~fI"
+if not defined REPO set "REPO=%RPP_HOME%"
+if not defined REPO set "REPO=D:\code\RPP"
 set "TRANSFER=D:\rover_blocks\_transfer"
 cd /d "%REPO%" || ( echo no %REPO% & pause & exit /b 1 )
 set "B="
+set "BR=main"
 (
-  for /f "delims=" %%f in ('dir /b /o-d "%TRANSFER%\rpp_*.bundle" 2^>nul') do if not defined B set "B=%TRANSFER%\%%f"
+  for /f %%b in ('git rev-parse --abbrev-ref HEAD') do set "BR=%%b"
+  set "PAT=mppp_v*.bundle"
+  if /i "!BR!"=="rpp" set "PAT=rpp_v*.bundle"
+  for /f "delims=" %%f in ('dir /b /o-d "%TRANSFER%\!PAT!" 2^>nul') do if not defined B set "B=%TRANSFER%\%%f"
   for /f %%h in ('git rev-parse HEAD') do set "H0=%%h"
   if defined B (
-    git fetch -q "!B!" +main:refs/remotes/bundle/main
-    if errorlevel 1 ( echo fetch from !B! failed - send Claude the lines above & pause & exit /b 1 )
-    git merge-base --is-ancestor HEAD refs/remotes/bundle/main
+    git fetch -q "!B!" +!BR!:refs/remotes/bundle/!BR!
+    if errorlevel 1 ( echo fetch of !BR! from !B! failed - send Claude the lines above & pause & exit /b 1 )
+    git merge-base --is-ancestor HEAD refs/remotes/bundle/!BR!
     if errorlevel 1 (
-      git merge-base --is-ancestor refs/remotes/bundle/main HEAD
+      git merge-base --is-ancestor refs/remotes/bundle/!BR! HEAD
       if errorlevel 1 (
-        git merge -q --no-edit refs/remotes/bundle/main
+        git merge -q --no-edit refs/remotes/bundle/!BR!
         if errorlevel 1 ( git merge --abort & echo the newest bundle !B! does not merge cleanly into %REPO% - send Claude the lines above & pause & exit /b 1 )
         echo the newest bundle !B! merged into %REPO%
       ) else (
@@ -112,7 +121,7 @@ set "B="
     ) else (
       git ls-files --error-unmatch scripts/windows/run_single_site_ibr.bat >nul 2>nul
       if errorlevel 1 if exist scripts\windows\run_single_site_ibr.bat del /q scripts\windows\run_single_site_ibr.bat
-      git merge -q --ff-only refs/remotes/bundle/main
+      git merge -q --ff-only refs/remotes/bundle/!BR!
       if errorlevel 1 ( echo fast-forward failed - send Claude the lines above & pause & exit /b 1 )
     )
   )
@@ -495,7 +504,9 @@ def install(dest: PathLike) -> Path:
 def add_parser(sub) -> None:
     p = sub.add_parser("single-sites", help="0.96: the single-station test sites of rpp/data/single_sites.json - dense, "
                        "mesh, depthmaps, ods, rover masked and shown (rpp.ibr.single_sites)")
-    p.add_argument("labels", nargs="*", help="stations of the config (default: all)")
+    p.add_argument("labels", nargs="*", help="stations of the config (default: all but the experimental ones)")
+    p.add_argument("--all", action="store_true", help="0.99.3: every station of the config, the experimental ones too "
+                   "(the Mastcam-Z 34 mm station), the last one first")
     p.add_argument("--config", default=None, help="the config file (default rpp/data/single_sites.json)")
     p.add_argument("--root", default=None, help="the blocks' root (default RPP_SCAPES or D:\\rover_blocks)")
     p.add_argument("--out", default=None, help="the output root (default <root>/<config 'out'>)")
@@ -519,6 +530,14 @@ def add_parser(sub) -> None:
     p.add_argument("--upload", action="store_true",
                    help="0.97.21: after the run, publish (into docs/ods of this checkout unless --publish names a folder), "
                         "commit the panoramas there and push the branch to origin - the code's commits go with it")
+    p.add_argument("--host", choices=("hf", "github"), default="hf",
+                   help="0.99.3: where --upload puts the pictures - hf (default; Christian, 16 Nov 2026: \"v0p99 should upload "
+                        "rpv products to hugging face\"): the dataset RPP_HF_DATASET (ctate7163/rpv-panoramas), one commit per "
+                        "station, panos.json on GitHub pointing at it (rpp.ibr.hf); github: the pictures committed into the "
+                        "viewer's checkout as before 0.99.3")
+    p.add_argument("--no-hf-record", dest="hf_record", action="store_false", default=True,
+                   help="0.99.3: with --host hf, the viewer's pictures only (default: also each station's record - the 16-bit "
+                        "stacked panoramas, the pivot's 16-bit depth, ods.json, station.json; about 0.35 GB a station)")
     p.add_argument("--publish-width", type=int, default=8192, metavar="PX", help="wider images are reduced to this (default 8192)")
     p.add_argument("--publish-views", nargs="+", default=None, metavar="VIEW",
                    help="standard, 'enhanced local', 'normal map', 'distance map', enhanced, ... (default: "
@@ -545,6 +564,8 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
         for lab, st in cfg["stations"].items():
             print(f"{lab}  {st['station']:>9}  {st.get('site') or st.get('work')}  {st.get('note', '')}")
         return 0
+    if getattr(a, "all", False) and not a.labels:                # 0.99.3: the experimental stations too
+        a.labels = list(cfg["stations"])[::-1]
     runs = plan(cfg, root, out_root, a.labels, a.steps, a.variants, ods_width=a.width,
                 rover_surface=getattr(a, "rover_surface", False))
     if a.dry_run:
@@ -579,16 +600,30 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
         from .nadir import block_name                    # 0.97.17: the block's name without its size word
         titles = {k: {"title": v.get("title") or v.get("name") or block_name(v.get("site")) or k,   # 0.98.19: the page puts "Sol 0xxx" before it
                       "note": v.get("web_note"), "yaw_deg": v.get("yaw_deg")} for k, v in st_cfg.items()}
+        use_hf = bool(getattr(a, "upload", False)) and getattr(a, "host", "hf") == "hf"
+        before = None
+        if use_hf:                                       # 0.99.3: the pictures to Hugging Face, panos.json to GitHub
+            from . import hf
+            try:
+                before = json.loads((Path(a.publish) / "panos.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                before = {}
         doc = web.publish(out_root, a.publish, stations=list(labels), views=[web.OLD_VIEW_NAMES.get(v, v) for v in (a.publish_views or web.DEFAULT_VIEWS)], width=a.publish_width, titles=titles,
-                          render_map=True)
+                          render_map=True, files_dir=hf.stage_dir(out_root) if use_hf else None)
         if not web.install_viewer(a.publish):
             print("the viewer page (docs/ods/index.html, vendor/) is not in this installation: copy it from the repository")
         msg = f"published: {len(doc['panos'])} stations in {Path(a.publish) / 'panos.json'}"
         ok = True
         if getattr(a, "upload", False):
+            parts = []
+            if use_hf:
+                res = hf.publish(a.publish, doc, list(labels), out_root, previous=before, record=getattr(a, "hf_record", True))
+                ok = bool(res["ok"])
+                parts.append(res["message"])
             up = web.upload(a.publish, list(labels))
-            ok = bool(up["ok"])
-            msg = ("uploaded: " if ok else "NOT uploaded: ") + up["message"]
+            ok = ok and bool(up["ok"])
+            parts.append(up["message"])
+            msg = ("uploaded: " if ok else "NOT (all) uploaded: ") + " | ".join(parts)
         if not quiet:
             print(msg, flush=True)
         finish.failed = getattr(finish, "failed", False) or not ok

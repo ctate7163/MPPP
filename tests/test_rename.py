@@ -35,6 +35,7 @@ KEPT = [
     r"MPPPImage", r"mppp\.image\.MPPPImage", r"import mppp", r"python -m mppp", r"mppp\*", r"mppp:cli_main",
     r"mppp, mppp_studies", r"the mppp command", r"\bmppp = ", r"formerly mppp", r"``mppp:``",
     r"mppp_env\.bat", r"install of mppp",
+    r"mppp_v\*\.bundle", r"\"MPPP freeze\"",            # 0.99.3: the v0p98 line's bundles and its freeze restart entry
     r"MPPP -> RPP", r"\(RPP\|MPPP\)", r"/MPPP/ods", r"old name, MPPP", r"[Ff]ormerly MPPP", r"called MPPP",
     r"was MPPP stereo viewer", r"MPPP \(Mars Photogrammetry Preprocessing Pipeline\)",
     r"MPPP, Mars Photogrammetry Preprocessing Pipeline", r"made by MPPP", r"pypi\.org/project/mppp/",
