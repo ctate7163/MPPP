@@ -3,6 +3,17 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.6 — 2026-11-16 (branch `rpp`)
+
+- **A red-weighted gray in the mask training** (Christian, 16 Nov: "add the red-weighted gray option"). A Curiosity
+  Navcam frame is one band at 600-800 nm, so its gray is mostly what the red channel sees.
+  - `train_mask --photometric --gray-red SHARE`: that share of the gray conversions mixes R, G, B with random weights
+    around R 0.70, G 0.25, B 0.05 (a Dirichlet draw per sample), instead of the Rec. 601 luma. `--gray-prob P` sets
+    how many photometric samples are made gray (the preset's 0.25 by default).
+  - `PhotometricConfig.gray_red_share`, `gray_red_mean`, `gray_red_concentration`; `TrainConfig.gray_prob`,
+    `gray_red_share`.
+  - Off by default: with share 0 a seed draws exactly as before.
+
 ## 0.99.5 — 2026-11-16 (branch `rpp`)
 
 Christian (16 Nov, evening): freeze-3 on v0p99 and the MPPP -> RPP rename of the PC's tree; blocks and deck stations

@@ -510,6 +510,8 @@ class TrainConfig:
     photometric: bool = False             # exposure, gamma, channel gains, black level, noise, shadow, haze, gray
     photometric_prob: float = 0.5         # 10 Nov: 0.9 in v4.4
     photometric_strength: str = "mild"    # 10 Nov: augment.PHOTOMETRIC_PRESETS - "mild" (default) or "strong" (v4.4)
+    gray_prob: Optional[float] = None     # 0.99.6: share of the photometric samples made gray (None: the preset's 0.25)
+    gray_red_share: float = 0.0           # 0.99.6: share of those grays that are red-weighted (MSL Navcam); 0 = luma only
     lmst_sampler: bool = False            # frames before 09:00 / after 16:00 LMST drawn lmst_upweight x more often
     lmst_upweight: float = 4.5
     angular_scale: bool = False           # one target mrad/px per sample, log-uniform in angular_range
@@ -677,9 +679,14 @@ def augment_config(cfg: TrainConfig):
     """0.96: the :class:`augment.AugmentConfig` of a training config, or None when no online augmentation is on."""
     if not (cfg.photometric or cfg.angular_scale or cfg.defocus or cfg.copy_paste or cfg.color_matrix):
         return None
+    from dataclasses import replace
     from .augment import PHOTOMETRIC_PRESETS, AngularScaleConfig, AugmentConfig
+    photo = PHOTOMETRIC_PRESETS[getattr(cfg, "photometric_strength", "mild")]
+    gp, rs = getattr(cfg, "gray_prob", None), float(getattr(cfg, "gray_red_share", 0.0) or 0.0)
+    if gp is not None or rs > 0:                         # 0.99.6: the gray options
+        photo = replace(photo, **({"grey_prob": float(gp)} if gp is not None else {}), gray_red_share=rs)
     return AugmentConfig(photometric=bool(cfg.photometric), photometric_prob=float(cfg.photometric_prob),
-                         photo=PHOTOMETRIC_PRESETS[getattr(cfg, "photometric_strength", "mild")],
+                         photo=photo,
                          angular_scale=bool(cfg.angular_scale),
                          angular=AngularScaleConfig(target_range=tuple(float(v) for v in cfg.angular_range)),
                          defocus=bool(cfg.defocus), copy_paste=bool(cfg.copy_paste),

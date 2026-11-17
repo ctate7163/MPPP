@@ -8,7 +8,7 @@ parameters for every sample.  No torch in this module; :mod:`.train` wires it in
 1. **Lighting invariance** (:func:`photometric`): exposure (log-uniform), gamma after the exposure, per-channel
    gains (white-balance jitter), a black-level offset, Poisson-Gaussian noise with sigma proportional to the square
    root of the signal, a synthetic soft-edged shadow (the label is unchanged: shadow is terrain), a haze veil and a
-   gray <-> color swap.  Applied in linear space and clipped to 8 bits at the end; invalid pixels stay 0, valid
+   gray <-> color swap (0.99.6: optionally a red-weighted gray, as a Curiosity Navcam sees).  Applied in linear space and clipped to 8 bits at the end; invalid pixels stay 0, valid
    ones never become 0.  It replaces v3's one fixed tone-curve copy per file (``images_variable/``), which was 2x
    data, not invariance, and v4.1's :func:`..dataset.random_tone` (the same recipe drawn online).
 2. **LMST weighting** (:func:`lmst_hours_from_stem`, :func:`lmst_weights`): 87 % of the frames are at 11-16 LMST;
@@ -183,6 +183,13 @@ class PhotometricConfig:
     haze_alpha: Tuple[float, float] = (0.0, 0.15)
     haze_prob: float = 0.5
     grey_prob: float = 0.25                             # gray <-> color swap (covers mono VCE frames too)
+    # 0.99.6 (Christian, 16 Nov: "add the red-weighted gray option"): a Curiosity Navcam frame is one band at
+    # 600-800 nm, so its gray is mostly what the red channel sees.  This share of the gray conversions mixes R, G, B
+    # with random weights around gray_red_mean (a Dirichlet draw, tighter for a larger gray_red_concentration)
+    # instead of the Rec. 601 luma.  0 = the luma only, as before (the same draws for the same seed).
+    gray_red_share: float = 0.0
+    gray_red_mean: Tuple[float, float, float] = (0.70, 0.25, 0.05)
+    gray_red_concentration: float = 40.0
 
 
 PHOTOMETRIC_STRONG = PhotometricConfig(exposure_range=(0.4, 2.5), exposure_prob=0.8, gamma_range=(0.6, 1.8),
@@ -243,9 +250,13 @@ def photometric(rgb: np.ndarray, valid: np.ndarray, rng, cfg: PhotometricConfig 
         x += rng.standard_normal(x.shape).astype(np.float32) * sig
         p["noise_sigma"] = s
     if rng.random() < cfg.grey_prob:
+        w = (0.299, 0.587, 0.114)                       # Rec. 601 luma
+        if cfg.gray_red_share > 0 and rng.random() < cfg.gray_red_share:      # no extra draw when the share is 0
+            w = tuple(float(v) for v in rng.dirichlet(np.asarray(cfg.gray_red_mean, float) * cfg.gray_red_concentration))
+            p["gray_weights"] = list(w)
         # elementwise, not a BLAS matmul: on the PC a (H, W, 3) @ (3,) through MKL aborted the process (9 Nov, with
         # torch's OpenMP loaded in the same test session)
-        gray = 0.299 * x[..., 0] + 0.587 * x[..., 1] + 0.114 * x[..., 2]
+        gray = w[0] * x[..., 0] + w[1] * x[..., 1] + w[2] * x[..., 2]
         x = np.repeat(gray[..., None], 3, axis=2)
         p["grey"] = True
     out = np.clip(np.rint(np.clip(x, 0.0, 1.0) * 255.0), 1, 255).astype(np.uint8)

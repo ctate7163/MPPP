@@ -100,6 +100,11 @@ def _parser() -> argparse.ArgumentParser:
                     help="10 Nov: mild (default: exposure x0.7-1.15 on half the samples, gamma 0.85-1.2) or strong "
                          "(v4.4: exposure x0.4-2.5, gamma 0.6-1.8)")
     ap.add_argument("--photometric-prob", type=float, default=0.5, help="share of the samples (v4.4: 0.9)")
+    ap.add_argument("--gray-prob", type=float, default=None, metavar="P",
+                    help="0.99.6: share of the photometric samples made gray (default: the preset's 0.25)")
+    ap.add_argument("--gray-red", type=float, default=0.0, metavar="SHARE",
+                    help="0.99.6: share of those grays mixed mostly from red (R 0.70, G 0.25, B 0.05 on average, "
+                         "random per sample), as a Curiosity Navcam sees (600-800 nm); 0 = Rec. 601 luma only")
     ap.add_argument("--lmst-sampler", action="store_true", help="early / late LMST frames drawn 4.5x more often")
     ap.add_argument("--lmst-upweight", type=float, default=4.5)
     ap.add_argument("--angular-scale", action="store_true", help="one target mrad/px per sample (0.08-1.2)")
@@ -150,6 +155,10 @@ def _main(ap: argparse.ArgumentParser, a) -> int:
             a.color_matrix = r["color_matrix"]
         if a.quad_split_above is None and r.get("quad_split_above"):
             a.quad_split_above = int(r["quad_split_above"])
+    if (a.gray_red or a.gray_prob is not None) and not a.photometric:
+        ap.error("--gray-prob / --gray-red act inside the lighting augmentation: add --photometric (or --recipe A, B, C)")
+    if not 0.0 <= a.gray_red <= 1.0 or (a.gray_prob is not None and not 0.0 <= a.gray_prob <= 1.0):
+        ap.error("--gray-prob and --gray-red are shares from 0 to 1")
     if a.photometric:
         a.tone_prob = 0.0                                   # the online photometric augmentation replaces the tone curve
     if a.write_test_list:
@@ -217,7 +226,8 @@ def _main(ap: argparse.ArgumentParser, a) -> int:
                           hflip=not a.no_hflip, zoom_max=a.zoom_max, zoom_prob=0.0 if a.zoom_pairs else a.zoom_prob,
                           tone_prob=a.tone_prob, zoom_pairs=bool(a.zoom_pairs), seed=a.seed,
                           photometric=a.photometric, photometric_prob=a.photometric_prob,
-                          photometric_strength=a.photometric_strength, lmst_sampler=a.lmst_sampler, lmst_upweight=a.lmst_upweight,
+                          photometric_strength=a.photometric_strength, gray_prob=a.gray_prob, gray_red_share=a.gray_red,
+                          lmst_sampler=a.lmst_sampler, lmst_upweight=a.lmst_upweight,
                           angular_scale=a.angular_scale, angular_range=tuple(a.angular_range), defocus=a.defocus,
                           copy_paste=a.copy_paste, color_matrix=cm, family_batches=a.family_batches,
                           train_families=a.train_families, test_list=a.test_list)
