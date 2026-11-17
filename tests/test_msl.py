@@ -207,3 +207,19 @@ def test_example_falls_back_to_the_zip_at_the_first_pds_failure(tmp_path, monkey
         zf.writestr("datadrive/00461/ids/rdr/ncam/x.IMG", b"x")
     d = E.fetch_example(tmp_path / "ex", url=zp.as_uri(), get=get)
     assert len(asked) == 2 and (d / "datadrive" / "00461" / "ids" / "rdr" / "ncam" / "x.IMG").is_file()
+
+
+def test_msl_blocks_sit_with_the_mars2020_blocks(monkeypatch, capsys):
+    """0.99.12 (Christian, 17 Nov 2026: "put the msl blocks in the rover_blocks folder. Use the naming convention
+    D:/rover_blocks/msl_sol_0{sol start}_{block name}"): the folder from the first sol and the block's name; the Mars
+    2020 folder parser does not take it for one of its blocks."""
+    from rpp_studies.msl import block as B
+    from rpp.waypoints.sites import parse_work_folder
+    assert B.block_folder_name(124, "yellowknife_bay") == "msl_sol_0124_yellowknife_bay"
+    assert B.block_folder_name(3047, "Mont Mercou") == "msl_sol_3047_mont_mercou"
+    monkeypatch.setenv("RPP_SCAPES", "/blocks")
+    assert B.main(["where", "--sols", "162", "296"]) == 0
+    assert capsys.readouterr().out.strip().replace("\\", "/") == "/blocks/msl_sol_0162_yellowknife_bay"
+    assert B.main(["where", "--preset", "site87"]) == 0
+    assert capsys.readouterr().out.strip().replace("\\", "/") == "/blocks/msl_sol_3047_mont_mercou"
+    assert parse_work_folder("/blocks/msl_sol_0162_yellowknife_bay") == (None, False)

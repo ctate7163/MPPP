@@ -102,3 +102,46 @@ def test_card_check_and_the_single_sites_options(tmp_path, monkeypatch):
     assert p.parse_args(["single-sites", "--upload", "--host", "github", "--no-hf-record"]).hf_record is False
     r = hf.check("someone/panos", timeout=0.01)          # the sandbox cannot reach it: a clear "no", not an exception
     assert r["ok"] is False and r["url"].endswith("/resolve/main/README.md")
+
+
+class MovingApi(FakeApi):
+    """0.99.12: a hub that holds the dataset of the earlier name."""
+    def __init__(self, existing=("ctate7163/rpv-panoramas",)):
+        super().__init__()
+        self.existing, self.moves = set(existing), []
+
+    def repo_exists(self, repo_id, repo_type=None):
+        return repo_id in self.existing
+
+    def move_repo(self, from_id, to_id, repo_type=None):
+        self.moves.append((from_id, to_id, repo_type))
+        self.existing.discard(from_id)
+        self.existing.add(to_id)
+
+    def create_repo(self, repo_id, repo_type=None, exist_ok=False, private=False):
+        super().create_repo(repo_id, repo_type, exist_ok, private)
+        self.existing.add(repo_id)
+
+
+def test_the_rpp_rpv_dataset_takes_over_the_earlier_one(monkeypatch):
+    """Christian, 17 Nov 2026: "there should be a separate rpp-rpv repository" - the morning's rpv-panoramas is renamed,
+    once; another dataset named by RPP_HF_DATASET is left alone; panos.json's old addresses follow."""
+    from rpp.ibr import hf
+    monkeypatch.delenv("RPP_HF_DATASET", raising=False)
+    monkeypatch.delenv("MPPP_HF_DATASET", raising=False)
+    assert hf.dataset() == "ctate7163/rpp-rpv"
+    api = MovingApi()
+    assert hf.ensure_dataset(api=api) == "ctate7163/rpp-rpv"
+    assert api.moves == [("ctate7163/rpv-panoramas", "ctate7163/rpp-rpv", "dataset")]
+    hf.ensure_dataset(api=api)                                   # the second time: nothing to move
+    assert len(api.moves) == 1
+    other = MovingApi()
+    assert hf.ensure_dataset("someone/panos", api=other) == "someone/panos" and not other.moves
+    fresh = MovingApi(existing=())                               # neither there: created
+    assert hf.ensure_dataset(api=fresh) == "ctate7163/rpp-rpv" and not fresh.moves
+    assert ("ctate7163/rpp-rpv", "dataset", False) in fresh.repos
+    e = {"id": "S", "views": {"standard": "https://huggingface.co/datasets/ctate7163/rpv-panoramas/resolve/abc/S/viewer/a.jpg"},
+         "note": "rpv-panoramas in words stays"}
+    n = hf.old_to_new(e, "ctate7163/rpp-rpv")
+    assert n["views"]["standard"] == "https://huggingface.co/datasets/ctate7163/rpp-rpv/resolve/abc/S/viewer/a.jpg"
+    assert n["note"] == e["note"]

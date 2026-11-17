@@ -46,7 +46,10 @@ Steps
   labels', the label-center residuals per site.
 
 Data go to ``D:\data\msl`` (``navcam\SOLnnnnn``, ``MSL_waypoints.json``) and stay there for later blocks; the block
-to ``D:\rover_blocks_msl\<preset name>``.
+to ``D:\rover_blocks\msl_sol_<first sol, 4 digits>_<block name>`` (0.99.12, Christian, 17 Nov 2026: "put the msl
+blocks in the rover_blocks folder. Use the naming convention D:/rover_blocks/msl_sol_0{sol start}_{block name}", as the
+Mars 2020 blocks' ``mars2020_sol_<sol>_<site>``; the Mars 2020 code reads only ``mars2020_sol_*`` folders), e.g.
+``msl_sol_0124_yellowknife_bay``; ``--sols 162 296`` makes ``msl_sol_0162_yellowknife_bay``.
 """
 from __future__ import annotations
 
@@ -67,16 +70,29 @@ from . import first_block as F
 log = logging.getLogger("rpp.msl")
 
 DEFAULT_DATA = r"D:\data\msl"
-DEFAULT_ROOT = r"D:\rover_blocks_msl"
+DEFAULT_ROOT = r"D:\rover_blocks"            # 0.99.12: with the Mars 2020 blocks (RPP_SCAPES); was D:\rover_blocks_msl
+FOLDER_PREFIX = "msl_sol_"
 NAVCAM_HEIGHT_M = 1.9                  # the Navcam above the ground (label C at about -1.9 m in the rover frame)
 LOOK_MAX_M = 40.0
 PRESETS: Dict[str, Dict[str, Any]] = {
-    "yellowknife": {"sols": (124, 302), "side": "AB", "families": "N", "sites": None, "name": "msl_yellowknife_0124_0302",
+    "yellowknife": {"sols": (124, 302), "side": "AB", "families": "N", "sites": None, "block": "yellowknife_bay",
                     "radius_m": 250.0,
                     "note": "Yellowknife Bay, sols 124-302: A-side Navcams to sol 199, B-side from sol 200"},
-    "site87": {"sols": (3047, 3056), "side": "B", "families": "N", "sites": [87], "name": "msl_site87_first",
+    "site87": {"sols": (3047, 3056), "side": "B", "families": "N", "sites": [87], "block": "mont_mercou",
                "radius_m": 50.0, "note": "the first block (Mont Mercou approach), B side"},
 }
+
+
+def blocks_root() -> Path:
+    """The folder of the MSL blocks: the Mars 2020 blocks' root (``RPP_SCAPES``, else ``D:\\rover_blocks``)."""
+    from rpp import env as rpp_env
+    return Path(rpp_env.get("RPP_SCAPES") or DEFAULT_ROOT)
+
+
+def block_folder_name(first_sol: int, block: str) -> str:
+    """``msl_sol_<first sol, 4 digits>_<block>`` (0.99.12): ``block_folder_name(124, "yellowknife_bay")`` is
+    ``msl_sol_0124_yellowknife_bay``."""
+    return f"{FOLDER_PREFIX}{int(first_sol):04d}_{str(block).strip().lower().replace(' ', '_')}"
 
 
 # ------------------------------------------------------------------------------------------------- waypoints
@@ -667,10 +683,12 @@ def report_text(man: Dict[str, Any], rep: Dict[str, Any]) -> str:
 # ------------------------------------------------------------------------------------------------- command line
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("step", choices=("waypoints", "fetch", "prepare", "align", "all"))
+    ap.add_argument("step", choices=("waypoints", "fetch", "prepare", "align", "all", "where"),
+                    help="where: print the block's folder and stop")
     ap.add_argument("--preset", default="yellowknife", choices=sorted(PRESETS))
     ap.add_argument("--data", default=DEFAULT_DATA, help=f"the MSL archive on disk (default {DEFAULT_DATA})")
-    ap.add_argument("--work", default=None, help=f"the block's folder (default {DEFAULT_ROOT}\\<preset name>)")
+    ap.add_argument("--work", default=None, help=f"the block's folder (default {DEFAULT_ROOT}\\msl_sol_<first sol>_<block>)")
+    ap.add_argument("--block", default=None, help="the block's name in its folder (default the preset's: yellowknife_bay)")
     ap.add_argument("--sols", nargs=2, type=int, default=None, help="FIRST LAST (default: the preset's)")
     ap.add_argument("--side", default=None, help="A, B or AB (default: the preset's)")
     ap.add_argument("--list", action="store_true", help="fetch: list what would come, download nothing")
@@ -692,8 +710,13 @@ def main(argv=None) -> int:
     if a.side:
         preset["side"] = a.side.upper()
     data = Path(a.data)
-    work = Path(a.work or Path(DEFAULT_ROOT) / preset["name"])
+    preset["name"] = block_folder_name(preset["sols"][0], a.block or preset["block"])
+    work = Path(a.work or blocks_root() / preset["name"])
+    if a.step == "where":                                  # 0.99.12: the batch file asks for the folder
+        print(work)
+        return 0
     work.mkdir(parents=True, exist_ok=True)
+    print(f"block folder: {work}")
     wp = None
     if a.step in ("waypoints", "prepare", "all"):
         try:

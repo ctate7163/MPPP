@@ -5,8 +5,8 @@ Christian, 16 Nov 2026: "Prepare a test msl block".  The v0p99 plan (section 3.3
 the B-side cameras), where the sample in ``D:\\code\\MPPP\\data\\msl`` is from.
 
     python -m rpp_studies.msl.first_block fetch   --sols 3047 3082 --site 87 [--list]      (on the PC: PDS)
-    python -m rpp_studies.msl.first_block prepare --work D:\\rover_blocks_msl\\msl_site87_first
-    python -m rpp_studies.msl.first_block align   --work D:\\rover_blocks_msl\\msl_site87_first
+    python -m rpp_studies.msl.first_block prepare --work D:\\rover_blocks\\msl_sol_3047_mont_mercou
+    python -m rpp_studies.msl.first_block align   --work D:\\rover_blocks\\msl_sol_3047_mont_mercou
     python -m rpp_studies.msl.first_block all     --sols 3047 3082 --site 87                (the three in turn)
 
 **fetch.**  The Navcam RDRs (``MSLNAV_1XXX``) of the sols from the PDS Imaging Node, one folder per sol under
@@ -54,8 +54,9 @@ import numpy as np
 log = logging.getLogger("rpp_studies.msl")
 
 DEFAULT_DATA = r"D:\data\msl"
-DEFAULT_ROOT = r"D:\rover_blocks_msl"
-DEFAULT_NAME = "msl_site87_first"
+DEFAULT_ROOT = r"D:\rover_blocks"            # 0.99.12: msl_sol_<first sol>_<block> with the Mars 2020 blocks
+DEFAULT_BLOCK = "mont_mercou"
+DEFAULT_NAME = "msl_sol_3047_mont_mercou"
 BASES = ("https://planetarydata.jpl.nasa.gov/img/data/msl/MSLNAV_1XXX",
          "https://pds-imaging.jpl.nasa.gov/data/msl/MSLNAV_1XXX")
 # DATA holds the newest version of each product (V2 from 2021); the volume's V1 products of releases 1-17 moved to
@@ -527,6 +528,7 @@ def main(argv=None) -> int:
     ap.add_argument("--work", default=None, help=f"the block's folder (default {DEFAULT_ROOT}\\{DEFAULT_NAME})")
     ap.add_argument("--sols", nargs="+", type=int, default=[3047, 3082], help="FIRST LAST, or a list (default 3047 3082)")
     ap.add_argument("--site", type=int, default=87)
+    ap.add_argument("--block", default=DEFAULT_BLOCK, help=f"the block's name in its folder (default {DEFAULT_BLOCK})")
     ap.add_argument("--side", default="B", help="the computer side of the cameras (A or B; '' for both)")
     ap.add_argument("--drives", nargs="*", type=int, default=None, help="fetch: only these drives")
     ap.add_argument("--list", action="store_true", help="fetch: list what would come, download nothing")
@@ -537,7 +539,11 @@ def main(argv=None) -> int:
     ap.add_argument("--refine-intrinsics", action="store_true", help="align: refine the focal length and distortion")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
-    work = Path(a.work or Path(DEFAULT_ROOT) / DEFAULT_NAME)
+    if a.work:
+        work = Path(a.work)
+    else:                                                  # 0.99.12: D:\rover_blocks\msl_sol_<first sol>_<block>
+        from .block import block_folder_name, blocks_root
+        work = blocks_root() / block_folder_name(min(_sols(a.sols)), a.block)
     side = a.side.upper() or None
     rc = 0
     if a.step in ("fetch", "all"):

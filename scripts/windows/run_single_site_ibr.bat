@@ -15,7 +15,7 @@ REM               run_single_site_ibr.bat --dry-run            the commands, not
 REM               run_single_site_ibr.bat Sol0052_S003D2046 --no-upload  the run without the upload at its end
 REM               run_single_site_ibr.bat --publish-only                 no rendering: publish and push what is there
 REM    0.97.24: when the run is done its panoramas are published and uploaded (--upload is given here; --no-upload
-REM    after it wins).  0.99.3: the pictures go to the Hugging Face dataset ctate7163/rpv-panoramas, station by station,
+REM    after it wins).  0.99.3: the pictures go to the Hugging Face dataset ctate7163/rpp-rpv, station by station,
 REM    and panos.json to the viewer's GitHub checkout (D:\code\RPV), committed and pushed; --host github puts the
 REM    pictures into that checkout as before.  A push that fails is tried three times and goes up with the next run:
 REM    see "NOT (all) uploaded" at the end and upload_pending.json in the viewer's folder.
