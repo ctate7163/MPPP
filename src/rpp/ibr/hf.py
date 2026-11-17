@@ -116,7 +116,7 @@ def card(repo: str) -> str:
     from .. import __version__
     return f"""---
 license: {licence()}
-pretty_name: Mars rover panorama viewer (RPV) panoramas
+pretty_name: Rover Photogrammetry Viewer (RPV) panoramas
 tags:
 - mars
 - perseverance
@@ -126,11 +126,11 @@ tags:
 - photogrammetry
 ---
 
-# Mars rover panorama viewer (RPV) panoramas
+# Rover Photogrammetry Viewer (RPV) panoramas
 
 Omnidirectional stereo (ODS) panoramas of Mars 2020 Perseverance rover stations, made with the Rover Photogrammetry
 Pipeline (RPP, https://github.com/ctate7163/rpp) by Christian Tate (Malin Space Science Systems).
-They are shown by the Mars rover panorama viewer: {PAGE_ORIGIN}/rpv/
+They are shown by the Rover Photogrammetry Viewer: {PAGE_ORIGIN}/rpv/
 
 **Image credit:** NASA/JPL-Caltech/MSSS (Navcam); NASA/JPL-Caltech/MSSS/ASU (Mastcam-Z).
 

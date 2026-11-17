@@ -29,21 +29,39 @@ Steps
   perspective lens with k1, k2, p1, p2, k3, fitted to each frame's label CAHVOR (:func:`rpp.calib.labelfit.
   opencv5_from_cahvore`; about 0.02 px rms on the Navcam) and the median taken.  ``--camera fisheye`` keeps the
   first block's THIN_PRISM_FISHEYE.
-* **masks** - the mask CNN (``--mask-model``, default the released ``rpp_mask_v3``) on every frame, and MIPL's
-  rover mask (MXY) where the archive has one.  COLMAP's mask leaves out what either calls rover (``--mask both``;
-  ``cnn`` or ``mxy`` for one).  For the training set the CNN's masks are written beside the images in the layout of
+* **masks** - the mask CNN (``--mask-model``, default the released ``rpp_mask_v3``) on every frame; the mask is the
+  image's alpha channel (gray + alpha PNG) and ``masks\\`` for COLMAP (0.99.16; ``--mask both`` / ``mxy`` also fetch
+  and use MIPL's rover mask, MXY).  For the training set the CNN's masks are written beside the images in the layout of
   a mask training set (``mask_candidates\images\<stem>.png`` RGBA, ``masks\<stem>.png`` 255 = terrain), with the MXY
   mask, an overlay and ``review.csv`` (frames where the CNN and MXY disagree most first) to clean them by.
 * **pairs** - an image pair is matched when the two cameras are within ``--pair-distance-m`` and their views meet on
   the ground: the point where each optical axis meets the ground 1.9 m below the camera (at most 40 m out) lies
   inside the other image, or the middle of the two such points lies inside both.  Both eyes of a stereo pair always.  At most ``--pairs-per-image`` per image (nearest
   first).  ``pairs.txt``.
-* **align** - SIFT with the masks; the pairs matched; the incremental mapper with the label cameras held; the model
-  put into the block frame by a similarity onto the label camera centers (RANSAC, ``--max-error-m``); then the
-  bundle adjustment with the cameras free (focal lengths, principal points, k1, k2, p1, p2, k3; k4-k6 held at zero),
-  twice, with the observations above 4 px dropped in between.  ``report.txt``: frames registered per camera,
-  reprojection error, each camera's refined parameters against its CAHVOR start, the stereo baselines against the
-  labels', the label-center residuals per site.
+* **align** - SIFT with the masks; the pairs matched; the incremental mapper with the start cameras held; the model
+  put into the block frame by a similarity onto the label camera centers (RANSAC, ``--max-error-m``); then, 0.99.16
+  (Christian, 17 Nov 2026: "hold the principal point on the first stage. Solve A pair rig and B pair rig separately"),
+  the bundle adjustment in stages, each twice with the observations above 4 px dropped in between:
+  1. *free images* - focal lengths and k1, k2, p1, p2, k3 free; the principal points held (with a free attitude per
+     image a principal point is not observable: on 17 Nov NLA's went 15 px); k4-k6 held at zero;
+  2. *stereo rigs* - each side's pair (NLA + NRA, NLB + NRB, and the front Hazcams' FLA + FRA, FLB + FRB) becomes one
+     COLMAP rig: one right-from-left pose per side, solved with the cameras, principal points held.  These are the
+     block's cameras;
+  3. *check* - on a copy, the principal points freed too: how far they move and what that gains.
+  The model is then scaled so that the Navcam rigs' baselines are the labels' (``--scale labels`` keeps the label
+  positions' scale): the baseline is hardware, the label station separations of a small block are not good to 5 %.
+  ``report.txt``: frames registered per camera, each stage's reprojection error, each camera's parameters against
+  its start, its residuals by radius, each rig against the labels' pair, the scale, the label-center residuals per
+  site, and the Navcam verdict (:func:`verdict`).  ``cmods_candidate\\MSL_*.json`` are the model files.
+* **finish** - the stages again from the mapper's model (``sparse\\0``), without matching.
+* **promote** - the Navcam model files into the camera models in use (``RPP_CMODS``), as the Mars 2020 models go
+  (:func:`rpp.calib.models.promote`: checked, copied, a line in ``CHANGES.md``), when the verdict is ok
+  (``--promote-if-ok`` on align does it at once; ``--force`` past a failed verdict).  The next ``prepare`` starts from
+  promoted cameras (``--label-cameras``: from the labels).
+
+Front Hazcams (0.99.16, "please include front hazcam images in the msl block"): family F of the preset; fetched from
+the Hazcam volume (MSLHAZ_1XXX) into ``D:\\data\\msl\\hazcam\\SOLnnnnn``; 124 degrees wide, so their COLMAP camera is the
+fisheye one (THIN_PRISM_FISHEYE fitted to the label CAHVORE), never the perspective one.
 
 Data go to ``D:\data\msl`` (``navcam\SOLnnnnn``, ``MSL_waypoints.json``) and stay there for later blocks; the block
 to ``D:\rover_blocks\msl_sol_<first sol, 4 digits>_<block name>`` (0.99.12, Christian, 17 Nov 2026: "put the msl
@@ -73,9 +91,18 @@ DEFAULT_DATA = r"D:\data\msl"
 DEFAULT_ROOT = r"D:\rover_blocks"            # 0.99.12: with the Mars 2020 blocks (RPP_SCAPES); was D:\rover_blocks_msl
 FOLDER_PREFIX = "msl_sol_"
 NAVCAM_HEIGHT_M = 1.9                  # the Navcam above the ground (label C at about -1.9 m in the rover frame)
+CAMERA_HEIGHT_M = {"N": NAVCAM_HEIGHT_M, "F": 0.68, "R": 0.78}     # 0.99.16: the Hazcams sit low on the body
 LOOK_MAX_M = 40.0
+# 0.99.16 (Christian, 17 Nov 2026: "hold the principal point on the first stage. Solve A pair rig and B pair rig
+# separately. If the camera models look good, then promote the MSL navcams the same way we do for Mars 2020"):
+# the parameters held in the bundle adjustments, by COLMAP model (indices into params)
+HELD_ZERO = {"FULL_OPENCV": (9, 10, 11), "THIN_PRISM_FISHEYE": (10, 11)}       # k4-k6; sx1, sy1 (as the Mars 2020 form)
+PRINCIPAL_POINT = (2, 3)
+ALPHA_MASKED = 128                     # the mask in the image's alpha channel, as the Mars 2020 blocks (0.5)
+MODEL_FORM = "msl-brown-v1"
+RADIAL_BINS = ((0.0, 0.3), (0.3, 0.6), (0.6, 0.8), (0.8, 1.01))
 PRESETS: Dict[str, Dict[str, Any]] = {
-    "yellowknife": {"sols": (124, 302), "side": "AB", "families": "N", "sites": None, "block": "yellowknife_bay",
+    "yellowknife": {"sols": (124, 302), "side": "AB", "families": "NF", "sites": None, "block": "yellowknife_bay",
                     "radius_m": 250.0,
                     "note": "Yellowknife Bay, sols 124-302: A-side Navcams to sol 199, B-side from sol 200"},
     "site87": {"sols": (3047, 3056), "side": "B", "families": "N", "sites": [87], "block": "mont_mercou",
@@ -246,7 +273,7 @@ def select(frames: List[Dict[str, Any]], radius_m: Optional[float], anchor_site:
 def group_camera(infos: List[Dict[str, Any]], kind: str = "opencv5", step: float = 16.0) -> Dict[str, Any]:
     """The COLMAP camera of a camera group (NLA, NRB ...) from its frames' label models: ``opencv5`` (FULL_OPENCV with
     k4-k6 = 0) or ``fisheye`` (THIN_PRISM_FISHEYE, as the first block).  Median over the distinct label models."""
-    if kind == "fisheye":
+    if kind == "fisheye" or infos[0].get("family", "N") != "N":          # 0.99.16: the Hazcams (124 degrees) always
         return F.group_camera(infos, step=step)
     from rpp.calib.labelfit import opencv5_from_cahvore
     from rpp.cmod import CameraModel
@@ -270,6 +297,23 @@ def group_camera(infos: List[Dict[str, Any]], kind: str = "opencv5", step: float
             "source": "label CAHVOR fit (rpp.calib.labelfit.opencv5_from_cahvore), median"}
 
 
+def promoted_camera(group: str, cam: Dict[str, Any]) -> Dict[str, Any]:
+    """``cam`` (the label fit) with the promoted model's parameters when the camera models in use hold ``MSL_<group>.json``
+    of the same COLMAP model and size (0.99.16: a promoted camera is the start of the next block)."""
+    try:
+        from rpp.calib import models as M
+        f = M._folder(None) / f"MSL_{group}.json"
+        if not f.is_file():
+            return cam
+        d = json.loads(f.read_text(encoding="utf-8"))
+    except Exception:                                                  # noqa: BLE001
+        return cam
+    if d.get("model") != cam["model"] or (d.get("width"), d.get("height")) != (cam["width"], cam["height"]):
+        return cam
+    return dict(cam, label_params=cam["params"], params=[float(x) for x in d["params"]],
+                source=f"promoted {f.name} ({d.get('source', '')})"[:200])
+
+
 # ------------------------------------------------------------------------------------------------- pairs
 def _axis_and_look(r: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
     R = np.asarray(r["R_w2c"], float)
@@ -277,7 +321,7 @@ def _axis_and_look(r: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
     a = R[2]                                   # the optical axis in the block frame
     t = LOOK_MAX_M
     if a[2] < -1e-3:
-        t = min(t, NAVCAM_HEIGHT_M / -a[2])
+        t = min(t, CAMERA_HEIGHT_M.get(r.get("family", "N"), NAVCAM_HEIGHT_M) / -a[2])
     return a, C + t * a
 
 
@@ -364,9 +408,12 @@ def _rover_enu(img: Path) -> Optional[List[float]]:
         return None
 
 
-def write_masks(work: Path, frames: List[Dict[str, Any]], mxy: Dict[str, Path], mask_mode: str = "both",
+def write_masks(work: Path, frames: List[Dict[str, Any]], mxy: Dict[str, Path], mask_mode: str = "cnn",
                 model: Optional[str] = "rpp_mask_v3", candidates: bool = True) -> Dict[str, Any]:
-    """Images, COLMAP masks and the training candidates (see the module's text)."""
+    """Images, COLMAP masks and the training candidates (see the module's text).  0.99.16 (Christian, 17 Nov 2026: "for
+    msl images, use the current mask cnn model and save them as the alpha channel. no need to download the official
+    hardware masks"): the default is the CNN alone, and each image is a gray + alpha PNG whose alpha is the mask
+    (255 terrain, ``ALPHA_MASKED`` where masked, as the Mars 2020 blocks); ``masks\\`` stays for COLMAP."""
     import cv2
     from rpp.labels import read_pds
     for d in ("images", "masks"):
@@ -387,7 +434,6 @@ def write_masks(work: Path, frames: List[Dict[str, Any]], mxy: Dict[str, Path], 
         r["image"] = name
         _, a = read_pds(r["path"])
         img8 = F.stretch8(np.squeeze(a))
-        cv2.imwrite(str(work / "images" / name), img8)
         rover = np.zeros(img8.shape, bool)
         row: Dict[str, Any] = {"stem": r["stem"], "camera": r["group"], "sol": r["sol"], "site": r["site"], "drive": r["drive"]}
         m = mxy.get(r["stem"])
@@ -423,6 +469,9 @@ def write_masks(work: Path, frames: List[Dict[str, Any]], mxy: Dict[str, Path], 
                     cv2.drawContours(ov, cs, -1, (0, 255, 0), 1)
                 cv2.imwrite(str(cand / "overlays" / (r["stem"] + ".jpg")), ov, [cv2.IMWRITE_JPEG_QUALITY, 85])
         cv2.imwrite(str(work / "masks" / (name + ".png")), np.where(rover, 0, 255).astype(np.uint8))
+        masked = infer is not None or mx is not None
+        cv2.imwrite(str(work / "images" / name),                   # gray + alpha (LA): the mask travels with the image
+                    np.dstack([img8, np.where(rover, ALPHA_MASKED, 255).astype(np.uint8)]) if masked else img8)
         r["mask_rover_pct"] = round(100 * float(rover.mean()), 2)
         r["mask"] = mask_mode if (infer is not None or mx is not None) else None
         rows.append(row)
@@ -459,15 +508,16 @@ def _cuda() -> bool:
         return False
 
 
-def prepare(work: Path, data: Path, preset: Dict[str, Any], camera: str = "opencv5", mask_mode: str = "both",
+def prepare(work: Path, data: Path, preset: Dict[str, Any], camera: str = "opencv5", mask_mode: str = "cnn",
             mask_model: Optional[str] = "rpp_mask_v3", radius_m: Optional[float] = None, pair_distance_m: float = 60.0,
-            pairs_per_image: int = 40, wp: Optional[Dict[str, Any]] = None, limit: Optional[int] = None) -> Dict[str, Any]:
+            pairs_per_image: int = 40, wp: Optional[Dict[str, Any]] = None, limit: Optional[int] = None,
+            label_cameras: bool = False) -> Dict[str, Any]:
     work = Path(work)
     work.mkdir(parents=True, exist_ok=True)
     sols = list(range(int(preset["sols"][0]), int(preset["sols"][1]) + 1))
     infos, mxy = scan(Path(data), sols, preset["side"], preset["families"], preset.get("sites"), cache=work / "labels_cache.json")
     if not infos:
-        raise ValueError(f"no full-frame Navcam RAD of sols {sols[0]}-{sols[-1]} under {data} - run the fetch first")
+        raise ValueError(f"no full-frame RAD of sols {sols[0]}-{sols[-1]} under {data} - run the fetch first")
     origin, site_rep = site_origins(infos, wp=wp)
     frames = place(infos, origin)
     frames, sel = select(frames, radius_m if radius_m is not None else preset.get("radius_m"), site_rep.get("anchor"))
@@ -477,6 +527,8 @@ def prepare(work: Path, data: Path, preset: Dict[str, Any], camera: str = "openc
     for r in frames:
         groups.setdefault(r["group"], []).append(r)
     cameras = {g: group_camera(v, camera) for g, v in sorted(groups.items())}
+    if not label_cameras:
+        cameras = {g: promoted_camera(g, c) for g, c in cameras.items()}
     mrep = write_masks(work, frames, mxy, mask_mode, mask_model)
     pairs = image_pairs(frames, cameras, pair_distance_m, pairs_per_image)
     (work / "pairs.txt").write_text("".join(f"{a} {b}\n" for a, b in pairs), encoding="utf-8")
@@ -489,6 +541,7 @@ def prepare(work: Path, data: Path, preset: Dict[str, Any], camera: str = "openc
            "images": [{k: r.get(k) for k in keep} for r in frames]}
     (work / "cameras.json").write_text(json.dumps(cameras, indent=1), encoding="utf-8")
     (work / "manifest.json").write_text(json.dumps(man, indent=1, default=float), encoding="utf-8")
+    F.write_open_in_colmap(work)                               # 0.99.15: there from the start (it opens the model once made)
     log.info("prepare: %d frames (%s), %d stations, sites %s (anchor %s), %d pairs; cameras %s", len(frames),
              sel.get("by_camera"), sel.get("stations"), site_rep.get("chained"), site_rep.get("anchor"), len(pairs),
              ", ".join(f"{g} ({c['frames']} frames, fit {c['fit_rms_px_max']:.3f} px)" for g, c in cameras.items()))
@@ -496,16 +549,19 @@ def prepare(work: Path, data: Path, preset: Dict[str, Any], camera: str = "openc
 
 
 # ------------------------------------------------------------------------------------------------- align
-def refine_cameras(rec, man: Dict[str, Any], rounds: int = 2, max_error_px: float = 4.0) -> List[Dict[str, Any]]:
-    """Bundle adjustment with every camera free (fx fy cx cy k1 k2 p1 p2 k3) and k4-k6 held at zero (a subset
-    manifold on the camera block); two images' poses held for the gauge.  Between rounds the observations above
-    ``max_error_px`` are dropped."""
+def refine_cameras(rec, man: Dict[str, Any], rounds: int = 2, max_error_px: float = 4.0, hold_pp: bool = False,
+                   rigs: bool = False) -> List[Dict[str, Any]]:
+    """Bundle adjustment with every camera's focal lengths and distortion free and the terms of ``HELD_ZERO`` held (a
+    subset manifold on the camera block); ``hold_pp``: the principal points held too (0.99.16).  ``rigs``: the stereo
+    rigs' sensor-from-rig poses free (one per rig, :func:`add_rigs`).  Two frames' poses are held for the gauge.
+    Between rounds the observations above ``max_error_px`` are dropped."""
     import pycolmap
     import pyceres
     out = []
     for k in range(int(rounds)):
         opts = pycolmap.BundleAdjustmentOptions()
         opts.refine_focal_length = opts.refine_principal_point = opts.refine_extra_params = True
+        opts.refine_sensor_from_rig = bool(rigs)
         cfg = pycolmap.BundleAdjustmentConfig()
         ids = sorted(rec.reg_image_ids())
         for i in ids:
@@ -517,24 +573,344 @@ def refine_cameras(rec, man: Dict[str, Any], rounds: int = 2, max_error_px: floa
         held = []
         for cid in list(rec.cameras):
             cam = rec.camera(cid)                      # the camera in the reconstruction (its params are the block)
-            if cam.model_name == "FULL_OPENCV":
-                pa = cam.params
-                if ba.problem.has_parameter_block(pa):
-                    m = pyceres.SubsetManifold(12, [9, 10, 11])
-                    ba.problem.set_manifold(pa, m)
-                    held.append((pa, m))           # the problem does not own the manifold: kept alive to the solve
+            const = list(HELD_ZERO.get(cam.model_name, ())) + (list(PRINCIPAL_POINT) if hold_pp else [])
+            pa = cam.params
+            if const and ba.problem.has_parameter_block(pa):
+                m = pyceres.SubsetManifold(len(pa), sorted(const))
+                ba.problem.set_manifold(pa, m)
+                held.append((pa, m))               # the problem does not own the manifold: kept alive to the solve
         summ = ba.solve()
         del held
         n_drop = 0
         if k < rounds - 1:
             n_drop = int(pycolmap.ObservationManager(rec).filter_all_points3D(float(max_error_px), 1.5))
         out.append({"round": k + 1, "reprojection_px": float(rec.compute_mean_reprojection_error()), "dropped": n_drop,
+                    "hold_pp": bool(hold_pp), "rigs": bool(rigs),
                     "cost": [float(getattr(summ, "initial_cost", float("nan"))), float(getattr(summ, "final_cost", float("nan")))]})
     return out
 
 
+# ------------------------------------------------------------------------------------------------- rigs (0.99.16)
+def rig_sides(man: Dict[str, Any]) -> List[Tuple[str, str]]:
+    """The stereo rigs of the block: (family, side) with both eyes among the cameras - ("N", "A"), ("N", "B"),
+    ("F", "B") ...  Each is solved on its own (Christian: "Solve A pair rig and B pair rig separately")."""
+    g = set(man["cameras"])
+    return sorted({(x[0], x[2]) for x in g if x[0] + "L" + x[2] in g and x[0] + "R" + x[2] in g})
+
+
+def add_rigs(rec, man: Dict[str, Any], db_path: Optional[Path]) -> Dict[str, Any]:
+    """Each side's stereo pair as a COLMAP rig (left eye the reference): the two images of a pair (the same name but
+    for the eye) become one frame, and the right-from-left pose - one per rig - starts from the model's own pairs
+    (COLMAP's ``apply_rig_config``, which also writes the rigs and frames into the database).  Returns
+    {"<family><side>": {"rig_id", "pairs", "singles"}}."""
+    import pycolmap
+    sides = rig_sides(man)
+    if not sides:
+        return {}
+    cfg = [pycolmap.RigConfig(cameras=[pycolmap.RigConfigCamera(ref_sensor=True, image_prefix=f"{f}L{sd}_"),
+                                        pycolmap.RigConfigCamera(ref_sensor=False, image_prefix=f"{f}R{sd}_")])
+           for f, sd in sides]
+    tmp = None
+    if db_path is None or not Path(db_path).is_file():           # a model without its database (tests, a re-finish)
+        import tempfile
+        tmp = Path(tempfile.mkdtemp(prefix="rpp_msl_rig_")) / "rig.db"
+        db = pycolmap.Database.open(str(tmp))
+        for c in rec.cameras.values():
+            db.write_camera(c, use_camera_id=True)
+        for r in rec.rigs.values():
+            db.write_rig(r, use_rig_id=True)
+        for iid, im in rec.images.items():
+            db.write_image(pycolmap.Image(name=im.name, camera_id=im.camera_id, image_id=iid), use_image_id=True)
+        for fid, fr in rec.frames.items():
+            nf = pycolmap.Frame(frame_id=fid, rig_id=fr.rig_id)
+            for d in fr.data_ids:
+                nf.add_data_id(d)
+            db.write_frame(nf, use_frame_id=True)
+    else:
+        db = pycolmap.Database.open(str(db_path))
+    try:
+        pycolmap.apply_rig_config(cfg, db, rec)
+    finally:
+        db.close()
+    out: Dict[str, Any] = {}
+    cam_group = _camera_groups(rec, man)
+    for rid, rig in rec.rigs.items():
+        g = cam_group.get(int(rig.ref_sensor_id.id), "")
+        if not list(rig.non_ref_sensors):
+            continue
+        fr = [f for f in rec.frames.values() if f.rig_id == rid and f.has_pose()]
+        out[g[0] + g[2]] = {"rig_id": int(rid), "pairs": sum(1 for f in fr if f.num_data_ids() == 2),
+                            "singles": sum(1 for f in fr if f.num_data_ids() == 1)}
+    return out
+
+
+def _camera_groups(rec, man: Dict[str, Any]) -> Dict[int, str]:
+    grp = {r["image"]: r["group"] for r in man["images"]}
+    out: Dict[int, str] = {}
+    for im in rec.images.values():
+        out.setdefault(int(im.camera_id), grp.get(im.name, "?"))
+    return out
+
+
+def label_rigs(man: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """The labels' right-from-left pose of each rig: {"NA": {"pairs", "baseline_m", "R_sensor_from_ref",
+    "t_sensor_from_ref_m"}} - medians over the pairs (the label CAHVOR pair)."""
+    pairs: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for r in man["images"]:
+        pairs.setdefault(r["pair_key"], {})[r["eye"]] = r
+    acc: Dict[str, List[Tuple[np.ndarray, np.ndarray]]] = {}
+    for d in pairs.values():
+        if "L" in d and "R" in d:
+            Rl, Rr = np.asarray(d["L"]["R_w2c"], float), np.asarray(d["R"]["R_w2c"], float)
+            t = -(Rr @ (np.asarray(d["R"]["C_block_m"], float) - np.asarray(d["L"]["C_block_m"], float)))
+            acc.setdefault(d["L"]["family"] + d["L"]["side"], []).append((Rr @ Rl.T, t))
+    out = {}
+    for k, v in acc.items():
+        t = np.median([x[1] for x in v], axis=0)
+        U, _, Vt = np.linalg.svd(np.mean([x[0] for x in v], axis=0))
+        out[k] = {"pairs": len(v), "baseline_m": float(np.linalg.norm(t)), "t_sensor_from_ref_m": [float(x) for x in t],
+                  "R_sensor_from_ref": (U @ np.diag([1, 1, np.linalg.det(U @ Vt)]) @ Vt).tolist()}
+    return out
+
+
+def _angles_mdeg(R: np.ndarray) -> List[float]:
+    """Small rotation as (pitch about x, yaw about y, roll about z) of the camera frame, mdeg."""
+    R = np.asarray(R, float)
+    return [float(1e3 * np.degrees(x)) for x in (0.5 * (R[2, 1] - R[1, 2]), 0.5 * (R[0, 2] - R[2, 0]), 0.5 * (R[1, 0] - R[0, 1]))]
+
+
+def pair_scatter(rec, man: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Before the rigs: each pair's own right-from-left rotation against the labels' (how constant the pair is when
+    every image is free), per rig: {"NA": {"pairs", "sd_mdeg": [pitch, yaw, roll], "baseline_sd_ppm"}}."""
+    lab = label_rigs(man)
+    by = {im.name: im for im in rec.images.values()}
+    pairs: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for r in man["images"]:
+        if r["image"] in by:
+            pairs.setdefault(r["pair_key"], {})[r["eye"]] = r
+    acc: Dict[str, List[Tuple[List[float], float]]] = {}
+    for d in pairs.values():
+        if "L" in d and "R" in d:
+            k = d["L"]["family"] + d["L"]["side"]
+            L, R = by[d["L"]["image"]], by[d["R"]["image"]]
+            rel = R.cam_from_world().rotation.matrix() @ L.cam_from_world().rotation.matrix().T
+            b = float(np.linalg.norm(np.asarray(L.projection_center()) - np.asarray(R.projection_center())))
+            acc.setdefault(k, []).append((_angles_mdeg(rel @ np.asarray(lab[k]["R_sensor_from_ref"]).T), b))
+    out = {}
+    for k, v in acc.items():
+        a, b = np.array([x[0] for x in v]), np.array([x[1] for x in v])
+        out[k] = {"pairs": len(v), "sd_mdeg": [round(float(x), 1) for x in a.std(axis=0)],
+                  "baseline_sd_ppm": round(float(1e6 * b.std() / b.mean()), 0)}
+    return out
+
+
+def solved_rigs(rec, man: Dict[str, Any], rigs: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """The solved right-from-left pose of each rig with its change from the labels': rotation (pitch, yaw, roll, mdeg),
+    baseline (model, label, ratio)."""
+    lab = label_rigs(man)
+    out = {}
+    for k, info in rigs.items():
+        rig = rec.rigs[info["rig_id"]]
+        T = rig.sensor_from_rig(list(rig.non_ref_sensors)[0])
+        R, t = T.rotation.matrix(), np.asarray(T.translation, float)
+        lb = lab.get(k)
+        out[k] = dict(info, R_sensor_from_ref=R.tolist(), t_sensor_from_ref_m=[float(x) for x in t],
+                      baseline_m=float(np.linalg.norm(t)))
+        if lb:
+            out[k].update(label_baseline_m=lb["baseline_m"], baseline_ratio=float(np.linalg.norm(t) / lb["baseline_m"]),
+                          rotation_vs_label_mdeg=[round(x, 1) for x in _angles_mdeg(R @ np.asarray(lb["R_sensor_from_ref"]).T)],
+                          label_R_sensor_from_ref=lb["R_sensor_from_ref"], label_t_sensor_from_ref_m=lb["t_sensor_from_ref_m"])
+    return out
+
+
+def scale_to_baseline(rec, rigs: Dict[str, Dict[str, Any]], family: str = "N") -> Optional[Dict[str, Any]]:
+    """The model scaled (about the middle of its cameras) so that the ``family`` rigs' baselines are the labels' - the
+    one length of the block that is hardware (0.99.16; on 17 Nov the label station separations, 4 m across with
+    5-30 cm errors, had set a scale 5 % off the baseline).  Returns {"factor", "by_rig"} and updates ``rigs``."""
+    import pycolmap
+    use = {k: v for k, v in rigs.items() if k[0] == family and v.get("baseline_ratio")}
+    if not use:
+        return None
+    w = np.array([v["pairs"] for v in use.values()], float)
+    k = float(1.0 / (np.sum(w * np.array([v["baseline_ratio"] for v in use.values()])) / w.sum()))
+    c = np.mean([np.asarray(im.projection_center(), float) for im in rec.images.values()], axis=0)
+    rec.transform(pycolmap.Sim3d(k, pycolmap.Rotation3d(np.eye(3)), (1.0 - k) * c))
+    by = {kk: round(v["baseline_ratio"], 5) for kk, v in rigs.items() if v.get("baseline_ratio")}
+    for v in rigs.values():
+        v["t_sensor_from_ref_m"] = [float(x) * k for x in v["t_sensor_from_ref_m"]]
+        v["baseline_m"] = float(v["baseline_m"] * k)
+        if v.get("baseline_ratio"):
+            v["baseline_ratio"] = float(v["baseline_ratio"] * k)
+    return {"factor": k, "family": family, "ratio_before_by_rig": by}
+
+
+# ------------------------------------------------------------------------------------------------- residuals, verdict
+def camera_residuals(rec, man: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Per camera: observations, reprojection rms and median (px), and the rms by radius (``RADIAL_BINS``, radius over
+    the half diagonal from the image's middle) - a distortion model that fits leaves it flat."""
+    groups = _camera_groups(rec, man)
+    acc: Dict[str, List[np.ndarray]] = {}
+    for im in rec.images.values():
+        cam = rec.cameras[im.camera_id]
+        T = im.cam_from_world()
+        half = 0.5 * float(np.hypot(cam.width, cam.height))
+        rows = []
+        for p2 in im.points2D:
+            if not p2.has_point3D():
+                continue
+            pr = cam.img_from_cam(T * rec.points3D[p2.point3D_id].xyz)
+            if pr is None:
+                continue
+            rows.append((float(np.linalg.norm(pr - p2.xy)), float(np.hypot(p2.xy[0] - 0.5 * cam.width, p2.xy[1] - 0.5 * cam.height) / half)))
+        if rows:
+            acc.setdefault(groups.get(int(im.camera_id), "?"), []).append(np.array(rows))
+    out = {}
+    for g, v in acc.items():
+        a = np.vstack(v)
+        e, r = a[:, 0], a[:, 1]
+        bins = []
+        for lo, hi in RADIAL_BINS:
+            m = (r >= lo) & (r < hi)
+            bins.append({"r": [lo, min(hi, 1.0)], "share": round(float(m.mean()), 3),
+                         "rms_px": round(float(np.sqrt(np.mean(e[m] ** 2))), 3) if m.sum() >= 50 else None})
+        rms = float(np.sqrt(np.mean(e ** 2)))
+        have = [b["rms_px"] for b in bins if b["rms_px"] is not None]
+        out[g] = {"observations": int(len(e)), "rms_px": round(rms, 3), "median_px": round(float(np.median(e)), 3),
+                  "by_radius": bins, "radial_spread": round((max(have) - min(have)) / rms, 3) if have else None}
+    return out
+
+
+LIMITS = {"registered_share": 0.75, "registered_frames": 100, "median_px": 0.6, "radial_spread": 0.15, "rig_pairs": 50,
+          "rig_cost_rise": 0.10, "pp_gain": 0.03, "baseline_agreement": 0.005}
+
+
+def verdict(rep: Dict[str, Any], man: Dict[str, Any], family: str = "N") -> Dict[str, Any]:
+    """Do the ``family`` cameras look good enough to promote?  {"ok", "checks": [{"what", "value", "limit", "ok"}]}.
+    The limits (``LIMITS``): each camera registered in 75 % of its frames and in 100 at least; median residual at most
+    0.6 px; the residual flat with radius (spread of the radial bins' rms at most 15 % of the rms); each rig from 50
+    pairs at least; the rigs cost at most 10 % in reprojection error over free images; freeing the principal points
+    gains at most 3 %; the rigs' baseline ratios agree within 0.5 %."""
+    checks: List[Dict[str, Any]] = []
+
+    def add(what, value, limit, ok):
+        checks.append({"what": what, "value": value, "limit": limit, "ok": bool(ok)})
+    frames = {g: c["frames"] for g, c in man["cameras"].items()}
+    cams = {g: c for g, c in (rep.get("cameras") or {}).items() if g[0] == family}
+    if not cams:
+        add(f"{family} cameras in the model", 0, ">= 1", False)
+    for g, c in sorted(cams.items()):
+        sh = c["registered"] / max(frames.get(g, 1), 1)
+        add(f"{g} registered share", round(sh, 3), f">= {LIMITS['registered_share']}", sh >= LIMITS["registered_share"])
+        add(f"{g} registered frames", c["registered"], f">= {LIMITS['registered_frames']}", c["registered"] >= LIMITS["registered_frames"])
+        r = (rep.get("residuals") or {}).get(g) or {}
+        add(f"{g} median residual px", r.get("median_px"), f"<= {LIMITS['median_px']}",
+            r.get("median_px") is not None and r["median_px"] <= LIMITS["median_px"])
+        add(f"{g} residual spread with radius", r.get("radial_spread"), f"<= {LIMITS['radial_spread']}",
+            r.get("radial_spread") is not None and r["radial_spread"] <= LIMITS["radial_spread"])
+    rigs = {k: v for k, v in (rep.get("rigs") or {}).items() if k[0] == family}
+    sides = {g[2] for g in cams}
+    for sd in sorted(sides):
+        v = rigs.get(family + sd)
+        add(f"{family}{sd} rig pairs", v["pairs"] if v else 0, f">= {LIMITS['rig_pairs']}", bool(v) and v["pairs"] >= LIMITS["rig_pairs"])
+    st = rep.get("stages") or {}
+    if st.get("free") and st.get("rigs"):
+        rise = st["rigs"]["reprojection_px"] / st["free"]["reprojection_px"] - 1.0
+        add("reprojection rise with the rigs", round(rise, 3), f"<= {LIMITS['rig_cost_rise']}", rise <= LIMITS["rig_cost_rise"])
+    else:
+        add("rig stage", None, "run", False)
+    if st.get("pp_check") and st.get("rigs"):
+        gain = 1.0 - st["pp_check"]["reprojection_px"] / st["rigs"]["reprojection_px"]
+        add("reprojection gain from free principal points", round(gain, 3), f"<= {LIMITS['pp_gain']}", gain <= LIMITS["pp_gain"])
+    ratios = [v["baseline_ratio"] for v in rigs.values() if v.get("baseline_ratio")]
+    if len(ratios) >= 2:
+        d = max(ratios) / min(ratios) - 1.0
+        add("rig baseline ratios agree", round(d, 4), f"<= {LIMITS['baseline_agreement']}", d <= LIMITS["baseline_agreement"])
+    return {"ok": all(c["ok"] for c in checks), "family": family, "checks": checks}
+
+
+# ------------------------------------------------------------------------------------------------- model files, promotion
+def model_files(work: Path, rep: Dict[str, Any], man: Dict[str, Any], family: str = "N") -> Dict[str, Path]:
+    """The block's cameras and rigs as model files in ``<work>\\cmods_candidate``: ``MSL_<group>.json`` (COLMAP model,
+    size, parameters, what was held, the label start, the fit) and ``MSL_<family><side>_rig.json`` (right from left:
+    the solved rotation; the translation in the solved direction with the labels' length).  These are what
+    :func:`promote` copies into the camera models in use."""
+    from rpp import __version__
+    out_dir = Path(work) / "cmods_candidate"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.datetime.now().strftime("%Y-%m-%d")
+    temps: Dict[str, List[float]] = {}
+    sols: Dict[str, List[int]] = {}
+    for r in man["images"]:
+        if r.get("ccd_degC") is not None:
+            temps.setdefault(r["group"], []).append(float(r["ccd_degC"]))
+        sols.setdefault(r["group"], []).append(int(r["sol"]))
+    out: Dict[str, Path] = {}
+    names = {"FULL_OPENCV": ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "k5", "k6"],
+             "THIN_PRISM_FISHEYE": ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "sx1", "sy1"]}
+    for g, c in sorted((rep.get("cameras") or {}).items()):
+        if g[0] != family:
+            continue
+        cam = man["cameras"][g]
+        nm = names.get(cam["model"], [])
+        held = [nm[i] for i in sorted(set(HELD_ZERO.get(cam["model"], ())) | set(PRINCIPAL_POINT))] if nm else []
+        t = temps.get(g) or []
+        d = {"mission": "MSL", "model": cam["model"], "width": cam["width"], "height": cam["height"],
+             "params": [float(x) for x in c["refined"]], "param_names": nm,
+             "distortion": "perspective with Brown-Conrady distortion (radial k1, k2, k3; tangential p1, p2); k4 = k5 = k6 = 0"
+             if cam["model"] == "FULL_OPENCV" else "fisheye (theta polynomial k1-k4) + tangential p1, p2; sx1 = sy1 = 0",
+             "held_params": held, "pixel_origin": "corner of the first pixel (COLMAP)", "form": MODEL_FORM,
+             "family": g[0], "eye": g[1], "side": g[2],
+             "temperature": {"ccd_degC_min": round(min(t), 1), "ccd_degC_median": round(float(np.median(t)), 1),
+                             "ccd_degC_max": round(max(t), 1), "note": "no temperature terms yet: one model over the block's range"} if t else None,
+             "label_params": [float(x) for x in cam.get("label_params", cam["params"])],
+             "start_params": [float(x) for x in c["start"]],
+             "source": f"RPP {__version__} MSL block {man['preset'].get('name')} ({stamp}), sols {min(sols[g])}-{max(sols[g])}: "
+                       "focal lengths and distortion from the block with the side's stereo rig; principal point held at its start",
+             "fit": {"block": man["preset"].get("name"), "registered": c["registered"], "frames": cam["frames"],
+                     "residuals": (rep.get("residuals") or {}).get(g), "reprojection_px": rep.get("reprojection_px")}}
+        out[f"MSL_{g}.json"] = out_dir / f"MSL_{g}.json"
+        out[f"MSL_{g}.json"].write_text(json.dumps(d, indent=1, default=float), encoding="utf-8")
+    for k, v in sorted((rep.get("rigs") or {}).items()):
+        if k[0] != family or not v.get("label_baseline_m"):
+            continue
+        t = np.asarray(v["t_sensor_from_ref_m"], float)
+        t = t / np.linalg.norm(t) * float(v["label_baseline_m"])
+        d = {"mission": "MSL", "ref": f"{k[0]}L{k[1]}", "sensor": f"{k[0]}R{k[1]}", "R_sensor_from_ref": v["R_sensor_from_ref"],
+             "t_sensor_from_ref_m": [float(x) for x in t], "baseline_m": float(v["label_baseline_m"]),
+             "translation": "the block's direction, the label CAHVOR pair's length", "family": k[0], "side": k[1],
+             "form": MODEL_FORM, "convention": f"{k[0]}L{k[1]} reference",
+             "rotation_vs_label_mdeg": v.get("rotation_vs_label_mdeg"), "pairs": v["pairs"],
+             "free_pair_sd_mdeg": ((rep.get("pair_scatter") or {}).get(k) or {}).get("sd_mdeg"),
+             "source": f"RPP {__version__} MSL block {man['preset'].get('name')} ({stamp}): one right-from-left pose for "
+                       f"the {v['pairs']} pairs of side {k[1]}"}
+        out[f"MSL_{k}_rig.json"] = out_dir / f"MSL_{k}_rig.json"
+        out[f"MSL_{k}_rig.json"].write_text(json.dumps(d, indent=1, default=float), encoding="utf-8")
+    return out
+
+
+def promote(work: Path, force: bool = False, dry_run: bool = False) -> Dict[str, Any]:
+    """The block's Navcam model files into the camera models in use, as the Mars 2020 models go
+    (:func:`rpp.calib.models.promote`: checked, copied over the folder's files, a line with source and SHA-256 in
+    ``CHANGES.md``) - when the block's verdict is ok (``force``: anyway)."""
+    from rpp.calib import models as M
+    work = Path(work)
+    rep = json.loads((work / "report.json").read_text(encoding="utf-8"))
+    v = rep.get("verdict") or {"ok": False, "checks": []}
+    cand = work / "cmods_candidate"
+    files = sorted(cand.glob("MSL_*.json")) if cand.is_dir() else []
+    if not files:
+        return {"promoted": False, "reason": f"no model files in {cand} (run the align step)"}
+    if not v.get("ok") and not force:
+        bad = [f"{c['what']} {c['value']} (limit {c['limit']})" for c in v.get("checks", []) if not c["ok"]]
+        return {"promoted": False, "reason": "the cameras do not pass: " + "; ".join(bad)}
+    note = (f"MSL block {work.name}: " + ("verdict ok" if v.get("ok") else "FORCED past the verdict")
+            + f", reprojection {rep.get('reprojection_px', float('nan')):.3f} px")
+    res = M.promote([cand], note=note, dry_run=dry_run)
+    return {"promoted": not dry_run, "dry_run": dry_run, **res}
+
+
 def align(work: Path, max_features: int = 8192, threads: int = -1, max_error_m: float = 2.0, refine: bool = True,
-          rounds: int = 2) -> Dict[str, Any]:
+          rounds: int = 2, rigs: bool = True, pp_check: bool = True, scale: str = "baseline") -> Dict[str, Any]:
     import pycolmap
     work = Path(work)
     man = json.loads((work / "manifest.json").read_text(encoding="utf-8"))
@@ -568,12 +944,21 @@ def align(work: Path, max_features: int = 8192, threads: int = -1, max_error_m: 
         return rep
     rec = max(recs.values(), key=lambda r: r.num_reg_images())
     others = sorted((int(r.num_reg_images()) for r in recs.values()), reverse=True)[1:6]
-    return finish(rec, man, work, len(recs), others, max_error_m, refine, rounds, t0)
+    return finish(rec, man, work, len(recs), others, max_error_m, refine, rounds, t0, rigs, pp_check, scale)
 
 
 def finish(rec, man: Dict[str, Any], work: Path, models: int = 1, others: Sequence[int] = (), max_error_m: float = 2.0,
-           refine: bool = True, rounds: int = 2, t0: Optional[float] = None) -> Dict[str, Any]:
-    """The mapped model into the block frame, the cameras refined, the report and exports (``align``'s second half)."""
+           refine: bool = True, rounds: int = 2, t0: Optional[float] = None, rigs: bool = True, pp_check: bool = True,
+           scale: str = "baseline") -> Dict[str, Any]:
+    """The mapped model into the block frame, the cameras refined, the report and exports (``align``'s second half).
+
+    0.99.16, in stages: (1) "free" - every image on its own, focal lengths and distortion free, the principal points
+    held; (2) "rigs" - each side's stereo pair one rig (:func:`add_rigs`), its right-from-left pose solved with the
+    cameras, the principal points still held: these are the block's cameras; (3) "pp_check" - on a copy, the
+    principal points freed too: how far they go and what it gains (a check, not a result).  ``scale``: "baseline"
+    scales the model to the Navcam rigs' label baseline after the similarity onto the label centers; "labels" leaves
+    the similarity's scale."""
+    import copy
     work = Path(work)
     t0 = time.time() if t0 is None else t0
     out = work / "sparse"
@@ -584,22 +969,49 @@ def finish(rec, man: Dict[str, Any], work: Path, models: int = 1, others: Sequen
                            "reprojection_px_mapper": float(rec.compute_mean_reprojection_error())}
     _to_block(rec, lab, max_error_m, rep, "similarity")
     start = {cid: np.array(c.params, float) for cid, c in rec.cameras.items()}
+    gname = _camera_groups(rec, man)
+    stages: Dict[str, Any] = {}
+    rig_info: Dict[str, Any] = {}
+
+    def snap(key: str, r, runs) -> None:
+        stages[key] = {"reprojection_px": float(r.compute_mean_reprojection_error()), "rounds": runs,
+                       "cameras": {gname.get(int(cid), str(cid)): [float(x) for x in c.params] for cid, c in r.cameras.items()}}
     if refine:
-        rep["refine"] = refine_cameras(rec, man, rounds=rounds)
+        runs = refine_cameras(rec, man, rounds=rounds, hold_pp=True)
+        snap("free", rec, runs)
+        rep["pair_scatter"] = pair_scatter(rec, man)
+        if rigs and rig_sides(man):
+            rig_info = add_rigs(rec, man, work / "database.db")
+            runs = refine_cameras(rec, man, rounds=rounds, hold_pp=True, rigs=True)
+            snap("rigs", rec, runs)
+            if pp_check:
+                chk = copy.deepcopy(rec)
+                runs = refine_cameras(chk, man, rounds=1, hold_pp=False, rigs=True)
+                snap("pp_check", chk, runs)
+                stages["pp_check"]["principal_point_moved_px"] = {
+                    g: [round(v[2] - stages["rigs"]["cameras"][g][2], 2), round(v[3] - stages["rigs"]["cameras"][g][3], 2)]
+                    for g, v in stages["pp_check"]["cameras"].items()}
+                del chk
+        rep["refine"] = [dict(r, stage=k) for k in ("free", "rigs") if k in stages for r in stages[k]["rounds"]]
         _to_block(rec, lab, max_error_m, rep, "similarity_after_refine")
+    rep["stages"] = stages
+    if rig_info:
+        rep["rigs"] = solved_rigs(rec, man, rig_info)
+        if scale == "baseline":
+            rep["scale"] = scale_to_baseline(rec, rep["rigs"])
+            if rep["scale"]:
+                res = [float(np.linalg.norm(np.asarray(im.projection_center()) - lab[im.name])) for im in rec.images.values() if im.name in lab]
+                rep["scale"]["label_centers_m"] = {"median": float(np.median(res)), "p95": float(np.percentile(res, 95)), "max": float(np.max(res))}
     rep["points"] = int(rec.num_points3D())
     rep["reprojection_px"] = float(rec.compute_mean_reprojection_error())
-    rep["minutes"] = round((time.time() - t0) / 60.0, 1)
-    gname = {}
-    for im in rec.images.values():
-        gname.setdefault(im.camera_id, next((r["group"] for r in man["images"] if r["image"] == im.name), "?"))
     rep["cameras"] = {}
     for cid, c in rec.cameras.items():
-        g = gname.get(cid, str(cid))
+        g = gname.get(int(cid), str(cid))
         p0, p1 = start[cid], np.array(c.params, float)
-        rep["cameras"][g] = {"registered": sum(1 for im in rec.images.values() if im.camera_id == cid),
+        rep["cameras"][g] = {"registered": sum(1 for im in rec.images.values() if im.camera_id == cid), "model": c.model_name,
                              "start": [float(x) for x in p0], "refined": [float(x) for x in p1],
                              "change": [float(x) for x in p1 - p0]}
+    rep["residuals"] = camera_residuals(rec, man)
     centers = {im.name: np.asarray(im.projection_center(), float) for im in rec.images.values()}
     sb = F.stereo_baselines([dict(r, C_enu_m=r["C_block_m"]) for r in man["images"]], centers)
     if sb:
@@ -613,10 +1025,15 @@ def finish(rec, man: Dict[str, Any], work: Path, models: int = 1, others: Sequen
             per_site.setdefault(int(r["site"]), []).append(float(np.linalg.norm(centers[r["image"]] - lab[r["image"]])))
     rep["label_residual_by_site_m"] = {str(s): {"frames": len(v), "median": round(float(np.median(v)), 3),
                                                 "max": round(float(np.max(v)), 3)} for s, v in sorted(per_site.items())}
+    rep["verdict"] = verdict(rep, man)
+    rep["minutes"] = round((time.time() - t0) / 60.0, 1)
     (out / "block_frame").mkdir(exist_ok=True)
     rec.write(out / "block_frame")
+    F.write_open_in_colmap(work)                               # 0.99.15: always there
     rec.export_PLY(str(work / "points_block_frame.ply"))
     (work / "cameras_refined.json").write_text(json.dumps(rep["cameras"], indent=1), encoding="utf-8")
+    (work / "report.json").write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")
+    rep["model_files"] = {k: str(v) for k, v in model_files(work, rep, man).items()}
     (work / "report.json").write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")
     (work / "report.txt").write_text(report_text(man, rep), encoding="utf-8")
     log.info("\n%s", report_text(man, rep))
@@ -664,11 +1081,42 @@ def report_text(man: Dict[str, Any], rep: Dict[str, Any]) -> str:
             lines.append(f"{k}: scale {s['scale']:.4f}, label centers off by median {s['median_m']:.3f} m, 95 % {s['p95_m']:.3f}, "
                          f"max {s['max_m']:.3f}")
     for r in rep.get("refine") or []:
-        lines.append(f"refine round {r['round']}: reprojection {r['reprojection_px']:.3f} px, dropped {r['dropped']}")
-    names = ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3"]
+        lines.append(f"refine {r.get('stage', '')} round {r['round']}: reprojection {r['reprojection_px']:.3f} px, dropped {r['dropped']}")
+    st = rep.get("stages") or {}
+    if st:
+        lines.append("stages (principal points held in 1 and 2): " + "; ".join(
+            f"{n} {st[k]['reprojection_px']:.3f} px" for k, n in (("free", "1 free images"), ("rigs", "2 stereo rigs"),
+                                                                  ("pp_check", "check, principal points free")) if k in st))
+        mv = (st.get("pp_check") or {}).get("principal_point_moved_px")
+        if mv:
+            lines.append("  check: freed principal points move by (cx, cy px) " + ", ".join(f"{g} {v[0]:+.1f} {v[1]:+.1f}" for g, v in sorted(mv.items())))
     for g, c in sorted((rep.get("cameras") or {}).items()):
+        names = (["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3"] if c.get("model", "FULL_OPENCV") == "FULL_OPENCV"
+                 else ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4"])
         ch = ", ".join(f"{n} {c['refined'][i]:.6g} ({c['change'][i]:+.3g})" for i, n in enumerate(names) if i < len(c["refined"]))
         lines.append(f"  {g}: {c['registered']} frames; {ch}")
+        r = (rep.get("residuals") or {}).get(g)
+        if r:
+            lines.append(f"      residual rms {r['rms_px']} px, median {r['median_px']} px; by radius "
+                         + ", ".join(f"{b['r'][0]:.1f}-{b['r'][1]:.1f}: {b['rms_px']}" for b in r["by_radius"]))
+    for k, v in sorted((rep.get("rigs") or {}).items()):
+        ps = (rep.get("pair_scatter") or {}).get(k) or {}
+        lines.append(f"rig {k} ({k[0]}R{k[1]} from {k[0]}L{k[1]}): {v['pairs']} pairs, {v['singles']} single frames; baseline "
+                     f"{1000 * v['baseline_m']:.1f} mm (label {1000 * v.get('label_baseline_m', float('nan')):.1f}, ratio "
+                     f"{v.get('baseline_ratio', float('nan')):.4f}); rotation from the label's (pitch, yaw, roll) "
+                     f"{v.get('rotation_vs_label_mdeg')} mdeg; free pairs scattered {ps.get('sd_mdeg')} mdeg")
+    sc = rep.get("scale")
+    if sc:
+        lc = sc.get("label_centers_m") or {}
+        lines.append(f"scale: the model times {sc['factor']:.4f} to give the {sc['family']} rigs the label baseline (ratios before: "
+                     f"{sc['ratio_before_by_rig']}); label centers then off by median {lc.get('median', float('nan')):.3f} m, "
+                     f"max {lc.get('max', float('nan')):.3f} m")
+    v = rep.get("verdict")
+    if v:
+        lines.append(f"Navcam verdict: {'OK to promote' if v['ok'] else 'NOT promoted'}")
+        for c in v["checks"]:
+            if not c["ok"]:
+                lines.append(f"  fails: {c['what']} = {c['value']} (limit {c['limit']})")
     if rep.get("stereo_baseline"):
         s = rep["stereo_baseline"]
         lines.append(f"stereo baseline: {s['pairs']} pairs, model {1000 * s['model_m_median']:.1f} mm vs label "
@@ -683,8 +1131,10 @@ def report_text(man: Dict[str, Any], rep: Dict[str, Any]) -> str:
 # ------------------------------------------------------------------------------------------------- command line
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("step", choices=("waypoints", "fetch", "prepare", "align", "all", "where"),
-                    help="where: print the block's folder and stop")
+    ap.add_argument("step", choices=("waypoints", "fetch", "prepare", "align", "all", "where", "gui", "finish", "promote"),
+                    help="where: print the block's folder and stop; gui: write open_in_colmap.bat into it and stop; "
+                         "finish (0.99.16): the stages after the mapper again, from sparse\\0 (no matching); promote: "
+                         "the block's Navcam models into the camera models in use, when its verdict is ok")
     ap.add_argument("--preset", default="yellowknife", choices=sorted(PRESETS))
     ap.add_argument("--data", default=DEFAULT_DATA, help=f"the MSL archive on disk (default {DEFAULT_DATA})")
     ap.add_argument("--work", default=None, help=f"the block's folder (default {DEFAULT_ROOT}\\msl_sol_<first sol>_<block>)")
@@ -693,7 +1143,19 @@ def main(argv=None) -> int:
     ap.add_argument("--side", default=None, help="A, B or AB (default: the preset's)")
     ap.add_argument("--list", action="store_true", help="fetch: list what would come, download nothing")
     ap.add_argument("--camera", default="opencv5", choices=("opencv5", "fisheye"))
-    ap.add_argument("--mask", default="both", choices=("both", "cnn", "mxy"), help="COLMAP's mask (default both)")
+    ap.add_argument("--mask", default="cnn", choices=("both", "cnn", "mxy"),
+                    help="the mask (default cnn, 0.99.16: the mask CNN alone, kept in the images' alpha channel; both / mxy "
+                         "also fetch and use MIPL's rover masks)")
+    ap.add_argument("--families", default=None, help="N Navcams, F front Hazcams, R rear Hazcams (default the preset's: NF)")
+    ap.add_argument("--label-cameras", action="store_true", help="prepare: start from the label cameras even when "
+                    "promoted MSL models are in the camera models in use")
+    ap.add_argument("--no-rigs", action="store_true", help="align: every image on its own (no stereo rigs)")
+    ap.add_argument("--no-pp-check", action="store_true", help="align: skip the check with free principal points")
+    ap.add_argument("--scale", default="baseline", choices=("baseline", "labels"),
+                    help="align: the model's scale from the Navcam rigs' label baseline (default) or the label positions")
+    ap.add_argument("--promote-if-ok", action="store_true", help="align / finish: promote the Navcam models when the verdict is ok")
+    ap.add_argument("--force", action="store_true", help="promote: past a failed verdict")
+    ap.add_argument("--dry-run", action="store_true", help="promote: check and show, copy nothing")
     ap.add_argument("--mask-model", default="rpp_mask_v3", help="the mask CNN (registry name or file)")
     ap.add_argument("--radius-m", type=float, default=None, help="prepare: frames within this of the block's middle")
     ap.add_argument("--pair-distance-m", type=float, default=60.0)
@@ -709,11 +1171,19 @@ def main(argv=None) -> int:
         preset["sols"] = tuple(a.sols)
     if a.side:
         preset["side"] = a.side.upper()
+    if a.families:
+        preset["families"] = a.families.upper()
     data = Path(a.data)
     preset["name"] = block_folder_name(preset["sols"][0], a.block or preset["block"])
     work = Path(a.work or blocks_root() / preset["name"])
     if a.step == "where":                                  # 0.99.12: the batch file asks for the folder
         print(work)
+        return 0
+    if a.step == "gui":                                    # 0.99.15: the COLMAP launcher for a block made before
+        if not Path(work).is_dir():
+            print(f"ERROR: no block folder {work}", file=sys.stderr)
+            return 1
+        print(f"written: {F.write_open_in_colmap(work)}")
         return 0
     work.mkdir(parents=True, exist_ok=True)
     print(f"block folder: {work}")
@@ -731,13 +1201,19 @@ def main(argv=None) -> int:
     rc = 0
     if a.step in ("fetch", "all"):
         sols = list(range(preset["sols"][0], preset["sols"][1] + 1))
-        rep = F.fetch(data, sols, None, preset["side"], None, a.list, preset["families"])
+        rep = F.fetch(data, sols, None, preset["side"], None, a.list, preset["families"], mxy=a.mask != "cnn")
         (work / f"fetch{'_list' if a.list else ''}.json").write_text(json.dumps(rep, indent=1), encoding="utf-8")
         found = sum(1 for v in rep["sols"].values() if v.get("found"))
         n = sum(v.get("products", 0) for v in rep["sols"].values())
         print(f"fetch: {found} of {len(rep['sols'])} sols found, {n} products (about {rep.get('est_mb', 0) / 1000:.1f} GB), "
               f"{rep['downloaded']} files downloaded ({rep['bytes'] / 1e9:.2f} GB), {rep['kept']} already there, "
               f"{len(rep['failed'])} failed")
+        hz = [v for k, v in rep["sols"].items() if str(k).endswith("hazcam")]
+        if hz:
+            print(f"  Hazcam volume: {sum(1 for v in hz if v.get('found'))} of {len(hz)} sols found, "
+                  f"{sum(v.get('products', 0) for v in hz)} products")
+            if not any(v.get("found") for v in hz):
+                print(f"  WARNING: no Hazcam folder answered - the block will hold Navcams only (addresses tried in {work})")
         if not found:
             print(f"no sol folder answered - the addresses tried are in {work}")
             return 1
@@ -745,12 +1221,27 @@ def main(argv=None) -> int:
             return 0
     if a.step in ("prepare", "all"):
         man = prepare(work, data, preset, a.camera, a.mask, a.mask_model, a.radius_m, a.pair_distance_m,
-                      a.pairs_per_image, wp, a.limit)
+                      a.pairs_per_image, wp, a.limit, a.label_cameras)
         print(f"prepare: {len(man['images'])} frames, {man['pairs']} pairs in {work}")
     if a.step in ("align", "all"):
-        rep = align(work, a.max_features, max_error_m=a.max_error_m, refine=not a.no_refine)
+        rep = align(work, a.max_features, max_error_m=a.max_error_m, refine=not a.no_refine, rigs=not a.no_rigs,
+                    pp_check=not a.no_pp_check, scale=a.scale)
         rc = 0 if rep.get("ok") else 1
         print((work / "report.txt").read_text(encoding="utf-8") if (work / "report.txt").is_file() else rep)
+    if a.step == "finish":
+        import pycolmap
+        man = json.loads((work / "manifest.json").read_text(encoding="utf-8"))
+        rep = finish(pycolmap.Reconstruction(str(work / "sparse" / "0")), man, work, refine=not a.no_refine,
+                     max_error_m=a.max_error_m, rigs=not a.no_rigs, pp_check=not a.no_pp_check, scale=a.scale)
+        rc = 0 if rep.get("ok") else 1
+        print((work / "report.txt").read_text(encoding="utf-8"))
+    if a.step == "promote" or (a.promote_if_ok and a.step in ("align", "all", "finish") and rc == 0):
+        res = promote(work, force=a.force, dry_run=a.dry_run)
+        if res.get("promoted") or res.get("dry_run"):
+            print(f"{'would promote' if res.get('dry_run') else 'promoted'} into {res['folder']}: " + ", ".join(sorted(res["files"])))
+        else:
+            print(f"not promoted: {res['reason']}")
+            rc = rc or (1 if a.step == "promote" else 0)
     return rc
 
 

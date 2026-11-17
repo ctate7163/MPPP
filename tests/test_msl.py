@@ -2,7 +2,11 @@
 block choice (rpp_studies.msl.first_block); the products themselves are tested on the PC."""
 from __future__ import annotations
 
+import json
+
 import numpy as np
+import pytest
+from pathlib import Path
 
 from rpp_studies.msl import first_block as F
 
@@ -119,49 +123,116 @@ def test_msl_waypoint_table_and_opencv_fit(tmp_path):
     assert rep["rms_px"] < 0.05 and p12[9:] == [0.0, 0.0, 0.0] and abs(p12[0] - 1225) < 5
 
 
-def test_msl_block_refines_the_opencv_cameras_and_reports(tmp_path):
-    """0.99.5: the second half of the alignment on a synthetic two-camera block (NLA, NLB): the model into the block
-    frame, the cameras refined from a start 10 px off (k4-k6 held at zero), the stereo baselines, the residuals per
-    site."""
+def _synthetic_stereo_block(seed=2, pairs_per_side=8):
+    """A block of NLA/NRA and NLB/NRB pairs with one true right-from-left pose per side, cameras started 10 px short."""
     import pycolmap
-    from rpp_studies.msl.block import finish
-    rng = np.random.default_rng(2)
+    rng = np.random.default_rng(seed)
     rec = pycolmap.Reconstruction()
     true = np.array([1225., 1226., 507., 503., -0.02, 0.01, 1e-4, -2e-4, 0.005, 0, 0, 0])
-    for cid in (1, 2):
+    groups = {1: "NLA", 2: "NRA", 3: "NLB", 4: "NRB"}
+    for cid in groups:
         cam = pycolmap.Camera.create_from_model_name(cid, "FULL_OPENCV", 1000., 1024, 1024); cam.params = true.copy()
         rec.add_camera_with_trivial_rig(cam)
-    X = rng.uniform([-6, -6, 6], [6, 6, 16], (500, 3))
+    X = rng.uniform([-8, -6, 6], [8, 6, 16], (600, 3))
     ids = [rec.add_point3D(x, pycolmap.Track()) for x in X]
-    images = []
-    for i in range(12):
-        cid = 1 if i < 6 else 2
-        eye = "L" if i % 2 == 0 else "R"
-        ang = 0.02 * (i - 6)
-        q = np.array([0, np.sin(ang / 2), 0, np.cos(ang / 2)])
-        t = np.array([-0.4 * (i // 2) - (0.42 if eye == "R" else 0.0), 0.1 * (i % 3), 0.02 * (i % 2)])
-        pose = pycolmap.Rigid3d(pycolmap.Rotation3d(q), t)
-        name = f"{'NLA' if cid == 1 else 'NLB'}_{i:02d}.png"
-        im = pycolmap.Image(image_id=i + 1, name=name, camera_id=cid)
-        cam = rec.camera(cid)
-        uv = cam.img_from_cam(np.array([pose * x for x in X]))
-        im.points2D = pycolmap.Point2DList([pycolmap.Point2D(u + rng.normal(0, 0.2, 2), pid) for u, pid in zip(uv, ids)])
-        rec.add_image_with_trivial_frame(im, pose)
-        C = -(pose.rotation.matrix().T @ pose.translation)
-        images.append({"image": name, "group": "NLA" if cid == 1 else "NLB", "eye": eye, "pair_key": f"p{i // 2}",
-                       "site": 6 if i < 8 else 7, "C_block_m": list(C * 1.0 + rng.normal(0, 0.05, 3))})
-    for i in range(1, 13):
-        for k, p in enumerate(rec.image(i).points2D):
-            rec.point3D(p.point3D_id).track.add_element(i, k)
-    for cid in (1, 2):
-        rec.camera(cid).params = np.array([1215., 1216., 510., 500., 0, 0, 0, 0, 0, 0, 0, 0])
-    man = {"preset": {"name": "test", "note": "synthetic"}, "selection": {}, "sites": {}, "masks": {}, "images": images,
-           "mask_mode": "both", "mask_model": "x"}
-    rep = finish(rec, man, tmp_path, 1, [], max_error_m=0.5)
-    assert rep["ok"] and rep["similarity_after_refine"]["median_m"] < 0.2 and rep["stereo_baseline"]["pairs"] == 6
-    for c in rep["cameras"].values():
-        assert c["refined"][9:] == [0.0, 0.0, 0.0] and abs(c["refined"][0] - 1225.0) < 2 and abs(c["refined"][4] + 0.02) < 0.003
-    assert set(rep["label_residual_by_site_m"]) == {"6", "7"} and (tmp_path / "report.txt").is_file()
+    rel = {"A": (0.004, np.array([-0.42, 0.001, 0.002])), "B": (-0.003, np.array([-0.424, -0.001, 0.0]))}   # yaw rad, t
+    images, iid = [], 0
+    for side, (lc, rc) in (("A", (1, 2)), ("B", (3, 4))):
+        for k in range(pairs_per_side):
+            ang = 0.03 * (k - pairs_per_side / 2)
+            Rl = pycolmap.Rotation3d(np.array([0, np.sin(ang / 2), 0, np.cos(ang / 2)]))
+            left = pycolmap.Rigid3d(Rl, np.array([-0.5 * k + 1.5, 0.1 * (k % 3), 0.02 * (k % 2)]))
+            yaw, t = rel[side]
+            right = pycolmap.Rigid3d(pycolmap.Rotation3d(np.array([0, np.sin(yaw / 2), 0, np.cos(yaw / 2)])), t) * left
+            for eye, cid, pose in (("L", lc, left), ("R", rc, right)):
+                iid += 1
+                name = f"N{eye}{side}_{k:02d}.png"
+                im = pycolmap.Image(image_id=iid, name=name, camera_id=cid)
+                uv = rec.camera(cid).img_from_cam(np.array([pose * x for x in X]))
+                im.points2D = pycolmap.Point2DList([pycolmap.Point2D(u + rng.normal(0, 0.2, 2), pid) for u, pid in zip(uv, ids)])
+                rec.add_image_with_trivial_frame(im, pose)
+                R = pose.rotation.matrix()
+                C = -(R.T @ pose.translation)
+                images.append({"image": name, "group": groups[cid], "family": "N", "eye": eye, "side": side,
+                               "pair_key": f"N{side}_{k}", "site": 6 if k < 5 else 7, "drive": k, "sol": 160 + k,
+                               "ccd_degC": -10.0 - k, "R_w2c": R.tolist(), "C_block_m": list(C + rng.normal(0, 0.03, 3))})
+    for i in range(1, iid + 1):
+        for k, p2 in enumerate(rec.image(i).points2D):
+            rec.point3D(p2.point3D_id).track.add_element(i, k)
+    start = [1215., 1216., 507., 503., 0, 0, 0, 0, 0, 0, 0, 0]
+    for cid in groups:
+        rec.camera(cid).params = np.array(start)
+    cams = {g: {"model": "FULL_OPENCV", "params": start, "width": 1024, "height": 1024, "frames": pairs_per_side} for g in groups.values()}
+    man = {"preset": {"name": "msl_sol_0160_test", "note": "synthetic"}, "selection": {}, "sites": {}, "masks": {}, "images": images,
+           "mask_mode": "cnn", "mask_model": "x", "cameras": cams}
+    return rec, man, true, rel
+
+
+def test_msl_block_stages_rigs_scale_verdict_and_promotion(tmp_path, monkeypatch):
+    """0.99.16 (Christian, 17 Nov 2026: "hold the principal point on the first stage. Solve A pair rig and B pair rig
+    separately. If the camera models look good, then promote the MSL navcams the same way we do for Mars 2020"): the
+    principal points stay where they started, each side gets its own right-from-left pose (the two differ, and are
+    found), the model's scale is the label baseline's, the verdict blocks a block that is too small, and a promotion
+    goes through rpp.calib.models (CHANGES.md) without touching the Mars 2020 fingerprint."""
+    from rpp_studies.msl import block as B
+    from rpp.calib import models as M
+    rec, man, true, rel = _synthetic_stereo_block()
+    work = tmp_path / "msl_sol_0160_test"
+    work.mkdir()
+    rep = B.finish(rec, man, work, 1, [], max_error_m=0.5)
+    assert rep["ok"] and list(rep["stages"]) == ["free", "rigs", "pp_check"]
+    for g, c in rep["cameras"].items():
+        assert c["refined"][2:4] == [507.0, 503.0] and c["refined"][9:] == [0.0, 0.0, 0.0]         # held
+        assert abs(c["refined"][0] - true[0]) < 1.5 and abs(c["refined"][4] - true[4]) < 0.003
+    assert set(rep["rigs"]) == {"NA", "NB"} and rep["rigs"]["NA"]["pairs"] == 8 and rep["rigs"]["NA"]["singles"] == 0
+    for side in "AB":
+        v = rep["rigs"]["N" + side]
+        yaw = np.arcsin(np.asarray(v["R_sensor_from_ref"])[0, 2])                       # rotation about y
+        assert abs(yaw - rel[side][0]) < 3e-4
+        assert abs(v["baseline_m"] - v["label_baseline_m"]) < 0.004 and abs(v["baseline_ratio"] - 1) < 0.01
+    assert abs(rep["scale"]["factor"] - 1) < 0.06 and rep["scale"]["family"] == "N"
+    assert rep["residuals"]["NLA"]["radial_spread"] is not None and rep["residuals"]["NLA"]["median_px"] < 0.5
+    txt = (work / "report.txt").read_text()
+    assert "rig NA (NRA from NLA): 8 pairs" in txt and "Navcam verdict: NOT promoted" in txt and (work / "open_in_colmap.bat").is_file()
+    bad = {c["what"] for c in rep["verdict"]["checks"] if not c["ok"]}
+    assert not rep["verdict"]["ok"] and "NA rig pairs" in bad and "NLA registered frames" in bad
+    files = sorted(f.name for f in (work / "cmods_candidate").iterdir())
+    assert files == ["MSL_NA_rig.json", "MSL_NB_rig.json", "MSL_NLA.json", "MSL_NLB.json", "MSL_NRA.json", "MSL_NRB.json"]
+    d = json.loads((work / "cmods_candidate" / "MSL_NLA.json").read_text())
+    assert d["held_params"] == ["cx", "cy", "k4", "k5", "k6"] and d["form"] == B.MODEL_FORM and "Brown" in d["distortion"]
+    r = json.loads((work / "cmods_candidate" / "MSL_NA_rig.json").read_text())
+    assert abs(np.linalg.norm(r["t_sensor_from_ref_m"]) - r["baseline_m"]) < 1e-9 and (r["ref"], r["sensor"]) == ("NLA", "NRA")
+    cm = tmp_path / "cmods"
+    monkeypatch.setenv("RPP_CMODS", str(cm))
+    M.init_folder(cm)
+    fp = M.models_fingerprint(cm)
+    res = B.promote(work)
+    assert not res["promoted"] and "NA rig pairs" in res["reason"] and not (cm / "MSL_NLA.json").exists()
+    res = B.promote(work, force=True)
+    assert res["promoted"] and sorted(res["files"]) == files and (cm / "MSL_NB_rig.json").is_file()
+    assert "FORCED past the verdict" in (cm / "CHANGES.md").read_text() and M.models_fingerprint(cm) == fp
+    cam = B.promoted_camera("NLA", dict(man["cameras"]["NLA"]))                             # the next block starts there
+    assert cam["params"] == d["params"] and cam["label_params"] == man["cameras"]["NLA"]["params"] and "promoted MSL_NLA.json" in cam["source"]
+    with pytest.raises(ValueError):
+        M.check_msl_file("MSL_NRA.json", d)                                                # the eye does not match the name
+
+
+def test_msl_front_hazcams_join_the_block_and_masks_go_into_alpha():
+    """0.99.16 (Christian, 17 Nov 2026: "please include front hazcam images in the msl block" and "use the current mask
+    cnn model and save them as the alpha channel. no need to download the official hardware masks"): the preset takes
+    N and F, the Hazcams come from their own volume into hazcam\\SOLnnnnn and keep the fisheye model, and the fetch
+    leaves the MXY products out when the mask is the CNN's."""
+    from rpp_studies.msl import block as B
+    assert B.PRESETS["yellowknife"]["families"] == "NF" and B.CAMERA_HEIGHT_M["F"] < 1.0 < B.CAMERA_HEIGHT_M["N"]
+    assert [v[1] for v in F.VOLUMES] == ["navcam", "hazcam"] and all("MSLHAZ_1XXX" in b for b in F.HAZ_BASES)
+    names = ["FLB_417301006RAD_F0060000FHAZ00302M1.IMG", "FLB_417301006MXY_F0060000FHAZ00302M1.IMG",
+             "NLB_417301006RAD_F0060000NCAM05794M1.IMG", "RLB_417301006RAD_F0060000RHAZ00311M1.IMG"]
+    assert F.wanted(names, None, "AB", None, "F", mxy_too=False) == ["FLB_417301006RAD_F0060000FHAZ00302M1"]
+    assert len(F.wanted(names, None, "AB", None, "F")) == 2 and F.parse_name(names[0])["group"] == "FLB"
+    assert B.rig_sides({"cameras": {"NLA": 1, "NRA": 1, "NLB": 1, "FLB": 1, "FRB": 1}}) == [("F", "B"), ("N", "A")]
+    src = Path(B.__file__).read_text(encoding="utf-8")
+    assert 'mask_mode: str = "cnn"' in src and "ALPHA_MASKED, 255" in src and 'mxy=a.mask != "cnn"' in src
+    assert B.group_camera.__doc__ and 'infos[0].get("family", "N") != "N"' in src
 
 
 def test_pds_fetch_into_the_archive_layout(tmp_path):
@@ -223,3 +294,26 @@ def test_msl_blocks_sit_with_the_mars2020_blocks(monkeypatch, capsys):
     assert B.main(["where", "--preset", "site87"]) == 0
     assert capsys.readouterr().out.strip().replace("\\", "/") == "/blocks/msl_sol_3047_mont_mercou"
     assert parse_work_folder("/blocks/msl_sol_0162_yellowknife_bay") == (None, False)
+
+
+def test_msl_blocks_get_open_in_colmap(tmp_path, monkeypatch, capsys):
+    """0.99.15 (Christian, 17 Nov 2026: "Make sure there is always an open_in_colmap present for these alignments"): the
+    batch file opens the block-frame model (else the site frame, else the mapper's), path-free (%~dp0), CRLF; the gui
+    step writes it into a block made before."""
+    from rpp_studies.msl import block as B, first_block as F
+    (tmp_path / "masks").mkdir()
+    bat = F.write_open_in_colmap(tmp_path)
+    raw = bat.read_bytes()
+    assert b"\r\n" in raw and raw.count(b"\n") == raw.count(b"\r\n")
+    t = raw.decode()
+    assert t.index("sparse\\block_frame") < t.index("sparse\\site_frame") < t.index("sparse\\0\\")
+    assert '--database_path "%~dp0database.db" --image_path "%~dp0images" --import_path "%MODEL%"' in t
+    assert "mask_path=" in (tmp_path / "colmap_gui.ini").read_text()
+    bat.unlink()
+    monkeypatch.setenv("RPP_SCAPES", str(tmp_path))
+    assert B.main(["gui", "--sols", "162", "296"]) == 1                    # no such block: nothing made
+    (tmp_path / "msl_sol_0162_yellowknife_bay").mkdir()
+    assert B.main(["gui", "--sols", "162", "296"]) == 0
+    assert (tmp_path / "msl_sol_0162_yellowknife_bay" / "open_in_colmap.bat").is_file()
+    src = (Path(B.__file__)).read_text(encoding="utf-8")
+    assert src.count("    F.write_open_in_colmap(work)  ") == 2               # at prepare and at align
