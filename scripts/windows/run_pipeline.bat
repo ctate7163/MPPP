@@ -16,10 +16,10 @@ setlocal
 REM 2 Nov 2026 (0.95.3 freeze): the blocks live in D:\rover_blocks (was D:\scapes)
 set "ROOT=D:\rover_blocks"
 if not defined RPP_HOME for %%I in ("%~dp0..\..") do set "RPP_HOME=%%~fI"
-if not defined RPP_HOME set "RPP_HOME=D:\code\MPPP"
+if not defined RPP_HOME set "RPP_HOME=D:\code\RPP"
 set "RPP_WIN=%RPP_HOME%\scripts\windows"
 if not exist "%RPP_WIN%\rpp_env.bat" (
-  echo RPP not found in "%RPP_HOME%": set RPP_HOME to the RPP folder, e.g.  set RPP_HOME=D:\code\MPPP
+  echo RPP not found in "%RPP_HOME%": set RPP_HOME to the RPP folder, e.g.  set RPP_HOME=D:\code\RPP
   pause
   exit /b 1
 )

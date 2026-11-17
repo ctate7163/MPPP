@@ -60,3 +60,26 @@ def test_candidate_from_the_deck_joint_and_its_check(tmp_path):
     assert D.main(args + ["--promote"]) == 0
     assert json.loads((out / "M2020_N_rig.json").read_text())["drift"]["stations"] == 165
     assert len(list(out.glob("M2020_N_rig_replaced_*.json"))) == 1
+
+
+def test_knee_profile_finds_the_knee_of_synthetic_rigs(tmp_path):
+    """0.99.5: rpp_studies.calibration.knee - a hinge at sol 350 in the deck rigs and at 200 in the block epochs is found
+    in each, the knee at 250 is worse where it is wrong, and roll stays a line."""
+    from rpp_studies.calibration import knee as K
+    rng = np.random.default_rng(3)
+    s = np.r_[rng.uniform(15, 450, 80), rng.uniform(450, 2000, 80)]
+    T = rng.uniform(-30, -5, s.size)
+    hinge = lambda s, k, b, a: (a * s + (b - a) * np.minimum(s - k, 0)) / 1e3          # noqa: E731
+    rows = [{"tag": f"S{i:03d}", "sol": float(x), "T": float(t), "pitch_mdeg": float(hinge(x, 350, 20, 6) + rng.normal(0, 0.5)),
+             "yaw_mdeg": float(hinge(x, 300, -35, 4) + rng.normal(0, 1.0)), "roll_mdeg": float(-6e-3 * x + rng.normal(0, 1.0))}
+            for i, (x, t) in enumerate(zip(s, T))]
+    sb = rng.uniform(15, 2000, 100)
+    blocks = {"blocks": [{"sol_median": float(x), "T_median_degC": -20.0, "pitch_mdeg": float(hinge(x, 200, 25, 5.5) + rng.normal(0, 0.5)),
+                          "yaw_mdeg": float(rng.normal(0, 1.0)), "roll_mdeg": float(rng.normal(0, 1.0))} for x in sb]}
+    drift = {"knot_sol": 250.0, "pitch_mdeg_per_sol": 0.0, "pitch_early_mdeg_per_sol": 0.0, "yaw_mdeg_per_sol": 0.0,
+             "roll_mdeg_per_sol": 0.0}
+    res = K.analyze({"rows": rows, "angles": {}}, {"residuals": blocks, "drift": drift})
+    assert abs(res["pitch"]["deck"]["best"] - 350) <= 30 and res["pitch"]["deck"]["law_knee_chi2"] > 4
+    assert abs(res["pitch"]["blocks"]["best"] - 200) <= 40 and abs(res["pitch"]["deck"]["rate_after"] - 6) < 0.5
+    assert res["roll"]["deck"]["dbic_vs_line"] > 0                        # flat-then-linear not preferred over a line
+    assert K.text(res).count("knee 250 worse by") == 6

@@ -7,8 +7,9 @@ REM   sync_code.bat                    0.98.19 (Christian, 16 Nov 2026: "so that
 REM                                    without needing to install specific bundles"): the newest bundle Claude
 REM                                    delivered - the latest rpp_v*.bundle in RPP_TRANSFER (default
 REM                                    D:\rover_blocks\_transfer); every bundle holds the whole history since a314fa6
-REM   sync_code.bat BUNDLE [BRANCH]    this tree's main fast-forwarded to BRANCH (default main) of a git bundle
-REM                                    Claude delivered (D:\rover_blocks\_transfer\rpp_<...>.bundle)
+REM   sync_code.bat BUNDLE [BRANCH]    this tree's main fast-forwarded to BRANCH of a git bundle Claude delivered
+REM                                    (D:\rover_blocks\_transfer\rpp_<...>.bundle; default rpp for an rpp_v*.bundle,
+REM                                    else main)
 REM   sync_code.bat --github           this tree's main fast-forwarded to origin/main (git pull --ff-only)
 REM
 REM Then, always: the quick tests, one file per process with MKL sequential (torch's and MKL's OpenMP in one process
@@ -33,6 +34,9 @@ shift
 shift
 for %%I in ("%HERE%..\..") do set "REPO=%%~fI"
 call "%HERE%rpp_env.bat" --legacy-only
+REM 0.99.5: an RPP tree (src\rpp; D:\code\RPP on main after rename_mppp_to_rpp.bat) has its freeze checkout in
+REM D:\code\RPP_freeze, as freeze.bat; an MPPP 0.98 tree in D:\code\MPPP_freeze
+if not defined RPP_FREEZE_CODE if exist "%REPO%\src\rpp\__init__.py" set "RPP_FREEZE_CODE=D:\code\RPP_freeze"
 if not defined RPP_FREEZE_CODE set "RPP_FREEZE_CODE=D:\code\MPPP_freeze"
 set "KMP_DUPLICATE_LIB_OK=TRUE"
 set "MKL_THREADING_LAYER=SEQUENTIAL"
@@ -57,6 +61,9 @@ if /i "%~1"=="--github" (
   if "!BUNDLE!"=="" ( echo no rpp_v*.bundle in %RPP_TRANSFER% - usage: sync_code.bat [BUNDLE [BRANCH]]  ^|  sync_code.bat --github & goto :unstash_fail )
   echo bundle: !BUNDLE!
   set "BRANCH=%~2"
+  REM 0.99.5: an rpp_v*.bundle carries the branch rpp (main of an RPP tree follows it), an mppp_v*.bundle main
+  for %%B in ("!BUNDLE!") do set "BNAME=%%~nxB"
+  if "!BRANCH!"=="" if /i "!BNAME:~0,5!"=="rpp_v" set "BRANCH=rpp"
   if "!BRANCH!"=="" set "BRANCH=main"
   if not exist "!BUNDLE!" ( echo !BUNDLE! not found & goto :unstash_fail )
   git bundle verify "!BUNDLE!" >nul || ( echo the bundle does not fit this repository ^(a commit it builds on is missing here^) & goto :unstash_fail )

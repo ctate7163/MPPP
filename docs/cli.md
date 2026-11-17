@@ -22,6 +22,8 @@ The ``rpp`` command: the pipeline (:mod:`rpp.pipeline`) and its bookkeeping from
     rpp cmods [list | promote PATH ... --note TEXT]   the camera models in use
     rpp mask [list | fetch [NAME] | install FILE]      the terrain mask model
     rpp example [fetch [--dest DIR] | build --pds DIR --zcam DIR --out DIR]   the Mars 2020 example data (Rockytop)
+    rpp pds fetch --sols FIRST LAST [--cameras ncam fcam rcam zcam] [--match TEXT] [--list] [--dest DIR]
+                                                     Mars 2020 products from the PDS Imaging Node into RPP_PDS
     rpp maps [all | zooms | figures 2 3 ...] [--out DIR] [--dpi N] [--background dtm|ortho] [--tag T] [--dems F;F] [--orthos F;F]
     rpp calib navcam [--root DIR] [--group ecam_consensus | --blocks NAME=WORK ...] [--out DIR] [--promote-if-ok]
     rpp calib zcam|nz|hazcam [--zoom Z] [--group G1,G2] [--navcam-group G] [--variant V] [--promote-if-ok]

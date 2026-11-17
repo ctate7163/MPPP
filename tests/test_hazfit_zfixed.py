@@ -161,7 +161,8 @@ def test_groups_and_block_sites():
     # 2 Nov (Christian): the three longest blocks first; Cannery Passage out again
     # 9 Nov (Christian): butler_landing (sols 1-14, site 3 drive 0000) in the zcam consensus
     # 0.97.0 (12 Nov): Rockytop split into the two ridges; four more sites
-    assert g["zcam_consensus"] == ["butler_landing", "chal_rocks_large", "wildcat_ridge", "skinner_ridge", "taylorfjellet",
+    # 0.99.5 (16 Nov, the rig knee): Issole / Seitah South (sols 201, 286-339)
+    assert g["zcam_consensus"] == ["butler_landing", "chal_rocks_large", "issole_seitah_south", "wildcat_ridge", "skinner_ridge", "taylorfjellet",
                                    "seitah_overlook", "threeforks_north", "threeforks_south", "belva_crater_large",
                                    "marble_mountain", "bright_angel", "pico_turquino", "south_arm", "overlook_mountain",
                                    "airey_hill", "rose_river_falls", "hippo_pools"]

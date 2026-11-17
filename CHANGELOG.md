@@ -3,6 +3,69 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.5 — 2026-11-16 (branch `rpp`)
+
+Christian (16 Nov, evening): freeze-3 on v0p99 and the MPPP -> RPP rename of the PC's tree; blocks and deck stations
+for the rig knee; the MSL waypoints and a Yellowknife Bay block; the PDS download; the blue circle at twice the
+resolution.
+
+- **The rename on the PC.** `rename_mppp_to_rpp.bat` (delivered beside the bundle) runs once, when nothing runs from
+  `D:\code\MPPP`. It fast-forwards main to rpp, renames the folder `D:\code\RPP` and leaves a junction
+  `D:\code\MPPP` -> `D:\code\RPP`, so old paths keep working: batch files outside git, the deck-joint packages, the
+  clones' origins, the editable install. It stops, changing nothing, when main has commits rpp lacks or a process
+  still runs from the old folders. Tested on a copy of the PC's repository (main 0.98.31): the fast-forward, the
+  rename with the old path kept, `--update-code` of a freeze checkout cloned through the old path, and a dry run of
+  every freeze step.
+- **An RPP tree on main** (after the rename) is recognized by its `src\rpp`, not its branch:
+  - `freeze.bat` clones `D:\code\RPP_freeze` on the tree's branch;
+  - `sync_code.bat` takes the branch rpp of an `rpp_v*.bundle`;
+  - `run_single_site_ibr.bat` syncs from the newest `rpp_v*.bundle`.
+- **Freeze step `knee`** (after `deck`; Christian: "to resolve the knee sol, add some deck station and blocks in the
+  250-400 range to run in the next freeze run"):
+  - Deck stations in sols 250-400, one per 5-sol bin (`--knee-sols`, `--knee-bins`), through the deck-joint package
+    of 14 Nov. That package then reruns its joint and jackknifes in `D:\rover_frame_eod_early` (`--eod-work`).
+  - Then the knee profile of that deck joint and this run's Navcam joint
+    (`rpp_studies.calibration.knee`; `camera_analysis\knee_freeze_<day>`).
+  - `--no-knee-stations` skips the new stations and runs the profile only.
+- **The Navcam blocks of the freeze** (`ecam_consensus`) gain Issole / Seitah South (sols 201, 286-339), Artuby Ridge
+  (174-176, 342-349) and La Orotava Crater (384-385): rig epochs in sols 286-385. Issole / Seitah South also joins
+  the Mastcam-Z joints' group (`zcam_consensus`).
+- **`rpp_studies.calibration.knee`:** where the rig's early drift ends, profiled in the deck joint's station rigs and
+  a Navcam joint's rig epochs (16 Nov):
+  - pitch knee: 355 (68 % 330-390) on the deck, 220 (165-270) in the blocks, 320 together;
+  - yaw knee: 295 / 175 / 205;
+  - roll: linear (a flat-then-linear form is not preferred);
+  - the knee at 250 moves the rig by at most 1.2 mdeg.
+- **MSL:**
+  - **Waypoints:** `rpp.waypoints` knows MSL (`MISSIONS`; `load_waypoints(mission="msl")`, `rpp waypoints --mission
+    msl`; `local_en` for a table without easting / northing), from
+    https://mars.nasa.gov/mmgis-maps/MSL/Layers/json/MSL_waypoints.json.
+  - **`rpp_studies.msl.block`:** a Navcam block over several sites and both computer sides. Preset `yellowknife` is
+    Yellowknife Bay, sols 124-302: A side to sol 199, B side from sol 200.
+    - Sites are joined by the labels' site links; the waypoint table bridges gaps and checks the links.
+    - Four cameras (NLA, NRA, NLB, NRB) as COLMAP `FULL_OPENCV` with k4-k6 held at zero. That is the OpenCV
+      perspective lens with k1, k2, p1, p2, k3, fitted to the label CAHVOR (0.018 px rms; `rpp.calib.labelfit.
+      opencv5_from_cahvore`).
+    - Mapping with the label cameras, then a bundle adjustment with them free. A subset manifold holds k4-k6;
+      pyceres needs the manifold object kept alive to the solve, or it crashes.
+    - Masks: the mask CNN plus MXY. The CNN's masks go to `mask_candidates\` in the training-set layout with
+      `review.csv`, to clean.
+    - Pairs: where the views meet on the ground.
+  - Delivered: `msl_yellowknife.bat`.
+  - `first_block`: every site and both sides; the archive listing reports the size to download.
+- **`rpp pds fetch`** (`rpp.pds`): Mars 2020 RAD products straight from the PDS Imaging Node into the local archive
+  layout. Options: `--sols`, `--cameras ncam fcam rcam zcam`, `--match`, `--list`.
+  - **`rpp example fetch` now takes the example set from the PDS** (the 36 products; the release zip at the first
+    file the PDS cannot give; `--source release`).
+  - **The example runs with nothing set:** `rpp run rockytop_example` reads `~/rpp_example` and writes to
+    `~/rpp_scapes` when RPP_PDS / RPP_SCAPES are not set. A first try is two commands.
+  - README and quickstart say so in a few lines.
+- **The blue circle at twice the resolution** (Christian: "double the resolution on the blue circle so that there is
+  less pixelation on the text"): the ground texture is 2048 px. It is drawn at its own resolution (0.75 rows of the
+  band per texture pixel, in a 2:1 frame so the letters keep their shape), not upsampled from the 16K panorama's
+  455-row band. The next panorama run writes it.
+- `run_pipeline.bat` and the freeze's `--mask-home` default to `D:\code\RPP`.
+
 ## 0.99.4 — 2026-11-16 (branch `rpp`)
 
 Christian (16 Nov): "Prepare a test msl block".

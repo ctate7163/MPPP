@@ -46,7 +46,7 @@ distortion and the stereo rig to about 0.2 px, so the blocks across the mission 
 no single sol can provide. RPP versions those refined models, checks them across blocks, and feeds them back as
 the default cameras for the next run.
 
-Version **0.99.4** (`v0p99`): the core (`rpp`, the pipeline) and the research studies (`rpp_studies`) apart, the
+Version **0.99.5** (`v0p99`): the core (`rpp`, the pipeline) and the research studies (`rpp_studies`) apart, the
 freeze run as a driver of its own, and the products of one rover station past the block - a cleaned mesh with a
 model of the rover, per-image depth and photometric maps, and a stereoscopic 360 degree panorama with a web
 viewer (below). The paper's freeze release is 0.95 (`paper/paper.md`). Versions before 1.0 are
@@ -85,10 +85,12 @@ A small Mars 2020 set to try the pipeline on: Rockytop (sols 461-464) - the main
 at each of the two waypoints (sols 461 and 464) and eight Mastcam-Z 34 mm frames (ZCAM03381, sol 464), in the layout of a local PDS archive.
 
 ```bash
-rpp example fetch               # downloads the release asset (example-data-v1), checks it, unpacks to ~/rpp_example
-export RPP_PDS=~/rpp_example          # the folder holding datadrive/ and zcam/
-rpp run rockytop_example --zcam
+rpp example fetch               # its 36 products straight from the PDS Imaging Node into ~/rpp_example
+rpp run rockytop_example --zcam # reads ~/rpp_example, writes ~/rpp_scapes (RPP_PDS / RPP_SCAPES when set)
 ```
+
+Other sols come the same way: `rpp pds fetch --sols 500 534 --cameras ncam fcam zcam` downloads the RAD products
+of those sols from the PDS into `RPP_PDS` (`--list` first shows what is there; `--match NCAM03` takes part of them).
 
 ## Use
 

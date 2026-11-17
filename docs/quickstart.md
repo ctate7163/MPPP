@@ -7,8 +7,8 @@ This page runs RPP on the example data set: Rockytop, sols 461-464 (Mars 2020 ro
 - one front Hazcam pair at each waypoint (`FHAZ02008`);
 - eight Mastcam-Z 34 mm frames, four stereo pairs of sequence `ZCAM03381` (sol 464).
 
-The files are laid out as a local PDS archive (`datadrive/<sol>/ids/rdr/ncam|fcam/` and `zcam/`) and published as
-the GitHub release asset `example-data-v1`. The site `rockytop_example` in the site definitions selects them.
+The files are laid out as a local PDS archive (`datadrive/<sol>/ids/rdr/ncam|fcam/` and `zcam/`), as the PDS
+Imaging Node has them; they are also published as the GitHub release asset `example-data-v1`. The site `rockytop_example` in the site definitions selects them.
 
 ## 1. Install
 
@@ -21,13 +21,18 @@ See [Installation](installation.md) for the dependency groups and the GPU setup.
 ## 2. Fetch the example data
 
 ```bash
-rpp example fetch                 # downloads the release asset, checks its SHA-256, unpacks to ~/rpp_example
+rpp example fetch                 # the 36 products from the PDS Imaging Node into ~/rpp_example
 ```
 
-`--dest DIR` unpacks somewhere else; `--force` downloads again. The zip contains `example_manifest.json` with the size
-and SHA-256 of every file.
+`--dest DIR` puts them somewhere else. Files already there are not downloaded again. If the PDS cannot be reached,
+the release zip (`example-data-v1`) is used instead; `--source release` asks for it directly.
+
+Any other sols: `rpp pds fetch --sols FIRST LAST [--cameras ncam fcam rcam zcam] [--match TEXT] [--list]`.
 
 ## 3. Point RPP at the data and an output folder
+
+Nothing to do for the example: `rockytop_example` reads `~/rpp_example` and writes to `~/rpp_scapes`. For your own
+data, or other folders:
 
 ```bash
 export RPP_PDS=~/rpp_example     # searched recursively: datadrive/ (Navcam, Hazcam) and zcam/ (Mastcam-Z)

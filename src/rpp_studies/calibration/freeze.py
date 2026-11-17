@@ -6,7 +6,7 @@ The run uses its own checkout (``--code``: ``D:\\code\\RPP_freeze`` on v0p99, cl
 ``rpp``); ``D:\\code\\MPPP_freeze`` from ``D:\\code\\MPPP`` on v0p98 - by
 ``scripts\\windows\\freeze.bat``), its own camera-model folder (``--cmods``, ``D:\\rover_blocks\\cmods_freeze2``:
 the models in use with the 3 Nov Navcam law and the freeze-2 rig promoted into it; ``RPP_CMODS`` for every step),
-and the blocks root ``--root`` (``D:\\rover_blocks``).  ``D:\\code\\MPPP`` and ``D:\\scapes\\cmods`` are not changed.
+and the blocks root ``--root`` (``D:\\rover_blocks``).  The main tree (``D:\\code\\RPP``) and ``D:\\scapes\\cmods`` are not changed.
 
 Steps (each done once; started again after any stop, the run continues where it was):
 
@@ -35,6 +35,9 @@ Steps (each done once; started again after any stop, the run continues where it 
   nz       the N+Z34 check on the final blocks
   deck     the rover deck in the adjustment of the Mastcam-Z blocks with a Z34 deck pan (Three Forks north, Airey
            Hill, Chal Rocks large): the Navcam and Z34 baselines against the survey
+  knee     0.99.5: deck stations in sols 250-400 into the deck joint (its package of 14 Nov, ``--eod-work``), then the
+           knee profile of the Navcam rig drift from that deck joint and this run's Navcam joint
+           (``camera_analysis\\knee_freeze_<day>``); ``--no-knee-stations`` for the profile only
   ztests   comparison joints, never promoted: Z34 and Z110 with fy / fx held at 1, Z110 without Marble Mountain
   studies  run_pipeline's error_analysis, rover_frame and report on the final blocks (no states run)
   ladder   0.98.21: Seitah Overlook's states run with its 100 mm frames and its states report (the sol 121 zoom
@@ -78,7 +81,8 @@ from rpp import env as rpp_env
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
-STEPS = ("wait", "mask", "cmods", "zjoints", "zfinal", "ecam", "nz", "deck", "ztests", "studies", "ladder", "report")
+STEPS = ("wait", "mask", "cmods", "zjoints", "zfinal", "ecam", "nz", "deck", "knee", "ztests", "studies", "ladder", "report")
+KNEE_SOLS = (250, 400)                 # 0.99.5: the deck stations added for the rig knee (one per --knee-bins bin)
 TAG = "freeze_3"              # 0.98.15 (15 Nov): freeze-3 - the deck-joint rig, the 15 Nov backlash relabels, 100 mm
 # (0.97.0, 12 Nov: "freeze_097", the run restarted from the beginning on the 0.97 rules)
 ZOOMS = (26, 34, 48, 63, 79, 100, 110)     # 0.98.15: 26 and 100 mm too (promoted from two blocks)
@@ -561,6 +565,43 @@ class Run:
         return "; ".join(f"{k}: " + (", ".join(f"{n} {v:.2f} mm" for n, v in (r.get("baselines_mm") or {}).items())
                                     if "error" not in r else r["error"]) for k, r in rows.items())
 
+    def s_knee(self) -> str:
+        """0.99.5 (Christian, 16 Nov 2026: "to resolve the knee sol, add some deck station and blocks in the 250-400
+        range to run in the next freeze run"): deck stations in sols 250-400 (``--knee-sols``; one per ``--knee-bins``
+        bin with a medium-resolution Navcam 360 on the drive) through the deck-joint package of 14 Nov
+        (``run_eod_drive.bat``: the stations, the joint data, the joints and their jackknifes, the report, in
+        ``--eod-work``), then the knee profile (:mod:`.knee`) of that deck joint and of this run's Navcam joint
+        (whose blocks now include Artuby Ridge, Issole / Seitah South and La Orotava Crater, sols 286-385).  Nothing
+        is promoted."""
+        notes = []
+        if self.a.knee_stations:
+            drive = Path(self.a.eod_packages) / "deck_joint_drive_2026-11-14" / "run_eod_drive.bat"
+            if not drive.is_file():
+                notes.append(f"deck stations: {drive} not found - skipped")
+            else:
+                s0, s1 = self.a.knee_sols
+                rc = self.run("knee_deck", ["cmd", "/c", drive, "--first", s0, "--last", s1, "--bins", self.a.knee_bins,
+                                            "--per-500", "0", "--panoramas",
+                                            self.code / "src" / "rpp" / "data" / "single_sites.json"],
+                              timeout_h=24, cwd=drive.parent)
+                notes.append(f"deck stations sols {s0}-{s1}: exit {rc}")
+        since = str(self.status.get("started") or "")
+        joints = sorted((p for p in (self.root / "camera_analysis").glob("navcal_tied_*/navcam_joint/rig_residuals.json")),
+                        key=lambda p: p.stat().st_mtime)
+        fresh = [p for p in joints if not since or datetime.datetime.fromtimestamp(p.stat().st_mtime).isoformat() >= since[:19]]
+        blocks = (fresh or joints or [None])[-1]
+        out = self.root / "camera_analysis" / f"knee_freeze_{self.day()}"
+        cmd = [self.python, "-m", "rpp_studies.calibration.knee", "--deck", Path(self.a.eod_work) / "all_rig.json", "--out", out]
+        if blocks is not None:
+            cmd += ["--blocks", blocks.parent]
+        rc = self.run("knee_profile", cmd, timeout_h=1)
+        txt = out / "knee_profile.txt"
+        if txt.is_file():
+            notes += [ln for ln in txt.read_text(encoding="utf-8").splitlines() if ln.startswith(("pitch", "yaw"))][:6]
+        else:
+            notes.append(f"knee profile: exit {rc}")
+        return "; ".join(notes)
+
     def s_ztests(self) -> str:
         notes = []
         day = self.day()
@@ -969,7 +1010,7 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--mask-model", default="keep", metavar="keep|auto|FILE|NAME",
                     help="the mask model of the blocks (see above; default keep)")
     ap.add_argument("--mask-tag", default=None, help="auto: the training's --tag (default: the newest training)")
-    ap.add_argument("--mask-home", default=rpp_env.get("RPP_HOME_MAIN", r"D:\code\MPPP"),
+    ap.add_argument("--mask-home", default=rpp_env.get("RPP_HOME_MAIN", r"D:\code\RPP"),
                     help="auto: the tree train_masks.bat writes checkpoints\\ and 'Claude outputs\\' into")
     ap.add_argument("--mask-root", default=r"D:\masks", help="auto: where the training sets are")
     ap.add_argument("--mask-data", default=None, help="auto: the training set of the comparison (default: the newest)")
@@ -980,6 +1021,13 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--ab-python", default=rpp_env.get("RPP_TRAIN_PYTHON") or sys.executable,
                     help="auto: a Python with a CUDA torch for the comparison")
     ap.add_argument("--zcam-waive-aspect", type=int, nargs="*", default=list(WAIVE_ASPECT), metavar="ZOOM")
+    ap.add_argument("--no-knee-stations", dest="knee_stations", action="store_false",
+                    help="0.99.5: the knee step without new deck stations (the profile only)")
+    ap.add_argument("--knee-sols", type=int, nargs=2, default=list(KNEE_SOLS), metavar=("FIRST", "LAST"))
+    ap.add_argument("--knee-bins", type=int, default=30, help="knee: deck-station bins over --knee-sols (default 30: 5 sols)")
+    ap.add_argument("--eod-work", default=r"D:\rover_frame_eod_early", help="knee: the deck joint's work folder")
+    ap.add_argument("--eod-packages", default=None,
+                    help="knee: the folder holding deck_joint_drive_2026-11-14 (default: <the main tree>\\Claude outputs)")
     ap.add_argument("--jobs", type=int, default=int(rpp_env.get("RPP_JOBS", "2") or 2))
     ap.add_argument("--sites-timeout-h", type=float, default=168.0,
                     help="the time limit of one pass over the blocks (run_pipeline --sites-timeout-h; its own default "
@@ -1006,6 +1054,8 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv=None) -> int:
     a = parser().parse_args(argv)
+    if a.eod_packages is None:                    # 0.99.5: the deck-joint packages live in the main tree's outputs
+        a.eod_packages = str(Path(a.mask_home) / "Claude outputs")
     if a.status:
         return show_status(Run(a, read_only=True))
     if a.update_code:

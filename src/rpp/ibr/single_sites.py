@@ -102,17 +102,18 @@ set "BR=main"
 (
   for /f %%b in ('git rev-parse --abbrev-ref HEAD') do set "BR=%%b"
   set "PAT=mppp_v*.bundle"
-  if /i "!BR!"=="rpp" set "PAT=rpp_v*.bundle"
+  set "SRC=!BR!"
+  if exist "%REPO%\src\rpp\__init__.py" ( set "PAT=rpp_v*.bundle" & set "SRC=rpp" )
   for /f "delims=" %%f in ('dir /b /o-d "%TRANSFER%\!PAT!" 2^>nul') do if not defined B set "B=%TRANSFER%\%%f"
   for /f %%h in ('git rev-parse HEAD') do set "H0=%%h"
   if defined B (
-    git fetch -q "!B!" +!BR!:refs/remotes/bundle/!BR!
-    if errorlevel 1 ( echo fetch of !BR! from !B! failed - send Claude the lines above & pause & exit /b 1 )
-    git merge-base --is-ancestor HEAD refs/remotes/bundle/!BR!
+    git fetch -q "!B!" +!SRC!:refs/remotes/bundle/!SRC!
+    if errorlevel 1 ( echo fetch of !SRC! from !B! failed - send Claude the lines above & pause & exit /b 1 )
+    git merge-base --is-ancestor HEAD refs/remotes/bundle/!SRC!
     if errorlevel 1 (
-      git merge-base --is-ancestor refs/remotes/bundle/!BR! HEAD
+      git merge-base --is-ancestor refs/remotes/bundle/!SRC! HEAD
       if errorlevel 1 (
-        git merge -q --no-edit refs/remotes/bundle/!BR!
+        git merge -q --no-edit refs/remotes/bundle/!SRC!
         if errorlevel 1 ( git merge --abort & echo the newest bundle !B! does not merge cleanly into %REPO% - send Claude the lines above & pause & exit /b 1 )
         echo the newest bundle !B! merged into %REPO%
       ) else (
@@ -121,7 +122,7 @@ set "BR=main"
     ) else (
       git ls-files --error-unmatch scripts/windows/run_single_site_ibr.bat >nul 2>nul
       if errorlevel 1 if exist scripts\windows\run_single_site_ibr.bat del /q scripts\windows\run_single_site_ibr.bat
-      git merge -q --ff-only refs/remotes/bundle/!BR!
+      git merge -q --ff-only refs/remotes/bundle/!SRC!
       if errorlevel 1 ( echo fast-forward failed - send Claude the lines above & pause & exit /b 1 )
     )
   )

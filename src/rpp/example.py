@@ -5,7 +5,7 @@ front Hazcam pair each on sols 461 and 464 and the eight Mastcam-Z 34 mm frames 
 local PDS archive (``datadrive/<sol>/ids/rdr/<ncam|fcam>/`` and ``zcam/``) and published as a GitHub Release asset.
 
     rpp example build --pds D:\\data\\m2020\\datadrive --zcam D:\\data\\m2020\\zcam --out D:\\code\\MPPP\\_transfer
-    rpp example fetch [--dest DIR]       # download the release asset, check it, unpack; then set RPP_PDS
+    rpp example fetch [--dest DIR]       # 0.99.5: from the PDS (the release zip if that fails); then set RPP_PDS
 
 The zip carries ``example_manifest.json`` (every file with its size and SHA-256).
 """
@@ -25,6 +25,26 @@ EXAMPLE_NAME = ondisk.EXAMPLE_ASSET     # the release asset keeps its name (rpp.
 EXAMPLE_TAG = "example-data-v1"
 EXAMPLE_URL = f"https://github.com/ctate7163/RPP/releases/download/{EXAMPLE_TAG}/{EXAMPLE_NAME}.zip"
 EXAMPLE_SOLS = (461, 464)
+EXAMPLE_SITE = "rockytop_example"        # the site of the example set in rpp/data/sites.json
+
+
+def default_dest() -> Path:
+    """Where ``rpp example fetch`` puts the set: ``~/rpp_example``."""
+    return Path.home() / "rpp_example"
+
+
+def example_defaults(site: Optional[str], pds_dir: Optional[PathLike], scapes_root: Optional[PathLike]) -> Dict[str, Path]:
+    """0.99.5: the example runs with nothing set.  For the example site, a missing PDS archive is
+    ``~/rpp_example`` (when it holds the fetched set) and a missing scapes root ``~/rpp_scapes``; ``{}`` otherwise."""
+    if site != EXAMPLE_SITE:
+        return {}
+    out: Dict[str, Path] = {}
+    d = default_dest()
+    if not pds_dir and (d / "datadrive").is_dir():
+        out["pds_dir"] = d
+    if not scapes_root and (pds_dir or out):
+        out["scapes_root"] = Path.home() / "rpp_scapes"
+    return out
 ZCAM_SEQUENCE = "ZCAM03381"
 
 
@@ -140,12 +160,24 @@ def build_example(pds: PathLike, zcam: Optional[PathLike], out_dir: PathLike, na
 
 
 def fetch_example(dest: Optional[PathLike] = None, url: str = EXAMPLE_URL, sha256: Optional[str] = None,
-                  force: bool = False) -> Path:
-    """Download the example zip (the GitHub Release asset), check its SHA-256 when given (``sha256``, or the
-    ``.sha256`` file next to the asset), unpack it into ``dest`` (default ``~/rpp_example``).  Returns ``dest``."""
+                  force: bool = False, source: str = "pds", get=None) -> Path:
+    """The example set into ``dest`` (default ``~/rpp_example``) in the archive layout (``datadrive/``, ``zcam/``).
+    ``source="pds"`` (0.99.5, the default): each file of :data:`EXAMPLE_FILES` from the PDS Imaging Node
+    (:mod:`rpp.pds`; files already there are kept); if any cannot be had, the release zip.  ``"release"``: the zip
+    (the GitHub Release asset), its SHA-256 checked when given (``sha256``, or the ``.sha256`` file next to the
+    asset), unpacked.  Returns ``dest``."""
     import urllib.request
-    dest = Path(dest or Path.home() / "rpp_example").expanduser()
+    dest = Path(dest or default_dest()).expanduser()
     dest.mkdir(parents=True, exist_ok=True)
+    if source == "pds":
+        from . import pds
+        rep = pds.fetch_products(EXAMPLE_FILES, dest, stop_on_failure=True, tries=2,
+                                 **({"get": get} if get is not None else {}))
+        if not rep["failed"]:
+            return dest
+        import logging
+        logging.getLogger("rpp").warning("example: %s not had from the PDS (%s); the release zip instead",
+                                         rep["failed"][0][0], rep["failed"][0][1])
     zp = dest / url.rsplit("/", 1)[-1]
     if force or not zp.is_file():
         tmp = zp.with_suffix(".part")

@@ -11,6 +11,7 @@ The ``rpp`` command: the pipeline (:mod:`rpp.pipeline`) and its bookkeeping from
     rpp cmods [list | status | promote PATH ... --note TEXT | init DIR | ship]   the camera models in use (RPP_CMODS)
     rpp mask [list | fetch [NAME] | install FILE]      the terrain mask model
     rpp example [fetch [--dest DIR] | build --pds DIR --zcam DIR --out DIR]   the Mars 2020 example data (Rockytop)
+    rpp pds fetch --sols FIRST LAST [--cameras ncam fcam rcam zcam] [--match TEXT] [--list]   PDS -> RPP_PDS (0.99.5)
     rpp maps [all | zooms | figures 2 3 ...] [--out DIR] [--dpi N] [--background dtm|ortho] [--tag T] [--dems F;F] [--orthos F;F] [--waypoints refresh|auto|study]
     rpp calib navcam [--root DIR] [--group ecam_consensus | --blocks NAME=WORK ...] [--out DIR] [--promote-if-ok]
     rpp mesh WORK --station S003D1234 [--points PLY] [--colmap EXE] [--mesh-radius 30] [--plane-radius 100]   0.96: one clean surface
@@ -113,17 +114,23 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--force", action="store_true", help="fetch: download again")
 
     p = sub.add_parser("example", help="the Mars 2020 example data (Rockytop, sols 461-464): fetch or build")
-    p.add_argument("what", choices=("fetch", "build"), help="fetch: download the release asset and unpack it; "
-                   "build: zip it from a local PDS archive (for the release)")
-    p.add_argument("--dest", default=None, metavar="DIR", help="fetch: where to unpack (default ~/rpp_example)")
+    p.add_argument("what", choices=("fetch", "build"), help="fetch: download it (from the PDS; the release zip if "
+                   "that fails); build: zip it from a local PDS archive (for the release)")
+    p.add_argument("--dest", default=None, metavar="DIR", help="fetch: where to put it (default ~/rpp_example)")
+    p.add_argument("--source", default="pds", choices=("pds", "release"),
+                   help="fetch: 0.99.5 - the PDS Imaging Node (default) or the GitHub release zip")
     p.add_argument("--force", action="store_true", help="fetch: download again")
     p.add_argument("--pds", default=None, metavar="DIR", help="build: the PDS archive (default RPP_PDS)")
     p.add_argument("--zcam", default=None, metavar="DIR", help="build: the Mastcam-Z folder (default <PDS>/../zcam)")
     p.add_argument("--out", default=".", metavar="DIR", help="build: where to write the zip")
 
-    p = sub.add_parser("waypoints", help="the Mars 2020 waypoint table in use (cached download or packaged snapshot)")
+    p = sub.add_parser("waypoints", help="the rover waypoint table in use (cached download or packaged snapshot)")
     p.add_argument("--refresh", action="store_true", help="download the current table now (every sync should)")
+    p.add_argument("--mission", default="m2020", choices=("m2020", "msl"), help="0.99.5: m2020 (default) or msl (Curiosity)")
+    p.add_argument("--path", default=None, help="0.99.5: the table file to use / download into (default: the cache)")
 
+    from .pds import add_parser as _pds_parser
+    _pds_parser(sub)                          # 0.99.5: rpp pds fetch
     _study_parsers(sub)                       # 0.96.0: calib, zcam-states (rpp_studies.calibration), maps (rpp_studies.sites)
     from .ibr.cli import add_parsers as _ibr_parsers
     _ibr_parsers(sub)                         # 0.96.0: mesh, depthmaps, ods (rpp.ibr)
@@ -287,6 +294,12 @@ def _settings(a: argparse.Namespace, target: Optional[str] = None, extra: Option
             site = parse_work_folder(work)[0] or work.name
         else:
             site = target
+    if work is None:
+        from .example import example_defaults
+        dflt = example_defaults(site, base.pds_dir, base.scapes_root)
+        if dflt:
+            print("example: " + ", ".join(f"{k} {v}" for k, v in dflt.items()), file=sys.stderr)
+            base = base.replace(**dflt)
     s = load_settings(work, site, a.settings, sets, a.sites_file, base=base)
     return s.replace(**(extra or {}))
 
@@ -521,12 +534,18 @@ def cmd_cmods(a: argparse.Namespace) -> int:
     return 0
 
 
+def _pds_command(a: argparse.Namespace) -> int:
+    from .pds import cmd_pds
+    return cmd_pds(a)
+
+
 def cmd_example(a: argparse.Namespace) -> int:
     """``example fetch`` / ``example build``: the Mars 2020 example data set (:mod:`rpp.example`)."""
     from . import example as E
     if a.what == "fetch":
-        d = E.fetch_example(a.dest, force=a.force)
-        print(f"example data in {d}\n  set RPP_PDS={d} (it holds datadrive/ and zcam/)")
+        d = E.fetch_example(a.dest, force=a.force, source=getattr(a, "source", "pds"))
+        print(f"example data in {d}\nnext: rpp run rockytop_example --zcam"
+              + ("" if Path(d) == E.default_dest() else f" --pds {d}"))
         return 0
     pds = a.pds or rpp_env.get("RPP_PDS")
     if not pds:
@@ -560,17 +579,19 @@ def cmd_mask(a: argparse.Namespace) -> int:
 
 def cmd_waypoints(a: argparse.Namespace) -> int:
     from .waypoints import load_waypoints
-    from .waypoints.table import WAYPOINTS_URL, cached_path, waypoints_age_days
-    w = load_waypoints(refresh=bool(a.refresh))
+    from .waypoints.table import cached_path, mission_url, waypoints_age_days
+    mission = getattr(a, "mission", "m2020") or "m2020"
+    path = getattr(a, "path", None)
+    w = load_waypoints(path=path, refresh=bool(a.refresh), mission=mission)
     src = w["_rpp_source"]
     last = max(w["features"], key=lambda f: (int((f.get("properties", f)).get("sol") or 0)))
     pl = last.get("properties", last)
-    age = waypoints_age_days()
+    age = waypoints_age_days(src["path"])
     print(f"{src['n_features']} waypoints from {src['path']} ({'packaged snapshot' if src['packaged_snapshot'] else 'downloaded'}, "
           f"file time {src['file_time']}{'' if age is None else f', {age:.1f} days old'})")
     print(f"last waypoint: sol {pl.get('sol')} site {pl.get('site')} drive {pl.get('drive')}")
     if src["packaged_snapshot"]:
-        print(f"no downloaded copy at {cached_path()}: rpp waypoints --refresh downloads {WAYPOINTS_URL}")
+        print(f"no downloaded copy at {cached_path(mission)}: rpp waypoints --refresh downloads {mission_url(mission)}")
     return 0
 
 
@@ -855,7 +876,7 @@ def _ibr_command(name: str):
 
 
 COMMANDS = {"gui": cmd_gui, "process": cmd_process, "align": cmd_align, "run": cmd_run, "sites": cmd_sites, "cmods": cmd_cmods,
-            "mask": cmd_mask, "example": cmd_example, "waypoints": cmd_waypoints, "maps": _study_command("maps"), "calib": _study_command("calib"), "doctor": cmd_doctor,
+            "mask": cmd_mask, "example": cmd_example, "waypoints": cmd_waypoints, "pds": _pds_command, "maps": _study_command("maps"), "calib": _study_command("calib"), "doctor": cmd_doctor,
             "zcam-states": _study_command("zcam-states"), "dense": cmd_dense, "metashape": cmd_metashape, "nerfstudio": cmd_nerfstudio,
             "mesh": _ibr_command("mesh"), "depthmaps": _ibr_command("depthmaps"), "ods": _ibr_command("ods"),
             "single-sites": _ibr_command("single-sites"), "hf-check": _ibr_command("hf-check"),

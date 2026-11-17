@@ -45,10 +45,10 @@ def test_select_and_build(tmp_path):
     assert not any("FHAZ00206" in x for x in names)
     assert m2["counts"] == {"navcam": 32, "hazcam": 4, "zcam": 8}
     url = (tmp_path / "out" / f"{E.EXAMPLE_NAME}.zip").as_uri()
-    d = E.fetch_example(tmp_path / "dest", url=url)
+    d = E.fetch_example(tmp_path / "dest", url=url, source="release")
     assert (d / "zcam").is_dir() and (d / "datadrive" / "00464").is_dir()
     with pytest.raises(ValueError):
-        E.fetch_example(tmp_path / "dest2", url=url, sha256="0" * 64)
+        E.fetch_example(tmp_path / "dest2", url=url, sha256="0" * 64, source="release")
 
 
 def test_missing_files_are_named(tmp_path):
@@ -57,3 +57,24 @@ def test_missing_files_are_named(tmp_path):
     pds, zc = _archive(tmp_path, skip=(gone,))
     with pytest.raises(FileNotFoundError, match=gone[:20]):
         E.build_example(pds, zc, tmp_path / "out")
+
+
+def test_the_example_runs_with_nothing_set(tmp_path, monkeypatch):
+    """0.99.5 (Christian: "make that as easy as possible for someone testing out the software for the first time"):
+    after ``rpp example fetch``, ``rpp run rockytop_example`` finds ~/rpp_example and writes to ~/rpp_scapes."""
+    from rpp import example as E
+    monkeypatch.setattr(E.Path, "home", classmethod(lambda cls: tmp_path))
+    assert E.example_defaults("rockytop_example", None, None) == {}               # not fetched yet
+    (tmp_path / "rpp_example" / "datadrive").mkdir(parents=True)
+    d = E.example_defaults("rockytop_example", None, None)
+    assert d == {"pds_dir": tmp_path / "rpp_example", "scapes_root": tmp_path / "rpp_scapes"}
+    assert E.example_defaults("rockytop_example", "/pds", "/out") == {}           # what is set is kept
+    assert E.example_defaults("rockytop_example", "/pds", None) == {"scapes_root": tmp_path / "rpp_scapes"}
+    assert E.example_defaults("rockytop", None, None) == {}                       # only the example site
+    for k in ("RPP_PDS", "MPPP_PDS", "RPP_SCAPES", "MPPP_SCAPES"):
+        monkeypatch.delenv(k, raising=False)
+    import argparse
+    from rpp import cli
+    a = argparse.Namespace(set=[], root=None, pds=None, zcam=True, hazcam=None, settings=None, sites_file=None)
+    s = cli._settings(a, "rockytop_example")
+    assert s.pds_dir == tmp_path / "rpp_example" and s.scapes_root == tmp_path / "rpp_scapes" and s.include_zcam

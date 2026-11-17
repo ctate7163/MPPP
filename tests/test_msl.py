@@ -56,3 +56,154 @@ def test_archive_listings_with_relative_and_absolute_links(monkeypatch):
     assert F.listing("https://example/") == ["NLB_668441715RAD_F0870792NCAM00252M1.IMG", "NLB_668441715RAD_F0870792NCAM00252M1.LBL"]
     url, names, tried = F.find_sol_dir(3052, bases=("https://a/MSLNAV_1XXX",))
     assert url == "https://a/MSLNAV_1XXX/DATA/SOL03052/" and len(names) == 2 and len(tried) == 1
+
+
+def _info(site, drive, C, yaw_deg=0.0, eye="L", side="A", pair="p", link=None):
+    # camera looking horizontally to azimuth yaw (from north, clockwise), 10 deg down; block frame east-north-up
+    az, el = np.radians(yaw_deg), np.radians(-10.0)
+    z = np.array([np.sin(az) * np.cos(el), np.cos(az) * np.cos(el), np.sin(el)])
+    x = np.cross(z, [0, 0, 1.0]); x /= np.linalg.norm(x)
+    y = np.cross(z, x)
+    R = np.vstack([x, y, z])
+    return {"site": site, "drive": drive, "C_enu_m": list(C), "R_w2c": R.tolist(), "eye": eye, "side": side,
+            "group": f"NL{side}" if eye == "L" else f"NR{side}", "pair_key": pair, "sol": 150, "sclk": 1, "site_link": link,
+            "image": f"{site}_{drive}_{yaw_deg}_{eye}.png"}
+
+
+def test_msl_block_sites_chain_selection_and_pairs():
+    from rpp_studies.msl import block as B
+    # site 6 is 100 m north and 20 m east of site 5, per the label link (NED offset of site 6's origin in site 5)
+    link = {"site": 6, "parent": 5, "offset_ned_m": [100.0, 20.0, -1.0], "quaternion": [1, 0, 0, 0]}
+    infos = [_info(5, 0, [0, 0, 1.9]), _info(5, 10, [3, 0, 1.9]), _info(6, 0, [0, 0, 1.9], link=link),
+             _info(6, 0, [0.4, 0, 1.9], link=link), _info(7, 0, [0, 0, 1.9])]
+    origin, rep = B.site_origins(infos)
+    assert rep["anchor"] in (5, 6) and rep["left_out"] == [7]
+    d = origin[6] - origin[5]
+    assert np.allclose(d, [20.0, 100.0, 1.0])                     # ENU: east 20, north 100, up 1
+    frames = B.place(infos, origin)
+    assert len(frames) == 4 and all("C_block_m" in r for r in frames)
+    kept, sel = B.select(frames, 30.0, rep["anchor"])
+    assert sel["dropped"] == 2 and {r["site"] for r in kept} == {rep["anchor"]}   # the anchor site's frames, 100 m away
+    cam = {"model": "FULL_OPENCV", "params": [1225.0, 1225.0, 512.0, 512.0] + [0.0] * 8, "width": 1024, "height": 1024}
+    a = dict(_info(5, 0, [0, 0, 1.9], 0.0, pair="p"), C_block_m=[0, 0, 1.9], image="a.png")       # looking north
+    b = dict(_info(5, 1, [6, 0, 1.9], 0.0, pair="q"), C_block_m=[6, 0, 1.9], image="b.png")       # 6 m east, also north
+    c = dict(_info(5, 2, [0, 3, 1.9], 180.0, pair="r"), C_block_m=[0, 3, 1.9], image="c.png")    # looking south, away
+    s = dict(_info(5, 0, [0.42, 0, 1.9], 0.0, eye="R", pair="p"), C_block_m=[0.42, 0, 1.9], image="s.png")  # a's partner
+    pairs = set(B.image_pairs([a, b, c, s], {"NLA": cam, "NRA": cam}, max_distance_m=60.0, per_image=10))
+    assert ("a.png", "b.png") in pairs and ("a.png", "s.png") in pairs
+    assert ("a.png", "c.png") not in pairs and ("b.png", "c.png") not in pairs
+
+
+def test_msl_waypoint_table_and_opencv_fit(tmp_path):
+    import json
+    from rpp.waypoints.table import MISSIONS, load_waypoints, local_en, mission_url
+    assert mission_url("msl").endswith("/MSL/Layers/json/MSL_waypoints.json") and "m2020" in MISSIONS
+    feats = [{"type": "Feature", "properties": {"sol": s, "site": 6, "drive": 10 * s, "elev_geoid": -4500.0},
+              "geometry": {"type": "Point", "coordinates": [137.44 + 1e-4 * s, -4.59]}} for s in (124, 125, 126)]
+    p = tmp_path / "MSL_waypoints.json"
+    p.write_text(json.dumps({"type": "FeatureCollection", "features": feats}), encoding="utf-8")
+    w = load_waypoints(path=p, mission="msl")
+    assert w["_rpp_source"]["mission"] == "msl" and w["_rpp_source"]["n_features"] == 3
+    rows = local_en(w)
+    assert rows[0]["E"] == 0 and abs(rows[1]["E"] - np.radians(1e-4) * 3396190.0 * np.cos(np.radians(-4.59))) < 1e-6
+    assert rows[2]["site"] == 6 and rows[2]["drive"] == 1260 and rows[0]["elev"] == -4500.0
+    # the OpenCV k1 k2 p1 p2 k3 camera reproduces a CAHVOR (a synthetic Navcam-like one)
+    from rpp.calib.labelfit import opencv5_from_cahvore
+    from rpp.cmod import CameraModel
+    gcm = {"MODEL_TYPE": "CAHVOR", "MODEL_COMPONENT_1": [0.0, 0.0, 0.0], "MODEL_COMPONENT_2": [1.0, 0.0, 0.0],
+           "MODEL_COMPONENT_3": [512.0, 0.0, 1225.0], "MODEL_COMPONENT_4": [512.0, -1225.0, 0.0],
+           "MODEL_COMPONENT_5": [1.0, 0.0, 0.0], "MODEL_COMPONENT_6": [0.0, -0.002, 0.003]}
+    cm = CameraModel.from_label(gcm, 1024, 1024)
+    mc, _ = cm.camera_frame()
+    p12, rep = opencv5_from_cahvore(mc, 1024, 1024, step=32)
+    assert rep["rms_px"] < 0.05 and p12[9:] == [0.0, 0.0, 0.0] and abs(p12[0] - 1225) < 5
+
+
+def test_msl_block_refines_the_opencv_cameras_and_reports(tmp_path):
+    """0.99.5: the second half of the alignment on a synthetic two-camera block (NLA, NLB): the model into the block
+    frame, the cameras refined from a start 10 px off (k4-k6 held at zero), the stereo baselines, the residuals per
+    site."""
+    import pycolmap
+    from rpp_studies.msl.block import finish
+    rng = np.random.default_rng(2)
+    rec = pycolmap.Reconstruction()
+    true = np.array([1225., 1226., 507., 503., -0.02, 0.01, 1e-4, -2e-4, 0.005, 0, 0, 0])
+    for cid in (1, 2):
+        cam = pycolmap.Camera.create_from_model_name(cid, "FULL_OPENCV", 1000., 1024, 1024); cam.params = true.copy()
+        rec.add_camera_with_trivial_rig(cam)
+    X = rng.uniform([-6, -6, 6], [6, 6, 16], (500, 3))
+    ids = [rec.add_point3D(x, pycolmap.Track()) for x in X]
+    images = []
+    for i in range(12):
+        cid = 1 if i < 6 else 2
+        eye = "L" if i % 2 == 0 else "R"
+        ang = 0.02 * (i - 6)
+        q = np.array([0, np.sin(ang / 2), 0, np.cos(ang / 2)])
+        t = np.array([-0.4 * (i // 2) - (0.42 if eye == "R" else 0.0), 0.1 * (i % 3), 0.02 * (i % 2)])
+        pose = pycolmap.Rigid3d(pycolmap.Rotation3d(q), t)
+        name = f"{'NLA' if cid == 1 else 'NLB'}_{i:02d}.png"
+        im = pycolmap.Image(image_id=i + 1, name=name, camera_id=cid)
+        cam = rec.camera(cid)
+        uv = cam.img_from_cam(np.array([pose * x for x in X]))
+        im.points2D = pycolmap.Point2DList([pycolmap.Point2D(u + rng.normal(0, 0.2, 2), pid) for u, pid in zip(uv, ids)])
+        rec.add_image_with_trivial_frame(im, pose)
+        C = -(pose.rotation.matrix().T @ pose.translation)
+        images.append({"image": name, "group": "NLA" if cid == 1 else "NLB", "eye": eye, "pair_key": f"p{i // 2}",
+                       "site": 6 if i < 8 else 7, "C_block_m": list(C * 1.0 + rng.normal(0, 0.05, 3))})
+    for i in range(1, 13):
+        for k, p in enumerate(rec.image(i).points2D):
+            rec.point3D(p.point3D_id).track.add_element(i, k)
+    for cid in (1, 2):
+        rec.camera(cid).params = np.array([1215., 1216., 510., 500., 0, 0, 0, 0, 0, 0, 0, 0])
+    man = {"preset": {"name": "test", "note": "synthetic"}, "selection": {}, "sites": {}, "masks": {}, "images": images,
+           "mask_mode": "both", "mask_model": "x"}
+    rep = finish(rec, man, tmp_path, 1, [], max_error_m=0.5)
+    assert rep["ok"] and rep["similarity_after_refine"]["median_m"] < 0.2 and rep["stereo_baseline"]["pairs"] == 6
+    for c in rep["cameras"].values():
+        assert c["refined"][9:] == [0.0, 0.0, 0.0] and abs(c["refined"][0] - 1225.0) < 2 and abs(c["refined"][4] + 0.02) < 0.003
+    assert set(rep["label_residual_by_site_m"]) == {"6", "7"} and (tmp_path / "report.txt").is_file()
+
+
+def test_pds_fetch_into_the_archive_layout(tmp_path):
+    """0.99.5: rpp.pds - the PDS folder of a product, the local layout, a listing, the example set from the PDS."""
+    from rpp import pds
+    from rpp.example import EXAMPLE_FILES, fetch_example
+    n = "NLF_0461_0707870987_044RAD_N0260630NCAM03461_0A1195J01.IMG"
+    assert pds.camera_of(n) == "ncam" and pds.sol_of(n) == 461 and pds.camera_of("ZL0_0464_0708130229_159RAD_x") == "zcam"
+    assert pds.folder_url("ncam", 461) == ("https://planetarydata.jpl.nasa.gov/img/data/mars2020/"
+                                           "mars2020_navcam_ops_calibrated/data/sol/00461/ids/rdr/ncam/")
+    assert pds.local_folder(tmp_path, "fcam", 464) == tmp_path / "datadrive" / "00464" / "ids" / "rdr" / "fcam"
+    assert pds.local_folder(tmp_path, "zcam", 464) == tmp_path / "zcam"
+    asked = []
+
+    def get(url):
+        asked.append(url)
+        if url.endswith("/ncam/"):
+            return (f'<a href="../">up</a><a href="{n}">x</a><a href="{n[:-4]}.xml">l</a>'
+                    '<a href="NRF_0461_0707870987_044EDR_N0260630NCAM03461_0A1195J01.IMG">e</a>').encode()
+        return b"data:" + url.rsplit("/", 1)[-1].encode()
+    rep = pds.fetch_sols(tmp_path, [461], ["ncam"], get=get)
+    assert rep["names"] == [n] and rep["downloaded"] == 2 and (pds.local_folder(tmp_path, "ncam", 461) / n).is_file()
+    rep = pds.fetch_sols(tmp_path, [461], ["ncam"], get=get)
+    assert rep["kept"] == 2 and rep["downloaded"] == 0                       # nothing twice
+    d = fetch_example(tmp_path / "ex", get=get)
+    files = sorted(p.name for p in (tmp_path / "ex").rglob("*.IMG"))
+    assert len(files) == len(EXAMPLE_FILES) and (d / "zcam" / EXAMPLE_FILES[-1]).is_file()
+
+
+def test_example_falls_back_to_the_zip_at_the_first_pds_failure(tmp_path, monkeypatch):
+    """0.99.5: with the PDS out of reach, the example asks it once (two tries) and takes the release zip at once."""
+    import zipfile
+    from rpp import example as E, pds
+    monkeypatch.setattr(pds.time, "sleep", lambda s: None)
+    asked = []
+
+    def get(url):
+        asked.append(url)
+        raise OSError("unreachable")
+    zp = tmp_path / "z" / "example.zip"
+    zp.parent.mkdir()
+    with zipfile.ZipFile(zp, "w") as zf:
+        zf.writestr("datadrive/00461/ids/rdr/ncam/x.IMG", b"x")
+    d = E.fetch_example(tmp_path / "ex", url=zp.as_uri(), get=get)
+    assert len(asked) == 2 and (d / "datadrive" / "00461" / "ids" / "rdr" / "ncam" / "x.IMG").is_file()

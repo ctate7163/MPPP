@@ -240,8 +240,10 @@ def make_mark(width: int, height: int, lines: Sequence[str], radius_deg: Optiona
             "rows": info, "stretch": info[0]["stretch"] if info else 1.0, "centre_azimuth_deg": float(center_azimuth_deg) % 360.0}
 
 
-TEXTURE_PX = 1024
+TEXTURE_PX = 2048                     # 0.99.5 (Christian, 16 Nov 2026: "double the resolution on the blue circle so
+#                                       that there is less pixelation on the text"): 1024 until 0.99.4
 TEXTURE_SUFFIX = "nadir_mark.png"
+TEXTURE_ROWS_PER_PX = 0.75            # write_texture draws the mark with this many band rows per texture pixel of radius
 
 
 def top_down(mark: Dict[str, Any], size: int = TEXTURE_PX) -> np.ndarray:
@@ -273,7 +275,11 @@ def write_texture(mark: Dict[str, Any], path, size: int = TEXTURE_PX):
     import cv2
     w, h = mark.get("size") or (mark["alpha"].shape[1], 0)
     if h:                                 # the letters in their own shape on the ground, not the panorama's compromise
-        mark = make_mark(w, h, mark["lines"], mark["radius_deg"], mark.get("azimuth0_deg", 0.0),
+        # 0.99.5: drawn finer than the panorama - the disc's radius gets TEXTURE_ROWS_PER_PX rows of the band per
+        # texture pixel (an equirectangular frame of 2:1, so the letters keep their shape; at 16K the panorama's band
+        # had 455 rows for the 2048 texture's 1024-pixel radius, and the letters were upsampled 2.25 times)
+        hh = max(int(h), 2 * int(np.ceil(0.5 * TEXTURE_ROWS_PER_PX * 0.5 * float(size) * 180.0 / float(mark["radius_deg"]))))
+        mark = make_mark(2 * hh, hh, mark["lines"], mark["radius_deg"], mark.get("azimuth0_deg", 0.0),
                          mark.get("centre_azimuth_deg", 0.0), stretch_power=1.0)
     ink = top_down(mark, size)
     S = ink.shape[0]

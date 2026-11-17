@@ -545,3 +545,5 @@ def test_freeze_runs_on_this_version_and_keeps_its_checkout_on_its_line(tmp_path
     bat = (Path(F.REPO) / "scripts" / "windows" / "freeze.bat").read_text(encoding="ascii")
     assert r'"FREEZE_DEFAULT_CODE=D:\code\RPP_freeze"' in bat and r'"FREEZE_DEFAULT_CODE=D:\code\MPPP_freeze"' in bat
     assert "git clone -q -b !FREEZE_BRANCH!" in bat
+    assert r'if exist "%RPP_MAIN%\src\rpp\__init__.py" set "FREEZE_DEFAULT_CODE=D:\code\RPP_freeze"' in bat   # 0.99.5
+    assert "knee" in F.STEPS and F.STEPS.index("knee") == F.STEPS.index("deck") + 1

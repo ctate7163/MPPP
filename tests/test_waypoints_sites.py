@@ -255,9 +255,11 @@ def test_shipped_sites_v0p75():
     assert r["chal_rocks"] == [(91, 101), (361, 378)] and r["threeforks_large"][0] == (652, 693)
     assert r["enchanted_lake"] == [(555, 590), (421, 423)] and S.load_sites()["chal_rocks"] == (91, 378)
     g = t["groups"]
-    # 9 Nov 2026 (Christian): the ecam consensus is the nine large blocks
-    assert g["ecam_consensus"] == ["van_zyl_overlook_huge", "seitah_north_large", "threeforks_large", "delta_front_ascent",
-                                   "belva_crater_large", "bell_island_large", "taylorfjellet_large", "origny_large", "hippo_pools"]
+    # 9 Nov 2026 (Christian): the ecam consensus is the nine large blocks; 0.99.5 (16 Nov, the rig knee): three blocks
+    # in sols 174-385 after Seitah North
+    assert g["ecam_consensus"] == ["van_zyl_overlook_huge", "seitah_north_large", "issole_seitah_south", "artuby_ridge",
+                                   "la_orotava_crater", "threeforks_large", "delta_front_ascent", "belva_crater_large",
+                                   "bell_island_large", "taylorfjellet_large", "origny_large", "hippo_pools"]
     assert "threeforks_north" not in g["ecam_consensus"] and "zcam34_consensus_v0p82" not in g and "threeforks_large" not in g["zcam34_consensus"]
     assert "navcam_consensus_v0p82" not in g
     assert len(g["zcam34_consensus"]) == 15 and "olifants" in g["zcam34_consensus"] and "issole_seitah_south" in g["zcam34_consensus"] and g["zcam34_consensus"][:3] == ["butler_landing", "chal_rocks_large", "rochette"]   # 9 Nov: butler_landing; 22 Oct: chal_rocks_large back; 21 Oct (Christian): Issole back without its video sequence ZCAM05093, olifants back
@@ -358,9 +360,11 @@ def test_sites_19_oct_afternoon():
     assert S["van_zyl_overlook_huge"]["sols"] == [[15, 99], [361, 378]]
     nc = set(G["ecam_consensus"])
     # 9 Nov 2026 (Christian): nine large blocks (2 Nov: 21 - the large and huge ones in place of the small ones)
+    # 0.99.5 (16 Nov, Christian: "add some deck station and blocks in the 250-400 range"): three more
     assert nc == {"van_zyl_overlook_huge", "seitah_north_large", "threeforks_large", "delta_front_ascent", "belva_crater_large",
-                  "bell_island_large", "taylorfjellet_large", "origny_large", "hippo_pools"}
-    assert not nc & {"oeb_landing_site", "chal_rocks", "chal_rocks_large", "issole_seitah_south", "cheyava_falls", "taylorfjellet",
+                  "bell_island_large", "taylorfjellet_large", "origny_large", "hippo_pools",
+                  "issole_seitah_south", "artuby_ridge", "la_orotava_crater"}
+    assert not nc & {"oeb_landing_site", "chal_rocks", "chal_rocks_large", "cheyava_falls", "taylorfjellet",
                      "enchanted_lake", "pico_turquino", "south_arm", "witch_hazel_hill", "rochette", "groloy", "airey_hill",
                      "hans_amundsen_workspace"}
     assert "seitah_north_large" in G["navcam_baseline"] and "van_zyl_overlook_huge" in G["navcam_baseline"]

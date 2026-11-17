@@ -2,9 +2,9 @@
 REM ======================================================================================================
 REM RPP 0.96.0 - freeze.bat (9 Nov 2026, Christian: "please prepare a freeze.bat that will run on 0.96").
 REM The freeze run, unattended and resumable, on its own checkout of the code (RPP_FREEZE_CODE): D:\code\RPP_freeze
-REM for v0p99 (this tree on branch rpp), D:\code\MPPP_freeze for v0p98 (main) - cloned from this tree the first
-REM time.  See rpp_studies.calibration.freeze for the steps (wait, mask, cmods, zjoints, zfinal, ecam, nz, deck,
-REM ztests, studies, ladder, report) and the faults it rides out.
+REM for RPP (0.99 and later: this tree has src\rpp), D:\code\MPPP_freeze for the old MPPP 0.98 line - cloned from
+REM this tree, on its branch, the first time.  See rpp_studies.calibration.freeze for the steps (wait, mask, cmods,
+REM zjoints, zfinal, ecam, nz, deck, knee, ztests, studies, ladder, report) and the faults it rides out.
 REM
 REM   freeze.bat                        start, or continue after a stop (done steps are skipped)
 REM   freeze.bat --status               where it is: running / stopped by the user / done / not running; nothing started
@@ -28,20 +28,20 @@ REM ============================================================================
 setlocal EnableExtensions EnableDelayedExpansion
 for %%I in ("%~dp0..\..") do set "RPP_MAIN=%%~fI"
 call "%~dp0rpp_env.bat" --legacy-only
-REM 0.99.3: a freeze runs from main (v0p98: D:\code\MPPP, its checkout D:\code\MPPP_freeze) or from rpp (v0p99:
-REM D:\code\RPP, its checkout D:\code\RPP_freeze, cloned on branch rpp) - each line keeps its own checkout, so a
-REM v0p98 checkout is never moved to v0p99 or back (freeze.py checks the version: 0.99 here)
+REM 0.99.3 / 0.99.5: each line of the code keeps its own checkout, so an MPPP 0.98 checkout is never moved to RPP
+REM or back (freeze.py checks the version too): a tree with src\rpp (RPP 0.99 and later - D:\code\RPP, on main
+REM after rename_mppp_to_rpp.bat, or on rpp) uses D:\code\RPP_freeze, cloned on the tree's branch; a tree without
+REM it (MPPP 0.98) uses D:\code\MPPP_freeze
 set "FREEZE_BRANCH="
 for /f %%b in ('git -C "%RPP_MAIN%" rev-parse --abbrev-ref HEAD 2^>nul') do set "FREEZE_BRANCH=%%b"
 if not defined FREEZE_BRANCH set "FREEZE_BRANCH=main"
-set "FREEZE_DEFAULT_CODE="
-if /i "!FREEZE_BRANCH!"=="main" set "FREEZE_DEFAULT_CODE=D:\code\MPPP_freeze"
-if /i "!FREEZE_BRANCH!"=="rpp" set "FREEZE_DEFAULT_CODE=D:\code\RPP_freeze"
-if not defined FREEZE_DEFAULT_CODE (
-  echo freeze: %RPP_MAIN% is on branch !FREEZE_BRANCH! - a freeze runs from main ^(D:\code\MPPP^) or rpp ^(D:\code\RPP^)
+if /i "!FREEZE_BRANCH!"=="HEAD" (
+  echo freeze: %RPP_MAIN% is not on a branch ^(detached HEAD^) - check out main first
   if not defined RPP_NOPAUSE pause
   exit /b 1
 )
+set "FREEZE_DEFAULT_CODE=D:\code\MPPP_freeze"
+if exist "%RPP_MAIN%\src\rpp\__init__.py" set "FREEZE_DEFAULT_CODE=D:\code\RPP_freeze"
 if not defined RPP_FREEZE_ROOT set "RPP_FREEZE_ROOT=D:\rover_blocks"
 if not defined RPP_FREEZE_CODE set "RPP_FREEZE_CODE=!FREEZE_DEFAULT_CODE!"
 title RPP freeze (!FREEZE_BRANCH!) - %RPP_FREEZE_ROOT%

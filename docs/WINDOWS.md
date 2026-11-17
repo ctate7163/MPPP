@@ -6,7 +6,7 @@ batches and the weekend runner went (git history has them; `run_pipeline.bat` do
 
 | what for | files |
 |---|---|
-| **the freeze** | `freeze.bat` (0.96.0: the freeze run, unattended and resumable, on its own checkout cloned from this tree - 0.99.3: `D:\code\RPP_freeze` (branch rpp) from `D:\code\RPP`, `D:\code\MPPP_freeze` (main) from `D:\code\MPPP` - `rpp_studies.calibration.freeze`: wait, mask, cmods, zjoints, zfinal, ecam, nz, deck, ztests, studies, report; `--status`, `--mask-model keep\|auto\|FILE`, `--update-code`, `--redo STEP`, `--only STEP`), `stop_rpp.bat` (also stops it: "stopped by the user") |
+| **the freeze** | `freeze.bat` (0.96.0: the freeze run, unattended and resumable, on its own checkout cloned from this tree - 0.99.5: `D:\code\RPP_freeze` for an RPP tree (`src\rpp`), on the tree's branch; `D:\code\MPPP_freeze` for an MPPP 0.98 tree - `rpp_studies.calibration.freeze`: wait, mask, cmods, zjoints, zfinal, ecam, nz, deck, knee, ztests, studies, ladder, report; `--status`, `--mask-model keep\|auto\|FILE`, `--update-code`, `--redo STEP`, `--only STEP`), `stop_rpp.bat` (also stops it: "stopped by the user") |
 | **the runs** | `run_pipeline.bat` (the whole calibration study: the ecam_consensus blocks - Navcam with both Hazcam pairs; the Navcam joint and the Hazcam fit, promoted; the Mastcam-Z blocks; the Mastcam-Z joints; the error analysis; the rover-frame study 3A), `run_sites.bat` (the Navcam blocks of a group), `run_sites_zcam.bat` (the Navcam + Mastcam-Z blocks of zcam_consensus, then `zcam_joints.bat`), `zcam_joints.bat`, `zcam_backlash_rerun.bat` (0.95.3: the backlash states run of Chal Rocks, Seitah Overlook and Rockytop, the found list updated, the three blocks again with every zoom, then the 34-110 mm joints with `--iterations 300`, nothing promoted), `run_zcam_states.bat`, `promote_models.bat`, `stop_rpp.bat` |
 | **status** | `check_sites.bat` (the site definitions; when each block last finished, with which version, or that it runs now) |
 | **one folder** | `process_sites.bat` (process a group's images), `align_here.bat` (align the folder it sits in) |
@@ -49,3 +49,11 @@ figures of `rpp_studies.sites` (`m20_sites`) from the official blocks of `src\rp
 orthomosaic under `D:\rover_blocks\dem` (or `M20_DEMS` / `M20_ORTHOS`), the ~70 m terrain tiles elsewhere.  Needs
 `pip install -e ".[maps]"` (adjustText, rasterio, pyproj).  Each figure is its own process; at 300 dpi with the
 DTMs a figure takes a few minutes and 1-3 GB.
+
+## From MPPP to RPP on the PC (0.99.5)
+
+`rename_mppp_to_rpp.bat` (delivered in `D:\rover_blocks\_transfer`) does it once, when nothing runs from `D:\code\MPPP`:
+main is fast-forwarded to the newest `rpp_v*.bundle`, the folder becomes `D:\code\RPP`, and a junction
+`D:\code\MPPP` -> `D:\code\RPP` keeps every old path working (batch files outside git, the deck-joint packages, the
+clones whose origin is `D:\code\MPPP`, the Python's editable install).  Updates after that: `sync_code.bat` or
+`sync_rpp.bat` in `D:\code\RPP` (both take the newest `rpp_v*.bundle`).

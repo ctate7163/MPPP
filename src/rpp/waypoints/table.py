@@ -30,16 +30,33 @@ PathLike = Union[str, Path]
 
 WAYPOINTS_URL = "https://mars.nasa.gov/mmgis-maps/M20/Layers/json/M20_waypoints.json"
 WAYPOINTS_FILE = "M20_waypoints.json"
+# 0.99.5 (Christian, 16 Nov 2026: "put [MSL_waypoints.json] in the rpp data code for use in MSL"): the same table for
+# Curiosity, from the map behind NASA's "Where is Curiosity?" page.  No snapshot ships yet: the first
+# load_waypoints(mission="msl", refresh="auto") downloads it into the cache (or the ``path`` given, e.g.
+# D:\data\msl\MSL_waypoints.json).
+MISSIONS = {"m2020": (WAYPOINTS_URL, WAYPOINTS_FILE),
+            "msl": ("https://mars.nasa.gov/mmgis-maps/MSL/Layers/json/MSL_waypoints.json", "MSL_waypoints.json")}
 MARS_RADIUS_M = 3396190.0          # IAU 2000 Mars sphere used by the M2020 maps
 
 
-def snapshot_path() -> Path:
+def _mission(mission: str) -> Tuple[str, str]:
+    try:
+        return MISSIONS[str(mission).lower()]
+    except KeyError:
+        raise ValueError(f"no waypoint table for mission {mission!r} (known: {', '.join(MISSIONS)})") from None
+
+
+def mission_url(mission: str = "m2020") -> str:
+    return _mission(mission)[0]
+
+
+def snapshot_path(mission: str = "m2020") -> Path:
     """The waypoint snapshot shipped with the package (frozen; the error-model self-tests rely on it)."""
-    return data_dir() / WAYPOINTS_FILE
+    return data_dir() / _mission(mission)[1]
 
 
-def cached_path() -> Path:
-    return cache_dir() / WAYPOINTS_FILE
+def cached_path(mission: str = "m2020") -> Path:
+    return cache_dir() / _mission(mission)[1]
 
 
 MAX_AGE_DAYS = 1.0   # refresh="auto": a cached table older than this is downloaded again (the mission adds waypoints
@@ -55,9 +72,11 @@ def waypoints_age_days(path: Optional[PathLike] = None) -> Optional[float]:
 
 
 def load_waypoints(path: Optional[PathLike] = None, refresh: Union[bool, str] = False,
-                   url: str = WAYPOINTS_URL, timeout: float = 30.0, max_age_days: float = MAX_AGE_DAYS) -> Dict[str, Any]:
+                   url: Optional[str] = None, timeout: float = 30.0, max_age_days: float = MAX_AGE_DAYS,
+                   mission: str = "m2020") -> Dict[str, Any]:
     """
-    The waypoint GeoJSON as a dict (``_rpp_source`` records path, SHA-256, count, download time).
+    The waypoint GeoJSON as a dict (``_rpp_source`` records path, SHA-256, count, download time, mission).
+    ``mission``: ``"m2020"`` (default) or ``"msl"`` (:data:`MISSIONS`); ``url`` defaults to the mission's.
 
     * ``path`` given: that file (``refresh`` downloads into it first).
     * default: the user-cache copy if one exists, else the packaged snapshot.
@@ -67,7 +86,8 @@ def load_waypoints(path: Optional[PathLike] = None, refresh: Union[bool, str] = 
     * ``refresh="auto"`` (0.90, what the pipeline uses): download when the cache is missing or older than
       ``max_age_days`` - so every processing run and every sync of the code works from the current table.
     """
-    target = Path(path) if path is not None else cached_path()
+    url = url or mission_url(mission)
+    target = Path(path) if path is not None else cached_path(mission)
     if refresh == "auto":
         age = waypoints_age_days(target)
         refresh = age is None or age > max_age_days
@@ -84,14 +104,18 @@ def load_waypoints(path: Optional[PathLike] = None, refresh: Union[bool, str] = 
     if not target.is_file():
         if path is not None:
             raise FileNotFoundError(f"waypoint file not found: {target}")
-        target = snapshot_path()
+        target = snapshot_path(mission)
+        if not target.is_file():
+            raise FileNotFoundError(f"no {mission} waypoint table: none downloaded ({cached_path(mission)}) and none "
+                                    f"shipped; load_waypoints(mission={mission!r}, refresh=True) downloads {url}")
     raw = target.read_bytes()
     data = json.loads(raw.decode("utf-8"))
     if not data.get("features"):
         raise ValueError(f"No 'features' in waypoint file {target}")
     data["_rpp_source"] = {"path": str(target), "sha256": hashlib.sha256(raw).hexdigest(),
                             "n_features": len(data["features"]),
-                            "packaged_snapshot": target.resolve() == snapshot_path().resolve(),
+                            "packaged_snapshot": target.resolve() == snapshot_path(mission).resolve(),
+                            "mission": str(mission).lower(), "url": url,
                             "file_time": datetime.datetime.fromtimestamp(target.stat().st_mtime).isoformat(timespec="seconds")}
     return data
 
@@ -244,6 +268,40 @@ def _kind(note: Any) -> str:
     if "site increment" in n:
         return "site_increment"
     return n or "unknown"
+
+
+def local_en(data: Dict[str, Any], origin: Optional[Tuple[float, float]] = None) -> List[Dict[str, Any]]:
+    """One row per waypoint with a local east / north in meters (0.99.5, for tables without ``easting`` /
+    ``northing``, e.g. MSL's): {"sol", "site", "drive", "lon", "lat", "E", "N", "elev"} - ``easting`` / ``northing``
+    when the file has them, else an equirectangular offset on the Mars sphere from ``origin`` (lon, lat; default the
+    first waypoint).  ``site`` / ``drive`` are None where the file has none."""
+    rows = []
+    for f in data.get("features") or []:
+        p = _props(f)
+        ll = lonlat_of(f)
+        if ll is None:
+            continue
+        el = None
+        for k in ("elev_geoid", "elev", "elevation", "elev_radius"):
+            try:
+                el = float(p[k])
+                break
+            except (KeyError, TypeError, ValueError):
+                continue
+        rows.append({"sol": _int(p, "sol"), "site": _int(p, "site"), "drive": _int(p, "drive"),
+                     "lon": ll[0], "lat": ll[1], "en": _en(p), "elev": el})
+    if not rows:
+        return []
+    lon0, lat0 = origin if origin is not None else (rows[0]["lon"], rows[0]["lat"])
+    k = math.radians(1.0) * MARS_RADIUS_M
+    for r in rows:
+        if r["en"] is not None and origin is None:
+            r["E"], r["N"] = r["en"]
+        else:
+            r["E"] = (r["lon"] - lon0) * k * math.cos(math.radians(lat0))
+            r["N"] = (r["lat"] - lat0) * k
+        del r["en"]
+    return rows
 
 
 def waypoint_rows(data: Dict[str, Any]) -> List[Dict[str, Any]]:

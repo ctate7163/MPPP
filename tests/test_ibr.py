@@ -1363,9 +1363,11 @@ def test_squares_left_on_top_named_by_station(tmp_path):
     assert r["top"] == "left" and sq.shape == (16, 16, 3) and np.array_equal(sq[:8], L) and np.array_equal(sq[8:], R)
     f = SS.install(tmp_path / "bats")
     b = (tmp_path / "bats" / "make_square.bat").read_text()
-    assert f.name == "run_single_site_ibr.bat" and "single-sites --squares-only %*" in b and "+!BR!:" in b
-    t = f.read_text()                       # 0.99.3: the tree's own line - rpp from rpp_v*.bundle, main from mppp_v*.bundle
-    assert "+!BR!:refs/remotes/bundle/!BR!" in t and 'set "PAT=rpp_v*.bundle"' in t and 'set "PAT=mppp_v*.bundle"' in t
+    assert f.name == "run_single_site_ibr.bat" and "single-sites --squares-only %*" in b and "+!SRC!:" in b
+    t = f.read_text()                       # 0.99.5: an RPP tree (src\rpp) - main after the rename, or rpp - syncs from
+    #                                         the rpp of the newest rpp_v*.bundle; an MPPP 0.98 tree from mppp_v*.bundle
+    assert "+!SRC!:refs/remotes/bundle/!SRC!" in t and 'set "PAT=rpp_v*.bundle" & set "SRC=rpp"' in t
+    assert 'set "PAT=mppp_v*.bundle"' in t and 'if exist "%REPO%\\src\\rpp\\__init__.py"' in t
     assert "+main:refs/remotes/bundle/main" not in t
 
 
@@ -1601,7 +1603,6 @@ def test_pivot_at_mastcamz_height_and_shared_tone_levels(tmp_path):
     """0.97.0 (Christian, 12 Nov 2026): the pivot on the azimuth axis at the Mastcam-Z height whatever cameras are
     rendered; one 16-to-8-bit scaling for the rover-shown and the rover-masked panorama; the center depth files; the
     jpg pictures with linear and log depth."""
-    from scipy.spatial.transform import Rotation
     from rpp.ibr import linear16 as L16
     from rpp.ibr import station as S
     up = np.array([0.0, 0.0, 1.0])
@@ -1844,7 +1845,7 @@ def test_enhlocal_is_one_filter_for_both_eyes():
 def test_rover_mesh_on_the_masked_terrain(tmp_path):
     """0.97.0 (12 Nov): the rover-shown mesh is the rover-masked terrain mesh plus the model - no second surface run."""
     import types
-    from rpp.ibr import cli as C, rover_model
+    from rpp.ibr import cli as C
     from rpp.ibr.mesh import read_mesh, write_mesh
     src, out = tmp_path / "S1", tmp_path / "S1" / "with_rover"
     src.mkdir()
@@ -3098,7 +3099,6 @@ def test_rover_variant_gets_a_turning_disc_and_the_page_faces(tmp_path):
     run with the pivot's eye last wrote no mark texture, so the page drew no disc; now the texture is written whatever
     the last eye, and on publishing a rover variant without one takes the terrain-only variant's disc.  The welcome
     view opens west under its new title; the page has the N E S W O cross and its keys."""
-    import shutil
     from rpp.ibr import web, single_sites as SS
     proj, rec, st, scene, P, colors = _station_scene(tmp_path)
     base = tmp_path / "sites" / "Sol0091_S003D0010"

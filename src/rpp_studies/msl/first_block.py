@@ -61,6 +61,7 @@ BASES = ("https://planetarydata.jpl.nasa.gov/img/data/msl/MSLNAV_1XXX",
 # DATA holds the newest version of each product (V2 from 2021); the volume's V1 products of releases 1-17 moved to
 # DATA_V1 (MSL_NAVCAM_RDR_V1_DS.CAT)
 LAYOUTS = ("DATA/SOL{sol:05d}/", "DATA_V1/SOL{sol:05d}/", "DATA/SOL{sol:04d}/", "data/sol{sol:05d}/", "data/SOL{sol:05d}/")
+EST_MB = {"RAD": 2.17, "MXY": 1.12}          # a 1024 x 1024 Navcam RAD (int16) / MXY (uint8) with its label
 UA = {"User-Agent": "rpp-msl-first-block (research; github.com/ctate7163/RPP)"}
 # MSL engineering-camera product names (MSL Camera SIS): NLB_668441715RAD_F0870792NCAM00252M1
 #   [0] N/F/R Navcam / front / rear Hazcam   [1] L/R eye   [2] A/B computer side   [4:13] SCLK seconds
@@ -143,7 +144,17 @@ def product_info(img: Path) -> Dict[str, Any]:
     pose = pose_from_label(R_cam_rnav, cah.C, rcs["ORIGIN_ROTATION_QUATERNION"], np.asarray(rcs["ORIGIN_OFFSET_VECTOR"], float),
                            f"site{int(rcs.get('REFERENCE_COORD_SYSTEM_INDEX', fn['site']))}_enu", "label (site frame)")
     sol = label_value(L, "PLANET_DAY_NUMBER")
-    return dict(fn, sol=int(sol) if sol is not None else None, lmst_h=lmst_hours(label_value(L, "LOCAL_MEAN_SOLAR_TIME")),
+    site_link = None                       # 0.99.5: this site's origin in the previous site's frame (NED, onboard)
+    sk = next((k for k in L if str(k).upper() in ("SITE_COORD_SYSTEM_PARMS", "SITE_COORDINATE_SYSTEM_PARMS")), None)
+    if sk is not None:
+        sg = L[sk]
+        try:
+            site_link = {"site": int(sg.get("COORDINATE_SYSTEM_INDEX")), "parent": int(sg.get("REFERENCE_COORD_SYSTEM_INDEX")),
+                         "offset_ned_m": [float(x) for x in sg.get("ORIGIN_OFFSET_VECTOR")],
+                         "quaternion": [float(x) for x in sg.get("ORIGIN_ROTATION_QUATERNION")]}
+        except (TypeError, ValueError):
+            site_link = None
+    return dict(fn, sol=int(sol) if sol is not None else None, site_link=site_link, lmst_h=lmst_hours(label_value(L, "LOCAL_MEAN_SOLAR_TIME")),
                 width=w, height=h, model_type=str(gcm.get("MODEL_TYPE")), gcm=gcm,
                 site_frame=int(rcs.get("REFERENCE_COORD_SYSTEM_INDEX", fn["site"])),
                 C_enu_m=[float(x) for x in pose.C], R_w2c=np.asarray(pose.R_w2c, float).tolist(),
@@ -182,18 +193,23 @@ def find_sol_dir(sol: int, bases: Sequence[str] = BASES, layouts: Sequence[str] 
     return None, [], tried
 
 
-def wanted(names: Iterable[str], site: int, side: Optional[str], drives: Optional[Sequence[int]] = None,
+def side_ok(f: Dict[str, Any], side: Optional[str]) -> bool:
+    """``side``: "A", "B", or None / "AB" for both (0.99.5)."""
+    return not side or str(side).upper() in ("AB", "BOTH") or f["side"] == str(side).upper()
+
+
+def wanted(names: Iterable[str], site: Optional[int], side: Optional[str], drives: Optional[Sequence[int]] = None,
            families: str = "N") -> List[str]:
-    """The stems to fetch from a sol folder: full-frame RAD of the site, side and families (both eyes), with the MXY of
-    the same frames."""
+    """The stems to fetch from a sol folder: full-frame RAD of the site (None: every site), side ("A", "B", None / "AB":
+    both) and families (both eyes), with the MXY of the same frames."""
     rad, mxy = set(), set()
     for n in names:
         if not n.upper().endswith(".IMG"):
             continue
         f = parse_name(n)
-        if not f or f["site"] != site or f["family"] not in families or f["sampling"] != "F":
+        if not f or (site is not None and f["site"] != site) or f["family"] not in families or f["sampling"] != "F":
             continue
-        if side and f["side"] != side.upper():
+        if not side_ok(f, side):
             continue
         if drives and f["drive"] not in set(drives):
             continue
@@ -214,7 +230,9 @@ def fetch(data: Path, sols: Sequence[int], site: int, side: Optional[str] = "B",
             continue
         stems = wanted(names, site, side, drives, families)
         lower = {n.upper(): n for n in names}
-        rep["sols"][sol] = {"found": True, "url": url, "products": len(stems)}
+        n_mxy = sum(1 for x in stems if "MXY_" in x)
+        rep["sols"][sol] = {"found": True, "url": url, "products": len(stems), "rad": len(stems) - n_mxy, "mxy": n_mxy}
+        rep["est_mb"] = round(rep.get("est_mb", 0.0) + EST_MB["RAD"] * (len(stems) - n_mxy) + EST_MB["MXY"] * n_mxy, 1)
         log.info("sol %d: %d products at %s", sol, len(stems), url)
         if list_only:
             rep["sols"][sol]["stems"] = stems
@@ -247,16 +265,23 @@ def fetch(data: Path, sols: Sequence[int], site: int, side: Optional[str] = "B",
 
 
 # ---------------------------------------------------------------------------------------------------- prepare
-def find_products(data: Path, site: int, side: Optional[str], families: str = "N") -> Tuple[List[Path], Dict[str, Path]]:
-    """(the full-frame RAD products of the site and side under ``data``, {RAD stem: its MXY file})."""
+def find_products(data: Path, site: Optional[int], side: Optional[str], families: str = "N",
+                  sols: Optional[Sequence[int]] = None) -> Tuple[List[Path], Dict[str, Path]]:
+    """(the full-frame RAD products of the site (None: all) and side under ``data``, {RAD stem: its MXY file});
+    ``sols``: only the ``SOLnnnnn`` folders of these sols (0.99.5)."""
     rad, mxy = [], {}
+    want = None if sols is None else {int(x) for x in sols}
     for p in sorted(Path(data).rglob("*")):
         if p.suffix.upper() != ".IMG" or not p.is_file():
             continue
+        if want is not None:
+            m = re.fullmatch(r"SOL(\d{4,5})", p.parent.name.upper())
+            if not m or int(m.group(1)) not in want:
+                continue
         f = parse_name(p.name)
-        if not f or f["site"] != site or f["family"] not in families or f["sampling"] != "F":
+        if not f or (site is not None and f["site"] != site) or f["family"] not in families or f["sampling"] != "F":
             continue
-        if side and f["side"] != side.upper():
+        if not side_ok(f, side):
             continue
         if f["product_type"] == "RAD":
             rad.append(p)

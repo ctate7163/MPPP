@@ -228,3 +228,63 @@ def block_camera(instrument: str, metas: Sequence[Dict[str, Any]]) -> Tuple[Dict
 
 __all__ = ["CENTRAL_E_M", "NONCENTRAL_DEPTHS_M", "fisheye_from_cahvore", "project_thin_prism_fisheye",
            "full_frame_model", "label_fisheye", "meta_fisheye", "block_camera", "is_central"]
+
+
+# ------------------------------------------------------------------ 0.99.5: the OpenCV perspective camera (MSL study)
+OPENCV5_PARAMS = ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3")
+
+
+def project_full_opencv(params: Sequence[float], X: np.ndarray) -> np.ndarray:
+    """COLMAP's ``FULL_OPENCV`` projection (fx fy cx cy k1 k2 p1 p2 k3 k4 k5 k6; corner pixel origin) of camera-frame
+    points (N, 3) -> pixels (N, 2); points behind the camera give NaN."""
+    fx, fy, cx, cy, k1, k2, p1, p2, k3, k4, k5, k6 = (float(v) for v in params)
+    X = np.asarray(X, float).reshape(-1, 3)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        u, v = X[:, 0] / X[:, 2], X[:, 1] / X[:, 2]
+    u2, v2, uv = u * u, v * v, u * v
+    r2 = u2 + v2
+    rad = (1 + k1 * r2 + k2 * r2 ** 2 + k3 * r2 ** 3) / (1 + k4 * r2 + k5 * r2 ** 2 + k6 * r2 ** 3)
+    du = u * rad + 2 * p1 * uv + p2 * (r2 + 2 * u2)
+    dv = v * rad + 2 * p2 * uv + p1 * (r2 + 2 * v2)
+    out = np.c_[fx * du + cx, fy * dv + cy]
+    out[~(X[:, 2] > 0)] = np.nan
+    return out
+
+
+def opencv5_from_cahvore(cm, width: int, height: int, step: float = 16.0,
+                         depth_m: float = CENTRAL_DEPTH_M) -> Tuple[List[float], Dict[str, Any]]:
+    """The COLMAP ``FULL_OPENCV`` camera with k4 = k5 = k6 = 0 - the OpenCV perspective lens with k1, k2, p1, p2, k3 -
+    that reproduces the CAHV-family model ``cm`` (:class:`rpp.cmod.CameraModel`, in its own camera frame as for
+    :func:`fisheye_from_cahvore`) over a ``width`` x ``height`` frame: least squares over the rays of a pixel grid
+    (every ``step`` px) at ``depth_m``.  For a narrow central camera (the MSL Navcam, 45 deg) the fit is close to
+    exact.  Returns (12 params, report)."""
+    from scipy.optimize import least_squares
+    from ..cmod import _rays_of, pixel_grid
+    c, _ = cm.camera_frame()
+    uv = pixel_grid(int(width), int(height), float(step))
+    with np.errstate(all="ignore"):
+        d = _rays_of(c, uv - 0.5)
+    d = d[np.all(np.isfinite(d), axis=1)]
+    P = d * float(depth_m)
+    with np.errstate(all="ignore"):
+        U = c.project(P) + 0.5
+    m = np.all(np.isfinite(U), axis=1)
+    P, U = P[m], U[m]
+    if len(P) < 50:
+        raise ValueError(f"the camera model images too few grid points ({len(P)}) to fit an OpenCV camera")
+    _, lin = cm.decompose()
+    x0 = np.array([lin["hs"], lin["vs"], lin["hc"] + 0.5, lin["vc"] + 0.5, 0.0, 0.0, 0.0, 0.0, 0.0])
+
+    def full(x):
+        return [*x[:9], 0.0, 0.0, 0.0]
+
+    def res(x):
+        return np.nan_to_num(project_full_opencv(full(x), P) - U, nan=1e3).ravel()
+
+    sol = least_squares(res, x0, x_scale="jac", method="lm", max_nfev=4000)
+    e = np.linalg.norm(res(sol.x).reshape(-1, 2), axis=1)
+    e0 = np.linalg.norm(res(x0).reshape(-1, 2), axis=1)
+    rep = {"rms_px": float(np.sqrt(np.mean(e ** 2))), "p95_px": float(np.percentile(e, 95)), "max_px": float(e.max()),
+           "start_rms_px": float(np.sqrt(np.mean(e0 ** 2))), "n": int(len(e)), "depth_m": float(depth_m),
+           "central": bool(is_central(c)), "frame": [int(width), int(height)], "success": bool(sol.success)}
+    return [float(v) for v in full(sol.x)], rep

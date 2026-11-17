@@ -36,6 +36,7 @@ KEPT = [
     r"mppp, mppp_studies", r"the mppp command", r"\bmppp = ", r"formerly mppp", r"``mppp:``",
     r"mppp_env\.bat", r"install of mppp",
     r"mppp_v\*\.bundle", r"\"MPPP freeze\"",            # 0.99.3: the v0p98 line's bundles and its freeze restart entry
+    r"MPPP 0\.98", r"rename_mppp_to_rpp", r"From MPPP to RPP",   # 0.99.5: the old line, and the PC's rename batch
     r"MPPP -> RPP", r"\(RPP\|MPPP\)", r"/MPPP/ods", r"old name, MPPP", r"[Ff]ormerly MPPP", r"called MPPP",
     r"was MPPP stereo viewer", r"MPPP \(Mars Photogrammetry Preprocessing Pipeline\)",
     r"MPPP, Mars Photogrammetry Preprocessing Pipeline", r"made by MPPP", r"pypi\.org/project/mppp/",
@@ -163,9 +164,13 @@ def test_rpp_env_bat_reads_the_old_names():
 
 
 def test_sync_code_and_freeze_stay_on_main():
-    for bat in ("sync_code.bat", "freeze.bat"):
-        t = (ROOT / "scripts" / "windows" / bat).read_text(encoding="utf-8")
-        assert "rev-parse --abbrev-ref HEAD" in t and '"main"' in t, bat
+    t = (ROOT / "scripts" / "windows" / "sync_code.bat").read_text(encoding="utf-8")
+    assert "rev-parse --abbrev-ref HEAD" in t and '"main"' in t
+    # 0.99.5: the freeze clones the tree's own branch (main after rename_mppp_to_rpp.bat) and refuses a detached HEAD;
+    # its checkout follows the tree's code (src\rpp: RPP_freeze), not the branch name
+    t = (ROOT / "scripts" / "windows" / "freeze.bat").read_text(encoding="utf-8")
+    assert "rev-parse --abbrev-ref HEAD" in t and '"!FREEZE_BRANCH!"=="HEAD"' in t
+    assert 'if exist "%RPP_MAIN%\\src\\rpp\\__init__.py" set "FREEZE_DEFAULT_CODE=D:\\code\\RPP_freeze"' in t
     assert '"%RPP_TRANSFER%\\rpp_v*.bundle"' in (ROOT / "scripts" / "windows" / "sync_code.bat").read_text()
 
 
