@@ -3,6 +3,35 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.16 — 2026-11-17 (branch `rpp`)
+
+MSL blocks (`rpp_studies.msl.block`), after the first Yellowknife Bay alignment (Christian, 12:24: "hold the principal
+point on the first stage. Solve A pair rig and B pair rig separately. If the camera models look good, then promote the
+MSL navcams the same way we do for Mars 2020. ... please include front hazcam images in the msl block"; 12:26: "use the
+current mask cnn model and save them as the alpha channel. no need to download the official hardware masks").
+
+- The bundle adjustment after the mapper runs in stages: (1) free images, focal lengths and distortion free, principal
+  points held; (2) each side's stereo pair as its own COLMAP rig (NA, NB, and the front Hazcams' FA, FB), one
+  right-from-left pose per rig solved with the cameras; (3) a check on a copy with the principal points free.  The
+  first run had freed everything at once, and NLA's principal point went 15 px.
+- The model's scale is the Navcam rigs' label baseline (`--scale labels` for the old behavior).  The first run's 5 %
+  disagreement between the stereo baseline and the labels came from the label station separations (4 m across, with
+  5-30 cm errors) setting the scale; within the largest station the label head geometry and the model agree in shape
+  and differ by that one factor.
+- `report.txt` gives each camera's residual by radius, each rig against the labels' pair (rotation in mdeg, baseline),
+  the scatter of the free pairs, the scale, and a Navcam verdict with its limits (`verdict`, `LIMITS`).
+- Model files `cmods_candidate\MSL_<camera>.json` and `MSL_<N|F><A|B>_rig.json`; the `promote` step (or
+  `--promote-if-ok`) copies the Navcam ones into the camera models in use through `rpp.calib.models.promote`, which
+  now knows the MSL names (`check_msl_file`).  The Mars 2020 fingerprints name their own files, so an MSL promotion
+  queues no Mars 2020 site again.  The next `prepare` starts from promoted cameras (`--label-cameras`: the labels).
+- Front Hazcams: the preset's families are `NF`; the fetch reads the Hazcam volume (MSLHAZ_1XXX) into
+  `D:\data\msl\hazcam\SOLnnnnn`; their camera is the fisheye model (124 degrees is past what a perspective model with
+  Brown distortion holds); the pair search uses their height above the ground.
+- Masks: the mask CNN alone by default, kept in each image's alpha channel (gray + alpha PNG, 255 terrain and 128
+  masked, as the Mars 2020 blocks) and in `masks\` for COLMAP; the fetch no longer downloads MXY products unless
+  `--mask both` or `mxy`.
+- New step `finish`: the stages again from `sparse\0`, without features or matching.
+
 ## 0.99.15 — 2026-11-17 (branch `rpp`)
 
 - The viewer keeps north when the station changes (Christian, 11:40: "the north direction should be preserved when moving

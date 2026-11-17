@@ -25,6 +25,8 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
 
+import numpy as np
+
 from ..paths import cmods_dir, package_cmods_dir
 from . import forms
 
@@ -334,9 +336,43 @@ def describe(folder: Optional[PathLike] = None) -> List[str]:
 
 
 # ------------------------------------------------------------------------------------------------- promotion
+# 0.99.16 (Christian, 17 Nov 2026: "promote the MSL navcams the same way we do for Mars 2020"): MSL_<N|F|R><L|R><A|B>.json
+# (a camera of one eye and computer side) and MSL_<N|F|R><A|B>_rig.json, written by rpp_studies.msl.block.  They are
+# not part of the Mars 2020 fingerprints (those name their files), so a promotion queues no Mars 2020 site again.
+_MSL_CAMERA_RE = re.compile(r"MSL_[NFR][LR][AB]\.json")
+_MSL_RIG_RE = re.compile(r"MSL_[NFR][AB]_rig\.json")
+
+
+def check_msl_file(name: str, d: Dict[str, Any]) -> str:
+    """Raise if an MSL model file does not have its form; return a one-line description."""
+    if d.get("mission") != "MSL":
+        raise ValueError('"mission" is not "MSL"')
+    if _MSL_RIG_RE.fullmatch(name):
+        R, t = np.asarray(d.get("R_sensor_from_ref"), float), np.asarray(d.get("t_sensor_from_ref_m"), float)
+        if R.shape != (3, 3) or t.shape != (3,) or not np.allclose(R @ R.T, np.eye(3), atol=1e-6) or np.linalg.det(R) < 0:
+            raise ValueError("R_sensor_from_ref / t_sensor_from_ref_m are not a rigid pose")
+        if (d.get("ref"), d.get("sensor")) != (f"{name[4]}L{name[5]}", f"{name[4]}R{name[5]}"):
+            raise ValueError(f"ref / sensor {d.get('ref')} / {d.get('sensor')} are not this file's pair")
+        if not 0.05 < float(np.linalg.norm(t)) < 1.5:
+            raise ValueError(f"baseline {np.linalg.norm(t):.3f} m")
+        return f"rig, baseline {float(np.linalg.norm(t)):.4f} m"
+    n = {"FULL_OPENCV": 12, "THIN_PRISM_FISHEYE": 12}.get(d.get("model"))
+    p_ = np.asarray(d.get("params", []), float)
+    if n is None or p_.shape != (n,) or not np.all(np.isfinite(p_)):
+        raise ValueError(f"model {d.get('model')} with {p_.size} parameters")
+    if (d.get("family"), d.get("eye"), d.get("side")) != (name[4], name[5], name[6]):
+        raise ValueError("family / eye / side do not match the file's name")
+    w, h = int(d.get("width", 0)), int(d.get("height", 0))
+    if w < 64 or h < 64 or not (0 < p_[2] < w and 0 < p_[3] < h and p_[0] > 0 and p_[1] > 0):
+        raise ValueError("size, focal lengths or principal point out of range")
+    return f"{d['model']} {w}x{h}, fx {p_[0]:.2f}"
+
+
 def _target_name(fname: str) -> Optional[str]:
     """The name a candidate file is promoted under (``M2020_ZCAM034_focus_model_candidate.json`` ->
     ``M2020_ZCAM034_focus_model.json``); None for a file that is not a model this package knows."""
+    if _MSL_CAMERA_RE.fullmatch(fname) or _MSL_RIG_RE.fullmatch(fname):
+        return fname
     if fname in NAVCAM_FILES or fname in CAMERA_FILE.values() or fname in RIG_FILE.values():
         return fname
     m = _ZCAM_RE.fullmatch(fname)
@@ -363,6 +399,8 @@ def collect(sources: Sequence[PathLike]) -> Dict[str, Path]:
 def check_file(name: str, f: PathLike) -> str:
     """Raise if ``f`` does not load as what ``name`` says (and follow its form); return a one-line description."""
     d = _read(Path(f))
+    if name.startswith("MSL_"):
+        return check_msl_file(name, d)
     if name in RIG_FILE.values():
         bad = forms.validate_rig(d)
         if bad:

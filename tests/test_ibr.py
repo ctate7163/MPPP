@@ -1103,7 +1103,11 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     from rpp.ibr import single_sites as SS
     cfg = SS.load_config()
     assert cfg["stations"]["Sol0690_S032D1184_Z34"]["experimental"] is True      # 0.98.2: runs only when named
-    assert {r["label"] for r in SS.plan(cfg, tmp_path)} == set(cfg["stations"]) - {"Sol0690_S032D1184_Z34"}
+    Z34 = {"Sol0690_S032D1184_Z34", "Sol0670_S032D0672_Z34"}                     # 0.99.16: Three Forks South too
+    assert {r["label"] for r in SS.plan(cfg, tmp_path)} == set(cfg["stations"]) - Z34
+    zs = cfg["stations"]["Sol0670_S032D0672_Z34"]                                # the Z34 360 of the Navcam 360's own sol
+    assert zs["experimental"] is True and zs["ods_args"][2:5] == ["--sols", "670", "670"] and zs["terrain"] == "block"
+    assert set(cfg["stations"]["Sol0670_S032D0672"]["frames"]["images"]) <= set(zs["context"])
     z = SS.plan(cfg, tmp_path, labels=["Sol0690_S032D1184_Z34"])[0]["commands"]
     zm = [c for c in z if c["variant"] == "masked"]                              # 0.98.22: + the rover variant
     assert len(zm) == 4 and {c["variant"] for c in z} == {"masked", "rover"}
@@ -1116,7 +1120,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     new98p30 = {"Sol0073_S003D2430", "Sol0449_S026D0000", "Sol0670_S032D0672", "Sol0784_S039D0926", "Sol0816_S039D1418",
                 "Sol1601_S078D4716", "Sol1615_S079D0198", "Sol1883_S088D1722"}   # 0.98.30: a Navcam panorama at every Z34 360
     assert all(cfg["stations"][k]["terrain"] == "block" and cfg["stations"][k]["work"].endswith("_zcam") for k in new98p30)
-    assert set(cfg["stations"]) - {"Sol0690_S032D1184_Z34"} - new98p6 == {"Sol0052_S003D2046", "Sol0461_S026D0630", "Sol0686_S032D1184", "Sol0474_S026D0850",
+    assert set(cfg["stations"]) - Z34 - new98p6 == {"Sol0052_S003D2046", "Sol0461_S026D0630", "Sol0686_S032D1184", "Sol0474_S026D0850",
                                     "Sol1635_S079D0732", "Sol1411_S068D0142", "Sol1792_S087D0000", "Sol1454_S071D0056", "Sol0477_S026D1004", "Sol0502_S026D1222", "Sol2009_S092D0000", "Sol2022_S093D0000", "Sol1947_S091D0000",
                                     "Sol1177_S054D0000", "Sol1183_S054D0866", "Sol1308_S061D1678", "Sol0609_S030D1172"} | new98p30   # 0.98.19: + Skinner Ridge, Wildcat Ridge, Hippo Pools 1947 / 2009 / 2022, Bright Angel 1177 / 1183, Pico Turquino 1308, Hidden Harbor 609
     assert len(cfg["stations"]["Sol0052_S003D2046"]["frames"]["images"]) == 12
@@ -1161,7 +1165,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert block_name("van_zyl_overlook_huge") == "Van Zyl Overlook" and block_name("witch_hazel_large") == "Witch Hazel Hill"
     assert block_name("taylorfjellet_large") == "Taylorfjellet" and block_name("rockytop") == "Rockytop"
     assert block_name("not_a_site_tiny") == "Not A Site" and block_name(None) is None
-    assert all("name" not in v for k, v in cfg["stations"].items() if k not in ("Sol0477_S026D1004", "Sol0502_S026D1222", "Sol0686_S032D1184", "Sol0690_S032D1184_Z34"))   # 0.98.19: these two are not "Rockytop"; 0.98.31: the Z34 station has no site to name it
+    assert all("name" not in v for k, v in cfg["stations"].items() if k not in ("Sol0477_S026D1004", "Sol0502_S026D1222", "Sol0686_S032D1184", "Sol0690_S032D1184_Z34", "Sol0670_S032D0672_Z34"))   # 0.98.19: these two are not "Rockytop"; 0.98.31: the Z34 station has no site to name it
     names = {k: next(c["argv"][c["argv"].index("--site-name") + 1] for c in r["commands"] if c["step"] == "ods") for k, r in
              ((r["label"], r) for r in runs)}
     assert names["Sol0474_S026D0850"] == "Rockytop" and names["Sol1411_S068D0142"] == "Witch Hazel Hill"

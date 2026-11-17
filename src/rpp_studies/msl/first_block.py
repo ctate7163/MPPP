@@ -59,6 +59,10 @@ DEFAULT_BLOCK = "mont_mercou"
 DEFAULT_NAME = "msl_sol_3047_mont_mercou"
 BASES = ("https://planetarydata.jpl.nasa.gov/img/data/msl/MSLNAV_1XXX",
          "https://pds-imaging.jpl.nasa.gov/data/msl/MSLNAV_1XXX")
+# 0.99.16 (Christian, 17 Nov 2026: "please include front hazcam images in the msl block"): the Hazcams' volume, laid out
+# as the Navcams'; its products go to <data>\hazcam\SOLnnnnn
+HAZ_BASES = tuple(b.replace("MSLNAV_1XXX", "MSLHAZ_1XXX") for b in BASES)
+VOLUMES = (("N", "navcam", BASES), ("FR", "hazcam", HAZ_BASES))
 # DATA holds the newest version of each product (V2 from 2021); the volume's V1 products of releases 1-17 moved to
 # DATA_V1 (MSL_NAVCAM_RDR_V1_DS.CAT)
 LAYOUTS = ("DATA/SOL{sol:05d}/", "DATA_V1/SOL{sol:05d}/", "DATA/SOL{sol:04d}/", "data/sol{sol:05d}/", "data/SOL{sol:05d}/")
@@ -200,7 +204,7 @@ def side_ok(f: Dict[str, Any], side: Optional[str]) -> bool:
 
 
 def wanted(names: Iterable[str], site: Optional[int], side: Optional[str], drives: Optional[Sequence[int]] = None,
-           families: str = "N") -> List[str]:
+           families: str = "N", mxy_too: bool = True) -> List[str]:
     """The stems to fetch from a sol folder: full-frame RAD of the site (None: every site), side ("A", "B", None / "AB":
     both) and families (both eyes), with the MXY of the same frames."""
     rad, mxy = set(), set()
@@ -215,53 +219,60 @@ def wanted(names: Iterable[str], site: Optional[int], side: Optional[str], drive
         if drives and f["drive"] not in set(drives):
             continue
         (rad if f["product_type"] == "RAD" else mxy if f["product_type"] == "MXY" else set()).add(f["stem"])
-    keep_mxy = {s for s in mxy if s.replace("MXY_", "RAD_", 1) in rad}
+    keep_mxy = {s for s in mxy if s.replace("MXY_", "RAD_", 1) in rad} if mxy_too else set()
     return sorted(rad) + sorted(keep_mxy)
 
 
 def fetch(data: Path, sols: Sequence[int], site: int, side: Optional[str] = "B", drives=None, list_only: bool = False,
-          families: str = "N") -> Dict[str, Any]:
-    """Download the sols' products into ``data/navcam/SOLnnnnn``.  Returns a report."""
+          families: str = "N", mxy: bool = True) -> Dict[str, Any]:
+    """Download the sols' products into ``data/navcam/SOLnnnnn`` (Navcams) and ``data/hazcam/SOLnnnnn`` (Hazcams, when
+    ``families`` has F or R; 0.99.16).  ``mxy=False``: the RAD frames only, without MIPL's rover masks.  Returns a
+    report; ``sols`` is keyed by the sol (Navcam volume) and by ``"<sol> hazcam"``."""
     rep: Dict[str, Any] = {"sols": {}, "downloaded": 0, "kept": 0, "bytes": 0, "failed": []}
-    for sol in sols:
-        url, names, tried = find_sol_dir(int(sol))
-        if url is None:
-            rep["sols"][sol] = {"found": False, "tried": tried}
-            log.warning("sol %d: no archive folder answered (%s)", sol, ", ".join(tried))
+    for fams, folder, bases in VOLUMES:
+        fam = "".join(f for f in families if f in fams)
+        if not fam:
             continue
-        stems = wanted(names, site, side, drives, families)
-        lower = {n.upper(): n for n in names}
-        n_mxy = sum(1 for x in stems if "MXY_" in x)
-        rep["sols"][sol] = {"found": True, "url": url, "products": len(stems), "rad": len(stems) - n_mxy, "mxy": n_mxy}
-        rep["est_mb"] = round(rep.get("est_mb", 0.0) + EST_MB["RAD"] * (len(stems) - n_mxy) + EST_MB["MXY"] * n_mxy, 1)
-        log.info("sol %d: %d products at %s", sol, len(stems), url)
-        if list_only:
-            rep["sols"][sol]["stems"] = stems
-            continue
-        out = Path(data) / "navcam" / f"SOL{int(sol):05d}"
-        out.mkdir(parents=True, exist_ok=True)
-        for s in stems:
-            for ext in (".IMG", ".LBL"):
-                remote = lower.get((s + ext).upper())
-                if remote is None:
-                    continue
-                dst = out / remote
-                if dst.is_file() and dst.stat().st_size > 0:
-                    rep["kept"] += 1
-                    continue
-                for k in range(3):
-                    try:
-                        b = _get(url + remote, timeout=300)
-                        tmp = dst.with_suffix(dst.suffix + ".part")
-                        tmp.write_bytes(b)
-                        tmp.replace(dst)
-                        rep["downloaded"] += 1
-                        rep["bytes"] += len(b)
-                        break
-                    except Exception as e:                           # noqa: BLE001
-                        if k == 2:
-                            rep["failed"].append(f"{url + remote}: {e}")
-                        time.sleep(5 * (k + 1))
+        for sol in sols:
+            key = sol if folder == "navcam" else f"{sol} {folder}"
+            url, names, tried = find_sol_dir(int(sol), bases)
+            if url is None:
+                rep["sols"][key] = {"found": False, "tried": tried}
+                log.warning("sol %d (%s): no archive folder answered (%s)", sol, folder, ", ".join(tried))
+                continue
+            stems = wanted(names, site, side, drives, fam, mxy)
+            lower = {n.upper(): n for n in names}
+            n_mxy = sum(1 for x in stems if "MXY_" in x)
+            rep["sols"][key] = {"found": True, "url": url, "products": len(stems), "rad": len(stems) - n_mxy, "mxy": n_mxy}
+            rep["est_mb"] = round(rep.get("est_mb", 0.0) + EST_MB["RAD"] * (len(stems) - n_mxy) + EST_MB["MXY"] * n_mxy, 1)
+            log.info("sol %d (%s): %d products at %s", sol, folder, len(stems), url)
+            if list_only:
+                rep["sols"][key]["stems"] = stems
+                continue
+            out = Path(data) / folder / f"SOL{int(sol):05d}"
+            out.mkdir(parents=True, exist_ok=True)
+            for st in stems:
+                for ext in (".IMG", ".LBL"):
+                    remote = lower.get((st + ext).upper())
+                    if remote is None:
+                        continue
+                    dst = out / remote
+                    if dst.is_file() and dst.stat().st_size > 0:
+                        rep["kept"] += 1
+                        continue
+                    for k in range(3):
+                        try:
+                            b = _get(url + remote, timeout=300)
+                            tmp = dst.with_suffix(dst.suffix + ".part")
+                            tmp.write_bytes(b)
+                            tmp.replace(dst)
+                            rep["downloaded"] += 1
+                            rep["bytes"] += len(b)
+                            break
+                        except Exception as e:                           # noqa: BLE001
+                            if k == 2:
+                                rep["failed"].append(f"{url + remote}: {e}")
+                            time.sleep(5 * (k + 1))
     return rep
 
 
