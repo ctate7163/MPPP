@@ -56,6 +56,20 @@ def block_terrain(st: Dict[str, Any], cfg: Dict[str, Any]):
     return name, [n if str(n).lower().endswith(".png") else f"{n}.png" for n in sets[name]["images"]]
 
 
+def mark_name(st: Dict[str, Any]) -> Optional[str]:
+    """The block's name in a station's nadir mark: ``"mark_name"``, else its ``"name"`` without a trailing camera tag such
+    as ``(Z34)`` (0.99.13, Christian, 17 Nov 2026: "The Zcam blue circles should have the same titles as the block name
+    as the ncam versions" - "Three Forks North (Z34)" is "Three Forks North" on the disc), else the block's name."""
+    import re
+    if st.get("mark_name"):
+        return str(st["mark_name"])
+    nm = st.get("name")
+    if nm:
+        return re.sub(r"\s*\((?:Z|Mastcam-Z)\s*\d*(?:\s*mm)?\)\s*$", "", str(nm), flags=re.I) or str(nm)
+    from .nadir import block_name
+    return block_name(st.get("site"))
+
+
 def block_workspace(name: str = "") -> str:
     """The block cloud's workspace folder: dense_block_N, or dense_block_<name> for a terrain set."""
     return f"dense_block_{name}" if name else BLOCK_WORKSPACE
@@ -260,7 +274,7 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                     from .ods import ods_prefix          # 0.97.14: the files carry the station's code of the list
                     argv += ["--prefix", ods_prefix(lab, rover=v == "rover")]
                     from .nadir import block_name        # 0.97.7: the name for the mark at the nadir; 0.97.17: the
-                    nm = st.get("name") or block_name(st.get("site"))    # block's name without its size word
+                    nm = mark_name(st)                   # block's name without its size word
                     if nm:
                         argv += ["--site-name", str(nm)]
                 if step == "mesh" and block:                 # the block's cloud, not an older one of the station alone

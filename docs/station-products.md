@@ -94,7 +94,7 @@ commit per station (`rpp.ibr.hf`):
 - `<station>/record/` (and `record/with_rover/`): the 16-bit stacked panoramas, the pivot's 16-bit depth, `ods.json`,
   `station.json`, the provenance picture and the tone levels (`--no-hf-record`: the viewer's pictures only).
 
-`panos.json` stays in the viewer's GitHub checkout (`D:\code\RPV`, published at https://ctate7163.github.io/RPV/),
+`panos.json` stays in the viewer's GitHub checkout (`D:\code\RPV`, published at https://ctate7163.github.io/rpv/),
 committed and pushed as before; its addresses point at the station's commit on the dataset
 (`https://huggingface.co/datasets/ctate7163/rpp-rpv/resolve/<commit>/<station>/viewer/<file>`), so a link
 never changes under a browser's cache. Pictures an earlier upload left in the checkout are removed once the station
@@ -219,12 +219,12 @@ A = view, X = info and map, Y = home (the welcome view, facing west), B = terrai
 button or H = home, B = terrain only, and the N E S W O cross at the upper right (O = level along the rover's +x). A line at the bottom reports what
 the device can show (maximum texture size, compressed-texture formats).
 
-- On the documentation site: [https://ctate7163.github.io/RPV/](https://ctate7163.github.io/RPV/){target="_blank" rel="noopener"}
+- On the documentation site: [https://ctate7163.github.io/rpv/](https://ctate7163.github.io/rpv/){target="_blank" rel="noopener"}
   (opens in a new tab from these pages; GitHub's own rendering of the README does not allow that).
 - To add stations: `rpp single-sites Sol0052_S003D2046 --publish D:\code\RPV --upload --publish-only` puts the stereo JPEGs
   (reduced to 8192) on Hugging Face (`--host hf`, the default) and lists them in the viewer checkout's `panos.json`, then
   commits and pushes that checkout (`--host github`: the pictures into its `panos/`, as before 0.99.3). Since 0.99.10 the
-  repository's own `docs/ods` holds the page and `vendor/` only: the panoramas and their list live in `ctate7163/RPV`.
+  repository's own `docs/ods` holds the page and `vendor/` only: the panoramas and their list live in `ctate7163/rpv`.
 - Another image list: `.../ods/?index=URL` (same origin, or a host that allows cross-origin requests).
 
 Status: a prototype. It has been checked in a desktop browser with a labeled test pair; the stereo in a headset,

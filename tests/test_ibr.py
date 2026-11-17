@@ -1107,7 +1107,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     z = SS.plan(cfg, tmp_path, labels=["Sol0690_S032D1184_Z34"])[0]["commands"]
     zm = [c for c in z if c["variant"] == "masked"]                              # 0.98.22: + the rover variant
     assert len(zm) == 4 and {c["variant"] for c in z} == {"masked", "rover"}
-    assert "--context-images" in zm[-1]["argv"] and zm[-1]["argv"][-9:] == ["--cameras", "Z", "--sols", "690", "692", "--zcam-scale", "0.5", "--fill-cameras", "NF"]   # 0.98.30: + the sol 692 deck pan
+    assert "--context-images" in zm[-1]["argv"] and zm[-1]["argv"][-10:] == ["--cameras", "Z", "--sols", "690", "692", "--zcam-scale", "0.5", "--fill-cameras", "NF", "--no-gains"]   # 0.98.30: + the sol 692 deck pan; 0.99.13: no gains
     rs = [c for c in SS.plan(cfg, tmp_path, labels=["Sol0052_S003D2046"], rover_surface=True)[0]["commands"] if c["step"] == "ods"]
     assert [c["argv"][-4:] == ["--eyes", "left", "right", "center"] for c in rs] == [c["variant"] == "rover" for c in rs]
     new98p6 = {"Sol0009_S003D0000", "Sol0180_S007D0000", "Sol0204_S007D1836", "Sol0248_S008D0000", "Sol0361_S011D0000", "Sol0565_S029D0000", "Sol1955_S091D0124", "Sol1965_S091D0806", "Sol1189_S054D1152"}      # 0.98.6, 0.98.7: eight more stations (Christian, 14 Nov 2026)
@@ -3115,7 +3115,7 @@ def test_rover_variant_gets_a_turning_disc_and_the_page_faces(tmp_path):
     assert vs["rover"]["ground_mark"]["file"] == vs["masked"]["ground_mark"]["file"]
     assert web.WELCOME_YAW_DEG == 270.0
     page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
-    assert "Rover Photogrammetry Viewer" in page and "RPP stereo viewer" not in page and "WELCOME_AZ_DEG = 270" in page
+    assert "Mars rover panorama viewer (RPV)" in page and "RPP stereo viewer" not in page and "WELCOME_AZ_DEG = 270" in page
     assert all(f'id="face{k}"' in page for k in "NESWO") and "lookKeys" in page   # O looks level since 0.98.28
 
 
@@ -3161,11 +3161,12 @@ def test_viewer_moves_to_its_own_repository(tmp_path, monkeypatch):
     assert web.viewer_dir() == tmp_path / "RPV"
     monkeypatch.delenv("RPP_VIEWER_DIR")
     home = Path(web.__file__).resolve().parents[3]
-    assert web.viewer_dir() in (home.parent / "RPV", home / "docs" / "ods")
-    assert web.VIEWER_URL == "https://ctate7163.github.io/RPV/"
+    assert web.viewer_dir() in (home.parent / "rpv", home.parent / "RPV", home / "docs" / "ods")
+    assert web.VIEWER_URL == "https://ctate7163.github.io/rpv/"        # 0.99.13: lower case
     page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
     head = page[:page.index("</head>")]
-    assert "location.replace('https://ctate7163.github.io/RPV/' + location.search + location.hash)" in head
+    assert "location.replace('https://ctate7163.github.io/rpv/' + location.search + location.hash)" in head
+    assert "/^\\/RPV(\\/|$)/.test(location.pathname)" in head      # 0.99.13: a copy still served at /RPV/ sends on too
     assert "location.hostname === 'ctate7163.github.io'" in head and "(RPP|MPPP)" in head
     assert "const CODE_URL = 'https://github.com/ctate7163/RPP';" in page
     # installed into another folder (the RPV checkout), the page is the same file - the redirect only fires on /RPP/ods/
@@ -3308,3 +3309,28 @@ def test_z34_station_has_a_name_for_the_menu():
     # Christian, 14:52: "Make both Three Forks North and the zcam one should have an extra (Z34) after it"
     assert st["Sol0686_S032D1184"]["name"] == "Three Forks North"
     assert st["Sol0690_S032D1184_Z34"]["name"] == "Three Forks North (Z34)"
+
+
+def test_viewer_station_arrows_rover_button_and_title():
+    """0.99.13 (Christian, 17 Nov 2026: "left arrow and right arrow buttons on the lower right to take the scene to the
+    previous and next station. In between those two arrows, put a little rover icon to toggle the rover deck view on and
+    off", "replace the graphic with a curiosity rover", 'The title on the rpv website should be "Mars rover panorama
+    viewer (RPV)" instead of "MPPP stereo panoramas"'); the disc of a Mastcam-Z station named as its Navcam one; the
+    Z34 panorama blended without per-image gains."""
+    from rpp.ibr import web, single_sites as SS
+    page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    nav = page[page.index('<div id="nav">'):page.index('<div id="msg">')]
+    assert nav.index('id="prevSt"') < nav.index('id="roverBtn"') < nav.index('id="nextSt"')
+    assert "#nav { position: fixed; right: 12px; bottom: 12px;" in page
+    assert "Curiosity-class rover" in nav and nav.count("<circle") == 3
+    assert "$('prevSt').onclick = () => step('s', -1);" in page and "$('nextSt').onclick = () => step('s', 1);" in page
+    assert "function roverToggle()" in page and "updateNav();" in page
+    assert "<title>Mars rover panorama viewer (RPV)</title>" in page and '<span id="title">Mars rover panorama viewer (RPV)</span>' in page
+    assert "/stereo panoramas|photogrammetry viewer/i.test(j.title)" in page
+    import inspect
+    assert inspect.signature(web.publish).parameters["title"].default == "Mars rover panorama viewer (RPV)"
+    assert SS.mark_name({"name": "Three Forks North (Z34)"}) == "Three Forks North"
+    assert SS.mark_name({"name": "Three Forks North", "mark_name": "TFN"}) == "TFN"
+    cfg = SS.load_config()
+    z = cfg["stations"]["Sol0690_S032D1184_Z34"]
+    assert "--no-gains" in z["ods_args"] and SS.mark_name(z) == cfg["stations"]["Sol0686_S032D1184"]["name"]

@@ -46,7 +46,7 @@ distortion and the stereo rig to about 0.2 px, so the blocks across the mission 
 no single sol can provide. RPP versions those refined models, checks them across blocks, and feeds them back as
 the default cameras for the next run.
 
-Version **0.99.12** (`v0p99`): the core (`rpp`, the pipeline) and the research studies (`rpp_studies`) apart, the
+Version **0.99.13** (`v0p99`): the core (`rpp`, the pipeline) and the research studies (`rpp_studies`) apart, the
 freeze run as a driver of its own, and the products of one rover station past the block - a cleaned mesh with a
 model of the rover, per-image depth and photometric maps, and a stereoscopic 360 degree panorama with a web
 viewer (below). The paper's freeze release is 0.95 (`paper/paper.md`). Versions before 1.0 are
@@ -159,7 +159,7 @@ model in it, per-image depth, normal, incidence, emission, phase and shadow maps
 panorama, 8192 x 4096 per eye (16K with `--width 16384`), as PNG (8-bit and 16-bit linear) and JPEG. The stacked left-over-right files are
 named `..._360_3DTD` and carry XMP metadata for headset viewers.
 
-* The panoramas in a browser or a headset: **<https://ctate7163.github.io/RPV/>** (`docs/ods/`, a prototype;
+* The panoramas in a browser or a headset: **<https://ctate7163.github.io/rpv/>** (`docs/ods/`, a prototype;
   `rpp single-sites --publish docs/ods` adds stations).
 * How they are made and what the files are: [docs/station-products.md](https://ctate7163.github.io/RPP/station-products/).
 * The rover model (derived from NASA's Perseverance model, credit NASA/JPL-Caltech), for use by others:
