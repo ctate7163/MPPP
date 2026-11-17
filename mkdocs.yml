@@ -1,9 +1,9 @@
 site_name: RPP
 site_description: "Rover Photogrammetry Pipeline: Mars 2020 PDS images to COLMAP and Metashape"
 site_author: Christian Tate
-site_url: https://ctate7163.github.io/RPP/
-repo_url: https://github.com/ctate7163/RPP
-repo_name: ctate7163/RPP
+site_url: https://ctate7163.github.io/rpp/
+repo_url: https://github.com/ctate7163/rpp
+repo_name: ctate7163/rpp
 edit_uri: ""
 copyright: "Copyright 2026 Christian Tate, Malin Space Science Systems. Apache-2.0."
 docs_dir: docs

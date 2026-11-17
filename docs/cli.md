@@ -350,7 +350,7 @@ run is skipped (`--force` runs everything; `step_<name>.json` in the station's f
 variant takes the first one's terrain mesh, and `single_sites_status.json` says what is running. `--publish DIR`
 (0.97.3) copies the stations' stereo JPEGs, reduced to `--publish-width`, into `DIR/panos` and lists them in
 `DIR/panos.json` for the web viewer (`docs/ods` of the repository; see
-[Station products](station-products.md)); `--publish-only` does only that. `--install DIR` writes `run_single_site_ibr.bat` into DIR: it fast-forwards `D:\code\MPPP`
+[Station products](station-products.md)); `--publish-only` does only that. `--install DIR` writes `run_single_site_ibr.bat` into DIR: it fast-forwards `D:\code\RPP`
 to the newest bundle in `D:\rover_blocks\_transfer` when that bundle is ahead (never back), then runs
 `rpp single-sites` with its arguments - it names no version, so it never needs replacing.
 

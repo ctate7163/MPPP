@@ -3,6 +3,22 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.14 — 2026-11-17 (branch `rpp`)
+
+- The welcome view's title is "Rover Photogrammetry Viewer (RPV)" again (Christian, 11:10: "rename welcome page name to
+  rover photogrammetry viewer (RPV)"); the page and the tab stay "Mars rover panorama viewer (RPV)".
+- The credit reads "Created by Christian Tate at MSSS" (11:12: 'remove the "for research purposes" phrase'), on the welcome
+  view, the page and the dataset card.
+- GitHub addresses of the pipeline are lower case, `ctate7163/rpp` and https://ctate7163.github.io/rpp/ (11:11: "I'd like
+  to rename RPP to rpp to match the rpv"); the XMP namespace URIs stay as they are (identifiers, not links).
+  `_transfer\github_lowercase\rename_github_lowercase.bat` renames both repositories and makes the user site
+  `ctate7163.github.io` forward `/RPV/...`, `/RPP/ods/` and `/RPP/...` to the lower-case sites.
+- The documentation pages name `D:\code\RPP` where they named `D:\code\MPPP`; `test_cmods_dir_is_the_default_camera_folder`
+  clears `MPPP_CMODS` too (it failed in sync_code.bat on the PC, where the old variable is set).
+- The welcome view's control instructions are one font size (11:10: "make the control instructions on the welcome page a
+  uniform size font"): `textPanel(..., {uniform: true})` gives every line the size of the one that must shrink most, and
+  the lines are split more evenly (B and grip together on the third line).
+
 ## 0.99.13 — 2026-11-17 (branch `rpp`)
 
 Christian, 17 Nov 09:26–09:39.

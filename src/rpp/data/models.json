@@ -20,7 +20,7 @@
       "urls": [
         "https://huggingface.co/ctate7163/rpp-mask/resolve/main/rpp_mask_convnext_tiny_s4_v1.safetensors",
         "https://huggingface.co/ctate7163/mppp-mask/resolve/main/mppp_mask_convnext_tiny_s4_v1.safetensors",
-        "https://github.com/ctate7163/RPP/releases/download/mask-v1/mppp_mask_convnext_tiny_s4_v1.safetensors"
+        "https://github.com/ctate7163/rpp/releases/download/mask-v1/mppp_mask_convnext_tiny_s4_v1.safetensors"
       ]
     },
     "rpp_mask_v2": {
@@ -41,7 +41,7 @@
       "urls": [
         "https://huggingface.co/ctate7163/rpp-mask/resolve/main/rpp_mask_convnext_tiny_s4_v2.safetensors",
         "https://huggingface.co/ctate7163/mppp-mask/resolve/main/mppp_mask_convnext_tiny_s4_v2.safetensors",
-        "https://github.com/ctate7163/RPP/releases/download/mask-v2/mppp_mask_convnext_tiny_s4_v2.safetensors"
+        "https://github.com/ctate7163/rpp/releases/download/mask-v2/mppp_mask_convnext_tiny_s4_v2.safetensors"
       ]
     },
     "rpp_mask_v3": {

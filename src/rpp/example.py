@@ -23,7 +23,7 @@ PathLike = Union[str, Path]
 
 EXAMPLE_NAME = ondisk.EXAMPLE_ASSET     # the release asset keeps its name (rpp.ondisk)
 EXAMPLE_TAG = "example-data-v1"
-EXAMPLE_URL = f"https://github.com/ctate7163/RPP/releases/download/{EXAMPLE_TAG}/{EXAMPLE_NAME}.zip"
+EXAMPLE_URL = f"https://github.com/ctate7163/rpp/releases/download/{EXAMPLE_TAG}/{EXAMPLE_NAME}.zip"
 EXAMPLE_SOLS = (461, 464)
 EXAMPLE_SITE = "rockytop_example"        # the site of the example set in rpp/data/sites.json
 

@@ -35,10 +35,10 @@ They need open3d in the Python that runs rpp (the base Python): `python -m pip i
 first release with a Windows wheel for Python 3.13). The dense step before them runs its patch-match in the CUDA
 python (`rpp_gpu`) by itself.
 
-`scripts\windows\run_single_site_ibr.bat [STATION ...]` updates `D:\code\MPPP` from the newest `rpp_*.bundle` in
+`scripts\windows\run_single_site_ibr.bat [STATION ...]` updates `D:\code\RPP` from the newest `rpp_*.bundle` in
 `D:\rover_blocks\_transfer` and runs `rpp single-sites` (dense, mesh, depth maps, panorama; both variants) into
 `D:\rover_blocks\single_sites`. Steps that are up to date are skipped; `single_sites_status.json` there says what is
-running. `set RPP_NO_PAUSE=1` first for an unattended run. `--publish D:\code\MPPP\docs\ods --publish-only` puts the
+running. `set RPP_NO_PAUSE=1` first for an unattended run. `--publish D:\code\RPP\docs\ods --publish-only` puts the
 stereo JPEGs where the web viewer reads them (see [Station products](station-products.md)).
 
 ## Site maps: `scripts\windows\make_maps.bat`

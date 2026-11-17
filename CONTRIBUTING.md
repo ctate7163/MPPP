@@ -10,7 +10,7 @@ Apache-2.0.
 **Development setup**
 
 ```bash
-git clone https://github.com/ctate7163/RPP.git
+git clone https://github.com/ctate7163/rpp.git
 cd RPP
 pip install -e ".[all]"
 pytest -q                       # ~470 tests on the two PDS products in tests/data/m20 (about 10 minutes)

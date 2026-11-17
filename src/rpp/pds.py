@@ -31,7 +31,7 @@ COLLECTIONS = {"ncam": "mars2020_navcam_ops_calibrated", "fcam": "mars2020_hazca
                "rcam": "mars2020_hazcam_ops_calibrated", "zcam": "mars2020_mastcamz_ops_calibrated"}
 CAMERA_OF_LETTER = {"N": "ncam", "F": "fcam", "R": "rcam", "Z": "zcam"}
 NAME = re.compile(r"^([NFRZ])[A-Z0-9]{2}_(\d{4})_\d{10}_\d{3}([A-Z]{3})_", re.I)
-UA = {"User-Agent": "RPP (Rover Photogrammetry Pipeline; github.com/ctate7163/RPP)"}
+UA = {"User-Agent": "RPP (Rover Photogrammetry Pipeline; github.com/ctate7163/rpp)"}
 
 
 def camera_of(name: str) -> str:
