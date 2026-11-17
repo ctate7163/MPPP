@@ -3115,7 +3115,7 @@ def test_rover_variant_gets_a_turning_disc_and_the_page_faces(tmp_path):
     assert vs["rover"]["ground_mark"]["file"] == vs["masked"]["ground_mark"]["file"]
     assert web.WELCOME_YAW_DEG == 270.0
     page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
-    assert "Mars rover panorama viewer (RPV)" in page and "RPP stereo viewer" not in page and "WELCOME_AZ_DEG = 270" in page
+    assert "const VIEWER_NAME = 'Rover Photogrammetry Viewer (RPV)';" in page and "RPP stereo viewer" not in page and "WELCOME_AZ_DEG = 270" in page
     assert all(f'id="face{k}"' in page for k in "NESWO") and "lookKeys" in page   # O looks level since 0.98.28
 
 
@@ -3152,7 +3152,7 @@ def test_o_looks_along_the_rover_x_and_y_b_home_buttons(tmp_path):
 
 
 def test_viewer_moves_to_its_own_repository(tmp_path, monkeypatch):
-    """0.98.29 (Christian, 16 Nov 2026: "I renamed the github repo. change https://ctate7163.github.io/RPP/ods/ to
+    """0.98.29 (Christian, 16 Nov 2026: "I renamed the github repo. change https://ctate7163.github.io/rpp/ods/ to
     https://ctate7163.github.io/RPV/"): --upload publishes into RPP_VIEWER_DIR or the RPV checkout beside this one;
     the pipeline's own docs/ods page sends visitors on GitHub to the RPV site with the station link; the code link
     names the renamed repository."""
@@ -3168,7 +3168,7 @@ def test_viewer_moves_to_its_own_repository(tmp_path, monkeypatch):
     assert "location.replace('https://ctate7163.github.io/rpv/' + location.search + location.hash)" in head
     assert "/^\\/RPV(\\/|$)/.test(location.pathname)" in head      # 0.99.13: a copy still served at /RPV/ sends on too
     assert "location.hostname === 'ctate7163.github.io'" in head and "(RPP|MPPP)" in head
-    assert "const CODE_URL = 'https://github.com/ctate7163/RPP';" in page
+    assert "const CODE_URL = 'https://github.com/ctate7163/rpp';" in page
     # installed into another folder (the RPV checkout), the page is the same file - the redirect only fires on /RPP/ods/
     assert web.install_viewer(tmp_path / "RPV") and (tmp_path / "RPV" / "index.html").read_text(encoding="utf-8") == page
 
@@ -3315,7 +3315,7 @@ def test_viewer_station_arrows_rover_button_and_title():
     """0.99.13 (Christian, 17 Nov 2026: "left arrow and right arrow buttons on the lower right to take the scene to the
     previous and next station. In between those two arrows, put a little rover icon to toggle the rover deck view on and
     off", "replace the graphic with a curiosity rover", 'The title on the rpv website should be "Mars rover panorama
-    viewer (RPV)" instead of "MPPP stereo panoramas"'); the disc of a Mastcam-Z station named as its Navcam one; the
+    viewer (RPV)" instead of" the old list title'); the disc of a Mastcam-Z station named as its Navcam one; the
     Z34 panorama blended without per-image gains."""
     from rpp.ibr import web, single_sites as SS
     page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")

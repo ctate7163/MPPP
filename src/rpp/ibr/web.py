@@ -170,7 +170,7 @@ def welcome_pano(web: Path, station_entry: Optional[Dict[str, Any]], pano_dir: O
 
 
 def _welcome_entry(dst: Path) -> Dict[str, Any]:
-    return {"id": WELCOME_ID, "title": "Welcome", "welcome": True, "site_name": "Mars rover panorama viewer (RPV)",
+    return {"id": WELCOME_ID, "title": "Welcome", "welcome": True, "site_name": "Rover Photogrammetry Viewer (RPV)",
             "yaw_deg": WELCOME_YAW_DEG,                       # 0.98.19 (Christian, 16 Nov 2026): it opens looking west
             "variants": [{"key": "welcome", "label": "welcome", "views": {"standard": "panos/" + dst.name}}]}
 
@@ -600,7 +600,7 @@ VIEWER_URL = "https://ctate7163.github.io/rpv/"        # 0.98.29: the viewer's o
 
 def viewer_dir() -> Path:
     """Where ``single-sites --upload`` publishes when no ``--publish`` folder is given (0.98.29; Christian, 16 Nov 2026:
-    "change https://ctate7163.github.io/RPP/ods/ to https://ctate7163.github.io/RPV/"): ``RPP_VIEWER_DIR``; else a git
+    "change https://ctate7163.github.io/rpp/ods/ to https://ctate7163.github.io/RPV/"): ``RPP_VIEWER_DIR``; else a git
     checkout named ``RPV`` beside this one (``D:\\code\\RPV`` beside ``D:\\code\\MPPP``), whose pushes publish
     VIEWER_URL; else this checkout's ``docs/ods`` (as before 0.98.29 - on GitHub that page now sends visitors to
     VIEWER_URL, so panoramas published there are not seen)."""

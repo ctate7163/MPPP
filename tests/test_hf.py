@@ -127,8 +127,9 @@ def test_the_rpp_rpv_dataset_takes_over_the_earlier_one(monkeypatch):
     """Christian, 17 Nov 2026: "there should be a separate rpp-rpv repository" - the morning's rpv-panoramas is renamed,
     once; another dataset named by RPP_HF_DATASET is left alone; panos.json's old addresses follow."""
     from rpp.ibr import hf
-    monkeypatch.delenv("RPP_HF_DATASET", raising=False)
-    monkeypatch.delenv("MPPP_HF_DATASET", raising=False)
+    from rpp import env as rpp_env
+    for n in rpp_env.names("HF_DATASET"):                        # the new name and the old one
+        monkeypatch.delenv(n, raising=False)
     assert hf.dataset() == "ctate7163/rpp-rpv"
     api = MovingApi()
     assert hf.ensure_dataset(api=api) == "ctate7163/rpp-rpv"

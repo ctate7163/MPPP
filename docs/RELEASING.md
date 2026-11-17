@@ -2,7 +2,7 @@
 
 This covers four things:
 
-1. the code, pushed to `https://github.com/ctate7163/RPP`;
+1. the code, pushed to `https://github.com/ctate7163/rpp`;
 2. the released mask model, exported to **safetensors** and attached to a **GitHub release**;
 3. the same model on **Hugging Face**;
 4. the package on **PyPI**, <https://pypi.org/project/rover-photogrammetry-pipeline/> (section 8).
@@ -20,7 +20,7 @@ Commands are for Windows (Anaconda Prompt or PowerShell). On Linux and macOS the
 * **Git:** `git --version`. If it is missing, install [Git for Windows](https://git-scm.com/download/win) or run `conda install git`.
 * **GitHub CLI** (optional, simplifies releases): `winget install GitHub.cli`, then `gh auth login`.
 * **Hugging Face:** `pip install -U huggingface_hub`, then `huggingface-cli login` (or `hf auth login` in newer versions). Use a token with *write* access from https://huggingface.co/settings/tokens.
-* On github.com, create an **empty** repository `ctate7163/RPP`: no README, no license, no .gitignore. The files come from the bundle.
+* On github.com, create an **empty** repository `ctate7163/rpp`: no README, no license, no .gitignore. The files come from the bundle.
 
 ## 1. Push the code (first time, from the bundle)
 
@@ -28,9 +28,9 @@ The release was prepared as a git bundle: one file holding the repository and it
 
 ```bat
 cd /d D:\code
-git clone D:\code\MPPP\release_v0p21\rpp_v0p21.bundle RPP_git
+git clone D:\code\RPP\release_v0p21\rpp_v0p21.bundle RPP_git
 cd RPP_git
-git remote set-url origin https://github.com/ctate7163/RPP.git
+git remote set-url origin https://github.com/ctate7163/rpp.git
 git push -u origin main
 git push origin --tags
 ```
@@ -40,7 +40,7 @@ git push origin --tags
 Then work in `D:\code\MPPP_git`:
 * `pip install -e .[mask,sfm]` in your main environment.
 * Your old `D:\code\MPPP` stays as it was, with your checkpoints, runs and older notebooks.
-* To keep training into the old checkpoints folder, set `RPP_CHECKPOINTS=D:\code\MPPP\checkpoints`, e.g. with `setx RPP_CHECKPOINTS D:\code\MPPP\checkpoints` and a new terminal.
+* To keep training into the old checkpoints folder, set `RPP_CHECKPOINTS=D:\code\RPP\checkpoints`, e.g. with `setx RPP_CHECKPOINTS D:\code\RPP\checkpoints` and a new terminal.
 
 Later releases: commit, `git tag vX.Y.Z`, `git push && git push --tags`.
 
@@ -51,11 +51,11 @@ A `.pt` checkpoint is a Python pickle, and loading one can run code. A `.safeten
 From the repository folder (`D:\code\MPPP_git`), with the checkpoint and its `.json` card side by side:
 
 ```bat
-python -m rpp.mask.hub export D:\code\MPPP\checkpoints\convnext_tiny_s4_seg_20260925.pt --name rpp_mask_v2 --update-registry
+python -m rpp.mask.hub export D:\code\RPP\checkpoints\convnext_tiny_s4_seg_20260925.pt --name rpp_mask_v2 --update-registry
 ```
 
 The command:
-* writes `D:\code\MPPP\checkpoints\rpp_mask_convnext_tiny_s4_v2.safetensors` (124,825,300 bytes);
+* writes `D:\code\RPP\checkpoints\rpp_mask_convnext_tiny_s4_v2.safetensors` (124,825,300 bytes);
 * prints its SHA-256;
 * with `--update-registry`, writes the SHA-256 and size into `src/rpp/data/models.json`.
 
@@ -71,18 +71,18 @@ To check the file in Python:
 
 ```python
 from rpp.mask.model import load_model
-model, card = load_model(r"D:\code\MPPP\checkpoints\rpp_mask_convnext_tiny_s4_v2.safetensors")
+model, card = load_model(r"D:\code\RPP\checkpoints\rpp_mask_convnext_tiny_s4_v2.safetensors")
 print(card["backbone"], card["val_iou"], card["exported_from"])
 ```
 
 ## 3. Attach the model to a GitHub release
 
-The registry URL is `https://github.com/ctate7163/RPP/releases/download/mask-v2/mppp_mask_convnext_tiny_s4_v2.safetensors` (the asset keeps the name it was released with before the rename to RPP; GitHub forwards the old repository name). That means a release with the tag **`mask-v2`**, and the file name unchanged. A model-specific tag keeps the URL stable across code versions.
+The registry URL is `https://github.com/ctate7163/rpp/releases/download/mask-v2/mppp_mask_convnext_tiny_s4_v2.safetensors` (the asset keeps the name it was released with before the rename to RPP; GitHub forwards the old repository name). That means a release with the tag **`mask-v2`**, and the file name unchanged. A model-specific tag keeps the URL stable across code versions.
 
 With the GitHub CLI:
 
 ```bat
-gh release create mask-v2 D:\code\MPPP\checkpoints\mppp_mask_convnext_tiny_s4_v2.safetensors --repo ctate7163/RPP --title "Mask model v2" --notes "ConvNeXt-tiny + stride-4 decoder, masks_training_set_v7, 4 epochs, val IoU 0.977. SHA-256 227e483369e11d6e36ce3517cf9f6d6ac60a9a50c1e301f9e7ae53d0cef569b9"
+gh release create mask-v2 D:\code\RPP\checkpoints\mppp_mask_convnext_tiny_s4_v2.safetensors --repo ctate7163/rpp --title "Mask model v2" --notes "ConvNeXt-tiny + stride-4 decoder, masks_training_set_v7, 4 epochs, val IoU 0.977. SHA-256 227e483369e11d6e36ce3517cf9f6d6ac60a9a50c1e301f9e7ae53d0cef569b9"
 ```
 
 Or on the web:
@@ -93,14 +93,14 @@ Or on the web:
 
 GitHub release assets can be up to 2 GB each.
 
-A release for the code itself: `gh release create v0.14.0 --repo ctate7163/RPP --title "RPP 0.14.0" --notes-file CHANGELOG.md` (or use the web page).
+A release for the code itself: `gh release create v0.14.0 --repo ctate7163/rpp --title "RPP 0.14.0" --notes-file CHANGELOG.md` (or use the web page).
 
 ## 4. Upload the model to Hugging Face
 
 The registry URL of `rpp_mask_v3` is `https://huggingface.co/ctate7163/rpp-mask/resolve/main/rpp_mask_convnext_tiny_s4_v3.safetensors`: a public **model** repository `ctate7163/rpp-mask` with the file at its root. RPP does both steps (repository and upload) for you:
 
 ```bat
-cd /d D:\code\MPPP
+cd /d D:\code\RPP
 pip install -U huggingface_hub
 hf auth login
 python -m rpp_studies.mask_training.release_mask_model upload rpp_mask_v3
@@ -139,7 +139,7 @@ python -m rpp.mask.hub list
 3. Export it under a new name so the old URL keeps working, with `--out` for the usual file name:
 
    ```bat
-   python -m rpp.mask.hub export D:\code\MPPP\checkpoints\<checkpoint>.pt --name rpp_mask_v4 --out D:\code\MPPP\checkpoints\rpp_mask_convnext_tiny_s4_v4.safetensors --update-registry
+   python -m rpp.mask.hub export D:\code\RPP\checkpoints\<checkpoint>.pt --name rpp_mask_v4 --out D:\code\RPP\checkpoints\rpp_mask_convnext_tiny_s4_v4.safetensors --update-registry
    ```
 
    For a name not yet in `models.json`, the entry is created with an empty URL list.
@@ -165,12 +165,12 @@ automated from the repository.
    requires a repository that can be cloned without registration and an issue tracker readable without
    registration [1].
 2. **Enable GitHub Pages.** GitHub: *Settings > Pages > Build and deployment > Source: GitHub Actions*. The next push
-   to `main` runs the `docs` workflow and publishes <https://ctate7163.github.io/RPP/>. Check the run under
+   to `main` runs the `docs` workflow and publishes <https://ctate7163.github.io/rpp/>. Check the run under
    *Actions > docs*.
 3. **Log in to Zenodo with GitHub.** Open <https://zenodo.org>, *Log in > Log in with GitHub*, and authorize the
    Zenodo application.
 4. **Enable the repository in Zenodo.** In Zenodo, profile menu > *GitHub*, click *Sync now*, find
-   `ctate7163/RPP` and switch it on. From then on every GitHub release is archived automatically [2].
+   `ctate7163/rpp` and switch it on. From then on every GitHub release is archived automatically [2].
 5. **Optional: add your ORCID.** JSON has no comments, so `.zenodo.json` has no ORCID placeholder. Add
    `"orcid": "0000-0000-0000-0000"` to the creator in `.zenodo.json`, and uncomment and fill the `orcid:` line in
    `CITATION.cff`. Validate with `pip install cffconvert` and `cffconvert --validate -i CITATION.cff`.
@@ -184,7 +184,7 @@ automated from the repository.
    ```bat
    git tag v0.92.0
    git push origin v0.92.0
-   gh release create v0.92.0 --repo ctate7163/RPP --title "RPP 0.92.0" --notes "See CHANGELOG.md"
+   gh release create v0.92.0 --repo ctate7163/rpp --title "RPP 0.92.0" --notes "See CHANGELOG.md"
    ```
 
    Or on the web: *Releases > Draft a new release*, tag `v0.92.0`, *Publish release*. Zenodo archives the release
@@ -201,7 +201,7 @@ automated from the repository.
 
 ### JOSS submission
 
-10. Submit at <https://joss.theoj.org/papers/new> with the repository URL `https://github.com/ctate7163/RPP`, the
+10. Submit at <https://joss.theoj.org/papers/new> with the repository URL `https://github.com/ctate7163/rpp`, the
     version (`0.92.0`) and the archive DOI from step 9. The paper (`paper/paper.md`, `paper/paper.bib`) must be in
     the same repository [1].
 11. **At acceptance**, JOSS asks for a tagged release of the reviewed software and its archive DOI [1]. Make the

@@ -1,9 +1,9 @@
 # RPP — Rover Photogrammetry Pipeline
 
-[![docs](https://github.com/ctate7163/RPP/actions/workflows/docs.yml/badge.svg)](https://ctate7163.github.io/RPP/)
+[![docs](https://github.com/ctate7163/rpp/actions/workflows/docs.yml/badge.svg)](https://ctate7163.github.io/rpp/)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg)](https://doi.org/10.5281/zenodo.XXXXXXX)
 
-Documentation: <https://ctate7163.github.io/RPP/>
+Documentation: <https://ctate7163.github.io/rpp/>
 <!-- DOI badge: replace XXXXXXX with the Zenodo concept DOI after the first archived release (docs/RELEASING.md) -->
 
 *Beyond the stereo baseline with Mars rover images.*
@@ -46,11 +46,11 @@ distortion and the stereo rig to about 0.2 px, so the blocks across the mission 
 no single sol can provide. RPP versions those refined models, checks them across blocks, and feeds them back as
 the default cameras for the next run.
 
-Version **0.99.13** (`v0p99`): the core (`rpp`, the pipeline) and the research studies (`rpp_studies`) apart, the
+Version **0.99.14** (`v0p99`): the core (`rpp`, the pipeline) and the research studies (`rpp_studies`) apart, the
 freeze run as a driver of its own, and the products of one rover station past the block - a cleaned mesh with a
 model of the rover, per-image depth and photometric maps, and a stereoscopic 360 degree panorama with a web
 viewer (below). The paper's freeze release is 0.95 (`paper/paper.md`). Versions before 1.0 are
-development releases; see [CHANGELOG.md](https://github.com/ctate7163/RPP/blob/main/CHANGELOG.md).
+development releases; see [CHANGELOG.md](https://github.com/ctate7163/rpp/blob/main/CHANGELOG.md).
 
 ## Install
 
@@ -64,7 +64,7 @@ rpp doctor                            # what is installed, which camera models a
 From the repository, with the tests, studies, notebooks and Windows scripts:
 
 ```bash
-git clone https://github.com/ctate7163/RPP.git
+git clone https://github.com/ctate7163/rpp.git
 cd RPP
 pip install -e ".[all]"        # mask (torch, timm), sfm (pycolmap 4.2, pyceres 2.6, kornia), plots, notebooks, dev
 pytest -q                      # the test suite runs on the two PDS products in tests/data/m20
@@ -161,9 +161,9 @@ named `..._360_3DTD` and carry XMP metadata for headset viewers.
 
 * The panoramas in a browser or a headset: **<https://ctate7163.github.io/rpv/>** (`docs/ods/`, a prototype;
   `rpp single-sites --publish docs/ods` adds stations).
-* How they are made and what the files are: [docs/station-products.md](https://ctate7163.github.io/RPP/station-products/).
+* How they are made and what the files are: [docs/station-products.md](https://ctate7163.github.io/rpp/station-products/).
 * The rover model (derived from NASA's Perseverance model, credit NASA/JPL-Caltech), for use by others:
-  [docs/rover-model.md](https://ctate7163.github.io/RPP/rover-model/).
+  [docs/rover-model.md](https://ctate7163.github.io/rpp/rover-model/).
 
 ## GPU on Windows
 
@@ -210,5 +210,5 @@ waypoint table. The package contains no sensitive or non-public data.
 
 ## License and citation
 
-Apache-2.0 (see [LICENSE](https://github.com/ctate7163/RPP/blob/main/LICENSE) and [NOTICE](https://github.com/ctate7163/RPP/blob/main/NOTICE)); released as open source with the approval of Malin Space
-Science Systems. If you use RPP, please cite it as described in [CITATION.cff](https://github.com/ctate7163/RPP/blob/main/CITATION.cff).
+Apache-2.0 (see [LICENSE](https://github.com/ctate7163/rpp/blob/main/LICENSE) and [NOTICE](https://github.com/ctate7163/rpp/blob/main/NOTICE)); released as open source with the approval of Malin Space
+Science Systems. If you use RPP, please cite it as described in [CITATION.cff](https://github.com/ctate7163/rpp/blob/main/CITATION.cff).

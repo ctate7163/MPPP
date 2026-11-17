@@ -18,13 +18,13 @@
   ],
   "related_identifiers": [
     {
-      "identifier": "https://github.com/ctate7163/RPP",
+      "identifier": "https://github.com/ctate7163/rpp",
       "relation": "isSupplementTo",
       "scheme": "url",
       "resource_type": "software"
     },
     {
-      "identifier": "https://ctate7163.github.io/RPP/",
+      "identifier": "https://ctate7163.github.io/rpp/",
       "relation": "isDocumentedBy",
       "scheme": "url"
     }

@@ -63,7 +63,7 @@ BASES = ("https://planetarydata.jpl.nasa.gov/img/data/msl/MSLNAV_1XXX",
 # DATA_V1 (MSL_NAVCAM_RDR_V1_DS.CAT)
 LAYOUTS = ("DATA/SOL{sol:05d}/", "DATA_V1/SOL{sol:05d}/", "DATA/SOL{sol:04d}/", "data/sol{sol:05d}/", "data/SOL{sol:05d}/")
 EST_MB = {"RAD": 2.17, "MXY": 1.12}          # a 1024 x 1024 Navcam RAD (int16) / MXY (uint8) with its label
-UA = {"User-Agent": "rpp-msl-first-block (research; github.com/ctate7163/RPP)"}
+UA = {"User-Agent": "rpp-msl-first-block (research; github.com/ctate7163/rpp)"}
 # MSL engineering-camera product names (MSL Camera SIS): NLB_668441715RAD_F0870792NCAM00252M1
 #   [0] N/F/R Navcam / front / rear Hazcam   [1] L/R eye   [2] A/B computer side   [4:13] SCLK seconds
 #   [13:16] product type (RAD, MXY, XYZ, EDR ...)   [17] F full frame / S subframe / ...   [18:21] site [21:25] drive

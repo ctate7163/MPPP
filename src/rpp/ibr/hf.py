@@ -129,7 +129,7 @@ tags:
 # Mars rover panorama viewer (RPV) panoramas
 
 Omnidirectional stereo (ODS) panoramas of Mars 2020 Perseverance rover stations, made with the Rover Photogrammetry
-Pipeline (RPP, https://github.com/ctate7163/RPP) by Christian Tate (Malin Space Science Systems) for research purposes.
+Pipeline (RPP, https://github.com/ctate7163/rpp) by Christian Tate (Malin Space Science Systems).
 They are shown by the Mars rover panorama viewer: {PAGE_ORIGIN}/rpv/
 
 **Image credit:** NASA/JPL-Caltech/MSSS (Navcam); NASA/JPL-Caltech/MSSS/ASU (Mastcam-Z).

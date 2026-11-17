@@ -14,8 +14,8 @@ tags:
 
 # RPP mask models (`rpp_mask_v4`, `rpp_mask_v3`, ...)
 
-These are the reconstruction-mask models of [RPP](https://github.com/ctate7163/RPP), the Rover Photogrammetry
-Pipeline ([documentation](https://ctate7163.github.io/RPP/)). For each pixel of a Mars 2020
+These are the reconstruction-mask models of [RPP](https://github.com/ctate7163/rpp), the Rover Photogrammetry
+Pipeline ([documentation](https://ctate7163.github.io/rpp/)). For each pixel of a Mars 2020
 Perseverance image, a model predicts whether that pixel should be used for photogrammetric reconstruction:
 
 - **Include** means terrain and sky.
@@ -116,4 +116,4 @@ work.
 ## Citation
 
 Please cite RPP as described in its
-[CITATION.cff](https://github.com/ctate7163/RPP/blob/main/CITATION.cff).
+[CITATION.cff](https://github.com/ctate7163/rpp/blob/main/CITATION.cff).

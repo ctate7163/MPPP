@@ -62,11 +62,11 @@ rpp = "rpp.cli:main"
 mppp = "mppp:cli_main"          # 0.99 only: the command before the rename, with a note
 
 [project.urls]
-Homepage = "https://github.com/ctate7163/RPP"
-Documentation = "https://ctate7163.github.io/RPP/"
-Repository = "https://github.com/ctate7163/RPP"
-Issues = "https://github.com/ctate7163/RPP/issues"
-Changelog = "https://github.com/ctate7163/RPP/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/ctate7163/rpp"
+Documentation = "https://ctate7163.github.io/rpp/"
+Repository = "https://github.com/ctate7163/rpp"
+Issues = "https://github.com/ctate7163/rpp/issues"
+Changelog = "https://github.com/ctate7163/rpp/blob/main/CHANGELOG.md"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

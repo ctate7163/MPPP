@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title>Mars rover panorama viewer (RPV)</title>
 <script>
-// 0.98.29 (Christian, 16 Nov 2026: "change https://ctate7163.github.io/RPP/ods/ to https://ctate7163.github.io/RPV/"):
+// 0.98.29 (Christian, 16 Nov 2026: "change https://ctate7163.github.io/rpp/ods/ to https://ctate7163.github.io/RPV/"):
 // the viewer lives in its own repository, ctate7163/RPV.  This page, still in the pipeline's docs at /RPP/ods/ (and
 // /MPPP/ods/ before the repository was renamed), sends the visitor there with the station link and any ?index=.
 // 0.99.13 (Christian, 17 Nov 2026: "let's make the website https://ctate7163.github.io/rpv have a lower case rpv instead of
@@ -346,11 +346,16 @@ function textPanel(lines, opt = {}) {                            // lines: [{tex
   c.width = W; c.height = Math.ceil(Hpx);
   if (opt.back) { g.fillStyle = opt.back; g.beginPath(); g.roundRect(0, 0, c.width, c.height, 48); g.fill(); }
   g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+  const fit = l => { let px = l.px; g.font = font(l);            // the size at which a line fits the width
+    while (g.measureText(l.text).width > W - 2 * pad && px > 12) { px -= 4; g.font = font({ ...l, px }); }
+    return px; };
+  // 0.99.14 (Christian, 17 Nov 2026: "make the control instructions on the welcome page a uniform size font"): with
+  // opt.uniform every line takes the size of the line that needs the most shrinking
+  const one = opt.uniform ? Math.min(...lines.map(fit)) : null;
   let y = pad;
   for (const l of lines) {
-    g.font = font(l);
-    let px = l.px;
-    while (g.measureText(l.text).width > W - 2 * pad && px > 12) { px -= 4; g.font = font({ ...l, px }); }
+    const px = one || fit(l);
+    g.font = font({ ...l, px });
     y += l.px * 0.625;
     if (l.outline) {                                             // 0.99.1: a colored outline (the title)
       g.strokeStyle = l.outline; g.lineWidth = Math.max(3, px * 0.08); g.strokeText(l.text, W / 2, y);   // thin: not bold
@@ -384,10 +389,11 @@ const WELCOME_AZ_DEG = 270;                     // 0.98.19: the welcome view ope
 // about it being created by Christian Tate at MSSS for research purposes with the code available at the github link').
 // CODE_URL: the pipeline's repository (GitHub forwards the old name, MPPP).
 // 0.99.13 (Christian, 17 Nov 2026: 'The title on the rpv website should be "Mars rover panorama viewer (RPV)" instead of
-// "MPPP stereo panoramas"'): the page's title, the tab's and the welcome view's
-const VIEWER_NAME = 'Mars rover panorama viewer (RPV)';
-const CREDIT = 'Created by Christian Tate at MSSS for research purposes';
-const CODE_URL = 'https://github.com/ctate7163/RPP';   // 0.98.29: the repository renamed MPPP -> RPP
+// the old list title'): the page's title and the tab's.  11:10: "rename welcome page name to rover photogrammetry
+// viewer (RPV)" - the welcome view keeps the viewer's full name
+const VIEWER_NAME = 'Rover Photogrammetry Viewer (RPV)';
+const CREDIT = 'Created by Christian Tate at MSSS';   // 0.99.14 (Christian, 17 Nov 2026: 'remove the "for research purposes" phrase')
+const CODE_URL = 'https://github.com/ctate7163/rpp';   // 0.98.29: the repository renamed MPPP -> RPP
 {                                                 // on a screen the welcome view also gets the credit with a link to click
   const c = $('credit'), l = document.createElement('a');
   l.href = CODE_URL; l.target = '_blank'; l.rel = 'noopener'; l.textContent = CODE_URL.replace(/^https:\/\//, '');
@@ -410,9 +416,9 @@ function showWelcome(on) {
                                  { text: 'Code: ' + CODE_URL.replace(/^https:\/\//, ''), px: 56, weight: 400, color: '#000', plain: true },
                                  { text: 'Mars 2020 Perseverance rover', px: 120, weight: 700 }]), WELCOME_AZ_DEG, 14, 5, 4.2));
     welcome.add(place(textPanel([{ text: 'trigger: next site   |   left trigger: back   |   stick: turn', px: 84, weight: 600 },
-                                 { text: 'X: info and map   |   Y: home   |   A: view   |   B: terrain only (again: color skin)', px: 84, weight: 600 },
-                                 { text: 'grip: rover on, off or 3D', px: 84, weight: 600 }],
-                                { back: 'rgba(0,0,0,0.35)' }), WELCOME_AZ_DEG, -6, 5, 3.6));
+                                 { text: 'X: info and map   |   Y: home   |   A: view', px: 84, weight: 600 },
+                                 { text: 'B: terrain only (again: color skin)   |   grip: rover on, off or 3D', px: 84, weight: 600 }],
+                                { back: 'rgba(0,0,0,0.35)', uniform: true }), WELCOME_AZ_DEG, -6, 5, 3.6));   // 0.99.14: one size
   }
   welcome.visible = !!on;
   $('credit').style.display = on ? '' : 'none';
@@ -899,7 +905,7 @@ diagnostics();
     if (traverse && traverse.dtm && traverse.dtm.file)           // 0.98.19: the blank panel D (DTM, traverse, 2 km bar)
       fetch(new URL(traverse.dtm.file, base).href).then(r => r.blob()).then(createImageBitmap)
         .then(b => { dtmImage = b; if (infoPanel.visible) drawInfo(); }).catch(e => console.warn('DTM map', e));
-    // 0.99.13: a list's own title, except the old "MPPP / RPP stereo panoramas" of lists published before
+    // 0.99.13: a list's own title, except the old "... stereo panoramas" of lists published before
     if (j.title && !/stereo panoramas|photogrammetry viewer/i.test(j.title)) { $('title').textContent = j.title; document.title = j.title; }
   } catch (e) { msg(`no image list at ${index.href} (${e.message || e})`); return; }
   if (!panos.length) { msg('the image list is empty'); return; }

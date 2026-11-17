@@ -51,7 +51,7 @@ The training images are regenerated from the PDS products by the RPP pipeline it
 the images it will be given in production. On Windows:
 
 ```bat
-D:\code\MPPP\scripts\windows\train_masks.bat
+D:\code\RPP\scripts\windows\train_masks.bat
 ```
 
 This batch file does the following:
@@ -75,13 +75,13 @@ model always sees the inference view and also sees rover hardware near the Mastc
 Hazcam frames are used once; the random zoom is off. On Windows:
 
 ```bat
-D:\code\MPPP\scripts\windows\train_masks.bat --tag v8_v4.2 --zoom-pairs
+D:\code\RPP\scripts\windows\train_masks.bat --tag v8_v4.2 --zoom-pairs
 ```
 
 ## Comparing two models
 
 ```bat
-python D:\code\MPPP\rpp_studies.mask_training.compare_mask_models --data D:\masks\masks_training_set_v8 --split-ckpt D:\code\MPPP\checkpoints\convnext_tiny_s4_seg_20261030_v8.pt --models rpp_mask_v3 D:\code\MPPP\checkpoints\convnext_tiny_s4_seg_20261030_v8.pt --seen D:\masks\masks_training_set_v7 --out "D:\code\MPPP\Claude outputs\mask_ab_v3_v4"
+python -m rpp_studies.mask_training.compare_mask_models --data D:\masks\masks_training_set_v8 --split-ckpt D:\code\RPP\checkpoints\convnext_tiny_s4_seg_20261030_v8.pt --models rpp_mask_v3 D:\code\RPP\checkpoints\convnext_tiny_s4_seg_20261030_v8.pt --seen D:\masks\masks_training_set_v7 --out "D:\code\MPPP\Claude outputs\mask_ab_v3_v4"
 ```
 
 This scores both models on the held-out frames of the new model, by camera. With `--seen`, it scores them again on
