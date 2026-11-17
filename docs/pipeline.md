@@ -1,11 +1,11 @@
 # Pipeline
 
-The pipeline is `mppp.pipeline`; the `mppp` command (`process`, `align`, `run`) calls it. Every setting of a run is
-a field of [`Settings`](api.md#mppp.pipeline.Settings), whose defaults are the production values. Settings come
-from, later ones winning: the site's `settings` in the site definitions (`mppp/data/sites.json`),
+The pipeline is `rpp.pipeline`; the `rpp` command (`process`, `align`, `run`) calls it. Every setting of a run is
+a field of [`Settings`](api.md#rpp.pipeline.Settings), whose defaults are the production values. Settings come
+from, later ones winning: the site's `settings` in the site definitions (`rpp/data/sites.json`),
 `<WORK>/mppp_settings.json`, a `--settings` file, and `--set NAME=VALUE` overrides.
 
-A site's WORK folder is `<MPPP_SCAPES>/mars2020_sol_<first sol>_<site>[_zcam]`. It holds `processed/` (images,
+A site's WORK folder is `<RPP_SCAPES>/mars2020_sol_<first sol>_<site>[_zcam]`. It holds `processed/` (images,
 masks, manifest) and one COLMAP project per variant (`colmap/`, `colmap_<variant>/`).
 
 ```text
@@ -14,11 +14,11 @@ align         ->  manifest -> project -> features -> database -> match -> recons
 run_site      =   process_site, then align
 ```
 
-`mppp align --stop-after STEP` (or `align(..., stop_after=STEP)`) stops after one of these steps.
+`rpp align --stop-after STEP` (or `align(..., stop_after=STEP)`) stops after one of these steps.
 
 ## 1. Select the PDS products
 
-`select_products` finds, under `MPPP_PDS`, the Navcam RAD products (`NLF`, `NRF`) of the site's sol ranges and, with
+`select_products` finds, under `RPP_PDS`, the Navcam RAD products (`NLF`, `NRF`) of the site's sol ranges and, with
 Mastcam-Z, the `ZL0` / `ZR0` products of each of the site's zooms (34 mm unless the site lists others). By default it
 also adds every waypoint station within 10 m of a station of the sol range, from any sol
 (`add_nearby_waypoints`). One product is kept per exposure (the largest), Navcam tiles and sub-frames covering less
@@ -37,14 +37,14 @@ out any Hazcam images in `processed/`, and its run key leaves out the Hazcam set
 
 - **Rules before image work**: Navcam frames pointing more than 20° above the horizon, images outside 06:00-18:00
   local mean solar time, images with more than 20 % saturated valid pixels, Navcam exposures longer than 40 ms, and
-  frames whose centre is bluer than the edge by more than a B/R ratio of 1.2 are not processed.
-- **Radiometry**: radiance from the label scaling, normalised to an overhead Sun at a reference optical depth;
+  frames whose center is bluer than the edge by more than a B/R ratio of 1.2 are not processed.
+- **Radiometry**: radiance from the label scaling, normalized to an overhead Sun at a reference optical depth;
   written as 16-bit linear PNG (and 8-bit previews). The PDS file name is kept.
-- **Masks**: the terrain mask from the released ConvNeXt-tiny model (`mppp_mask_v3`), stored in the PNG alpha
+- **Masks**: the terrain mask from the released ConvNeXt-tiny model (`rpp_mask_v3`), stored in the PNG alpha
   channel. The model masks rover hardware and rover shadows; the sky is not masked.
-- **Cameras**: the promoted models of `mppp.calib` (Navcam, Mastcam-Z 34 mm) or the label CAHVOR start models;
+- **Cameras**: the promoted models of `rpp.calib` (Navcam, Mastcam-Z 34 mm) or the label CAHVOR start models;
   every image is padded to the full detector frame so that one camera serves all sub-frames of an eye.
-- **Pose priors**: the label pose (CAHV) placed in East-North-Up metres of the landing-site frame through the
+- **Pose priors**: the label pose (CAHV) placed in East-North-Up meters of the landing-site frame through the
   waypoint table.
 
 Outputs: `images_png16/`, `references.txt` for Metashape, `colmap/sparse_prior/` (cameras, poses, rig),
@@ -73,10 +73,10 @@ partners are always kept. The pairs only choose which images are compared: the m
 features of both images. Geometric verification runs in full-resolution pixels
 (6 px threshold). Features and matches are reused while the images and matching settings are unchanged.
 
-COLMAP's matcher runs in a child process: the CUDA environment named by `MPPP_GPU_PYTHON` when set, otherwise the
+COLMAP's matcher runs in a child process: the CUDA environment named by `RPP_GPU_PYTHON` when set, otherwise the
 current Python on the CPU.
 
-Before any of this, the images of the shipped exclusion list `src/mppp/data/exclude_images.txt` are left out
+Before any of this, the images of the shipped exclusion list `src/rpp/data/exclude_images.txt` are left out
 (Mastcam-Z movies, ZCAM01* sequences, a few Navcam stereo pairs that do not work for photogrammetry);
 `EXCLUDE_LIST=false` keeps them. A WORK folder's own `exclude_images.txt` and the site's `EXCLUDE` setting add to it.
 
@@ -112,7 +112,7 @@ The Navcam-only stage is exported as well (`error_input_navcam/`).
 ## 5. Health checks
 
 `health` evaluates the refined block in groups: registration, tie points (track lengths, cross-station fraction,
-tied station blocks), reprojection (residuals per camera, left/right balance, growth towards the image edge, corner
+tied station blocks), reprojection (residuals per camera, left/right balance, growth toward the image edge, corner
 coverage), camera-model changes, the stereo rig, and pose shifts against the priors. Each value has a warn and a fail
 threshold; the verdict is the worst status. The thresholds are provisional. A `fail` verdict means the alignment
 should be fixed before any error analysis. The report is written to `<project>/health/` (`health.json`,
@@ -126,7 +126,7 @@ should be fixed before any error analysis. The report is written to `<project>/h
 |---|---|
 | `native/` | COLMAP text model in each image's native pixels |
 | `stations.csv` | image to station (site/drive), sol, SCLK, LMST, solar elevation, instrument, scale |
-| `poses.csv` | prior versus refined camera centre (ENU, m) and attitude difference (deg) |
+| `poses.csv` | prior versus refined camera center (ENU, m) and attitude difference (deg) |
 | `residuals.npz` | per-observation residuals in native pixels |
 | `summary.json` | cameras and rig before and after, track statistics, epsilon estimates |
 | `camera_shifts.png` | the camera-shift figure |

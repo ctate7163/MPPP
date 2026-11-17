@@ -1,6 +1,6 @@
 {
-  "title": "MPPP: Mars Photogrammetry Preprocessing Pipeline",
-  "description": "MPPP turns Mars 2020 Perseverance Navcam and Mastcam-Z PDS image products into aligned structure-from-motion blocks in COLMAP and into inputs for Agisoft Metashape, with rover masks, camera models and pose priors.",
+  "title": "RPP: Rover Photogrammetry Pipeline",
+  "description": "RPP turns Mars 2020 Perseverance Navcam and Mastcam-Z PDS image products into aligned structure-from-motion blocks in COLMAP and into inputs for Agisoft Metashape, with rover masks, camera models and pose priors.",
   "upload_type": "software",
   "creators": [
     {

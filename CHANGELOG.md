@@ -3,6 +3,482 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.11 — 2026-11-17 (branch `rpp`)
+
+Christian, 17 Nov 07:08: "The ncam rig likely has a yaw and roll temp component. Let's remove the pp temp dependence and
+instead fit the roll pitch and yaw change with sol and temperature. Make this change for both the freeze3 and deck
+joint runs. Will do the deck joint first and use its results for the freeze3. Also prepare prefreeze3c to rerun seitah
+and do one last joint on all the zcams, plus hazcams, and a n+z34 joint using the new temp dependence forms."  07:10:
+"If the bar is rotating then the zcams would have a similar trend and temp dependence. Test that."  06:59: "How can we
+ensure the all the sol 121 seitah images align?"
+
+- **The rig_T Navcam form.** The stereo temperature change is a rotation of the camera bar, not a principal-point
+  motion: cx and cy are constant, and the rig rotation is linear in sol and in the camera temperature (the rig file's
+  `thermal`: `pitch_mdeg_per_degC`, `yaw_mdeg_per_degC`, `roll_mdeg_per_degC` about `T0_degC`). The 16 Nov deck joint
+  and the 3 Nov blocks agree on a roll of +0.25 mdeg/degC (not modeled until now) and a stereo yaw of -1.2 mdeg/degC.
+  - `rpp.calib.rig_at(rig, sol, T_degC)` turns the rotation by the rates (`rig_thermal_terms`, `thermal_offset_mdeg`).
+  - A block's rigs are set at its median camera temperature (`navcam_start_rig`, the rig epochs); the temperature bins
+    turn each bin's Navcam rig by the rates from there (`rpp.sfm.thermal`, `settings["navcam_rig_thermal"]`,
+    the thermal stage's `bin_rigs_turned`).
+  - The forms (`rpp.calib.forms`): a rig with rates is valid; `navcam_form` says which form a model set has
+    (`rig_T`, `pp_T`, `none`, `both`). `check_form` refuses `both` (the change counted twice), and so does a
+    promotion that would leave a folder with both.
+  - `rpp calib navcam --form rig_T` (the default; `pp_T`: the old form). The tied joint holds the principal-point
+    slopes of both eyes at 0 and fits one temperature rate per angle `K` in the rig law
+    `q(s, T) = Q0 + 1/2 [D s + H min(s, knot)] + 1/2 K (T - T0)`; the rig units already sit per temperature bin.
+    From a pp_T folder `K` starts at the slopes' stereo equivalent (`pp_stereo_rates`). The law files carry the
+    rates with their sd. The N+Z joint, the law check, the Mastcam-Z and Hazcam joints read them.
+  - `check_navcam` compares the whole stereo temperature change (the slopes' equivalent rotation plus the rig's
+    rates) when either side is rig_T.
+  - `rpp_studies.calibration.deck_rig`: from a rig_T deck joint (`all_rig.json` `form`), the candidate rig carries
+    the rates. `--cameras-from` writes the two Navcam cameras with their slopes set to 0 (the rig_T model set), and
+    `--station-cameras` carries the rig over to those cameras (the 16 Nov stations against cmods_freeze2: pitch
+    +0.60, yaw -1.61 mdeg). The check compares the stereo temperature change at T0 -/+ 10 degC.
+  - The knee profile fits pitch against temperature too when the deck joint is rig_T.
+  - Test: a synthetic block whose NR images see a rig turned by (0.3, -1.2, 0.25) mdeg/degC - the tied joint recovers
+    the rates to 0.05; the pp_T form on the same data ends 20 % higher in cost.
+- **The bar test** (`rpp calib zcam --zcam-rig-T-test [DEG]`): an extra diagnostic pass of the Mastcam-Z joint, with one
+  rig per block, epoch and lens-temperature bin. It fits the rigs' rotation against the lens temperature within the
+  blocks and between them (with sol), beside the Navcam rig's rates (`diagnostics.rig_T_test`, report lines).
+  - On the 15-16 Nov joints, the existing per-block rigs (21 sites, 43 block-zoom rigs) follow the Navcam rig in sol on
+    all three angles: pitch +5.8 +- 1.2, yaw +5.4 +- 1.1, roll -2.7 +- 1.9 mdeg/1000 sol after sol 250 (Navcam +6.1,
+    +3.9, -6.8). The early yaw reversal is there too (-22 +- 10 against -39 +- 7).
+  - Against the lens temperature between the blocks: yaw -0.45 +- 0.16, pitch -0.13 +- 0.18, roll -0.15 +- 0.28
+    mdeg/degC. The within-block test needs the new pass.
+- **Seitah Overlook sol 121** (the zoom ladder ZCAM08114).
+  - A zoom without a focus model (26, 100 mm) starts its high-state bins at the label f x 1.0095
+    (`ZCAM_NO_MODEL_HIGH_RATIO`, the backlash ratio). The low state stays at the label; 110 mm has one state.
+  - With fewer than `zcam_min_zoom_images` images, such a zoom refines f and holds the principal point and the
+    distortion. Before, everything was held at a label f about 1 % off, and the 26 mm frames slid 3.4 m along the
+    boresight and were dropped.
+  - The 63 / 79 mm frames take the pre3 models (ZR063's 2.7-3.6 px and the 79 mm low state's 0.3-0.9 m slides came
+    from the 16 Nov models).
+- **Rochette's panorama on the whole block's terrain** (Christian, 17 Nov 08:21: "rerun rochette and rockytop from the
+  ods using whole block terrain models. upload them to hugging face"). `Sol0180_S007D0000` gets `"terrain": "block"`
+  in `single_sites.json`: the terrain is fused from all 42 Navcam frames of `mars2020_sol_0178_rochette_zcam`
+  (`colmap/dense_block_N`): the end-of-drive 360s of sols 178 and 180, the mid-drive pairs, the later frames at
+  S007D0000 and the 6 frames of sol 341. The panorama still comes from the station's own frames and its context frames.
+  The four Rockytop stations already use the block's terrain set (`block:rockytop`, 119 frames, 0.98.19).
+- `M20_waypoints.json` (both copies) to sol 2022: the waypoints 92_130 and 93_0, which a download had added to the
+  PC's working copy (the rename stops on changed tracked files; the PC's copy is stashed).
+- Outside the repository:
+  - the deck-joint packages run every joint in the rig_T form (`joint_ba.py --nav-pp-T off`), taking each station's
+    own applied slopes out;
+  - `all_report.py` fits pitch, yaw and roll against sol and temperature;
+  - `run_prefreeze3c.bat` builds the candidate, the model folder `cmods_prefreeze3c`, (`--ecam`) the full ecam
+    joint, Seitah, the seven Mastcam-Z joints with the bar test, the Hazcam fit, the N+Z34 joint and a summary.
+
+## 0.99.10 — 2026-11-17 (branch `rpp`)
+
+- **The viewer's panoramas out of the repository.** `docs/ods/panos.json` and `docs/ods/panos/orientation_test_360_3DTD.jpg`
+  are removed, as the PC's main removed them in the viewer's last publish commits ("panoramas live in ctate7163/RPV").
+  `rename_mppp_to_rpp.bat` then merges rpp into main without a conflict. `docs/ods` keeps the page and `vendor/`,
+  which the tests read. `docs/station-products.md` names the viewer's checkout (`D:\code\RPV`) as the place to publish.
+- Outside the repository (the deck-joint packages in `Claude outputs`, which the freeze's `knee` step runs), from
+  Christian's requests of 16 Nov ("add the rear Hazcams the same way trace to the fiducal in the same way as the fhaz.
+  add Mastcam-Z frames and its deck pans to the deck joint, as a second, finer link. Use three forks north with the sol
+  692 deck pan to test z34 pointing and baseline from the fiducials and vfs"):
+  - every deck joint has one body-fixed rear Hazcam mount and rig (`joint_ba.py --rhaz-shared`), and the stations get
+    their rear Hazcam pairs (`rhaz_frames.py` for the stations made before);
+  - the Mastcam-Z deck pans become joint stations (`Z<ST>`), and `joint_ba.py --zlink` puts their Z frames on the mast
+    chain with a Z mount and a ZL -> ZR rig per zoom;
+  - `--hold` tests one deck pan on the solved joint (`run_eod_late.bat --only ztest`: Three Forks north, sol 692);
+  - `ALL_cxrig` tests whether the law's stereo cx(T) is a rig yaw.
+
+## 0.99.9 — 2026-11-16 (branch `rpp`)
+
+Christian (16 Nov, evening), for the next mask run: "Remove the dilation morphology. Use connected component to
+remove small islands of pixels. Ignore a +-2 px band at label edges in the loss, or add a Lovasz term ... Write out
+the probability map as well as the binary mask ... each step can apply its own threshold without rerunning the
+network."
+
+- **No dilation; small islands removed** (`rpp.mask_levels`, torch-free).
+  - `remove_small_islands`: 8-connected components; terrain specks in the rover and rover specks in the terrain
+    under `min_island_frac` of the frame flip.
+  - The card's `dilate_kernel` stays: `rpp_mask_v3` (3) gives the masks it gave. The next run's card: 0.
+- **The label edge out of the loss** (`rpp_studies.mask_training.train`).
+  - `edge_band`: the pixels within 2 canvas px of a label edge (a max/min pool of the label). `mask_loss` leaves
+    them out of the BCE and the Tversky sums: a prediction 2 px off the label's edge costs what an exact one does.
+  - `lovasz_hinge` (Berman et al. 2018): the IoU surrogate, `--lovasz W` adds W times it (off by default).
+  - Validation IoU, which picks the checkpoint, is unchanged (the whole frame).
+  - `train_mask`: `--edge-ignore-px` (2), `--lovasz` (0), `--dilate-kernel` (0), `--min-island-frac` (1e-4),
+    `--sfm-threshold` (0.9), `--tight-threshold` (0.5). The card records them (`step_thresholds`,
+    `min_island_frac`, `loss`).
+- **The probability on disk; each step its own threshold.**
+  - Processing writes `masks_prob/<stem>.png` (P(terrain) x 255, padded, static-masked and undistorted like the
+    mask) beside `masks/`; `export.write_mask_probability` (on). This holds for `rpp_mask_v3` too.
+  - A block made from it gets `masks/` at the card's "sfm" threshold (a margin for the features) and
+    `masks_tight/` at its "tight" threshold. `masks_prob/` is linked in. With a card without step thresholds (v3),
+    `masks/` is the processed mask as before.
+  - The tight mask is what dense fusion, the mesh and the panoramas (`rover_masks.mask_file`: masks_ibr, then
+    masks_tight, then masks), Metashape's depth maps and the Nerfstudio frames take.
+  - `rpp mask levels PROJECT --sfm T --tight T` remakes either from `masks_prob/`, with no network. A new `masks/`
+    takes effect when the features are extracted again.
+- Run keys unchanged (checked on all 144 site and Mastcam-Z blocks): freeze-3 with v3 runs as before, and its
+  blocks carry probability maps.
+- Roadmap: "Next: beyond the stereo 360" (a station in six degrees of freedom: textured mesh, then splats).
+
+## 0.99.8 — 2026-11-16 (branch `rpp`)
+
+Christian (16 Nov, evening): "look at the camera models holistically ... Take the obvious improvements that have
+proven and implement them" and "report all ecam projection errors in high-res pixels". The review is
+`claude/camera-review-2026-11-16-freeze3-held-terms-pointing-hazcam-anchoring.md` in the project.
+
+- **Residuals in full-resolution pixels.**
+  - `native_residuals` returns `residual_fullres_px` too: the keypoints' and the models' frame, 5120 x 3840 for the
+    Navcams and Hazcams. The native residual is that times the product's downsample scale.
+  - Every block's `summary.json` and `run_done.json` gain `residual_rms_fullres_px` and `residual_median_fullres_px`.
+  - The freeze log ("... px full-res") and the run report's block table show them. Blocks made before this version
+    show their native rms, marked "n".
+  - The health table's reprojection line adds the full-resolution median and rms (its gates stay in native pixels).
+  - Native pixels mixed 1x, 2x and 4x products: most Navcam block frames are 2x, and about a third of the Hazcam
+    frames are 4x.
+- **Hazcam rig drift only where the blocks show it** (`hazfit.RIG_RATE_MIN_Z` = 3, as for the early-mission
+  offsets).
+  - A rate with |z| < 3 is held at 0, and that angle sits at its blocks' mean. The fitted rates, their errors and the
+    held ones are in the rig file's `drift` and in the report.
+  - The 3 Nov fit carried rates of |z| <= 1.8 (front pitch -4.3 +- 2.3, yaw +3.8 +- 5.4; rear yaw -12.7 +- 5.7,
+    pitch +10.8 +- 18.2 mdeg/1000 sol). They moved the rigs by up to 25 mdeg by sol 2000: 0.95 px of rear Hazcam
+    convergence.
+- **Deck-joint package (outside git):** the knee step's scale tests also run `ALL_fxfy_haz` (front Hazcam fx, fy
+  free per station camera). It tests the Hazcam law's +1,100 to +1,400 ppm aspect against the deck-anchored Navcam.
+  The report prints the per-station fx, fy and aspect of each fx/fy-free joint.
+
+## 0.99.7 — 2026-11-16 (branch `rpp`)
+
+- **Deck stations at extreme temperatures in the freeze's knee step** (Christian, 16 Nov: "for the next rover deck
+  joint, add 20 stations at extreme temperatures in order to better resolve its temperature trend").
+  - `--knee-extreme-temps 20` (default): the 10 coldest and the 10 warmest 360s of the drive that pass the deck test.
+    Each kind is spread over the sols, at least span / 20 sols apart, so temperature does not line up with sol.
+  - The deck-joint package's `fill_from_drive.py --extreme-temps N` reads each candidate's camera temperature from
+    its labels (cached in `drive_temperatures.json`). A rerun adds none.
+  - The new package files are delivered with this version (outside git). An older package gets the 250-400 stations
+    only, with a note.
+- **The elevation-scale test** (Christian: is the deck joint's mast elevation scale of +311 +- 103 ppm real, and could
+  the Navcam models absorb it?). The knee step's deck joint also runs `ALL_fxfy` (Navcam fx, fy free per station
+  camera) and `ALL_nochainscale` (the scale held at 0), through `EOD_JOINT_OPTS=--scale-tests`;
+  `--no-knee-scale-tests` leaves them out. The package report lists both under "variant".
+- **A late roll knee in `rpp_studies.calibration.knee`** (Christian: "Does the roll data prefer a knee at sol
+  1200-1500?"): a hinge with a temperature term over sols 600-1900.
+  - On 16 Nov: deck 1450 (68 % 1360-1550, BIC +2.1, not preferred); blocks 1180 (1130-1620, BIC -11.0); both 1410
+    (1340-1570).
+  - Roll falls about 8-10 mdeg/1000 sol before the knee and is flat or rising after it.
+
+## 0.99.6 — 2026-11-16 (branch `rpp`)
+
+- **A red-weighted gray in the mask training** (Christian, 16 Nov: "add the red-weighted gray option"). A Curiosity
+  Navcam frame is one band at 600-800 nm, so its gray is mostly what the red channel sees.
+  - `train_mask --photometric --gray-red SHARE`: that share of the gray conversions mixes R, G, B with random weights
+    around R 0.70, G 0.25, B 0.05 (a Dirichlet draw per sample), instead of the Rec. 601 luma. `--gray-prob P` sets
+    how many photometric samples are made gray (the preset's 0.25 by default).
+  - `PhotometricConfig.gray_red_share`, `gray_red_mean`, `gray_red_concentration`; `TrainConfig.gray_prob`,
+    `gray_red_share`.
+  - Off by default: with share 0 a seed draws exactly as before.
+
+## 0.99.5 — 2026-11-16 (branch `rpp`)
+
+Christian (16 Nov, evening): freeze-3 on v0p99 and the MPPP -> RPP rename of the PC's tree; blocks and deck stations
+for the rig knee; the MSL waypoints and a Yellowknife Bay block; the PDS download; the blue circle at twice the
+resolution.
+
+- **The rename on the PC.** `rename_mppp_to_rpp.bat` (delivered beside the bundle) runs once, when nothing runs from
+  `D:\code\MPPP`. It fast-forwards main to rpp, renames the folder `D:\code\RPP` and leaves a junction
+  `D:\code\MPPP` -> `D:\code\RPP`, so old paths keep working: batch files outside git, the deck-joint packages, the
+  clones' origins, the editable install. It stops, changing nothing, when main has commits rpp lacks or a process
+  still runs from the old folders. Tested on a copy of the PC's repository (main 0.98.31): the fast-forward, the
+  rename with the old path kept, `--update-code` of a freeze checkout cloned through the old path, and a dry run of
+  every freeze step.
+- **An RPP tree on main** (after the rename) is recognized by its `src\rpp`, not its branch:
+  - `freeze.bat` clones `D:\code\RPP_freeze` on the tree's branch;
+  - `sync_code.bat` takes the branch rpp of an `rpp_v*.bundle`;
+  - `run_single_site_ibr.bat` syncs from the newest `rpp_v*.bundle`.
+- **Freeze step `knee`** (after `deck`; Christian: "to resolve the knee sol, add some deck station and blocks in the
+  250-400 range to run in the next freeze run"):
+  - Deck stations in sols 250-400, one per 5-sol bin (`--knee-sols`, `--knee-bins`), through the deck-joint package
+    of 14 Nov. That package then reruns its joint and jackknifes in `D:\rover_frame_eod_early` (`--eod-work`).
+  - Then the knee profile of that deck joint and this run's Navcam joint
+    (`rpp_studies.calibration.knee`; `camera_analysis\knee_freeze_<day>`).
+  - `--no-knee-stations` skips the new stations and runs the profile only.
+- **The Navcam blocks of the freeze** (`ecam_consensus`) gain Issole / Seitah South (sols 201, 286-339), Artuby Ridge
+  (174-176, 342-349) and La Orotava Crater (384-385): rig epochs in sols 286-385. Issole / Seitah South also joins
+  the Mastcam-Z joints' group (`zcam_consensus`).
+- **`rpp_studies.calibration.knee`:** where the rig's early drift ends, profiled in the deck joint's station rigs and
+  a Navcam joint's rig epochs (16 Nov):
+  - pitch knee: 355 (68 % 330-390) on the deck, 220 (165-270) in the blocks, 320 together;
+  - yaw knee: 295 / 175 / 205;
+  - roll: linear (a flat-then-linear form is not preferred);
+  - the knee at 250 moves the rig by at most 1.2 mdeg.
+- **MSL:**
+  - **Waypoints:** `rpp.waypoints` knows MSL (`MISSIONS`; `load_waypoints(mission="msl")`, `rpp waypoints --mission
+    msl`; `local_en` for a table without easting / northing), from
+    https://mars.nasa.gov/mmgis-maps/MSL/Layers/json/MSL_waypoints.json.
+  - **`rpp_studies.msl.block`:** a Navcam block over several sites and both computer sides. Preset `yellowknife` is
+    Yellowknife Bay, sols 124-302: A side to sol 199, B side from sol 200.
+    - Sites are joined by the labels' site links; the waypoint table bridges gaps and checks the links.
+    - Four cameras (NLA, NRA, NLB, NRB) as COLMAP `FULL_OPENCV` with k4-k6 held at zero. That is the OpenCV
+      perspective lens with k1, k2, p1, p2, k3, fitted to the label CAHVOR (0.018 px rms; `rpp.calib.labelfit.
+      opencv5_from_cahvore`).
+    - Mapping with the label cameras, then a bundle adjustment with them free. A subset manifold holds k4-k6;
+      pyceres needs the manifold object kept alive to the solve, or it crashes.
+    - Masks: the mask CNN plus MXY. The CNN's masks go to `mask_candidates\` in the training-set layout with
+      `review.csv`, to clean.
+    - Pairs: where the views meet on the ground.
+  - Delivered: `msl_yellowknife.bat`.
+  - `first_block`: every site and both sides; the archive listing reports the size to download.
+- **`rpp pds fetch`** (`rpp.pds`): Mars 2020 RAD products straight from the PDS Imaging Node into the local archive
+  layout. Options: `--sols`, `--cameras ncam fcam rcam zcam`, `--match`, `--list`.
+  - **`rpp example fetch` now takes the example set from the PDS** (the 36 products; the release zip at the first
+    file the PDS cannot give; `--source release`).
+  - **The example runs with nothing set:** `rpp run rockytop_example` reads `~/rpp_example` and writes to
+    `~/rpp_scapes` when RPP_PDS / RPP_SCAPES are not set. A first try is two commands.
+  - README and quickstart say so in a few lines.
+- **The blue circle at twice the resolution** (Christian: "double the resolution on the blue circle so that there is
+  less pixelation on the text"): the ground texture is 2048 px. It is drawn at its own resolution (0.75 rows of the
+  band per texture pixel, in a 2:1 frame so the letters keep their shape), not upsampled from the 16K panorama's
+  455-row band. The next panorama run writes it.
+- `run_pipeline.bat` and the freeze's `--mask-home` default to `D:\code\RPP`.
+
+## 0.99.4 — 2026-11-16 (branch `rpp`)
+
+Christian (16 Nov): "Prepare a test msl block".
+
+- **`rpp_studies.msl.first_block`**, the first Curiosity block as a study (the v0p99 plan, section 3.3); the M2020
+  pipeline is not touched. It runs in four steps:
+  - `fetch`: the Navcam RDRs (`MSLNAV_1XXX`) of the sols from the PDS Imaging Node into
+    `D:\data\msl\navcam\SOLnnnnn`. It takes the full-frame `RAD` of the site and side (both eyes) and MIPL's rover
+    masks `MXY`. The archive's folder layout is looked up (several tried, the one that answers reported); `--list`
+    downloads nothing.
+  - `prepare`: the block is the station with the most stereo pairs (at least 8) and its neighbors within 50 m. Each
+    frame becomes 8-bit radiance and a COLMAP mask from MXY (255 = rover). The cameras are one per eye and side
+    (NLB, NRB): the `THIN_PRISM_FISHEYE` fitted to the label CAHVOR (0.012-0.018 px rms on the sample). The manifest
+    holds sol, LMST, station and the side's CCD temperature, and the label camera centers in the site frame
+    (`rpp.camera.pose_from_label`).
+  - `align`: COLMAP SIFT with the masks and the label intrinsics held, all pairs matched, the incremental mapper, then
+    a similarity onto the label centers.
+  - `report.txt`: frames registered, reprojection error, scale, residuals to the labels, and the stereo baseline
+    against the label's.
+- MSL names (`NLB_668441715RAD_F0870792NCAM00252M1`: camera, side, SCLK, product, sampling, site, drive, sequence;
+  the sol is in the label), the `Sol-NNNNNM` LMST form and `MSL:`-prefixed keywords are read. Checked on the sample
+  in `D:\code\MPPP\data\msl`: sol 3052 at S087D0792, its camera 10.2 m above the site origin.
+- Delivered beside the bundle: `msl_first_block.bat` (site 87, side B, sols 3047-3056 by default; a listing first,
+  then fetch, prepare and align into `D:\rover_blocks_msl\msl_site87_first`).
+- **Bug fixes from the 0.99.0 rename (three tests failed since then):**
+  - `test_mask_train` started `monitor.py` from `src/rpp/mask/training` (it is in `src/rpp_studies/mask_training`).
+  - The mask registry tests expected only the `ctate7163/rpp-mask` address. Until the Hugging Face repository is
+    renamed, the pre-0.99 `ctate7163/mppp-mask` stays second, and the GitHub release asset keeps its old file name.
+
+## 0.99.3 — 2026-11-16 (branch `rpp`)
+
+Christian (16 Nov): "Prepare ibr run to reprocess everything and upload to hugging face. Is there anything preventing
+freeze3 from running on v0p99? Please test this and resolve any bugs. Promote the latest deck joint parameters".
+
+- **Freeze-3 can run on v0p99.** Tested with a real (not dry) run of every step on an empty root and with
+  `--update-code` on clones of both lines. Before this, two things stopped it:
+  - `freeze.bat` refused any tree not on `main` (0.99.0);
+  - the run refused any RPP but 0.98 (`REQUIRED_VERSION`).
+
+  Now each line has its own freeze checkout:
+  - `freeze.bat` of `D:\code\RPP` (branch `rpp`) uses `D:\code\RPP_freeze`, cloned on branch `rpp`;
+  - the one of `D:\code\MPPP` (`main`) uses `D:\code\MPPP_freeze` as before.
+
+  Related changes:
+  - `REQUIRED_VERSION` is 0.99 here.
+  - `--update-code` pulls the tree's own branch (it always pulled `main`). It refuses a checkout on the other line,
+    so a v0p98 checkout is never moved to v0p99.
+  - `sync_rpp.bat` brings `D:\code\RPP_freeze` up to date when no freeze runs.
+  - A v0p99 run removes the v0p98 freeze's restart entry (RunOnce "MPPP freeze"), so a reboot starts one freeze.
+- **Bug: `run_single_site_ibr.bat` on the `rpp` tree fetched `main` from an `rpp_v*.bundle`.** That bundle has no
+  `main`, so the batch stopped before the run. It now syncs the tree's own line: `rpp` from the newest
+  `rpp_v*.bundle`, `main` from the newest `mppp_v*.bundle`. Its default tree is `D:\code\RPP`.
+- **Bug: `rpp --log <file>` failed when the file's folder did not exist** (a first joint on a new root).
+- **The panoramas on Hugging Face** (`rpp.ibr.hf`; Christian, 16 Nov: "v0p99 should upload rpv products to hugging
+  face near to where the mask CNN are").
+  - `single-sites --upload` now puts the pictures into the public dataset `ctate7163/rpv-panoramas`
+    (`RPP_HF_DATASET`), one commit per station: `<station>/viewer/` holds what the viewer loads, `<station>/record/`
+    the 16-bit stacked panoramas, the pivot's 16-bit depth, `ods.json`, `station.json`, the provenance picture and
+    the tone levels.
+  - `panos.json` stays in the RPV checkout (pushed as before), its addresses pinned to the station's commit.
+  - A station whose upload fails keeps its entry of before. Pictures the GitHub site held for a station are removed
+    once the station is on the dataset.
+  - Options: `--host github` (the old way), `--no-hf-record` (viewer pictures only), `single-sites --all` (the
+    experimental stations too).
+  - `rpp hf-check [--create]` makes the dataset and its card (licence `RPP_HF_LICENSE`, default `cc-by-4.0` as
+    proposed) and checks that the dataset serves the viewer's origin (CORS).
+  - `web.publish(files_dir=)` writes the stations' pictures outside the git checkout.
+  - The `ibr` extra includes `huggingface_hub`.
+  - Delivered beside the bundle: `rerun_all_panoramas.bat` installs `huggingface_hub` if missing, checks the token
+    and the dataset, then runs `run_single_site_ibr.bat --all --force`, which makes every station again and uploads
+    each one as it finishes.
+- **The deck joint's rig as the freeze-3 candidate** (`rpp_studies.calibration.deck_rig`): `M2020_N_rig.json` from a
+  deck joint's `all_rig.json`, made as the 101-station candidate of 15 Nov was (rebuilt from that run's output, the
+  two agree exactly):
+  - rotation `Rot(a) . R(3 Nov NAVJOINT)`, with pitch and yaw from the knee-250 law and roll from the linear law;
+  - drift with the knee at sol 250;
+  - the base rig's translation direction at the joint's mean baseline.
+
+  `check` compares the new law with the candidate it replaces: the angle change over sols 0-2000 (limits 2 / 4 /
+  6 mdeg), the rates in combined errors (3; against a candidate made before `deck_law` was stored, its drift rates
+  with the new law's errors), and the baseline (60 um). `--promote` writes it only when the check passes, keeping
+  the replaced file.
+
+  Promoted on 16 Nov at 16:49: the 164-station joint ALL of 16 Nov (sols 15-2006) is now
+  `freeze3_2026-11-15\cmods_candidate_rig\M2020_N_rig.json`. Against the 101-station rig:
+  - angle change over sols 0-2000: pitch -0.34...+0.22, yaw -1.52...+0.20, roll +0.10...+0.21 mdeg;
+  - rates: pitch +21.0 / +6.1 (was +19.2 / +6.4), yaw -39.4 / +3.9 (-38.9 / +4.8), roll -6.1 (-6.1) mdeg/1000 sol,
+    every one within 1.7 errors;
+  - baseline 423.508 mm (was 423.536).
+
+## 0.99.2 — 2026-11-16 (branch `rpp`)
+
+Christian (16 Nov): "scrub the code, text, and documentation for `centre` and `colour` and other British-specific
+spelling. Use center and color."
+
+**American spelling.** The code, the messages, the help, the docs, the notebooks, the viewer and the notes in the
+configs now say color, center, gray, meter, behavior, neighbor, labeled, modeling, toward, analyze, normalize,
+optimize, summarize, and so on (1,450 lines in 190 files).
+- **Names in the code:** 60 renamed, for example `estimate_fill_color`, `sky_color`, `ROVER_GRAY_REL`,
+  `TERRAIN_GRAY`, `write_center_depth`, `prior_gauge(recenter=...)`, `nadir.make_mark(center_azimuth_deg=...)`,
+  `render_station(center_depth=...)`, `radiometry.quantize`, `summarize`, `min_neighbors`. The viewer's shader
+  uniforms are `colorMap`, `gray` and `grayShade`.
+- **What keeps its spelling** (`rpp.ondisk`, `SPELLING_KEPT_NAMES`): whatever a file, a run key or another program
+  reads.
+  - Keys in JSON and in the records: `"centre"` of a block or a ground plane, `centre_rms_px`, `"coloured"` in
+    `ods.json`, `"recentred"`.
+  - File names: `<station>_ods_centre.png`, `_ods_centre_depth.npz`.
+  - The glTF extras the viewer reads: `grey_rgb`, `grey_shade`, `text_centre_azimuth_deg`.
+  - Settings that are part of a run key: `max_centre_tint`, `prior_gauge_recentre`, the manifest's `centre_tint`.
+  - Saved training settings: `grey_prob`.
+  - Names from other packages: `colour_demosaicing`, scipy's `grey_closing`, matplotlib's `labelleft`, Open3D's
+    `orient_normals_towards_camera_location`.
+
+  So v0p98 and v0p99 read each other's files, and every run key and processing key is unchanged (all 122 sites
+  checked).
+- **`rpp ods --eyes center`:** "centre" works too. Either way the file is `<station>_ods_centre.png`, as before.
+  `single-sites` passes `center`.
+- **Left as written:** the changelog's code spans (the names of their time), `docs/history/`, the third-party files
+  (`LICENSE`, `NOTICE`, the viewer's `vendor/`), `paper.bib` and the packaged camera models.
+- `tests/test_spelling.py` checks two things: no British word is used as a word anywhere, and no British name is in
+  the code except the kept ones.
+
+## 0.99.1 — 2026-11-16 (branch `rpp`)
+
+The panorama and viewer changes planned as 0.98.30 on `main` (that number went to the Knob Mountain consensus
+change, and `main` stays with freeze-3); `rpp` also has `main`'s 0.98.30 and 0.98.31 merged in.
+
+Christian (16 Nov): "Render the left and right ods eyes at 16k by default. Save 8k versions for upload. Include the
+enhlocal image versions in the upload and let it be viewable as one of the skins that button B shows. Change "normal"
+to "normal map" and "range log" to "distance map". The normal map render should not include the flat plane the
+extends out to the horizon. Somehow the normal map keeps show the pea green flat plane under the rover."; "the enl and
+enhlocal should have a little less saturation and black clipping"; "The B button should both hide the rover and return
+the terrain only view (not the the normal or depth map view)"; "the Sol0690_S032D1184_Z34 should include the z34 rover
+deck pan from sol 692. Use ncam images to fill in any holes."; "For the ods list, Include an ncam ods for every
+location where there is a z34 360 mosaic. Please build those 3d terrain models from all the ncam images in those
+blocks. Include mid drive imaging images for context."
+
+- **16K eyes by default:** `rpp ods --width` defaults to `ods.DEFAULT_WIDTH` = 16384. `web.publish` (and
+  `single-sites --upload`) still writes the 8K JPEGs (area filter). `--width 8192` renders 8K as before.
+- **The upload carries enhanced local:** `web.DEFAULT_VIEWS` = standard, enhanced local, normal map, distance map.
+- **New view names:** "normal" is "normal map", "range log" is "distance map", "range linear" is "distance map
+  linear". The files keep their parts (`_normal`, `_range_log`, `_range_linear`). `panos.json` entries published
+  before keep their old names; the page shows them by the new ones (`VIEW_LABEL`), and an old name in the URL or in
+  `--publish-views` still works (`web.OLD_VIEW_NAMES`).
+- **Normal map:** only the surface meshed from the cloud and the rover model. The terrain fill (under the rover, the
+  underlay, the apron to the ground plane's reach) and the deck floors were mesh triangles too and showed their up
+  normal (the pea green). `mesh_report.json` now records `terrain_triangles` (`fill_terrain` reports
+  `measured_triangles`), and `geometry_panorama` blacks out every other mesh triangle (`_synthetic_surface`).
+  Normals are turned toward the eye, so a triangle wound the other way no longer shows olive green. **A mesh made
+  before 0.99.1 has no `terrain_triangles`: run the mesh step again** to get the clean normal map.
+- **enh and enhlocal tone:** less black clipping (`ENH_OUT_LOW` 0.06 -> 0.10) and less saturation (`ENH_SATURATION`
+  0.85 of each color's distance from its luma). The enhlocal unsharp mask fades out within `ENH_LOCAL_KNEE` = 40 of
+  black and white instead of clipping. `rpp ods --retone` makes them again from the 16-bit panoramas without
+  rendering.
+- **Viewer, B:** the terrain-only variant (no rover) in a color view - standard, or the color view already shown -
+  never the normal or distance map. B again steps through the color skins (standard, enhanced local, ...). The 3D
+  rover is set again at the eyes' center whenever the station, the variant or the view changes and when R turns it
+  on.
+- **Welcome view** (Christian, 16 Nov: "make the made by and code: text smaller", then "make the made by and code
+  text solid black. The Rover Pho Viewer font should have blue fill and orange outsides, the same colors as used in
+  the blue circle and the orange on the maps"): the "Created by ..." and "Code: ..." lines are 56 px (80 before),
+  regular weight, solid black. The title "Rover Photogrammetry Viewer (RPV)" is light blue (the nadir disc's
+  `#b0d4ee`) with a thin orange outline (the map's `#ff9500`). The screen credit at the lower left is black, 9 px.
+- **Sol0690_S032D1184_Z34:** the panorama from ZCAM08692 (sol 690) and the rover-deck pan ZCAM05086 (sol 692, 60
+  pairs): `--sols 690 692`. Context (fill only; also in the dense step): 96 frames taken within 2.5 h of the 360's
+  LMST (13.3 h), within 20 m. They are the station's own Navcam and front Hazcam frames of sols 686 and 688;
+  NRF/NLF_0693_..._NCAM08111 (the frame Christian named and its pair); the sol 684 end-of-drive 360 at S032D1174;
+  NCAM08111 of sol 684; NCAM12681; and the Navcam sets of sols 413, 414 and 433 at Three Forks (the station note
+  lists them). `--fill-cameras` keeps only frames within 2 h by the clock, so the station's own Navcam frames of
+  other sols come in as context.
+- **A Navcam panorama at every Z34 360 mosaic:** eight new stations, each with `"terrain": "block"` (the dense step on
+  every Navcam frame of the Mastcam-Z block, `dense_block_N`). Each panorama is made from the end-of-drive 360 at the
+  place of the Z34 360. Context: the mid-drive frames (NCAM00301, NCAM08111) within 20 m.
+  - `Sol0073_S003D2430` (Chal Rocks, Z34 sol 78)
+  - `Sol0449_S026D0000` (Rose River Falls, sol 454; its `site` is `rose_river_falls` for the name, the block is
+    Knob Mountain's Mastcam-Z block)
+  - `Sol0670_S032D0672` (Three Forks South, sol 670)
+  - `Sol0784_S039D0926` and `Sol0816_S039D1418` (Belva Crater, sols 789 and 817)
+  - `Sol1601_S078D4716` and `Sol1615_S079D0198` (Taylorfjellet, sols 1603 and 1618)
+  - `Sol1883_S088D1722` (Olifants, sol 1889)
+
+  The places that already had one keep their stations unchanged: `Sol0009_S003D0000`, `Sol0502_S026D1222`,
+  `Sol0565_S029D0000`, `Sol0686_S032D1184`, `Sol1411_S068D0142` and `Sol1965_S091D0806`. Sol 965's 360 at S047D0000
+  (Airey Hill) is the rover-deck pan, not a mosaic of the terrain.
+
+## 0.99.0 — 2026-11-16 (branch `rpp`)
+
+Christian (16 Nov): "The next version v0p99 will change the name to rpp for rover photogrammetry pipeline. ... we'll
+need to replace every mppp with rpp throughout the code and documentation. make sure it doesn't break the code
+anywhere."
+
+**RPP, formerly MPPP.** The pipeline is the Rover Photogrammetry Pipeline. Everything new says RPP; everything a PC,
+a block or a script already has keeps working. The entries below this one keep the old name: they record what the
+software was called then.
+
+- **Packages and commands:** `src/rpp` and `src/rpp_studies` (were `src/mppp`, `src/mppp_studies`); the `rpp`
+  command and `python -m rpp`. Logger names `rpp...`. The class `MPPPImage` is `RPPImage`.
+- **The old names still work (0.99 only):** `src/mppp` and `src/mppp_studies` are alias packages - `import mppp.X`
+  gives the module `rpp.X` itself, so old scripts, notebooks and pickles (`navcam_calibration_study` pickles an
+  `SfmProject`) load; `python -m mppp ...` and the `mppp` command run `rpp` with a note; `MPPPImage` stays an alias.
+- **PyPI:** the distribution is `rover-photogrammetry-pipeline` (`pip install rover-photogrammetry-pipeline`,
+  extras as before); the name `rpp` on PyPI belongs to another project (a REAPER file parser).
+- **Environment:** every `RPP_*` variable falls back to its `MPPP_*` spelling (`rpp.env.get`; all 70-odd variables
+  go through it). `rpp_env.bat` does the same for the batch files (an `MPPP_X` becomes `RPP_X` unless that is set;
+  not `MPPP_HOME`: a tree's home is its own folder) and reads `rpp_python.txt`, `rpp_scapes.txt`, `rpp_pds.txt`,
+  `rpp_cmods.txt`, else the `mppp_*.txt` of a tree set up before. `mppp_env.bat` is a stub that calls `rpp_env.bat`.
+  `rpp doctor` says which old names a PC still sets. `envs/rpp.yml`, `envs/rpp_gpu.yml`; the GPU fallback looks for
+  the conda environment `rpp_gpu`, then `mppp_gpu`.
+- **Kept as they are (`rpp.ondisk`), so that no block is processed or aligned again:**
+  - the names in WORK folders and roots: `mppp_manifest_v*.json`, `mppp_config_v*.json`, `mppp_settings.json`,
+    `mppp_status.json`, `mppp_dense*.json`, `mppp_sfm_log.json`, `mppp_stereo.json`, `mppp_stopped.txt`,
+    `mppp_batch.json`, `mppp_batches\`, `mppp_pipeline\`;
+  - the keys inside records (`"mppp"` version in `run_done.json` and the run settings, `mppp_version`,
+    `mppp_version_tag`), the mask card key `mppp_card` and format `mppp-mask-safetensors-1` (part of each released
+    file's bytes), the training-set marker `_mppp_regen.json`;
+  - the user cache `%LOCALAPPDATA%\mppp` (the mask models, `gpu_python.txt`, the waypoint cache and `gpu.lock`: v0p98
+    and v0p99 share it, so their GPU steps take turns);
+  - the packaged camera models `data/cmods/*.json` (their bytes are the models' fingerprint in every run key);
+  - the PC's folders `D:\code\MPPP` and `D:\code\MPPP_freeze`, the conda environments `mppp_gpu` / `mppp_gpu_lg`,
+    the example data's release asset `mppp_example_m2020_rockytop`.
+  The run key and the processing key of every site of `sites.json` (Navcam and Mastcam-Z, 122 keys) are the same as
+  on 0.98.29. A one-time `rpp migrate` renames the WORK-folder names after freeze-3.
+- **Mask models:** `rpp_mask_v1` .. `v4` (default `rpp_mask_v3`); the registry lists `mppp_mask_v*` as aliases.
+  A block whose configuration names `mppp_mask_v3` is not "configuration changed" (`process._canon`), and a run key
+  hashes a released model under its old name (`rpp_mask_v4` and `mppp_mask_v4` give the same key). The registry's
+  files are `rpp_mask_convnext_tiny_s4_v*.safetensors`; a cached file under its old name (the same bytes) is used where
+  it is, so nothing is downloaded again. URLs: `ctate7163/rpp-mask` first, then `ctate7163/mppp-mask` (Hugging Face
+  forwards it once renamed), then the GitHub release. `release_mask_model rename` renames the repository on Hugging
+  Face; `upload` refuses while only the old one exists. Exporting an old model again keeps its release name, so the
+  bytes and the SHA-256 are the released ones. `rpp_mask_v4` is marked not released (it is not on Hugging Face: 404).
+- **XMP:** new products carry `xmlns:rpp="https://github.com/ctate7163/RPP/ns/1.0/"` (and `/ns/0.1/` in processed
+  images); `xmp.read_fields` reads the `mppp:` fields of older products too.
+- **Batch files:** `sync_code.bat` and `freeze.bat` refuse to run in a tree that is not on `main` (the rpp worktree
+  `D:\code\RPP` has `sync_rpp.bat`; freeze-3 runs on v0p98 from `D:\code\MPPP`). `sync_code.bat` takes the newest
+  `rpp_v*.bundle`. `stop_mppp.bat` is `stop_rpp.bat`.
+- **Text:** code, docstrings, batch files, docs, notebooks and the README say RPP; Christian's quoted words keep their
+  wording. Not changed: this changelog's earlier entries, `docs/history/`, `paper/`, `data/cmods/CHANGES.md`.
+- `tests/test_rename.py` checks that the old spelling appears only in the names above, the compatibility code and
+  history; that `import mppp` gives the `rpp` modules and old pickles load; that `MPPP_SCAPES` alone still works; that
+  an `mppp_mask_v3` configuration and a v0p98 WORK folder are reused; and that the run keys did not change.
+
 ## 0.98.31 — 2026-11-16
 
 Christian (16 Nov): "how does the z34 show up in the list of ods?"
@@ -48,17 +524,17 @@ take you to the welcome screen facing West. In the desktop version, add a home i
 you to the terrain only view. In the website version, make the Enter VR button a little larger if supported." and
 "In the info box, capitalize Sol."
 
-- **O fixed:** it took the nadir mark's text centre for the rover's front, but that text has been turned 135 deg
+- **O fixed:** it took the nadir mark's text center for the rover's front, but that text has been turned 135 deg
   clockwise of the front since 0.98.7, so O looked 135 deg off. Now O looks level along the rover's +x (RNAV
   forward). The station's `ods.json` records `nadir_mark.rover_forward_azimuth_deg` (and `text_from_forward_deg`), and
   `web.publish` passes it on as `ground_mark.rover_forward_azimuth_deg` (`web.rover_forward_azimuth`). For entries
-  published before, the page takes the text centre less 135 deg.
+  published before, the page takes the text center less 135 deg.
 - The N E S W O cross is at the upper right, below the bar.
 - **Headset:** Y (left) = home, the welcome view facing west (the world turned so west is where the head points); B
   (right) = the terrain-only variant. The welcome help panel lists them.
 - **Screen:** a house button in the bar, and the keys H (home) and B (terrain only).
 - The Enter VR button is larger (160 px, 18 px bold) where immersive VR is supported.
-- Info box: "Sol" / "Sols" capitalised.
+- Info box: "Sol" / "Sols" capitalized.
 - `window.rpvState()`: the station, variant, view and the azimuth / elevation looked at, for checks.
 
 ## 0.98.27 — 2026-11-16
@@ -290,15 +766,15 @@ look pixelated. the rover should not have a hole visible from any where within t
 make the middle line a little smaller font." and "the welcome screen should have color, just be a little more muted".
 
 - **The 3D rover is the Perseverance model itself** (`mppp.ibr.rover_surface`, rewritten): the model's triangles as
-  `mppp mesh --rover` placed them (179,426 at a station), coloured in the viewer from the pivot's panorama where the
+  `mppp mesh --rover` placed them (179,426 at a station), colored in the viewer from the pivot's panorama where the
   pivot sees them (a per-pixel test against the panorama's range, bias 12 mm + 1.2 %, smooth over four range pixels)
-  and rover grey, lightly shaded, where no camera saw them.  No holes from any viewpoint; the edges are the model's.
+  and rover gray, lightly shaded, where no camera saw them.  No holes from any viewpoint; the edges are the model's.
   The file drops from about 37 MB to about 5 MB a station.  The grid mesh with its second layer is gone.
   The panorama record's key for the azimuth of column 0 was read under a wrong name before (always 0).
 - Viewer: antialiasing on; the stick turns at 150 deg/s (60); the info page leans back 69 deg (40); the map on it
   lies over a low-resolution orbital picture (`web.traverse_ortho`: `panos/traverse_ortho.jpg`, 1024 px, from
   `M20_ORTHOS` or `<root>/dem/m2020_trn/*rtho*.tif`; made once); on a screen `?head=x,y,z` moves the eye off the pivot.
-- The welcome picture keeps Van Zyl's colours, muted (`WELCOME_MUTE`); the grey one is removed.
+- The welcome picture keeps Van Zyl's colors, muted (`WELCOME_MUTE`); the gray one is removed.
 - `"terrain": "block"` in `single_sites.json` (both Rockytop stations): `mppp dense --whole-block` makes one cloud
   from every Navcam frame of the block (`colmap/dense_block_N`, shared by the block's stations); the mesh is made
   from it, the panorama from the station's own frames (`dense_<station>_block/mppp_dense.json`).
@@ -314,18 +790,18 @@ make the middle line a little smaller font." and "the welcome screen should have
 Christian: "Include a version of the vf figure in the official make figures list. The normal map should not include
 the flat plane. Make those extra channels 4k and the same with the range map. Uploaded the range map too in log
 scale ... The 3d rover models should not interpolate colors across the rover especially at the bottom pole. Make in
-images mars rover grey."
+images mars rover gray."
 
 - `make_figures.bat` and `paper_figures` list `deck_fiducials_and_vfs[_early]_<tag>.png` (made since 0.98.10 with the
   deck fiducial figure), the label-vs-constrained deck figure and the deck-joint baseline figure.
-- `ods.geometry_panorama`: the range and normal panoramas are 4096 wide (`GEOMETRY_WIDTH`; the colour ones stay
+- `ods.geometry_panorama`: the range and normal panoramas are 4096 wide (`GEOMETRY_WIDTH`; the color ones stay
   8192), and the normal panorama shows the mesh and the rover model only - the ground plane is black.
 - `web.publish` uploads `range log` with `standard` and `normal` (`DEFAULT_VIEWS`), and publishes the range and normal
   views at most 4096 wide, so the 8k ones of earlier runs go up at 4k too.  The viewer's X button steps through all three.
-- The rover model where no frame coloured it is one flat neutral grey (`ROVER_GREY_REL` x the ground's median level),
-  painted before the crack fill, so no colour is carried across the rover in the panoramas.
-  `rover_surface.grey_unseen` does the same to the 3D rover's texture (it replaces `heal_unseen`, the nearest colour
-  smoothed, which smeared colours over the bottom pole), and the layer behind is no longer blurred.
+- The rover model where no frame colored it is one flat neutral gray (`ROVER_GREY_REL` x the ground's median level),
+  painted before the crack fill, so no color is carried across the rover in the panoramas.
+  `rover_surface.grey_unseen` does the same to the 3D rover's texture (it replaces `heal_unseen`, the nearest color
+  smoothed, which smeared colors over the bottom pole), and the layer behind is no longer blurred.
 
 ## 0.98.11 — 2026-11-15
 
@@ -366,15 +842,15 @@ make the rover 3d model default on."
 - `mppp single-sites` makes the rover's 3D surface by default (`--no-rover-surface` turns it off): the with-rover
   panorama is also rendered from the pivot, about a third more time for that variant.
 - The mark's middle row (sol and site) is smaller: at most 0.15 of the radius tall (0.20 in 0.98.7).
-- The three modes are labelled "terrain only", "terrain with rover (projected)" and "terrain with rover (3D model)".
+- The three modes are labeled "terrain only", "terrain with rover (projected)" and "terrain with rover (3D model)".
 
 ## 0.98.7 — 2026-11-14
 
 Christian: "the blue circle with the blue text needs to rotate clockwise by 135 degrees. Make the second row of text
 larger put the made by C. Tate on a third line."
 
-- The mark's text is centred 135 degrees clockwise (seen from above) from the rover's forward direction
-  (`TEXT_AZIMUTH_FROM_FORWARD_DEG`); it was centred on forward. The compass still points to north.
+- The mark's text is centered 135 degrees clockwise (seen from above) from the rover's forward direction
+  (`TEXT_AZIMUTH_FROM_FORWARD_DEG`); it was centered on forward. The compass still points to north.
 - Three rows: the rover and the image credit; the sol and the site, now the tallest (up to 0.20 of the radius, was
   0.16); "made by C. Tate" on its own. The compass is 0.45 of the disc (was 0.50) to make room.
 - The viewer cuts the disc into compass and text ring where the picture says (`ground_mark.split`).
@@ -420,10 +896,10 @@ button could bring up a little page attached to the left hand that has a little 
 
 - Headset controls: right trigger next station, left trigger the one before; thumbstick left / right turns the view
   (60 degrees a second, kept from station to station); A shows a panel with the site name and sol (key I on a
-  screen); X steps through the colour views only; grip still switches variant.
-- The labelled test pair is gone from the list. The first entry is a welcome view: Van Zyl Overlook in washed-out
-  grey, NORTH / EAST / SOUTH / WEST in white in the sky, "MPPP stereo viewer - Mars 2020 Perseverance rover" 5 m
-  ahead, and a line of the controls. `publish` makes the grey picture when Van Zyl is published.
+  screen); X steps through the color views only; grip still switches variant.
+- The labeled test pair is gone from the list. The first entry is a welcome view: Van Zyl Overlook in washed-out
+  gray, NORTH / EAST / SOUTH / WEST in white in the sky, "MPPP stereo viewer - Mars 2020 Perseverance rover" 5 m
+  ahead, and a line of the controls. `publish` makes the gray picture when Van Zyl is published.
 - The ground disc is 1.30 x the mark (was 1.15), lies at the terrain's level in both variants, and is two parts:
   the compass stays fixed to north, the text ring turns so that its text is upright for the viewer.
 - `panos.json` entries carry `site_name` and `sols`.
@@ -431,7 +907,7 @@ button could bring up a little page attached to the left hand that has a little 
 **The sky** (Christian: "an extra check at the end to heal over any dark bands or other artifacts").
 
 - `heal_sky`, the last step: the sky is compared with its own smooth version (14 degrees along the azimuth,
-  0.7 degrees in elevation, so the brightening towards the horizon stays). Pixels more than a few percent from it,
+  0.7 degrees in elevation, so the brightening toward the horizon stays). Pixels more than a few percent from it,
   or on a brightness step along the azimuth, are replaced by it. A clean sky is not touched. Tried on the Bell
   Island and Origny panoramas: frame-shaped patches become a soft glow; the bright block right on Bell Island's
   horizon is reduced, not removed (the heal fades out at the skyline).
@@ -442,13 +918,13 @@ matter where the viewer moves the head within a .15 m radius").
 
 - The hole under the mast is closed: the panorama from the pivot no longer carries the nadir mark, so the surface
   reaches the nadir (0.98.2 left out everything within 10.5 degrees of it - 20 to 28 % of the rover's pixels).
-- A vertex every 2 px (was 4), with the columns thinned towards the nadir (by 2, 4, 8, 16; the joints closed).
+- A vertex every 2 px (was 4), with the columns thinned toward the nadir (by 2, 4, 8, 16; the joints closed).
   Over 2,000,000 triangles the step grows by one: Van Zyl is expected to land at 3 px (`--max-triangles`, `--step`).
 - Cells are cut along the diagonal that keeps more of them, so edges are less ragged.
 - A second layer behind every edge between two parts of the rover: the farther surface continued under the nearer
-  part, coloured from its own side, as far as a head 0.15 m from the pivot can see past the edge (`--head-radius`).
-- Rover pixels no frame coloured (flat brown in the panorama) take their surroundings' colour in the texture.
-- The depth file holds `rover` in every run and `unseen` when the centre panorama is rendered.
+  part, colored from its own side, as far as a head 0.15 m from the pivot can see past the edge (`--head-radius`).
+- Rover pixels no frame colored (flat brown in the panorama) take their surroundings' color in the texture.
+- The depth file holds `rover` in every run and `unseen` when the center panorama is rendered.
 
 **Other**
 
@@ -475,11 +951,11 @@ experiment, so keep the ods with the rover".
 - **The rover as a textured surface** (`mppp.ibr.rover_surface`). The Navcam sees the rover from the mast head only,
   so the surface is built from there: the with-rover panorama from the pivot is the texture, and its depth gives a
   vertex every 4 pixels where the rover model is. Cells across a jump in range are left open, and what the cameras
-  never saw is not in the mesh. Output: `<prefix>_rover_surface.glb` (binary glTF, metres about the pivot).
+  never saw is not in the mesh. Output: `<prefix>_rover_surface.glb` (binary glTF, meters about the pivot).
 - `mppp single-sites --rover-surface` renders the with-rover panorama from the pivot as well
   (`--eyes left right centre`, about half as long again for that variant), builds the surface and publishes it.
   A failure here never fails the run.
-- `<prefix>_ods_centre_depth.npz` now also holds `rover` (where the rover model is) when the centre panorama is rendered.
+- `<prefix>_ods_centre_depth.npz` now also holds `rover` (where the rover model is) when the center panorama is rendered.
 - The viewer lays the surface on the terrain-only view. In a headset it stays where the head was when it appeared,
   so it shifts against the terrain as the head moves. Key R shows and hides it.
 
@@ -506,7 +982,7 @@ Christian: "The first Z26 and z100 models promoted will need to be just from sei
 Christian: "please prepare the code needed to run all the single site ods in the json config file and upload them
 afterwards with the new rendered disk. Call this v0p98p0". `run_single_site_ibr.bat` with no arguments does that
 (0.97.24: every station of `single_sites.json`, both variants, then publish, commit and push). New in this version, the
-colour rules (Christian: "for the enhanced color, make sure that the bright rover and sky is compressed while bringing
+color rules (Christian: "for the enhanced color, make sure that the bright rover and sky is compressed while bringing
 out detail from the shadows and the terrain. The shadows should not be clipped to black. The 16 bit images should have
 a universal scale to radiance, and the standard 8-bit version should be made from the 16 bit images and have the same
 range as the standard pipeline 8-bit images. When blending the images, make sure to preserve the noise canceling
@@ -514,7 +990,7 @@ advantage of multiple frames seeing the same terrain"):
 
 - **16-bit panoramas on one scale.** `--exposure16` is 1 by default: the frames' own 16-bit scale at every station
   (0.97: a gain per station between 0.5 and 4). `ods.json` `linear16.radiance` gives the value per unit radiance per
-  channel, the station's zenith scale, and what is not radiance (the blending gains, neutralised saturation, fills).
+  channel, the station's zenith scale, and what is not radiance (the blending gains, neutralized saturation, fills).
   The 16-bit files are darker than in 0.97 by the gain that is gone (Van Zyl: 1.076).
 - **Standard 8-bit view from the 16-bit image, on the pipeline's 8-bit scale** (`--tone pipeline`, the default;
   `linear16.tone_pipeline`): the 16-bit value / 64, value for value up to 235; above it each channel is rolled off by
@@ -603,7 +1079,7 @@ advantage of multiple frames seeing the same terrain"):
 - **Range and normal panoramas** (Christian: "how hard would it be to render a ods of the range or normal map? that
   would help checking the model during debugging and dev"): `mppp ods` writes `<station>_range_log_360_3DTD.jpg`,
   `_range_linear_` and `_normal_` (`ods.geometry_panorama`, `--no-geometry` to skip): the scene cast along the same
-  rays as the colour panorama, both eyes, left on top. Range from each eye's ray origin in the colours of the
+  rays as the color panorama, both eyes, left on top. Range from each eye's ray origin in the colors of the
   per-image depth pictures; the normal in the station's frame, RGB = 127.5 (1 + [east, north, up]). No source frame
   is used. They carry the stereo metadata and are views the publisher knows (`"range log"`, `"range linear"`,
   `"normal"`; not published by default). Checked on the synthetic station only: not yet run on a block.
@@ -675,13 +1151,13 @@ advantage of multiple frames seeing the same terrain"):
 - **Context frames** (Christian: "include NLF_1790_... from a near location for context. Since it is from a
   different location, it should be masked in both the with and without rover parts"): `"context": [names]` per
   station in the station list, `mppp ods --context-images`. They go into the dense step (terrain) and into the
-  panorama as fill-only sources: their rover mask is applied in both variants, they never colour the rover model,
-  each is colour-matched to the panorama on its own, and their sols are not in the nadir mark. With the rover
+  panorama as fill-only sources: their rover mask is applied in both variants, they never color the rover model,
+  each is color-matched to the panorama on its own, and their sols are not in the nadir mark. With the rover
   shown, a view from a context frame through the place where the rover model stands counts as hidden.
 - **Station list:** `Sol1792_S087D0000` (Origny: 9 Navcam pairs of sol 1792; context: the NCAM03790 pair of sol
   1790 at S086D0700) and `Sol1454_S071D0056` (Bell Island: 8 Navcam pairs of sol 1454; context: four pairs at
   S071D0006, S071D0120, S071D0160 and this station on sol 1458).
-- Ground fill of the terrain-only panorama: its colours come from all of the terrain mesh, not only mesh within
+- Ground fill of the terrain-only panorama: its colors come from all of the terrain mesh, not only mesh within
   0.25 m of the regional plane (the 0.97.13 change reached the with-rover variant only).
 
 ## 0.97.14 — 2026-11-13
@@ -723,10 +1199,10 @@ views smoothed. **None of the rendering changes has been seen on data yet**; the
   surface's disparity. Before, both eyes had the same picture - the mark at infinity.
 - **Near blend gradual:** 0.97.8 switched near surfaces (under 3 m) to the narrow feather and the 4th power of the
   parallax term in both bands - one frame took nearly everything, with hard changes of frame and a line at 3 m.
-  Now the feathers are the terrain's, and the powers rise between 4 m and 2 m from 1 / 3 (colour / detail) to
+  Now the feathers are the terrain's, and the powers rise between 4 m and 2 m from 1 / 3 (color / detail) to
   2 / 4 (`NEAR_BLEND_M`, `NEAR_LOW_POWER`, `NEAR_PARALLAX_POWER`, `near_share`).
-- **`provenance.png`** shows the frames' colours mixed by their weights in the blend (the strongest frame's colour
-  alone before); the fills keep their flat colours.
+- **`provenance.png`** shows the frames' colors mixed by their weights in the blend (the strongest frame's color
+  alone before); the fills keep their flat colors.
 - **Enhanced views** (`_enh_`, `_enhlocal_`; made from the 16-bit eye panoramas, as before): the sky above the
   skyline is replaced by its blur (Gaussian, 3 degrees), gets no local contrast, and half a level of noise against
   8-bit contours (`linear16.smooth_sky`). The render writes the small map of where
@@ -736,7 +1212,7 @@ views smoothed. **None of the rendering changes has been seen on data yet**; the
   regional slope: at Taylorfjellet (tilt 13.8 degrees, 4.4 m rms) it passes 0.25 to 0.3 m above the ground around
   the rover. Nearer than 20 m the fill grid gets a second sheet of the interpolated surface 0.2 m under
   the cell heights (`mesh.FILL_NEAR_DROP_M`), so a ray through a gap of the mesh ends there; cells without surface are interpolated as before.
-  With the rover model in the mesh, the panorama's ground fill takes its colours from all terrain mesh, not only
+  With the rover model in the mesh, the panorama's ground fill takes its colors from all terrain mesh, not only
   mesh within 0.25 m of the plane.
 - **No-data flag in the pictures:** where a frame is black padding, every `photometry_jpg` picture is black
   (`raycast.no_data_mask`; recorded in the pictures' scale: `NoData`).
@@ -748,7 +1224,7 @@ views smoothed. **None of the rendering changes has been seen on data yet**; the
 
 - **Rover model, from the front Hazcam frames of sol 52:** the camera bodies still clipped the corners of the
   Hazcam maps (the view was cleared to 70 degrees off the axis; the frame's corners are at 86). Cleared over the
-  whole field of view, and everything within 6 cm of each optical centre removed (5,186 triangles). The dark block
+  whole field of view, and everything within 6 cm of each optical center removed (5,186 triangles). The dark block
   at the front right moved 4 mm down (its lower edge was about 25 pixels high in FRF_0052_0671563995).
 
 ## 0.97.11 — 2026-11-13
@@ -756,9 +1232,9 @@ views smoothed. **None of the rendering changes has been seen on data yet**; the
 - **Shadows sharp:** no growing, no closing. Incidence above 86 degrees is shadow (89 before). The shadow ray starts
   1 cm off the surface along the surface normal; it started 2 cm along the Sun's direction, which at grazing
   incidence is hardly off the surface - the cause of the hatching.
-- **No centre panorama** in the station list (a third of the render time); the depth from the pivot is still made,
+- **No center panorama** in the station list (a third of the render time); the depth from the pivot is still made,
   from rays alone (16 s for 8K on two cores with a 2.4-million-triangle mesh). `--eyes left right centre` brings it back.
-- **Front Hazcams and the rover model:** every Hazcam ray met NASA's camera body within 5 cm (the optical centre is
+- **Front Hazcams and the rover model:** every Hazcam ray met NASA's camera body within 5 cm (the optical center is
   inside it). The builder removes what a front Hazcam sees nearer than 10 cm (448 triangles).
 - **Hazcam frames only within 2 hours** of the panorama's Navcam frames (`ods.FILL_WITHIN_S`), for the fill and
   for `mppp depthmaps --add-cameras`; before: the same sol, or any sol.
@@ -768,7 +1244,7 @@ views smoothed. **None of the rendering changes has been seen on data yet**; the
 - **8K is the standard panorama again** (`DEFAULT_WIDTH = 8192`); `--width 16384` for 16K (`mppp ods` and
   `mppp single-sites`).
 - **Nadir mark:** the disc twice as large (20 degrees); the text in two rows near the rim, each over at most half the
-  circle, centred on the rover's front, so it reads upright facing forward and looking down.
+  circle, centered on the rover's front, so it reads upright facing forward and looking down.
 - **Station list:** S079D0732 (Taylorfjellet, sol 1635, ten Navcam pairs NCAM03635 / 02635 / 15635).
 
 ## 0.97.9 — 2026-11-13
@@ -791,10 +1267,10 @@ views smoothed. **None of the rendering changes has been seen on data yet**; the
   to move back"; `BODY_COMPONENT_SHIFTS` in the builder, fitted on the NLF / NRF pair of sol 52).
 - **Nadir mark:** light blue; the text is one line around the rim, a straight line in the flat image.
 - **Shadows:** incidence above 89 degrees is shadow; hatching closed; grown by 3 pixels (`photometry.finish_shadow`).
-- **Pictures:** the sky is white in the depth, normal, incidence, emission and phase pictures (grey / black before).
+- **Pictures:** the sky is white in the depth, normal, incidence, emission and phase pictures (gray / black before).
 - **Front Hazcam** frames get their maps and photometric pictures (`mppp depthmaps --add-cameras F`, on in the
   station list); their shadows take the head from the Navcam frame nearest in time.
-- **Hazcam colour match** found no shared pixel at Van Zyl (it looked only at what the mast sees). It now compares
+- **Hazcam color match** found no shared pixel at Van Zyl (it looked only at what the mast sees). It now compares
   on points of the terrain mesh within 12 m of the Hazcams.
 - **`mesh_preview.png`:** two views from above, height (left) and range (right), linear, east / north, +/- 50 m;
   the panorama under them as before.
@@ -802,7 +1278,7 @@ views smoothed. **None of the rendering changes has been seen on data yet**; the
 ## 0.97.7 — 2026-11-13
 
 **In short.** Shadows from the mast, booms and camera head; a credit mark at the nadir; the front Hazcams fill in
-under the arm, colour-matched to the Navcams; the per-image pictures carry their value scales; the rover model with
+under the arm, color-matched to the Navcams; the per-image pictures carry their value scales; the rover model with
 NASA's full detail; crack filling scaled for 16K. None of it has been run on a real block yet.
 
 - **Shadows** (Christian: "make sure to include the rover mast and booms. Find how the mast resolver angles relate
@@ -810,16 +1286,16 @@ NASA's full detail; crack filling scaled for 16K. None of it has been run on a r
   tube and booms (`mast`) are fixed to the deck. A head point x is at X = P + Rot(G) Rz(az) (h + Ry(-el) x) for
   the label's resolver azimuth and elevation, with the axes of the fitted mast chain; az = 180, el = 90 degrees is
   forward and level, which is the pose of NASA's model (its Navcam housings within 2 cm of the chain's camera
-  centres). `rover_model.head_in_mech`, `head_transform_mech`, `head_angles_deg`, `shadow_casters`. `mppp depthmaps
+  centers). `rover_model.head_in_mech`, `head_transform_mech`, `head_angles_deg`, `shadow_casters`. `mppp depthmaps
   --photometry` casts shadows from the mesh and from mast, booms and the head where each image's own camera had it;
   with a terrain-only mesh from the whole rover. The panorama still leaves the mast out.
-- **Nadir mark** (`mppp.ibr.nadir`): within 10 degrees of straight down, a disc in the sky's colour with black text
+- **Nadir mark** (`mppp.ibr.nadir`): within 10 degrees of straight down, a disc in the sky's color with black text
   - Mars 2020 Perseverance Rover, sol and site, made by C. Tate, image credit NASA/JPL (Navcam, Hazcam) or
   NASA/JPL/MSSS/ASU (with Mastcam-Z). `--site-name`, `--no-nadir-mark`, `--nadir-mark-deg`; `name` per station in
-  `single_sites.json`. In every colour panorama, 16-bit included; recorded in `ods.json`.
+  `single_sites.json`. In every color panorama, 16-bit included; recorded in `ods.json`.
 - **Front Hazcam fill** (`mppp ods --fill-cameras F`, on in `single_sites.json`): the station's front Hazcam pair
-  of the same sols colours only what no Navcam frame sees, coming in as the Navcam feather goes out.
-- **Hazcam colour** (`ods.estimate_fill_colour`): per camera (FL, FR) one factor per channel from the surface a
+  of the same sols colors only what no Navcam frame sees, coming in as the Navcam feather goes out.
+- **Hazcam color** (`ods.estimate_fill_colour`): per camera (FL, FR) one factor per channel from the surface a
   Hazcam and a Navcam frame both see, taken within 30 minutes of each other; applied to the fill frames in the
   panorama, reported in `ods.json` (`fill_colour_match`: factor, white-balance ratio, brightness, scatter,
   samples). The Navcam frames are not changed. Not yet in the image processing: that waits for confirmation.
@@ -839,7 +1315,7 @@ No change to any result.
   rules, the web viewer and how to publish to it) and `docs/rover-model.md` (source and credit, what MPPP changed,
   how the label joint angles give the articulation, what is not done). Both in the site navigation; the README has a
   section that links the viewer, <https://ctate7163.github.io/MPPP/ods/>.
-- **The rover model for others:** `docs/rover/perseverance_rmech.glb` (one mesh per part, RMECH, metres;
+- **The rover model for others:** `docs/rover/perseverance_rmech.glb` (one mesh per part, RMECH, meters;
   `scripts/export_rover_glb.py` writes it from the packaged `.npz`). `NOTICE`, the README and
   `src/mppp/data/rover/README.md` (now in the wheel) credit NASA/JPL-Caltech and say the model was modified.
   `NOTICE` also names three.js (MIT), which the viewer page includes.
@@ -906,7 +1382,7 @@ now finished from disk. A first web viewer for the stereo panoramas.
   the `_360_3DTD.jpg` squares on one sphere per eye, station / variant / view menus, a link per view
   (`#<station>/<variant>/<view>`), drag and wheel on a screen, trigger / grip / A-X in a headset. Served with the
   documentation at `/ods/`. `mppp single-sites --publish DIR [--publish-only]` (`mppp.ibr.web`) copies the stereo
-  JPEGs (reduced to 8192) and writes `panos.json`. Checked in desktop Chrome with a labelled test pair
+  JPEGs (reduced to 8192) and writes `panos.json`. Checked in desktop Chrome with a labeled test pair
   (`web.label_pano`); not yet in a headset.
 
 ## 0.97.2 — 2026-11-12
@@ -932,7 +1408,7 @@ South joins the Mastcam-Z lists; the rig figures get a knee at sol 250.
 
 ## 0.97.1 — 2026-11-12
 
-**In short.** The station panoramas for the headset: eye separation merged towards the poles and faded with range, the
+**In short.** The station panoramas for the headset: eye separation merged toward the poles and faded with range, the
 terrain to 75 m with a watertight far field and a plane to 200 m, the rover model placed by its deck targets with the
 arm from the label angles, a 16-bit exposure per station and contrast-enhanced views; the freeze restarts on the 0.97
 rules.
@@ -977,12 +1453,12 @@ rules.
   to the plane, which has no angles (`mesh.FILL_MIN_COVER`).
 - **Nearby stations for the ground** (Christian, 12 Nov: "constrain the terrain from the masked images of several
   nearby stations"). `mppp dense --station S --nearby-m M` adds the frames of the block's other stations within M
-  metres (its own workspace, `dense_<S>..._near<M>`); `mppp mesh --keep-under-rover 0.25` then keeps the terrain under
+  meters (its own workspace, `dense_<S>..._near<M>`); `mppp mesh --keep-under-rover 0.25` then keeps the terrain under
   the rover's footprint that lies within 0.25 m of the ground's height around it. In `single_sites.json`:
   `"nearby_m": 15` per station or at the top level (and `keep_under_rover_m`). Off by default; not run on a block yet.
 - **Enhanced views from the terrain** (Christian, 12 Nov: "too bland. The sky and rover deck can saturate"). Black and
   white points at 0.5 % and 99.5 % of the band 2-30 deg below the horizon, the gamma (1.0-2.6) puts that band's
-  median at 0.45, the colour x 1.2; what is brighter than the terrain's white clips. Replaces the rule of this morning.
+  median at 0.45, the color x 1.2; what is brighter than the terrain's white clips. Replaces the rule of this morning.
 - **Single sites**: `--width PX` for one run (e.g. 16384, with `--out` to keep the panoramas there); the log is
   written line by line.
 - **Terrain to 75 m, plane to 200 m, sky at infinity** (Christian, 12 Nov, later: "the terrain should go out further to
@@ -991,7 +1467,7 @@ rules.
   to the plane's (`FILL_APRON_TO_M`). The station stereo keeps points to 81 m (minimum triangulation angle 0.3 deg,
   0.4 before: the stereo maps of a station are made again). In the panorama the sky is at infinity again
   (`--sky-radius M` for a sphere) and the eye separation fades from 75 m to zero at 200 m.
-- **UHF antenna in the rover model** (Christian, in VR: the grey cylinder above the calibration targets "looks a little
+- **UHF antenna in the rover model** (Christian, in VR: the gray cylinder above the calibration targets "looks a little
   out of place"). NASA's model has the can too small: through the label camera of NRF_0052_0671564560 its stand falls
   on the stand but the can is 0.81 of the real one across and its top 1 deg low. The can is scaled 1.23 across and
   1.14 in height from its base (`scripts/build_rover_model.py`, `UHF_CAN_*`); checked on that frame and on
@@ -1008,7 +1484,7 @@ rules.
   low points of the stretch before gamma"). Chosen from six treatments of the Van Zyl panorama side by side: gamma 2.2
   first, then black and white at 1 % and 99 % of the terrain band in that space, then an S-curve about the band's
   median. `_enhlocal_` adds an unsharp mask on the lightness (0.25 % of the width, x 0.8) in place of CLAHE - a fixed
-  filter, the same for both eyes. No colour boost. Replaces the two rules of earlier today.
+  filter, the same for both eyes. No color boost. Replaces the two rules of earlier today.
 - **Freeze window** (Christian, 12 Nov): a line when a block starts ("aligning <site>") and when it ends (verdict,
   images, residual, hours), and every half hour the last log line of each running block.
 - **Freeze on 0.97, from the beginning** (Christian, 12 Nov: "restart the freeze from the beginning using the
@@ -1076,7 +1552,7 @@ share one viewpoint and one tone scale, and their pictures are jpg.
 - **Mastcam-Z rig epochs** (Christian, 12 Nov: "mastcam-Z 34mm rigs should be split every 100 sols ... so that the
   sol span of one z34 rig in a block is not longer than 100 sols"). A zoom's rig in a block is split into one rig
   per epoch of at most 100 sols of its stereo pairs (`sfm.project.zcam_rig_epochs`; keys `Z034`, `Z034#1` ...; an
-  epoch with fewer than 4 pairs joins its neighbour; every zoom, not 34 mm alone). The focus bins and intrinsics
+  epoch with fewer than 4 pairs joins its neighbor; every zoom, not 34 mm alone). The focus bins and intrinsics
   are shared; only the rig differs. Chal Rocks large: sols 72-100 and 361-378. A joint over blocks keeps one rig;
   its diagnostic pass gives such a block one rig per epoch, and the model file and the rig figure show each as
   "block [sols a-b]". A Mastcam-Z site whose sols span more than 100 gets a new run key
@@ -1099,11 +1575,11 @@ share one viewpoint and one tone scale, and their pictures are jpg.
 - **Surface check in the rover-shown panorama** (Christian, 12 Nov: "nothing from the rover mask lands on the terrain
   and nothing from the terrain mask lands on the rover ... where the disagreement is too much ... leave that a
   brown fill color"). With the rover model in the mesh (`mesh_report.json: rover_triangles`), a frame's pixel inside
-  its rover mask may colour the model only, and a pixel outside it anything but the model (`ods.candidates`,
+  its rover mask may color the model only, and a pixel outside it anything but the model (`ods.candidates`,
   `SURFACE_CHECK`). The model where the check leaves no source is flat brown (0.8 x the panorama's median terrain
-  colour; `source` -5, dark brown in `provenance.png`); terrain without a source gets the ground fill as before, and
+  color; `source` -5, dark brown in `provenance.png`); terrain without a source gets the ground fill as before, and
   what is still left the same brown. `ods.json` counts the samples turned away and the brown share per eye. The mask
-  also covers the rover's shadow, so shadow pixels do not colour the terrain in this render. Tested on synthetic
+  also covers the rover's shadow, so shadow pixels do not color the terrain in this render. Tested on synthetic
   scenes only.
 - **Rover model: the high-gain antenna, the turret turned, the arm raised** (Christian, 12 Nov: "put the high gain
   antenna back in and have it point in a neutral direction ... tilted forward at a 45 degree angle. The turret needs
@@ -1113,11 +1589,11 @@ share one viewpoint and one tone scale, and their pictures are jpg.
   sol; the arm's stow angles (90.0, 14.5, 68.8, -89.4, 77.5) deg, was (89.2, 16.4, 71.9, -103.3, -90.1): the shoulder
   azimuth held at 90 (Christian: "az90 is more right for that joint"), the other four fitted by least squares to
   marked points in two frames (the drill's dome, PIXL and the bit at Rockytop sol 461; PIXL and the PERSEVERANCE
-  plate's centre line at Van Zyl sol 52), then the elbow +2.5 and the wrist -2.5 deg ("bring it down a little while
+  plate's center line at Van Zyl sol 52), then the elbow +2.5 and the wrist -2.5 deg ("bring it down a little while
   leaving the far side of the forearm in place": the turret 3 cm lower). In NLF_0052_0671564132, which shows the
   whole arm and was not used for the fit, the plate, the elbow, PIXL and the dome fall on the frame's. The ribbed
   block on the deck is turned 30 deg in azimuth about its -y end, the right end as the mast cameras see it, which stays in place
-  (`BODY_TURNS`; first about its own centre; a lean about its long axis was the wrong axis). Checked afterwards
+  (`BODY_TURNS`; first about its own center; a lean about its long axis was the wrong axis). Checked afterwards
   against three later frames (sols 1431, 1463, 1470): turret dome and instrument box within about 30 px, except the
   dome about 80 px high on sol 1463; no refit. Decimated triangles farther than 12 mm from the model they came from are removed (4, in the
   suspension). Chosen by eye
@@ -1140,7 +1616,7 @@ share one viewpoint and one tone scale, and their pictures are jpg.
   deck targets. `ledger` (`ledger.json`): each claim with its independent evidence, value, standard error and
   status; its table closes the freeze report.
 - **Single-station products** (`mppp.ibr`). The pivot sits on the azimuth axis at the Mastcam-Z height whatever
-  cameras are rendered (`--pivot-height zcam`, the default; `fit` is the old behaviour). `mppp ods --tone-levels
+  cameras are rendered (`--pivot-height zcam`, the default; `fit` is the old behavior). `mppp ods --tone-levels
   FILE`: the 16-to-8-bit levels found once and reused - the driver gives the rover-shown and rover-masked runs of a
   station the same file. `--eyes left right centre`: a panorama from the pivot with its depth
   (`_ods_centre_depth.npz`, `_depth_16.png`, `_depth_linear.jpg`, `_depth_log.jpg`). Per-image pictures are jpg in
@@ -1166,7 +1642,7 @@ the station in their names; the stacked square has the left eye on top; the rove
   `mesh --rover` then drops the fused points inside the footprint more than 3 cm below the top, lifts the mesh
   vertices there onto it, and adds the floor (a 5 cm grid, ~2,000 triangles) to `mesh.ply`, so a ray through a
   hole in the reconstructed deck - a quarter of the deck seen from the mast at Van Zyl, mostly around the mast
-  foot - lands on the deck, coloured from the deck's own pixels, instead of on the ground 1.1 m below.
+  foot - lands on the deck, colored from the deck's own pixels, instead of on the ground 1.1 m below.
   `rover_deck.json` (the pose, the footprint corners in the block, the agreement); `--no-deck-floor`.
 - **The panorama in 16 bits** (`mppp ods --bits 16`, `mppp.ibr.linear16`; Christian: "please implement a 16-bit
   process so that I can color correct it later ... I would like to have more control over the color space"). The
@@ -1185,7 +1661,7 @@ the station in their names; the stacked square has the left eye on top; the rove
   (`ods_args` in `single_sites.json`, now also a top-level key).
 - **The Perseverance model in the mesh** (`mppp.ibr.rover_model`, `scripts/build_rover_model.py`; Christian: "take
   this model of perseverance's, simplify it, add it to the mesh, and project the images onto it. The arm is stowed,
-  so you would need to rotate the arm joints"). NASA's glTF model (credit NASA/JPL-Caltech, 199,000 triangles, metres,
+  so you would need to rotate the arm joints"). NASA's glTF model (credit NASA/JPL-Caltech, 199,000 triangles, meters,
   x left / y up / z forward, the wheels on y 0) maps to RMECH as x = z, y = -x, z = 1.135 - y; an ICP of the Van Zyl
   rover cloud onto its body moves that by 0.12 deg and 2-3 mm. The arm is a chain of five nodes (shoulder azimuth
   about its local y, shoulder elevation, elbow and wrist about z, the turret about y); the five angles from the
@@ -1217,7 +1693,7 @@ the station in their names; the stacked square has the left eye on top; the rove
     heartbeat and step, and kept in the status (`interruptions`).
 - **`scripts\windows\update_and_run_single_sites.bat`** (Christian, 11 Nov: "Please put that bat file in the
   MPPP/scripts/windows/ folder"): the copy of `mppp.ibr.single_sites.BAT` (a test keeps the two identical). In the
-  repository it works on the tree it is in; everything after the settings is one parenthesised block, read whole
+  repository it works on the tree it is in; everything after the settings is one parenthesized block, read whole
   before it runs, because the merge may replace the file under it. 26 files in `scripts\windows`.
 - **The wind-sensor booms masked from the model** (Christian: "use this to predict the location of the wind booms
   and remove them from the 360"). The mast below the head is fixed to the rover - only the head turns - so the
@@ -1227,22 +1703,22 @@ the station in their names; the stacked square has the left eye on top; the rove
   by 1.2 % of the width and adds it to the frame's excluded pixels (rover shown; `ods.json` `mast_masked`;
   `--keep-mast`); `mppp mesh` drops the fused points within 6 cm of the mast and booms. What was behind a boom
   comes from another frame, or from the ground fill.
-- **Darker 16-bit files, a levelled 8-bit version** (Christian: "The 16-bit images should be darker to avoid
+- **Darker 16-bit files, a leveled 8-bit version** (Christian: "The 16-bit images should be darker to avoid
   saturation ... process it into an 8bit version that has the high and low points rescaled optimally to show
   detail"): the 16-bit panoramas are written at `--exposure16` 0.5 of the frames' own 16-bit scale (the blend is
   not clipped before; `ods.json` records the share clipped, the factor and the levels), and the 8-bit panorama is
   made from the linear one with `--tone auto` (now the default): the exposure is set on the ground - the black
   point at the 0.5 % of the darkest channel, the median of the lower half (mostly terrain) at 100 of 255, from the
-  first eye for both - linear up to 170, the highlights rolled off towards 255 and faded to neutral instead of
+  first eye for both - linear up to 170, the highlights rolled off toward 255 and faded to neutral instead of
   clipped. (The first version put the white point at the 99.7 % of the panorama: at Van Zyl the sunlit white deck
   took the range and the terrain came out at a fifth of it.) `ods --retone` / `single-sites --retone` make the
   8-bit panoramas and squares again from the 16-bit ones, without rendering.
 - **The ground filled where no frame saw it** (Christian: "the holes in the rover should be filled at ground level.
   Same with the area occluded by the arm. It shouldn't be zero, but continuous with a planar terrain"):
-  `ods.fill_ground` - below the horizon, what no frame coloured (under the rover, behind the arm, through holes
-  in the rover) takes the colour of the terrain around it (coloured pixels on the ground plane or on mesh within
+  `ods.fill_ground` - below the horizon, what no frame colored (under the rover, behind the arm, through holes
+  in the rover) takes the color of the terrain around it (colored pixels on the ground plane or on mesh within
   25 cm of it, not the rover) by a pull-push pyramid, wrapped around north; `source` -4, brown in
-  `provenance.png`, `ground_filled` in `ods.json`; `--no-ground-fill`. Above the horizon an uncoloured surface is
+  `provenance.png`, `ground_filled` in `ods.json`; `--no-ground-fill`. Above the horizon an uncolored surface is
   now a sky hole and takes the sky fill.
 - **A second floor behind the deck** (Christian: "The back of the rover could use another minimum plane"): at the
   deck top's level over RMECH x -1.55 .. -1.10 m, y +-0.45 m (under the RTG and the aft structure), added to the
@@ -1345,8 +1821,8 @@ changes made on the way to the build.
   Christian, 9 Nov: "0.96.0 should build the pipeline that generates the per image depth maps and photometric cube
   from the cleaned up 3d mesh. 0.96.0 should prototype the stereoscopic pipeline. The output should just be two
   images. Don't build the webviewer"; the plans of 29 and 31 Oct). `station`: the station of a block (site, drive),
-  its frames by camera family, the mast pivot from their centres and rotations (least squares C_i = P + R_i^T d_g
-  per family; the mean centre below 6 frames or 60 deg of azimuth), the block's up / north / east from
+  its frames by camera family, the mast pivot from their centers and rotations (least squares C_i = P + R_i^T d_g
+  per family; the mean center below 6 frames or 60 deg of azimuth), the block's up / north / east from
   `error_input/block_frame.json` or the sun model. `mesh`: Poisson (open3d; COLMAP's Delaunay mesher through the
   executable when given) over the fused cloud, then the cleanup - components under 1 %, rubber sheets, surface no
   fused point supports within tau(z) = max(5 cm, 2 % z, 3 sigma_z), the 60 m radius - decimation to 3 M
@@ -1357,7 +1833,7 @@ changes made on the way to the build.
   `photometry`: incidence, emission, phase and the cast shadow from the sun direction of the image's row
   (`sun_enu` through `R_block_from_enu`); npz, COLMAP `.bin` arrays, previews, `photometry_report.json`. `ods`:
   the omni-directional stereo panorama (equirectangular 8192 x 4096, 64 mm between the eyes): each eye's rays cast
-  into the scene, every hit coloured from the source frame that sees it best (the smallest angle to the frame's
+  into the scene, every hit colored from the source frame that sees it best (the smallest angle to the frame's
   axis, inside the frame and its mask), chunked by rows; `ods_left.png`, `ods_right.png`, `provenance.png`,
   `ods.json` with the coverage. Rockytop sols 461-464 (the example data) is the example station. `mppp mesh |
   depthmaps | ods WORK --station S003D1234` (also `python -m mppp.ibr`); the products under
@@ -1450,7 +1926,7 @@ changes made on the way to the build.
     (`mppp_dense.json`), `--images` / `--sols` to choose;
   - **black cracks** (triangles on the deck, slivers along mesh edges): a ray through a gap in the mesh ends on the
     ground behind, which the mesh hides from every camera; a pixel no source sees unhidden now takes the best
-    hidden view, and the cracks still left (at most 4000 px, 24 px wide) are filled from their edges (grey in the
+    hidden view, and the cracks still left (at most 4000 px, 24 px wide) are filled from their edges (gray in the
     provenance map; `ods.json`: `hidden_view_used`, `cracks_filled`); large unseen areas stay black;
   - **the rover's mesh and the near-field detail** (Christian: "the mesh on the rover does not look very good";
     "The near and mid terrain needs a little more detail and higher polygon count"): the mesh step read the fused
@@ -1469,11 +1945,11 @@ changes made on the way to the build.
     frames (0.34 mrad);
   - **the sky above the frames filled** (Christian: "extrapolate and blur the light blue sky upwards so that there
     isn't a shape boundary there"; "make sure not to extrapolate black pixel areas"; "increase the width of the
-    blending near the top so that streaks do not converge at the north pole"): per column the colour from the
+    blending near the top so that streaks do not converge at the north pole"): per column the color from the
     brightest 40 % of a band just below its highest seen sky pixel (sky, not the distant hills, which are "far" too;
     no pixel darker than 12), the boundary the lower envelope of the frames' tops (the lowest within 10 % of the
-    width) smoothed (2 % of the width), the colour carried up and blurred horizontally as 1 / cos(elevation) (the
-    same width on the sky everywhere; uniform at the zenith) into the median sky colour, cross-faded with the seen
+    width) smoothed (2 % of the width), the color carried up and blurred horizontally as 1 / cos(elevation) (the
+    same width on the sky everywhere; uniform at the zenith) into the median sky color, cross-faded with the seen
     sky over 2 % of the height; light blue in the provenance map, `sky_filled` in `ods.json`, `--no-sky-fill`;
   - **the frames' black padding is not image content**: MPPP pads the subframes to the frame size, and the blend
     took the padding in as black - the fade to black at the frames' tops. Pixels at most 1 in every channel in a
@@ -1503,7 +1979,7 @@ changes made on the way to the build.
     image to the rectangle of valid pixels - a half-resolution Navcam frame keeps 90 % of its pixels, the corners
     cut from 60.9 to 53.5 deg of half-angle, the top and bottom eighths at 66 / 72 %; at Van Zyl S003D2046, 89 % of
     the rover's pixels reached the stereo (83-92 % in the deck frames). `--full-fov` keeps the whole field of view
-    (`blank_pixels` 1) at a size scaled so the centre keeps the default's focal length (2000 -> ~2550 px; ~1.8x the
+    (`blank_pixels` 1) at a size scaled so the center keeps the default's focal length (2000 -> ~2550 px; ~1.8x the
     patch-match time); the workspace record and the stereo record carry it, so a change redoes the undistortion
     and clears the old maps. On by default for the single sites (`dense_args` in `single_sites.json`); the
     previous summary is kept as `single_sites_summary_previous.md` for the comparison;
@@ -1550,12 +2026,12 @@ warning for opposite backlash states between the eyes, and f0's sd from the sequ
   of the residual against the distance from the principal point, as ppm the frames want f changed by, with its sd),
   and the same per row (elevation tier, clustered at gaps over half the vertical field of view) for pans. The 10
   sequences with the largest rms and every sequence flagged by A or C. Mostly vertical residuals growing from the
-  centre mean a real pull (pose or structure, e.g. the visit-2 site-frame offset) that pooling would hide; no
+  center mean a real pull (pose or structure, e.g. the visit-2 site-frame offset) that pooling would hide; no
   direction means the bins were the problem. Unit test: ZL's fy made 2000 ppm too large in one sequence - the row
   says fy -2000 ppm, x untouched.
 - **C. Opposite backlash states between the eyes** (`opposite_state_flags`, `OPPOSITE_STATE_TOL` 35 %): per sequence,
   the two eyes' dfx from the diagnostic pass (the pools, else the per-bin means) against each eye's low-state step
-  1e6 (1 / ratio - 1); an eye labelled high within 35 % of its step while the other eye is within 35 % of 0, fx and
+  1e6 (1 / ratio - 1); an eye labeled high within 35 % of its step while the other eye is within 35 % of 0, fx and
   fy moving together, is "possible low state, eye X" (the mirror: "possible high state"). A WARN line in the report,
   `check.json` and `calib zcam`'s output (`check_label`), never a failure. The case: Z63 ZCAM08038 (sol 78), ZL at
   -3,450 / -3,760 ppm against a step of -4,170, ZR within +900 of 0; confirmed by the mini-block, and its 24 ZL frames
@@ -1599,14 +2075,14 @@ warning for opposite backlash states between the eyes, and f0's sd from the sequ
 - **Mask training: online augmentation** (`mppp_studies.mask_training.augment`, the 9 Nov plan
   `claude/mask-next-run-2026-11-09-worst-frames-and-augmentation-plan.md`): lighting (exposure ×0.4–2.5 log-uniform,
   gamma 0.6–1.8, channel gains ±15 %, black level ±2 %, Poisson-Gaussian noise, soft shadows ×0.3–0.6 with the label
-  unchanged, haze veil, grey↔colour) drawn per sample in linear space — replaces `images_variable/` and the v4.1 tone
+  unchanged, haze veil, gray↔color) drawn per sample in linear space — replaces `images_variable/` and the v4.1 tone
   curve; an LMST-weighted sampler (the frame's clock → LMST within ±2 min; before 09:00 / after 16:00 drawn 4.5×);
-  angular-scale normalisation (one target mrad/px per sample from 0.08–1.2, Navcam zoomed in, Z110 out; replaces the
+  angular-scale normalization (one target mrad/px per sample from 0.08–1.2, Navcam zoomed in, Z110 out; replaces the
   pixel zooms); mask-conditioned defocus (2–12 px, p 0.3); cross-camera copy-paste of hardware cutouts at the matched
-  angular scale (p 0.3); a fitted colour matrix (`ColorMatrix` json, identity until fitted) applied N→Z and inverted;
+  angular scale (p 0.3); a fitted color matrix (`ColorMatrix` json, identity until fitted) applied N→Z and inverted;
   family-stratified batches (half Mastcam-Z); `train_families` for the transfer runs, the validation IoU per camera
   family in the log and the card history. `TrainConfig` fields of the same names; `mppp_studies.mask_training.train_mask --recipe
-  A|B|C` (A photometric + sampler; B + angular scale, defocus, quad split 4000; C + copy-paste, colour matrix,
+  A|B|C` (A photometric + sampler; B + angular scale, defocus, quad split 4000; C + copy-paste, color matrix,
   family batches) and the single flags; `train_masks.bat --recipe A --epochs 30 --tag v9A`. Tests: numpy parts
   (`tests/test_mask_augment.py`); the torch wiring is smoke-tested with `train_mask.py --smoke --recipe C`.
   The augmentations run as a pipeline object, `augment.Augment` (a geometry step - angular scale or the letterbox -
@@ -1658,8 +2134,8 @@ the Mastcam-Z joints can promote with the per-block aspect gate waived, and the 
 - **Standard figure: the cameras on the mast head** (Christian, 8 Nov: "I love zcam rig figure. Add that to the list of
   standard figure ... also do this for the other zooms").  `mppp_studies.calibration.zcam_mast_head`: the Z frames of the Mastcam-Z
   blocks through the deck_joint mast chain (resolver angles; per station the block <- RNAV similarity from its Navcam
-  frames) into the head frame; per zoom a 2 x 2 (top view, side view, pair centre / height against sol and
-  temperature, centre along the boresight against focus), the centre and image-centre pointing against zoom, and the
+  frames) into the head frame; per zoom a 2 x 2 (top view, side view, pair center / height against sol and
+  temperature, center along the boresight against focus), the center and image-center pointing against zoom, and the
   Z mount per zoom (Q_Z per zoom and eye; c_Z from 34 mm, along the boresight held at its near-focus median) in
   `zcam_mast_head_<tag>.json`.  `paper_figures.py --mast-chain` (default: the newest deck_joint_mast_model.json under
   `<root>\camera_analysis` or `--out`).
@@ -1688,7 +2164,7 @@ Hazcam early-mission step tested on the blocks.
   pair with the block rig 0.5-1.1 px, **baseline -978 +- 116 ppm** (the deck asks for 423.6 mm against the block
   rig's 424.0; chi2/dof 1.0; no significant temperature or sol trend yet); the deck's rig pitch per pair is
   +-50-170 mdeg, far too coarse for the 5 mdeg/1000 sol pitch drift. Annotated images: sub-pixel marks with the
-  pixel-centre mapping of the zoomed insets (the 3 Nov prototype drew them half a native pixel up-left), larger
+  pixel-center mapping of the zoomed insets (the 3 Nov prototype drew them half a native pixel up-left), larger
   text, the block solution's reprojection, TDF4. **TDF4** (rigid, not surveyed; Christian, 3 Nov): tracked, and
   fitted from the rays of images whose poses are resected on the surveyed targets (`fit_point_from_rays`):
   RNAV (335.75, 126.60, -1133.43) mm +- (0.08, 0.08, 0.16) from 24 images with >= 5 targets (4 Nov; the 9 with all
@@ -1726,7 +2202,7 @@ Hazcam early-mission step tested on the blocks.
   one rover pose T_j (block <- RNAV) per rest interval (per station, or `split="sol"`), a 3-D point per (interval,
   target) observed by its deck pixels with COLMAP's own reprojection costs (the tie points' camera, pose, rig and
   intrinsic blocks) and tied to T_j P_k by the survey (0.05 mm per axis; TDF4 0.4 mm), through the
-  `extra_residuals` hook of `bundle_adjust`; the prior-gauge recentre is applied to T_j. With a rigid T_j the survey
+  `extra_residuals` hook of `bundle_adjust`; the prior-gauge recenter is applied to T_j. With a rigid T_j the survey
   sets the block's metric scale, so a translation-refined rig measures the stereo baseline against the survey inside
   the solve. `python -m mppp_studies.calibration.deck WORK` on a solved block (writes `sparse/cahv_ba_deck`, `colmap/deck/`), or the
   setting `deck_in_ba` (`True`/`"station"`/`"sol"`; off by default and then not in the run key). Tests: the survey
@@ -1746,7 +2222,7 @@ Hazcam early-mission step tested on the blocks.
   the same solve. Study A1 (seven stations, sols 477-1831) in the project doc of 5 Nov.
 - **Hazcam rigs: `hazcam_rig_refine = "full"`** (Christian, 4 Nov: "the hazcams might not have correct baselines, so
   let those refine too"): rotation and translation, with the rig translation prior (`rig_translation_sigma_m`) on
-  the right centre; a weak pair (`rig_hold`, < 500 observations) stays held.
+  the right center; a weak pair (`rig_hold`, < 500 observations) stays held.
 - **TDF4 resolved; the deck with all seven targets** (Christian, 4 Nov: "how many images are there with 4 or more
   of the seven fiducials? Resolve the tdf4 location and remeasure the rig rotation"). The archive holds 567 Navcam
   full-frame images with >= 4 of the seven predicted in frame (NL 281, NR 286; 230 stereo pairs); 410 have >= 4
@@ -1792,7 +2268,7 @@ Hazcam early-mission step tested on the blocks.
   (sols 1355-1428: Witch Hazel Hill and South Arm, 281 m) failed its health check in the freeze run - 9 of 20 stations
   in one tied piece, 2 stations without cross-station ties, attitude p95 3.9 deg - and the Navcam joint left it out.
   The freeze chain's final pass runs `witch_hazel_hill` (its block is new, so it aligns from the start).
-- **Navcam intrinsics-vs-temperature figure**: the fy model in use is drawn (grey dash-dot, beside fx's dotted) and
+- **Navcam intrinsics-vs-temperature figure**: the fy model in use is drawn (gray dash-dot, beside fx's dotted) and
   the fy bins (squares) have a legend entry (Christian, 3 Nov: "Is the starting model the black dashed line for both
   fx and fy?").
 - **Mask comparisons use the split training recorded** (2 Nov, "study why the training did not improve"). The A/B
@@ -1832,9 +2308,9 @@ Hazcam early-mission step tested on the blocks.
   rover_frame, lightglue_ab, zcam_states, report). Then the studies that exist (15:46: "use past studies instead of
   writing new ones") on those blocks - `make_figures.bat`, `make_maps.bat`, `zcam_aspect_geometry.py` over every
   zoom, `tie_point_studies.py S6` over the zcam_consensus blocks - and last the tie-point studies on the tiny blocks in
-  `D:\scapes` (finished variants skipped): S2 with its verdict (would a cap of 1500 do: centres < 1 cm p95,
+  `D:\scapes` (finished variants skipped): S2 with its verdict (would a cap of 1500 do: centers < 1 cm p95,
   attitudes < 0.1 mdeg p95, focal lengths < 0.05 % max), then S1, S3, S4, S5 (`--skip-tie-studies`).
-  `make_maps.bat` honours `MPPP_NOPAUSE`. Faults: a failed step is logged and the
+  `make_maps.bat` honors `MPPP_NOPAUSE`. Faults: a failed step is logged and the
   chain goes on; a step past its time limit is stopped with its process tree; the computer is kept awake
   (SetThreadExecutionState) and QuickEdit switched off; the chain's state is
   `<root>\mppp_pipeline\freeze_chain_status.json` - started again after a crash, a reboot or a closed window it
@@ -1878,7 +2354,7 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   stopped. A new batch removes the marker.
 - **`zcam_backlash_rerun.bat`** (Christian, 31 Oct: "one good zcam joint to capture all of the problematic
   backlash anomalies ... the rerun of these three blocks with all zooms including z110. Allow more joint iterations
-  for convergence"): in one minimised window, (1) the per-image backlash states run of Chal Rocks, Seitah Overlook
+  for convergence"): in one minimized window, (1) the per-image backlash states run of Chal Rocks, Seitah Overlook
   and Rockytop (a new variant, `colmap_states_1031`, seeded from the blocks' current features), (2) `mppp
   zcam-states --apply` on those blocks (`MPPP_STATES_APPLY=0` stops after the report), (3) the three blocks again
   with `--force` (the found list is not in the run key) and every zoom of their lists, (4) `zcam_joints.bat` for
@@ -1979,7 +2455,7 @@ Hugging Face (not yet the default), a mask A/B script, and the documentation bro
   color changes as well as h flips and zooms ... call it v4.1"). `TrainConfig.tone_prob` / `train_mask.py
   --tone-prob` (default 0.5 in the script and `train_masks.bat`): a share of the training samples get a tone curve
   from v3's `images_variable` recipe (`dataset.random_tone`: black point 0-0.11, white point 0.90-1.50, gamma
-  0.50-0.85, channel gains 0.95-1.05), drawn anew every time - the colour diversity v3 had from its fixed copies
+  0.50-0.85, channel gains 0.95-1.05), drawn anew every time - the color diversity v3 had from its fixed copies
   on disk, with the images still the standard pipeline's. `train_masks.bat` trains 20 epochs (as v4).
 - **Alignment health: cameras without tie points are listed, not judged** (`unconstrained_cameras`, fewer than
   `MIN_CAMERA_OBSERVATIONS` = 30). Rockytop's ZCAM03391 79 mm bins had 0 observations and drifted with the priors
@@ -2029,10 +2505,10 @@ joints and the Hazcams by default; a block can be opened as a Metashape project 
   (`<block>.bundler.out` and its image list), `build_metashape_project.py` (`mppp.sfm.metashape_build`, runs in
   Metashape Professional's Python) and `make_metashape_project.bat`, which makes `<block>.psx`: the photos linked from
   `images\`, the tie points imported, the sensors and poses set and the calibration fixed (no alignment, no
-  optimisation), the masks from `masks\`, a local metric coordinate system (MPPP's world frame: x east, y north,
+  optimization), the masks from `masks\`, a local metric coordinate system (MPPP's world frame: x east, y north,
   z up, the chunk transform adds the block offset), and a check (`metashape_check.json`: COLMAP's observations and
   the imported tie points reprojected by Metashape). The camera models translate exactly: THIN_PRISM_FISHEYE ->
-  Fisheye and FULL_OPENCV -> Frame with f = fy, b1 = fx - fy, (cx, cy) from the frame centre, K1..K4, and P1 = p2,
+  Fisheye and FULL_OPENCV -> Frame with f = fy, b1 = fx - fy, (cx, cy) from the frame center, K1..K4, and P1 = p2,
   P2 = p1 (checked to 1e-11 px against pycolmap); terms Metashape has no place for (sx1, sy1; k4-k6), zero in every
   MPPP model, would be fitted and reported. Chal Rocks: 137 images, 40 sensors, 383,851 tie points with 1.32 M
   observations (55 MB Bundler file); the job's sensors and poses reproject COLMAP's observations at its own
@@ -2053,7 +2529,7 @@ joints and the Hazcams by default; a block can be opened as a Metashape project 
   size and an accurate transformations.json"; 2048 x 1536, "Zcam frames can be clipped 22 columns on the left and 16
   on the right"). `mppp nerfstudio WORK` writes `<project>\nerfstudio\` (`mppp.sfm.nerfstudio`): every registered
   frame resampled through COLMAP's exact camera model into a 2048 x 1536 pinhole frame (per-frame focal length and
-  principal point: the camera's centre resolution scaled by 2048 / width; Mastcam-Z without columns 0-21 and
+  principal point: the camera's center resolution scaled by 2048 / width; Mastcam-Z without columns 0-21 and
   1632-1647, scaled by 1536 / 1200), the masks likewise (0 where there is no source pixel), `transforms.json`
   (OpenGL camera-to-world in MPPP's world frame) and `sparse_pc.ply`. Checked on a synthetic block: the resampled
   value at Nerfstudio's projection of a tie point is the source value at COLMAP's projection.
@@ -2067,7 +2543,7 @@ joints and the Hazcams by default; a block can be opened as a Metashape project 
   held-out frames, the training curves, the card, `summary.md` (pairs by camera, sols, split, held-out IoU,
   augmentation) and the release candidate `.safetensors`, in `Claude outputs\mask_<checkpoint>\`. Nothing promoted.
 - **Training images keep the frames the alignment skips**: `regen_config` turns the pipeline's frame selection off
-  (v8's first regeneration lost 208 Navcam frames - sky-pointing, dark blue centre, saturated, outside the LMST
+  (v8's first regeneration lost 208 Navcam frames - sky-pointing, dark blue center, saturated, outside the LMST
   window - and 4 Mastcam-Z frames of site 1 have no landing-frame position and stay out).
 - **Training images need no landing-frame position** (Christian, 30 Oct: "a landing position should not be
   necessary to color process them"): `regen_config` takes the pose prior from the label's site frame
@@ -2078,7 +2554,7 @@ joints and the Hazcams by default; a block can be opened as a Metashape project 
   only where its four source pixels are) and the batch file: splatfacto, 15000 steps, `--load-3D-points` (the tie
   points), camera optimizer off (MPPP's poses held), densification threshold 0.0006 (finer for Mastcam-Z) until step
   10000, opacity reset every 1500 steps with culling below 0.2, large blobs culled (0.3 of the scene scale), scale
-  regularisation (axis ratio at most 6), images cached on the CPU; extra splatfacto options as arguments.
+  regularization (axis ratio at most 6), images cached on the CPU; extra splatfacto options as arguments.
 - **Hippo Pools: sol 1947's end-of-drive station S091D0000 in** (Christian, 30 Oct): `NEARBY_FROM_FIRST_SOL` off, so
   its sol-1947 images come in as another visit within 10 m; the mid-drive stops at site 90 do not.
 - **Mask training augmentation**: horizontal flips (as before) and, new, large Navcam/Hazcam frames (long side above
@@ -2106,11 +2582,11 @@ blocks stay valid.
 - **Rig translation refined** (Christian, 29 Oct: "the z34 rig translation should not be held ... let these rig
   parameters change and optimize while keeping a close eye on their significance"). Z34 28 Oct: ZR's focus slope was
   0.0105 px/count steeper than ZL's in all ten blocks (Z48 +0.013, Z63 +0.0125, Z110 +0.009) - the signature of a
-  right centre that is wrong along the boresight (it scales ZR's image by dz / D, and D goes with the focus count; a
+  right center that is wrong along the boresight (it scales ZR's image by dz / D, and D goes with the focus count; a
   synthetic block with +6 mm gave the same pattern and the free rig recovered +6.0 mm). `ztied.ZJOINT_RIG_FIT = "full"`:
-  rotation and translation refined, a 1 cm prior per axis on the start rig's right centre (`--zcam-rig-fit rotation`
+  rotation and translation refined, a 1 cm prior per axis on the start rig's right center (`--zcam-rig-fit rotation`
   for the 0.94 joint). The refined rig gets a covariance of its own (`extra:zrig|Z0nn`); the report and
-  `zcam_joint.json` (`rig`) give the right centre's move (x, y, z along the boresight, mm) with its sd and z per axis
+  `zcam_joint.json` (`rig`) give the right center's move (x, y, z along the boresight, mm) with its sd and z per axis
   and the baseline; the candidate model's rig carries `translation_change_mm`, `translation_sd_mm`. The N+Z joint
   refines the rig the same way.
 - **Early-mission principal-point offset of ZR** (Christian: "fix the Zcam rig drift for all zooms. Put this into an
@@ -2173,7 +2649,7 @@ blocks stay valid.
   **and the rover masks** undistorted, so the fusion leaves the rover out), falling back to COLMAP's
   `image_undistorter` (no masks) only when MPPP's Python is not found; it says whether the masks are there.
 - `mppp dense <WORK> --maps [png|jpg]` (`--maps-kind geometric|photometric`): COLMAP's depth and normal maps
-  (`dense\stereo\depth_maps`, `normal_maps`, `*.bin`) as images in `dense\stereo\maps_png\` - depth in a colour scale
+  (`dense\stereo\depth_maps`, `normal_maps`, `*.bin`) as images in `dense\stereo\maps_png\` - depth in a color scale
   over its 2-98th percentile (range in the file name), normals as RGB in the camera frame (`sfm.dense.read_colmap_array`,
   `export_dense_maps`). No value (transparent in a PNG, black in a JPEG) inside the rover mask (`dense\masks`) and
   beyond 100 m (`--max-depth`), in the depth and the normal images alike (Christian, 29 Oct).
@@ -2218,7 +2694,7 @@ blocks stay valid.
 **In short.** 0.95.0 is the code every site is rerun on before the cameras of the Navcam, the front Hazcams and
 Mastcam-Z 34 mm are frozen for the paper. What it changes, in order of weight: the Mastcam-Z joint fits one focus slope
 per eye with an intercept offset per sequence (the focal length is not curved over focus; sequence bins are the main
-runs' default, so every Mastcam-Z block runs again), gives the right eye's low-state centre its own offset relative
+runs' default, so every Mastcam-Z block runs again), gives the right eye's low-state center its own offset relative
 to the left eye, and holds the focus-from-below offset where it is one with the high/low ratio; the site runs hold a
 zoom with fewer than six images at a site at the model, drop far-field mis-ties before the final adjustment instead
 of failing the block, extract twice the SIFT features on the Navcam frames, and fail the Navcam corner check only
@@ -2245,7 +2721,7 @@ the database copies shrink and go, and the hand exclusions of Taylorfjellet and 
   offset, so the per-block lines and the block-aspect check do not read the offsets as aspect; the report says how
   many sequences carry a focus span (the slope's support). In the blocks, `refit_param_lines` fits the fx, fy lines
   with one intercept per sequence (weighted zero-sum) and sets each bin on its sequence's line.
-- **The right eye's low-state principal point** (Christian, 27 Oct: "the state shows in the centre"; Seitah Overlook's
+- **The right eye's low-state principal point** (Christian, 27 Oct: "the state shows in the center"; Seitah Overlook's
   ZR063 low-state frames 0.65 px): ZR's `d_cx_regular`, `d_cy_regular` are fitted relative to ZL's (held: the
   reference eye) from every exposure in which ZR is low and ZL is in the problem, whatever ZL's state
   (`paired_low_exposures`, `MIN_PAIRED_LOW_EXPOSURES` = 10) - not only the mixed exposures of 0.93.2, which the 63 mm
@@ -2322,7 +2798,7 @@ the database copies shrink and go, and the hand exclusions of Taylorfjellet and 
 
 ### Studies (`mppp_studies.calibration.tie_point_studies`)
 
-- S1 feature budget, S2 point thinning (against the all-points solution: frame centres, attitudes, per-bin focals), S3
+- S1 feature budget, S2 point thinning (against the all-points solution: frame centers, attitudes, per-bin focals), S3
   matcher and verification, S4 pair selection and the pose-guided scope, S5 filters, S6 the per-bin focal residual
   about the lines by observation band (for `MIN_BIN_OBSERVATIONS`): variant sets run as `mppp run --variant
   <study>_<variant>` on the three tiny blocks, measured the same way (completeness, quality, time per step).

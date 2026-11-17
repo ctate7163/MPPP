@@ -1,0 +1,158 @@
+"""
+Selecting PDS ``.IMG`` products from a local archive.
+
+Selection returns lists of paths.  How they are bundled ("scapes") is the
+user's business; nothing here requires a scape.  Nothing here ever deletes
+archive files (the legacy ``dedupe_by_version_index(delete=True)`` did).
+"""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+
+from .filenames import M2020Filename, parse_filename
+from .waypoints.sites import sol_ranges
+
+PathLike = Union[str, Path]
+
+
+def iter_imgs(input_dir: PathLike) -> Iterable[Tuple[Path, M2020Filename]]:
+    """All parsable ``*.IMG`` below ``input_dir`` (recursive, case-insensitive)."""
+    seen = set()
+    for fp in Path(input_dir).rglob("*"):
+        if fp.suffix.lower() != ".img" or not fp.is_file() or fp in seen:
+            continue
+        seen.add(fp)
+        try:
+            yield fp, parse_filename(fp)
+        except ValueError:
+            continue
+
+
+def in_sol_range(sol: int, sol_range: Any) -> bool:
+    """is ``sol`` inside ``sol_range`` - one ``(first, last)`` or a list of them?"""
+    return any(a <= int(sol) <= b for a, b in sol_ranges(sol_range))
+
+
+def find_imgs(input_dir: PathLike, camera_codes: Sequence[str],
+              sol_range: Optional[Any] = None,
+              site_drive: Optional[Tuple[int, int]] = None,
+              sequ_id: Optional[str] = None,
+              product_type: Optional[str] = "RAD",
+              include_thumbnails: bool = False) -> List[Path]:
+    """
+    ``camera_codes``: prefixes of the file name ('NLF', 'ZL0', 'Z', ...).
+    ``sequ_id``: substring looked for after the site/drive field, i.e. in the
+    sequence id + camera-specific field ('ZCAM08529', '_034', '_0A01'...).
+    """
+    codes = tuple(c.upper() for c in camera_codes)
+    out: List[Path] = []
+    for fp, fn in iter_imgs(input_dir):
+        name = fn.stem.upper()
+        if not name.startswith(codes):
+            continue
+        if product_type and fn.product_type != product_type.upper():
+            continue
+        if fn.thumbnail and not include_thumbnails:
+            continue
+        if sol_range and not in_sol_range(fn.sol, sol_range):       # one range or several visits
+            continue
+        if site_drive and (fn.site, fn.drive) != tuple(site_drive):
+            continue
+        if sequ_id and sequ_id.upper() not in name[35:]:
+            continue
+        out.append(fp)
+    return sorted(out)
+
+
+def find_imgs_near(input_dir: PathLike, camera_codes: Sequence[str], sol_range: Any,
+                   waypoints: Dict[str, Any], radius_m: Optional[float] = 5.0, sequ_id: Optional[str] = None,
+                   product_type: Optional[str] = "RAD", include_thumbnails: bool = False,
+                   anchor_stations: Optional[Sequence[Any]] = None,
+                   min_sol: Optional[int] = None,
+                   exclude_stations: Sequence[str] = ()) -> Tuple[List[Path], Dict[str, Any]]:
+    """
+    The products of ``sol_range`` plus, for sites the rover visited more than
+    once, the products of every other waypoint station within ``radius_m``
+    meters of one of the stations imaged in ``sol_range`` - whatever their sol.  Stations are (site, drive) from the file names, placed by the
+    waypoint table (``rpp.load_waypoints()``).  ``radius_m=None`` or 0 gives
+    :func:`find_imgs` over ``sol_range`` alone.  Returns ``(paths, report)``;
+    the report lists the stations in range, the stations added with their
+    distance, and the image count per added station.
+
+    ``sol_range`` may be a list of ranges (the visits of a site, ``sites.json`` ``"sols": [[361, 378], [91, 101]]``):
+    every image of every visit is "in range", and the nearby-waypoint search starts from all their stations.
+
+    ``anchor_stations``: the stations the nearby search starts from (``(site, drive)`` or ``"S###D####"``)
+    instead of the stations these cameras imaged in ``sol_range`` - notebook 03 passes the Navcam block's stations, so
+    a Mastcam-Z zoom gets the products of the same visits as the Navcam (e.g. Sid's sols 91-101 for the 361-378
+    block) even where it took no image in ``sol_range``.
+
+    ``min_sol``: the nearby visits add no image from before this sol (notebook 03 ``NEARBY_FROM_FIRST_SOL``:
+    the block's first sol, so e.g. Rochette starts at sol 178, not with the sol-175 station 9 m away).
+
+    ``exclude_stations``: stations ``"S###D####"`` left out entirely (0.93.1, a site's ``EXCLUDE``): no image of
+    theirs is selected and the nearby search does not start from them.
+
+    The block's own stations on other sols (0.93.3): an image taken at one of the stations the search starts from,
+    on a sol outside ``sol_range`` (the rover had not moved yet - e.g. Chal Rocks' sol 102 Mastcam-Z sequences at the
+    sol 99 station S004D0218), is added too (``min_sol`` still applies); the report lists them in
+    ``own_station_other_sols``.
+    """
+    from .waypoints import stations_near
+    codes = tuple(c.upper() for c in camera_codes)
+    cands: List[Tuple[Path, M2020Filename]] = []
+    for fp, fn in iter_imgs(input_dir):
+        name = fn.stem.upper()
+        if not name.startswith(codes):
+            continue
+        if product_type and fn.product_type != product_type.upper():
+            continue
+        if fn.thumbnail and not include_thumbnails:
+            continue
+        if sequ_id and sequ_id.upper() not in name[35:]:
+            continue
+        cands.append((fp, fn))
+    drop = {(int(str(x)[1:4]), int(str(x)[5:9])) for x in exclude_stations
+            if len(str(x)) == 9 and str(x)[0].upper() == "S" and str(x)[4].upper() == "D"}
+    if drop:
+        cands = [(fp, fn) for fp, fn in cands if (fn.site, fn.drive) not in drop]
+    in_range = [(fp, fn) for fp, fn in cands if in_sol_range(fn.sol, sol_range)]      # several visits
+    stations = sorted({(fn.site, fn.drive) for _, fn in in_range})
+    if anchor_stations is not None:
+        anc = set()
+        for st in anchor_stations:
+            if isinstance(st, str):
+                anc.add((int(st[1:4]), int(st[5:9])))
+            else:
+                anc.add((int(st[0]), int(st[1])))
+        stations = sorted(anc - drop)
+    report: Dict[str, Any] = {"sol_range": [list(r) for r in sol_ranges(sol_range)], "radius_m": radius_m, "min_sol": min_sol,
+                              "stations_excluded": [f"S{a:03d}D{b:04d}" for a, b in sorted(drop)],
+                              "stations_in_range": [f"S{a:03d}D{b:04d}" for a, b in stations], "stations_added": []}
+    paths = [fp for fp, _ in in_range]
+    report["own_station_other_sols"] = []
+    if radius_m and stations:
+        own_st = set(stations)
+        own = [(fp, fn) for fp, fn in cands if (fn.site, fn.drive) in own_st and not in_sol_range(fn.sol, sol_range)
+               and (min_sol is None or fn.sol >= int(min_sol))]
+        oc: Dict[Tuple[int, int], List[int]] = {}
+        for _, fn in own:
+            oc.setdefault((fn.site, fn.drive), []).append(fn.sol)
+        report["own_station_other_sols"] = [{"station": f"S{k[0]:03d}D{k[1]:04d}", "images": len(v),
+                                             "sols": sorted(set(v))} for k, v in sorted(oc.items())]
+        paths += [fp for fp, _ in own]
+        near = {(r["site"], r["drive"]): r for r in stations_near(waypoints, stations, radius_m)}
+        added = {k: r for k, r in near.items() if k not in set(stations)}
+        extra = [(fp, fn) for fp, fn in cands if (fn.site, fn.drive) in added and not in_sol_range(fn.sol, sol_range)
+                 and (min_sol is None or fn.sol >= int(min_sol))]
+        counts: Dict[Tuple[int, int], List[int]] = {}
+        for _, fn in extra:
+            counts.setdefault((fn.site, fn.drive), []).append(fn.sol)
+        report["stations_added"] = [{"station": f"S{k[0]:03d}D{k[1]:04d}", "distance_m": added[k]["distance_m"],
+                                     "nearest": "S%03dD%04d" % tuple(added[k]["nearest"]), "images": len(v),
+                                     "sols": [min(v), max(v)]} for k, v in sorted(counts.items())]
+        paths += [fp for fp, _ in extra]
+    report["n_in_range"], report["n_added"] = len(in_range), len(paths) - len(in_range)
+    return sorted(set(paths)), report
+

@@ -2,7 +2,7 @@
 # documents a reviewer looks for. The studies, notebooks, Windows scripts, paper and documentation site stay in the
 # git repository (https://github.com/ctate7163/RPP).
 include LICENSE NOTICE README.md CHANGELOG.md CITATION.cff CONTRIBUTING.md CODE_OF_CONDUCT.md pyproject.toml
-graft src/mppp/data
+graft src/rpp/data
 recursive-include tests *.py
 graft tests/data
 global-exclude __pycache__ *.py[cod] .DS_Store

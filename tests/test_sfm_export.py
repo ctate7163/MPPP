@@ -1,4 +1,4 @@
-"""Export for the error analysis (mppp.sfm.export). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
+"""Export for the error analysis (rpp.sfm.export). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
 import pytest
 import numpy as np
 
@@ -8,8 +8,8 @@ def test_camera_shift_plot(tmp_path):
     import matplotlib
     matplotlib.use("Agg")
     from helpers import _build_rec, _synthetic
-    from mppp.sfm.export import _nice, plot_camera_shifts, pose_residual_table
-    from mppp.sfm.reconstruction import bundle_adjust
+    from rpp.sfm.export import _nice, plot_camera_shifts, pose_residual_table
+    from rpp.sfm.reconstruction import bundle_adjust
     proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
     for r in proj.images:                                          # priors = truth, start perturbed
         r["prior_R_w2c"], r["prior_C"] = truth[r["name"]][0].tolist(), truth[r["name"]][1].tolist()
@@ -30,8 +30,8 @@ def test_native_model_is_a_valid_colmap_model(tmp_path):
     import numpy as np
     import pycolmap
     from helpers import _build_rec, _synthetic
-    from mppp.colmap import read_colmap
-    from mppp.sfm.export import native_reconstruction, write_native_text_model
+    from rpp.colmap import read_colmap
+    from rpp.sfm.export import native_reconstruction, write_native_text_model
     proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
     rec, _ = _build_rec(proj, truth, P, cams_d, rigT, noise, rng, perturb=False)
     info = write_native_text_model(rec, proj, tmp_path / "native")
@@ -54,7 +54,7 @@ def test_point_colors_from_tracks(tmp_path):
     pytest.importorskip("pycolmap")
     import cv2
     from helpers import _build_rec, _synthetic
-    from mppp.sfm.export import native_reconstruction, point_colors_from_tracks
+    from rpp.sfm.export import native_reconstruction, point_colors_from_tracks
     proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
     proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
     rec, _ = _build_rec(proj, truth, P, cams, rigT, noise, rng, perturb=False)
@@ -70,15 +70,15 @@ def test_point_colors_from_tracks(tmp_path):
     cols = np.array([p.color for p in nat.points3D.values()])
     both = [p for p in nat.points3D.values() if {nat.images[e.image_id].name[:2] for e in p.track.elements} == {"NL", "NR"}]
     assert both and all(abs(int(p.color[0]) - int(p.color[2])) < 130 and p.color[1] == 0 for p in both)
-    # a missing image: the point keeps the colour of the images that are there
+    # a missing image: the point keeps the color of the images that are there
     (proj.images_dir / next(im.name for im in nat.images.values() if im.name.startswith("NL"))).unlink()
     rep2 = point_colors_from_tracks(nat, proj.images_dir)
     assert rep2["images_missing"] == 1
 
 
 def _short_stop(tmp_path, offset=(1.5, -1.0, 0.0)):
-    """The synthetic block with one stereo frame of the second station relabelled as a two-image station whose
-    waypoint prior is ``offset`` metres off."""
+    """The synthetic block with one stereo frame of the second station relabeled as a two-image station whose
+    waypoint prior is ``offset`` meters off."""
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent))
@@ -97,7 +97,7 @@ def test_station_map_has_the_two_overview_panels_only(tmp_path):
     pytest.importorskip("pyceres")
     import matplotlib
     matplotlib.use("Agg")
-    from mppp.sfm.export import plot_camera_shifts
+    from rpp.sfm.export import plot_camera_shifts
     proj, rec, noise, fid = _short_stop(tmp_path)
     proj.settings["reconstruction"] = {"unlocalized_stations": ["S001D0150"]}
     fig = plot_camera_shifts(proj, rec=rec, out_png=tmp_path / "station_map.png")
@@ -111,7 +111,7 @@ def test_station_map_has_the_two_overview_panels_only(tmp_path):
 def test_epsilon_from_residuals_splits_intra_and_cross_station_points():
     """eps = rms / sqrt(2) over the observations of points seen from one station (intra) and from several (cross);
     non-finite residuals (behind the camera) are left out; the keys are those of summary.json's "eps"."""
-    from mppp.sfm.export import epsilon_from_residuals
+    from rpp.sfm.export import epsilon_from_residuals
     names = {1: "a.png", 2: "b.png", 3: "c.png"}
     stations = {"a.png": "S1", "b.png": "S1", "c.png": "S2"}
     res = {"residual_native_px": np.array([1.0, 1.0, 2.0, 2.0, 2.0, np.inf]),
@@ -133,9 +133,9 @@ def test_export_for_error_computes_eps_from_its_own_residuals(tmp_path):
     pytest.importorskip("pyceres")
     import json
     from helpers import _build_rec, _synthetic
-    from mppp.colmap import read_colmap
-    from mppp_studies.error.colmap import calibrate_eps_from_residuals
-    from mppp.sfm.export import export_for_error
+    from rpp.colmap import read_colmap
+    from rpp_studies.error.colmap import calibrate_eps_from_residuals
+    from rpp.sfm.export import export_for_error
     proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
     rec, _ = _build_rec(proj, truth, P, cams_d, rigT, noise, rng, perturb=False)
     summary = export_for_error(proj, rec, tmp_path / "ei")
@@ -155,7 +155,7 @@ def test_stations_csv_records_the_sun_and_the_block_frame(tmp_path):
     import csv
     import json
     from helpers import _build_rec, _synthetic
-    from mppp.sfm.export import export_for_error
+    from rpp.sfm.export import export_for_error
     proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
     for k, r in enumerate(proj.images):                                   # the label values (no manifest sun facts)
         r["solar_azimuth_deg"], r["solar_elevation_deg"] = 90.0, 30.0
@@ -181,7 +181,7 @@ def test_export_level_light_leaves_out_the_native_model_and_residuals(tmp_path):
     pytest.importorskip("pyceres")
     import json
     from helpers import _build_rec, _synthetic
-    from mppp.sfm.export import export_for_error
+    from rpp.sfm.export import export_for_error
     proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
     rec, _ = _build_rec(proj, truth, P, cams_d, rigT, noise, rng, perturb=False)
     s = export_for_error(proj, rec, tmp_path / "ei", level="light")
@@ -190,10 +190,10 @@ def test_export_level_light_leaves_out_the_native_model_and_residuals(tmp_path):
     assert not (ei / "residuals.npz").exists()
     assert all((ei / f).is_file() for f in ("summary.json", "stations.csv", "poses.csv", "block_frame.json"))
     assert json.loads((ei / "summary.json").read_text())["eps"]["n_intra_obs"] > 0      # eps from the residuals held
-    from mppp.pipeline import NOT_IN_KEY, Settings
+    from rpp.pipeline import NOT_IN_KEY, Settings
     assert Settings().export_level == "full" and "export_level" in NOT_IN_KEY
     from pathlib import Path
-    src = (Path(__file__).resolve().parents[1] / "src" / "mppp_studies" / "calibration" / "run_pipeline.py").read_text(encoding="utf-8")
+    src = (Path(__file__).resolve().parents[1] / "src" / "rpp_studies" / "calibration" / "run_pipeline.py").read_text(encoding="utf-8")
     assert '"--export"' in src and "export_level=light" in src
 
 
@@ -201,15 +201,15 @@ def test_dense_workspace_preloaded_from_the_native_model(tmp_path, monkeypatch):
     """0.95.0 (Christian, 28 Oct): prepare_dense undistorts the images with the native-pixel model into
     <project>/dense (pinhole cameras, COLMAP's stereo configs), undistorts the rover masks the same way for the
     fusion (binary again), records it; dense_reconstruct.bat next to open_in_colmap.bat runs the steps with a CUDA
-    COLMAP; write_gui_project writes the batch file; mppp dense --prepare does the workspace."""
+    COLMAP; write_gui_project writes the batch file; rpp dense --prepare does the workspace."""
     pytest.importorskip("pyceres")
     import cv2
     import json
     import pycolmap
     from helpers import _build_rec, _synthetic, _write_database
-    from mppp.sfm.database import write_gui_project
-    from mppp.sfm.dense import DENSE_MAX_IMAGE_SIZE, prepare_dense, write_dense_bat
-    from mppp.sfm.export import write_gui_native
+    from rpp.sfm.database import write_gui_project
+    from rpp.sfm.dense import DENSE_MAX_IMAGE_SIZE, prepare_dense, write_dense_bat
+    from rpp.sfm.export import write_gui_native
     assert DENSE_MAX_IMAGE_SIZE == 2000
     proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
     rec, _ = _build_rec(proj, truth, P, cams_d, rigT, noise, rng, perturb=False)
@@ -245,27 +245,41 @@ def test_dense_workspace_preloaded_from_the_native_model(tmp_path, monkeypatch):
     assert not (ws / "_masks_in").exists() and not (ws / "_masks_out").exists()
     assert json.loads((ws / "mppp_dense.json").read_text())["images"] == res["images"]
     assert prepare_dense(proj, max_image_size=400)["seconds"] == res["seconds"]       # there already: not redone
+    # 0.99.9: a tight mask (masks_tight/, the probability at the card's "tight" threshold) is what the fusion takes
+    from rpp.mask_levels import TIGHT_DIR
+    r0 = next(r for r in proj.images if r["name"] == masked[0])
+    w, h = r0["native_size"]
+    tm = np.full((h, w), 255, np.uint8)
+    tm[h // 4:, :] = 0                                                   # the tight mask leaves out more
+    (proj.root / TIGHT_DIR).mkdir(exist_ok=True)
+    cv2.imwrite(str(proj.root / TIGHT_DIR / (masked[0] + ".png")), tm)
+    res_t = prepare_dense(proj, max_image_size=400, overwrite=True)
+    assert res_t["masks"]["images"] == 4 and res_t["masks"]["tight"] == 1
+    mt = cv2.imread(str(ws / "masks" / (masked[0] + ".png")), cv2.IMREAD_GRAYSCALE)
+    assert (mt > 0).mean() < (m > 0).mean() - 0.15
+    m1 = cv2.imread(str(ws / "masks" / (masked[1] + ".png")), cv2.IMREAD_GRAYSCALE)
+    assert (m1 > 0).mean() == pytest.approx((m > 0).mean(), abs=0.02)   # the others: masks/, as before
     bat = write_dense_bat(proj)
     b = bat.read_bytes()
     assert bat.name == "dense_reconstruct.bat" and b.count(b"\n") == b.count(b"\r\n")
     t = b.decode()
     assert "image_undistorter" in t and "patch_match_stereo" in t and "stereo_fusion" in t and "poisson_mesher" in t
-    assert "--StereoFusion.mask_path" in t and "MPPP_DENSE_STEP" in t and "MPPP_DENSE_MAX_SIZE=2000" in t
+    assert "--StereoFusion.mask_path" in t and "RPP_DENSE_STEP" in t and "RPP_DENSE_MAX_SIZE=2000" in t
     assert t.index("colmap-x64-windows-cuda") < t.index("colmap-x64-windows-nocuda")      # a CUDA COLMAP first
     out = write_gui_project(proj, model="cahv_ba")
     assert out["bat_dense"] == str(bat)
-    from mppp.cli import main
+    from rpp.cli import main
     assert main(["dense", str(proj.root), "--prepare", "--max-image-size", "300", "--overwrite"]) == 0
     assert json.loads((ws / "mppp_dense.json").read_text())["max_image_size"] == 300
 
 
 def test_dense_maps_as_images_and_the_bat_prepares_the_masks(tmp_path):
     """0.95.1 (Christian, 29 Oct): COLMAP's depth / normal maps (text header w&h&c&, float32 column-major) as PNG or
-    JPEG in dense/stereo/maps_png; dense_reconstruct.bat prepares the workspace with MPPP's Python (the masks) before
+    JPEG in dense/stereo/maps_png; dense_reconstruct.bat prepares the workspace with RPP's Python (the masks) before
     falling back to COLMAP's undistorter, and does not rewrite itself."""
     import numpy as np
     from PIL import Image
-    from mppp.sfm.dense import export_dense_maps, read_colmap_array
+    from rpp.sfm.dense import export_dense_maps, read_colmap_array
 
     def write(path, a):
         a = np.asarray(a, np.float32)
@@ -297,13 +311,13 @@ def test_dense_maps_as_images_and_the_bat_prepares_the_masks(tmp_path):
     assert (al[:5, :5] == 0).all() and (al[20:, 35:] == 0).all() and (al[25:, :10] == 0).all() and (al[10:20, 10:30] == 255).all()
     nm_ = np.asarray(Image.open(ws / "stereo" / "maps_png" / files[1]))
     assert (nm_[25:, :10, 3] == 0).all() and (nm_[20:, 35:, 3] == 0).all() and (nm_[10:20, 10:30, 3] == 255).all()
-    assert float(files[0].split("_")[-1].split("-")[1][:-5]) <= 100.0           # the colour range within 100 m
+    assert float(files[0].split("_")[-1].split("-")[1][:-5]) <= 100.0           # the color range within 100 m
     assert export_dense_maps(ws, fmt="jpg")["depth_maps"] == 1
-    from mppp.sfm.dense import write_dense_bat
+    from rpp.sfm.dense import write_dense_bat
 
     class P:
         root = tmp_path
         settings: dict = {}
     t = write_dense_bat(P()).read_text()
-    assert "mppp dense \"%~dp0.\" --prepare --no-bat" in t and "mppp_env.bat" in t and ":prepared" in t
+    assert "rpp dense \"%~dp0.\" --prepare --no-bat" in t and "rpp_env.bat" in t and ":prepared" in t
     assert t.index("--no-bat") < t.index("image_undistorter")

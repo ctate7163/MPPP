@@ -1,14 +1,14 @@
 # Camera models and calibration
 
-`mppp.calib` defines one frozen model form per camera family and ships the promoted models in
-`src/mppp/data/cmods/`. `mppp cmods list` prints the models in use; `MPPP_CMODS` points at another folder, whose
+`rpp.calib` defines one frozen model form per camera family and ships the promoted models in
+`src/rpp/data/cmods/`. `rpp cmods list` prints the models in use; `RPP_CMODS` points at another folder, whose
 missing files fall back to the package copies.
 
-Since 0.95.0 the models *in use* on a working machine live outside git: `mppp cmods init D:\scapes\cmods` seeds
-that folder with the package set and writes `scripts/windows/mppp_cmods.txt`, from which the batch files set
-`MPPP_CMODS` (a shell needs `setx MPPP_CMODS D:\scapes\cmods`); promotions (`mppp cmods promote`, the joints'
-`--promote-if-ok`) go there and keep the folder complete; `mppp cmods status` compares it with the package copy;
-`mppp cmods ship` copies the models in use into `src/mppp/data/cmods/` for the one commit that ships them with a
+Since 0.95.0 the models *in use* on a working machine live outside git: `rpp cmods init D:\scapes\cmods` seeds
+that folder with the package set and writes `scripts/windows/rpp_cmods.txt`, from which the batch files set
+`RPP_CMODS` (a shell needs `setx RPP_CMODS D:\scapes\cmods`); promotions (`rpp cmods promote`, the joints'
+`--promote-if-ok`) go there and keep the folder complete; `rpp cmods status` compares it with the package copy;
+`rpp cmods ship` copies the models in use into `src/rpp/data/cmods/` for the one commit that ships them with a
 release. The tests check the shipped models' form and provenance, not their values.
 
 ## Model forms
@@ -19,10 +19,10 @@ fx, fy, cx, cy carry offsets for the images before the early-mission sol. NL is 
 (NR from NL) has one yaw for every temperature and a rotation drift linear in sol, with a hinge in the pitch rate.
 
 **Hazcam** (front FL, FR and rear RL, RR). The same form as the Navcam: fx, fy and k1 linear in temperature, an
-early-mission offset on fx, fy and a rig rotation drifting linearly with sol (`mppp calib hazcam`, below). First models of the four eyes
+early-mission offset on fx, fy and a rig rotation drifting linearly with sol (`rpp calib hazcam`, below). First models of the four eyes
 and both rigs ship since 0.94 (23 Oct 2026, from one to six blocks each). Without a model each image
 starts from the `THIN_PRISM_FISHEYE` fitted by least squares to its own label CAHVORE over the whole frame
-(`mppp.calib.labelfit`, 0.93), in the label model's own camera frame so the pose prior is unchanged. The front
+(`rpp.calib.labelfit`, 0.93), in the label model's own camera frame so the pose prior is unchanged. The front
 Hazcams are central (E about 1e-7 m): 0.13-0.19 px rms. The rear Hazcams carry entrance-pupil terms of 3-9 mm; a
 central camera cannot follow them, so the fit uses points at 2, 5 and 20 m and is good to 2-4 px rms (full-frame
 pixels; the rear products are usually quarter resolution, so 0.5-1 px in the image). In a block each eye starts from
@@ -53,18 +53,18 @@ finished blocks into one candidate model, check it against the model in use, and
 changes the run key, so the next batch run realigns every block with the new cameras.
 
 ```text
-finished blocks  ->  mppp calib navcam   ->  Navcam candidate        ->  check  ->  promote
-                 ->  mppp calib zcam     ->  Mastcam-Z focus model   ->  check  ->  promote
-                 ->  mppp calib nz       ->  report only (never promoted)
+finished blocks  ->  rpp calib navcam   ->  Navcam candidate        ->  check  ->  promote
+                 ->  rpp calib zcam     ->  Mastcam-Z focus model   ->  check  ->  promote
+                 ->  rpp calib nz       ->  report only (never promoted)
 ```
 
 The blocks come from a site group of the site definitions (`--group`, default `ecam_consensus` for Navcam and
 `zcam34_consensus` for Mastcam-Z) under the scapes root, or are listed with `--blocks NAME=WORK ...`. Each joint
 needs at least two finished blocks. Results go to `<root>/camera_analysis/<name>_<date>/` unless `--out` is given.
 
-### Navcam tied joint: `mppp calib navcam`
+### Navcam tied joint: `rpp calib navcam`
 
-Module [`mppp_studies.calibration.tied`](api.md#mppp_studies.calibration.tied). Every term of the Navcam form is a parameter of one bundle
+Module [`rpp_studies.calibration.tied`](api.md#rpp_studies.calibration.tied). Every term of the Navcam form is a parameter of one bundle
 adjustment over the finished Navcam blocks:
 
 - each eye gets one COLMAP camera per (temperature bin, era), where the era is before or after the early-mission
@@ -81,13 +81,13 @@ per-block, per-bin and per-sol values about the global solution. The candidate i
 leave-one-block-out limits.
 
 ```bash
-mppp calib navcam                          # blocks of the ecam_consensus group under MPPP_SCAPES
-mppp calib navcam --promote-if-ok --note "tied joint of the consensus blocks"
+rpp calib navcam                          # blocks of the ecam_consensus group under RPP_SCAPES
+rpp calib navcam --promote-if-ok --note "tied joint of the consensus blocks"
 ```
 
-### Mastcam-Z joint: `mppp calib zcam`
+### Mastcam-Z joint: `rpp calib zcam`
 
-Module [`mppp_studies.calibration.ztied`](api.md#mppp_studies.calibration.ztied). One bundle adjustment over the finished Navcam + Mastcam-Z
+Module [`rpp_studies.calibration.ztied`](api.md#rpp_studies.calibration.ztied). One bundle adjustment over the finished Navcam + Mastcam-Z
 blocks of one zoom (`--zoom`, default 34):
 
 - **Navcam held** at the promoted law (camera per eye, temperature bin and era; rig on its sol trend). The Navcam
@@ -115,7 +115,7 @@ chal_rocks, the one block with regular images (8 % of the observations), was the
 regular offset in a third of the ZL images moved the rig by (-18, -22, +9) mdeg with the old form and by < 0.1
 mdeg with the offset fitted.
 
-**Fixed terms per zoom** (0.93.1, `mppp.calib.forms.ZCAM_FIXED_TERMS`): at 34 mm k2 is held at 0.5 (ZL) and 0.6
+**Fixed terms per zoom** (0.93.1, `rpp.calib.forms.ZCAM_FIXED_TERMS`): at 34 mm k2 is held at 0.5 (ZL) and 0.6
 (ZR), with p1 and p2 free; at 48 mm k2, p1 and p2 are free; at 63, 79 and 110 mm k2 = p1 = p2 = 0. The block runs
 hold these values in their bin cameras and the joint holds the global terms at them; the likelihood-ratio tests then
 include "the fixed terms free" against the fixed values. The per-image prior camera keeps the promoted model's own
@@ -129,18 +129,18 @@ is that they were aligned with the Navcam models in use. `--group` takes comma-s
 filtered to the sites whose `zcam` list has the zoom.
 
 ```bash
-mppp calib zcam --zoom 34
-mppp calib zcam --zoom 34 --promote-if-ok
-mppp calib zcam --zoom 63 --group zcam_consensus --promote-if-ok
+rpp calib zcam --zoom 34
+rpp calib zcam --zoom 34 --promote-if-ok
+rpp calib zcam --zoom 63 --group zcam_consensus --promote-if-ok
 ```
 
 `scripts/windows/run_sites_zcam.bat` aligns the `zcam_consensus` blocks (every zoom of each site) and then runs
 `zcam_joints.bat`: one joint per zoom (34 over `zcam34_joint,zcam_consensus`, the others over `zcam_consensus`),
 each promoted if its checks pass, the Z34 figures, and the combined check below.
 
-### Combined check: `mppp calib nz`
+### Combined check: `rpp calib nz`
 
-Module [`mppp_studies.calibration.nzjoint`](api.md#mppp_studies.calibration.nzjoint). One adjustment of the finished Navcam + Mastcam-Z blocks
+Module [`rpp_studies.calibration.nzjoint`](api.md#rpp_studies.calibration.nzjoint). One adjustment of the finished Navcam + Mastcam-Z blocks
 in which the Navcam law and the Mastcam-Z focus law are both free, starting from the promoted laws. It compares the
 result with the Navcam-only law: how far each Navcam term moved in units of its standard deviation, the Navcam and
 Mastcam-Z residuals before and after, and the rig.
@@ -158,13 +158,13 @@ check over the six Z34 blocks alone moved NL cx by -1.3 px and both focal length
 residual changed by -0.7 %: a principal-point / attitude degeneracy that the extra blocks should pin.
 
 ```bash
-mppp calib nz --zoom 34
-mppp calib nz --zoom 34 --group zcam34_joint,zcam_consensus --navcam-group ecam_consensus
+rpp calib nz --zoom 34
+rpp calib nz --zoom 34 --group zcam34_joint,zcam_consensus --navcam-group ecam_consensus
 ```
 
-### Hazcam fit: `mppp calib hazcam`
+### Hazcam fit: `rpp calib hazcam`
 
-Module [`mppp_studies.calibration.hazfit`](api.md#mppp_studies.calibration.hazfit) (0.93.1). The Hazcam law in the Navcam form, fitted from the
+Module [`rpp_studies.calibration.hazfit`](api.md#rpp_studies.calibration.hazfit) (0.93.1). The Hazcam law in the Navcam form, fitted from the
 finished blocks' refined Hazcam cameras and rigs (`sparse/cahv_ba` of each block's project; `--variant` picks the
 project folder, `hazcam` for the Hazcam-only alignments):
 
@@ -182,8 +182,8 @@ files go to `candidate/` and `--promote-if-ok` promotes them. The block temperat
 images (the rear Hazcam labels carry stale temperature sensors, so their slope may come out unfitted).
 
 ```bash
-mppp calib hazcam --group hazcam_consensus --variant hazcam
-mppp calib hazcam --group hazcam_consensus --variant hazcam --promote-if-ok
+rpp calib hazcam --group hazcam_consensus --variant hazcam
+rpp calib hazcam --group hazcam_consensus --variant hazcam --promote-if-ok
 ```
 
 Since 0.94.4 `run_pipeline.bat` fits the Hazcams on the `ecam_consensus` blocks (Navcam with both Hazcam pairs)
@@ -191,19 +191,19 @@ right after the Navcam joint, both promoted if they pass (`run_hazcam.bat` and `
 separate `hazcam_consensus` alignment with the Navcam held, were removed in 0.94.4; `run_sites.py --group
 hazcam_consensus --variant hazcam --set NAVCAM_INTRINSICS=hold` then the commands above do the same).
 
-## Promotion: `mppp cmods`
+## Promotion: `rpp cmods`
 
 A candidate becomes the model in use when it is promoted, either by `--promote-if-ok` above (only when every check
 passes) or by hand:
 
 ```bash
-mppp cmods list                                         # the models in use and their form check
-mppp cmods promote <candidate folder or files> --note "why" --dry-run   # check and show, copy nothing
-mppp cmods promote <candidate folder or files> --note "why"
+rpp cmods list                                         # the models in use and their form check
+rpp cmods promote <candidate folder or files> --note "why" --dry-run   # check and show, copy nothing
+rpp cmods promote <candidate folder or files> --note "why"
 ```
 
 `promote` validates each file against the form, copies it into the models folder and appends the note to
-`cmods/CHANGES.md`; the replaced files stay in the git history. `mppp_studies.calibration.promote_cmods` does the same from a
-script. Commit `src/mppp/data/cmods` after a promotion.
+`cmods/CHANGES.md`; the replaced files stay in the git history. `rpp_studies.calibration.promote_cmods` does the same from a
+script. Commit `src/rpp/data/cmods` after a promotion.
 
 Camera models and site definitions are the author's decisions; open an issue before proposing a change to them.

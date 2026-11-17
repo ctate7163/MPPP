@@ -74,7 +74,7 @@ Future work could develop the following features.
 
 <!-- ![An aligned block in plan view: stations from telemetry and after adjustment, with the sparse point cloud.](figure3.png) -->
 
-# Acknowledgements
+# Acknowledgments
 
 We acknowledge contributions from the Mastcam-Z team at Arizona State University. The developent and testing of MPPP used Claude Code. 
 

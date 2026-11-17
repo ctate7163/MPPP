@@ -1,4 +1,4 @@
-"""The Mastcam-Z coverage guard of stage 2 (mppp.sfm.zcam_guard): group coverage, collapse, restore, database pairs."""
+"""The Mastcam-Z coverage guard of stage 2 (rpp.sfm.zcam_guard): group coverage, collapse, restore, database pairs."""
 import json
 class _Im:
     def __init__(self, n, posed=True):
@@ -23,7 +23,7 @@ class _Proj:
 
 def test_zcam_guard_coverage_collapse_and_restore():
     import numpy as np
-    from mppp.sfm import zcam_guard as ZG
+    from rpp.sfm import zcam_guard as ZG
     imgs = [{"image_id": i, "instrument": "ZL034_F01092", "camera_group": "ZL034"} for i in range(1, 7)] + \
            [{"image_id": i, "instrument": "ZR034_F01128", "camera_group": "ZR034"} for i in range(7, 13)] + \
            [{"image_id": 13, "instrument": "NL"}]
@@ -45,7 +45,7 @@ def test_zcam_guard_coverage_collapse_and_restore():
 
 def test_zcam_guard_db_pairs(tmp_path):
     import sqlite3
-    from mppp.sfm import zcam_guard as ZG
+    from rpp.sfm import zcam_guard as ZG
     db = tmp_path / "d.db"
     con = sqlite3.connect(db)
     con.execute("CREATE TABLE two_view_geometries (pair_id INTEGER, rows INTEGER)")

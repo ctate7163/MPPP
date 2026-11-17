@@ -1,18 +1,18 @@
-"""The waypoint check of a finished block (mppp.sfm.waypoint_check): the similarity fit, flagged stations, anisotropy."""
+"""The waypoint check of a finished block (rpp.sfm.waypoint_check): the similarity fit, flagged stations, anisotropy."""
 import csv
 import json
 
 import numpy as np
 import pytest
 def test_similarity_fit_is_robust():
-    from mppp.sfm.waypoint_check import similarity_fit
+    from rpp.sfm.waypoint_check import similarity_fit
     rng = np.random.default_rng(1)
     src = rng.uniform(-50, 50, (12, 3))
     src[:, 2] *= 0.05
     a = np.radians(0.3)
     R = np.array([[np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0], [0, 0, 1]])
     dst = 1.0025 * src @ R.T + [0.2, -0.1, 0.05] + rng.normal(0, 0.03, src.shape)
-    dst[3] += [2.0, -1.5, 0]                                   # one bad localisation
+    dst[3] += [2.0, -1.5, 0]                                   # one bad localization
     f = similarity_fit(src, dst)
     assert f["scale"] == pytest.approx(1.0025, abs=4e-4) and f["yaw_deg"] == pytest.approx(0.3, abs=0.05)
 
@@ -40,7 +40,7 @@ def _fake_block(tmp, stations, bad=None, stretch_e=0.0, unsurveyed=()):
 
 
 def test_check_block_flags_a_bad_waypoint(tmp_path):
-    from mppp.sfm import waypoint_check as WC
+    from rpp.sfm import waypoint_check as WC
     st = [(f"S010D{i:04d}", float(x), float(y)) for i, (x, y) in
           enumerate([(0, 0), (20, 5), (40, -3), (10, 30), (35, 25), (-5, 45)])]
     p = _fake_block(tmp_path, st, bad=("S010D0002", (1.4, -0.6, 0.0)))
@@ -54,7 +54,7 @@ def test_check_block_flags_a_bad_waypoint(tmp_path):
 
 
 def test_check_block_east_west_stretch_is_anisotropic(tmp_path):
-    from mppp.sfm import waypoint_check as WC
+    from rpp.sfm import waypoint_check as WC
     rng = np.random.default_rng(3)
     st = [(f"S020D{i:04d}", float(x), float(y)) for i, (x, y) in enumerate(rng.uniform(-60, 60, (10, 2)))]
     r = WC.check_block(_fake_block(tmp_path, st, stretch_e=0.004))
@@ -63,7 +63,7 @@ def test_check_block_east_west_stretch_is_anisotropic(tmp_path):
 
 
 def test_small_block_translation_only(tmp_path):
-    from mppp.sfm import waypoint_check as WC
+    from rpp.sfm import waypoint_check as WC
     st = [(f"S030D{i:04d}", float(i * 3), 0.0) for i in range(6)]          # 15 m
     r = WC.check_block(_fake_block(tmp_path, st))
     assert r["similarity"]["translation_only"] and r["anisotropy"] is None
@@ -72,7 +72,7 @@ def test_small_block_translation_only(tmp_path):
 def test_block_scale_from_surveyed_stations_only(tmp_path):
     """0.90: a station placed from the rover's onboard estimate (no waypoint of its own) is 2 m off; it must neither
     bend the block scale nor be flagged, and the report counts it separately."""
-    from mppp.sfm import waypoint_check as WC
+    from rpp.sfm import waypoint_check as WC
     rng = np.random.default_rng(5)
     st = [(f"S040D{i:04d}", float(x), float(y)) for i, (x, y) in enumerate(rng.uniform(-60, 60, (8, 2)))]
     bad = ("S040D0007", (2.0, 1.0, 0.0))

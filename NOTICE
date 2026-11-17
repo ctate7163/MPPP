@@ -1,19 +1,19 @@
-MPPP - Mars Photogrammetry Preprocessing Pipeline
+RPP - Rover Photogrammetry Pipeline
 Developed by Christian Tate, Malin Space Science Systems (MSSS).
 Released as open source under the Apache License, Version 2.0, with the approval of MSSS.
 
 Data provenance
-- Mars 2020 images: all images used by and distributed with MPPP (tests/data/m20/, and the images the
+- Mars 2020 images: all images used by and distributed with RPP (tests/data/m20/, and the images the
   mask model was trained on) are public products of the NASA Planetary Data System (PDS).
   Credits: Navcam NASA/JPL-Caltech; Mastcam-Z NASA/JPL-Caltech/ASU/MSSS.
-- Reconstruction masks, the mask model (mppp_mask_v1, mppp_mask_v2, mppp_mask_v3) and the camera models in
-  src/mppp/data/cmods/ (the Navcam cameras and stereo rig, the Hazcam cameras and rigs and the Mastcam-Z focus
+- Reconstruction masks, the mask model (rpp_mask_v1, rpp_mask_v2, rpp_mask_v3) and the camera models in
+  src/rpp/data/cmods/ (the Navcam cameras and stereo rig, the Hazcam cameras and rigs and the Mastcam-Z focus
   models) are the author's own work.
-- The rover model (src/mppp/data/rover/perseverance_rmech.npz, docs/rover/perseverance_rmech.glb) is derived
+- The rover model (src/rpp/data/rover/perseverance_rmech.npz, docs/rover/perseverance_rmech.glb) is derived
   from NASA's "Mars Perseverance Rover, 3D Model"
   (https://science.nasa.gov/resource/mars-perseverance-rover-3d-model/). Credit: NASA/JPL-Caltech. It was
   modified by the author (docs/rover-model.md); NASA has not reviewed or endorsed this version.
-- The waypoint snapshot (src/mppp/data/M20_waypoints.json) is a copy of the public Mars 2020 rover
+- The waypoint snapshot (src/rpp/data/M20_waypoints.json) is a copy of the public Mars 2020 rover
   waypoint table.
 - The package contains no sensitive or non-public data.
 

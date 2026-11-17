@@ -1,11 +1,11 @@
-"""0.96: the online mask augmentations (mppp_studies.mask_training.augment) - numpy only, no torch."""
+"""0.96: the online mask augmentations (rpp_studies.mask_training.augment) - numpy only, no torch."""
 import json
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from mppp_studies.mask_training import augment as A       # numpy only: imports without torch since the 0.96 split
+from rpp_studies.mask_training import augment as A       # numpy only: imports without torch since the 0.96 split
 
 NAV = "NLF_0474_0708800000_000FDR_N0260000NCAM02474_01_095J01.png"
 Z34 = "ZL0_0181_0683000000_000FDR_N0060000ZCAM08199_0340LMJ01.png"
@@ -79,13 +79,44 @@ def test_photometric_keeps_validity_and_is_seeded():
     assert np.array_equal(out1, out2) and not np.array_equal(out1, out3)
     assert not out1[~valid].any() and out1[valid].max(axis=-1).min() >= 1       # invalid stays 0, valid never 0
     assert "gamma" in p1 and "gains" in p1
-    grey, p = A.photometric(im, valid, np.random.default_rng(0), A.PhotometricConfig(grey_prob=1.0, noise_prob=0.0))
-    assert p.get("grey") and np.array_equal(grey[..., 0], grey[..., 1]) and np.array_equal(grey[..., 1], grey[..., 2])
+    gray, p = A.photometric(im, valid, np.random.default_rng(0), A.PhotometricConfig(grey_prob=1.0, noise_prob=0.0))
+    assert p.get("grey") and np.array_equal(gray[..., 0], gray[..., 1]) and np.array_equal(gray[..., 1], gray[..., 2])
     # exposure only: a brighter copy
     cfg = A.PhotometricConfig(exposure_range=(2.0, 2.0), exposure_prob=1.0, gamma_range=(1.0, 1.0), gain_range=(1.0, 1.0),
                               black_level=0.0, noise_prob=0.0, shadow_prob=0.0, haze_prob=0.0, grey_prob=0.0)
     bright, _ = A.photometric(im, valid, np.random.default_rng(0), cfg)
     assert np.all(bright[valid].astype(int) >= im[valid].astype(int))
+
+
+def test_red_weighted_gray_for_msl():
+    """0.99.6 (Christian, 16 Nov: "add the red-weighted gray option"): a share of the grays mixed mostly from red
+    (as a Curiosity Navcam sees, 600-800 nm), random weights per sample; share 0 draws exactly as before."""
+    im, ms = _scene()
+    valid = im.max(axis=2) > 0
+    plain = A.PhotometricConfig(exposure_prob=0.0, gamma_range=(1.0, 1.0), gain_range=(1.0, 1.0), black_level=0.0,
+                                noise_prob=0.0, shadow_prob=0.0, haze_prob=0.0, grey_prob=1.0)
+    from dataclasses import replace
+    # share 0: the same image and the same random stream as before the option (the seed reproduces old runs)
+    r0, r1 = np.random.default_rng(5), np.random.default_rng(5)
+    o0, p0 = A.photometric(im, valid, r0, A.PhotometricConfig(grey_prob=1.0))
+    o1, _ = A.photometric(im, valid, r1, replace(A.PhotometricConfig(grey_prob=1.0), gray_red_share=0.0))
+    assert np.array_equal(o0, o1) and r0.random() == r1.random() and "gray_weights" not in p0
+    # a red-only scene: the red gray is far brighter than the luma (0.299 of the red)
+    red = np.zeros_like(im); red[..., 0] = np.where(valid, 200, 0)
+    luma, _ = A.photometric(red, valid, np.random.default_rng(1), plain)
+    rg, p = A.photometric(red, valid, np.random.default_rng(1), replace(plain, gray_red_share=1.0))
+    w = p["gray_weights"]
+    assert abs(sum(w) - 1) < 1e-9 and np.array_equal(rg[..., 0], rg[..., 2])
+    assert abs(float(rg[valid][:, 0].mean()) - 200 * w[0]) < 1.0 and rg[valid].mean() > 1.8 * luma[valid].mean()
+    # the weights scatter around the mean
+    W = np.array([A.photometric(im, valid, np.random.default_rng(k), replace(plain, gray_red_share=1.0))[1]["gray_weights"]
+                  for k in range(200)])
+    assert np.allclose(W.mean(0), (0.70, 0.25, 0.05), atol=0.02) and 0.03 < W[:, 0].std() < 0.12
+    # the training options reach the augmentation
+    from rpp_studies.mask_training.train import TrainConfig, augment_config
+    ph = augment_config(TrainConfig(photometric=True, gray_prob=0.4, gray_red_share=0.7)).photo
+    assert ph.grey_prob == 0.4 and ph.gray_red_share == 0.7 and ph.exposure_range == A.PhotometricConfig().exposure_range
+    assert augment_config(TrainConfig(photometric=True)).photo == A.PhotometricConfig()
 
 
 def test_defocus_blurs_hardware_only():
@@ -180,7 +211,7 @@ def test_augment_pipeline_stages_follow_the_config():
     cut = A.hardware_cutout(im, ms)
     donor = lambda rng: (cut, 1.0)                                          # noqa: E731
     aug = A.Augment.from_config(cfg, lb, (160, 120), donor=donor)
-    assert aug.names() == ["copy_paste", "defocus", "photometric"]        # colour transfer off: identity matrix
+    assert aug.names() == ["copy_paste", "defocus", "photometric"]        # color transfer off: identity matrix
     calls = []
     aug.add_stage("my_new_one", lambda s, rng: (calls.append(s.canvas_mrad), s)[1], before="photometric")
     assert aug.names() == ["copy_paste", "defocus", "my_new_one", "photometric"]
@@ -202,7 +233,7 @@ def test_frozen_test_list_round_trip(tmp_path):
     """0.96: read_test_list / write_test_list and grouped_split(test_list=...) - the listed frames are the held-out
     side whatever the seed; names may be given as stems or with another extension."""
     try:
-        from mppp_studies.mask_training import train as T
+        from rpp_studies.mask_training import train as T
     except ModuleNotFoundError:
         pytest.skip("torch is not installed: train.py is tested on the GPU machine")
     names = [f"ZL0_{k:04d}_0700000000_000FDR_N0000000ZCAM0{k:04d}_0340LMJ01.png" for k in range(10)]

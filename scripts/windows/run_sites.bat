@@ -1,9 +1,9 @@
 @echo off
 REM ======================================================================================================
-REM MPPP - process and align the Navcam block of every site of the ecam_consensus group of
-REM src\mppp\data\sites.json (v0p53) into its own WORK folder mars2020_sol_<sol>_<site> under ROOT
+REM RPP - process and align the Navcam block of every site of the ecam_consensus group of
+REM src\rpp\data\sites.json (v0p53) into its own WORK folder mars2020_sol_<sol>_<site> under ROOT
 REM (Navcam only; the Mastcam-Z blocks: run_sites_zcam.bat),
-REM one site after the other, in the background (a minimised window; closing it stops the batch).
+REM one site after the other, in the background (a minimized window; closing it stops the batch).
 REM Finished sites (same settings) are skipped, so double-clicking again continues where it stopped.
 REM
 REM   batch log     %ROOT%\run_sites_log.txt
@@ -19,24 +19,24 @@ REM more options, e.g. --jobs 1   (one site at a time; two is the default since 
 REM                    --source processed --variant tight --set ATTITUDE_PRIOR_DEG=1.0
 set "EXTRA="
 
-REM MPPP: this file's own folder if it is MPPP's scripts\windows, else MPPP_HOME, so this
+REM RPP: this file's own folder if it is RPP's scripts\windows, else RPP_HOME, so this
 REM .bat also works when copied elsewhere (e.g. into the scapes root).
-if not defined MPPP_HOME if exist "%~dp0mppp_env.bat" if exist "%~dp0..\process_sites.py" for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
-if not defined MPPP_HOME set "MPPP_HOME=%~dp0..\.."
-set "MPPP_WIN=%MPPP_HOME%\scripts\windows"
-if not exist "%MPPP_WIN%\mppp_env.bat" (
-  echo MPPP not found in "%MPPP_HOME%": set MPPP_HOME to the MPPP folder
+if not defined RPP_HOME if exist "%~dp0rpp_env.bat" if exist "%~dp0..\process_sites.py" for %%I in ("%~dp0..\..") do set "RPP_HOME=%%~fI"
+if not defined RPP_HOME set "RPP_HOME=%~dp0..\.."
+set "RPP_WIN=%RPP_HOME%\scripts\windows"
+if not exist "%RPP_WIN%\rpp_env.bat" (
+  echo RPP not found in "%RPP_HOME%": set RPP_HOME to the RPP folder
   pause
   exit /b 1
 )
-call "%MPPP_WIN%\mppp_env.bat" || ( pause & exit /b 1 )
-REM 20 Oct: MPPP_SCAPES after mppp_env.bat (it may come from mppp_scapes.txt), else D:\rover_blocks when it exists
-if not defined MPPP_SCAPES if exist "D:\rover_blocks" set "MPPP_SCAPES=D:\rover_blocks"
-if not defined MPPP_SCAPES (echo set MPPP_SCAPES to the scapes root, e.g. setx MPPP_SCAPES D:\rover_blocks & pause & exit /b 1)
-set "ROOT=%MPPP_SCAPES%"
+call "%RPP_WIN%\rpp_env.bat" || ( pause & exit /b 1 )
+REM 20 Oct: RPP_SCAPES after rpp_env.bat (it may come from rpp_scapes.txt), else D:\rover_blocks when it exists
+if not defined RPP_SCAPES if exist "D:\rover_blocks" set "RPP_SCAPES=D:\rover_blocks"
+if not defined RPP_SCAPES (echo set RPP_SCAPES to the scapes root, e.g. setx RPP_SCAPES D:\rover_blocks & pause & exit /b 1)
+set "ROOT=%RPP_SCAPES%"
 REM 0.98.19: run_sites.bat --sites hidden_harbor - a --sites or --group given replaces the group above
 echo.%* | findstr /i /c:"--sites" /c:"--group" >nul && set "WHICH="
-start "MPPP run_sites - %ROOT%" /min cmd /c call "%MPPP_WIN%\_run_sites.bat" --root "%ROOT%" %WHICH% %EXTRA% %*
-echo MPPP run_sites started in a minimised window. Log: "%ROOT%\run_sites_log.txt"
+start "RPP run_sites - %ROOT%" /min cmd /c call "%RPP_WIN%\_run_sites.bat" --root "%ROOT%" %WHICH% %EXTRA% %*
+echo RPP run_sites started in a minimized window. Log: "%ROOT%\run_sites_log.txt"
 echo Status of every site: check_sites.bat
 timeout /t 10

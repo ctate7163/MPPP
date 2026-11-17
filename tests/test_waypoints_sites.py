@@ -1,6 +1,6 @@
-"""Site definitions and WORK folders (mppp.waypoints.sites, workdir). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
+"""Site definitions and WORK folders (rpp.waypoints.sites, workdir). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
 import json
-from mppp.waypoints.sites import check_sites, discover_scapes, load_sites, scan_scapes, site_label
+from rpp.waypoints.sites import check_sites, discover_scapes, load_sites, scan_scapes, site_label
 
 SITES = load_sites()
 import pytest
@@ -58,7 +58,7 @@ def _meta(stem, sol, site, drive, seq):
 
 
 def test_sites_json_is_the_site_list():
-    from mppp.waypoints import sites as S
+    from rpp.waypoints import sites as S
     t = S.load_site_table()
     assert len(t["sites"]) >= 32 and load_sites()["rockytop"][1] == 530 and load_sites()["south_arm"] == (1359, 1412)
     for g, members in t["groups"].items():
@@ -82,7 +82,7 @@ def test_sites_json_is_the_site_list():
 
 
 def test_sites_file_override(tmp_path):
-    from mppp.waypoints.sites import load_sites
+    from rpp.waypoints.sites import load_sites
     f = tmp_path / "s.json"
     f.write_text(json.dumps({"sites": {"a": {"sols": [5, 9]}, "b": [1, 2]}}))
     assert load_sites(f) == {"a": (5, 9), "b": (1, 2)}
@@ -92,7 +92,7 @@ def test_sites_file_override(tmp_path):
 
 
 def test_exclusions_and_existing(tmp_path):
-    from mppp.sfm.workdir import apply_exclusions, keep_existing, read_exclusions
+    from rpp.sfm.workdir import apply_exclusions, keep_existing, read_exclusions
     ms = [_meta("NLF_0658_0725353794_270RAD_N0320274NCAM08111_0A0095J01", 658, 32, 274, "NCAM08111"),
           _meta("NRF_0658_0725353794_270RAD_N0320274NCAM08111_0A0095J01", 658, 32, 274, "NCAM08111"),
           _meta("ZR0_0690_0728197573_035RAD_N0321184ZCAM08692_0340LMA01", 690, 32, 1184, "ZCAM08692"),
@@ -114,7 +114,7 @@ def test_exclusions_and_existing(tmp_path):
 
 
 def test_project_dir_seed_and_settings(tmp_path):
-    from mppp.sfm.workdir import load_settings, project_dir, seed_variant
+    from rpp.sfm.workdir import load_settings, project_dir, seed_variant
     assert project_dir(tmp_path).name == "colmap" and project_dir(tmp_path, "rational").name == "colmap_rational"
     with pytest.raises(ValueError):
         project_dir(tmp_path, "a b")
@@ -135,7 +135,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_check_sites(tmp_path):
     import importlib.util
-    from mppp.waypoints.sites import SITES_FILE, validate_site_table
+    from rpp.waypoints.sites import SITES_FILE, validate_site_table
     err, warn = validate_site_table()
     assert err == [] and not any("overlap" in w and "partly" not in w for w in warn)   # nested blocks are not flagged
     bad = tmp_path / "s.json"
@@ -161,7 +161,7 @@ def test_zcam_field_and_folder_names(tmp_path):
     """v0p53: "zcam": [34, 48, 63, 110] per site (the older "zcam34": true is read, with a warning); folders
     mars2020_sol_<first sol>_<site>_colmap[_zcam]."""
     import json
-    from mppp.waypoints import sites as S
+    from rpp.waypoints import sites as S
     f = tmp_path / "s.json"
     f.write_text(json.dumps({"sites": {"a": {"sols": [1, 2], "zcam": [34, 110]}, "b": {"sols": [3, 4], "zcam34": "False"},
                                        "c": {"sols": [3, 4], "z34": "True"}, "d": {"sols": [5, 6], "zcam": [35]},
@@ -180,7 +180,7 @@ def test_zcam_field_and_folder_names(tmp_path):
 
 
 def test_discover_scapes_keeps_sites_with_the_same_label(tmp_path, monkeypatch):
-    from mppp.waypoints import sites as S
+    from rpp.waypoints import sites as S
     rows = [{"label": "Bell Island", "site": "bell_island", "folder": str(tmp_path / "a"), "ok": True},
             {"label": "Bell Island", "site": "bell_island_large", "folder": str(tmp_path / "b"), "ok": True},
             {"label": "Van Zyl", "site": "van_zyl", "folder": str(tmp_path / "c"), "ok": True},
@@ -195,7 +195,7 @@ def test_discover_scapes_keeps_sites_with_the_same_label(tmp_path, monkeypatch):
 
 
 def test_sol_ranges_span_and_membership():
-    from mppp.waypoints import sites as S
+    from rpp.waypoints import sites as S
     assert S.sol_ranges([1, 2]) == [(1, 2)]
     assert S.sol_ranges([[361, 378], [91, 101]]) == [(361, 378), (91, 101)]
     assert S.sol_span([[361, 378], [91, 101]]) == (91, 378)           # 27 Oct (Christian): the first sol of all names the folder
@@ -209,7 +209,7 @@ def test_sol_ranges_span_and_membership():
 
 
 def test_site_table_with_visits(tmp_path):
-    from mppp.waypoints import sites as S
+    from rpp.waypoints import sites as S
     f = tmp_path / "sites.json"
     f.write_text(json.dumps({"sites": {
         "sid": {"sols": [[361, 378], [91, 101]], "zcam": [34], "settings": {}},
@@ -236,7 +236,7 @@ def test_site_table_with_visits(tmp_path):
 
 
 def test_scan_accepts_a_folder_of_the_second_visit(tmp_path):
-    from mppp.waypoints import sites as S
+    from rpp.waypoints import sites as S
     w = tmp_path / "mars2020_sol_0361_sid_colmap"
     (w / "colmap" / "sparse" / "m").mkdir(parents=True)
     (w / "colmap" / "sparse" / "m" / "images.bin").write_bytes(b"")
@@ -249,30 +249,32 @@ def test_scan_accepts_a_folder_of_the_second_visit(tmp_path):
 
 
 def test_shipped_sites_v0p75():
-    from mppp.waypoints import sites as S
+    from rpp.waypoints import sites as S
     t = S.load_site_table()
     r = S.load_site_ranges()
     assert r["chal_rocks"] == [(91, 101), (361, 378)] and r["threeforks_large"][0] == (652, 693)
     assert r["enchanted_lake"] == [(555, 590), (421, 423)] and S.load_sites()["chal_rocks"] == (91, 378)
     g = t["groups"]
-    # 9 Nov 2026 (Christian): the ecam consensus is the nine large blocks
-    assert g["ecam_consensus"] == ["van_zyl_overlook_huge", "seitah_north_large", "threeforks_large", "delta_front_ascent",
-                                   "belva_crater_large", "bell_island_large", "taylorfjellet_large", "origny_large", "hippo_pools"]
+    # 9 Nov 2026 (Christian): the ecam consensus is the nine large blocks; 0.99.5 (16 Nov, the rig knee): three blocks
+    # in sols 174-385 after Seitah North
+    assert g["ecam_consensus"] == ["van_zyl_overlook_huge", "seitah_north_large", "issole_seitah_south", "artuby_ridge",
+                                   "la_orotava_crater", "threeforks_large", "delta_front_ascent", "belva_crater_large",
+                                   "bell_island_large", "taylorfjellet_large", "origny_large", "hippo_pools"]
     assert "threeforks_north" not in g["ecam_consensus"] and "zcam34_consensus_v0p82" not in g and "threeforks_large" not in g["zcam34_consensus"]
     assert "navcam_consensus_v0p82" not in g
     assert len(g["zcam34_consensus"]) == 15 and "olifants" in g["zcam34_consensus"] and "issole_seitah_south" in g["zcam34_consensus"] and g["zcam34_consensus"][:3] == ["butler_landing", "chal_rocks_large", "rochette"]   # 9 Nov: butler_landing; 22 Oct: chal_rocks_large back; 21 Oct (Christian): Issole back without its video sequence ZCAM05093, olifants back
 
 
 def test_zcam34_dev_group_sites_have_the_zoom():
-    from mppp.waypoints.sites import site_group
+    from rpp.waypoints.sites import site_group
     dev = site_group("zcam34_dev")
-    from mppp.waypoints.sites import load_site_table, site_zooms
+    from rpp.waypoints.sites import load_site_table, site_zooms
     t = load_site_table()                     # v0p82: Christian's dev group may use a smaller site of a consensus block
     assert len(dev) == 6 and all(34 in site_zooms(t["sites"][s]) for s in dev)
 
 
 def test_sites_block_record_and_groups():
-    from mppp.waypoints.sites import block_sites, check_block_record, load_site_table, site_block, site_group, validate_site_table
+    from rpp.waypoints.sites import block_sites, check_block_record, load_site_table, site_block, site_group, validate_site_table
     assert check_block_record({"number": 3, "half_size_m": 30, "centre": {"lon": 77.4, "lat": 18.4}}) == []
     assert check_block_record({"number": 0}) and check_block_record([1])
     t = load_site_table()
@@ -292,7 +294,7 @@ def test_sites_block_record_and_groups():
 
 
 def test_included_fraction_filter():
-    from mppp.sfm.workdir import MIN_INCLUDED_FRACTION, filter_included_fraction
+    from rpp.sfm.workdir import MIN_INCLUDED_FRACTION, filter_included_fraction
     assert MIN_INCLUDED_FRACTION is None                     # v0p85: off (1/3 in v0p82)
     ims = [{"source_product": "a", "mask": {"included_fraction": 0.30}},
            {"source_product": "b", "mask": {"included_fraction": 0.34}}, {"source_product": "c"}]
@@ -303,7 +305,7 @@ def test_included_fraction_filter():
 
 
 def test_sites_in_order_of_first_visit():
-    from mppp.waypoints.sites import load_site_table
+    from rpp.waypoints.sites import load_site_table
     t = load_site_table()
     first = [min(a for a, _ in v["sols"]) for v in t["sites"].values()]
     assert first == sorted(first)
@@ -313,7 +315,7 @@ def test_sites_in_order_of_first_visit():
 
 
 def test_folder_names_and_old_names():
-    from mppp.waypoints import sites as S
+    from rpp.waypoints import sites as S
     assert S.folder_name("south_arm", 1408) == "mars2020_sol_1408_south_arm"
     assert S.folder_name("south_arm", 1408, True) == "mars2020_sol_1408_south_arm_zcam"
     for n, want in [("mars2020_sol_1408_south_arm", ("south_arm", False)),
@@ -326,7 +328,7 @@ def test_folder_names_and_old_names():
 
 
 def test_scan_scapes_reads_new_and_old_names(tmp_path):
-    from mppp.waypoints import sites as S
+    from rpp.waypoints import sites as S
     for n in ("mars2020_sol_1408_south_arm", "mars2020_sol_1408_south_arm_colmap_zcam", "camera_analysis"):
         (tmp_path / n).mkdir()
     rows = S.scan_scapes(tmp_path, {"south_arm": [[1408, 1412]]})
@@ -334,7 +336,7 @@ def test_scan_scapes_reads_new_and_old_names(tmp_path):
 
 
 def test_site_fixes_19_oct():
-    t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))["sites"]
+    t = json.loads((ROOT / "src" / "rpp" / "data" / "sites.json").read_text(encoding="utf-8"))["sites"]
     assert t["chal_rocks_large"]["sols"][0] == [72, 100]
     assert t["chal_rocks_large"]["settings"]["NEARBY_FROM_FIRST_SOL"] is True
     assert [421, 423] in t["enchanted_lake"]["sols"]     # 27 Oct (Christian): the sol 421 and 555 end-of-drive stations back
@@ -347,7 +349,7 @@ def test_sites_19_oct_afternoon():
     """Christian (19 Oct): notes last; Issole 201 + 286-339; Seitah North Large in the Navcam consensus and the
     baseline; seven more consensus blocks; Seitah Overlook 113-125; Butler Landing 1-14 + 32-44; Butler Landing
     Large gone; Van Zyl Overlook Huge 15-99 + 361-378 replaces Van Zyl Overlook Large."""
-    t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))
+    t = json.loads((ROOT / "src" / "rpp" / "data" / "sites.json").read_text(encoding="utf-8"))
     S, G = t["sites"], t["groups"]
     assert all(list(v)[-1] == "notes" for v in S.values() if "notes" in v)
     assert S["issole_seitah_south"]["sols"] == [[201, 201], [286, 339]]
@@ -358,9 +360,11 @@ def test_sites_19_oct_afternoon():
     assert S["van_zyl_overlook_huge"]["sols"] == [[15, 99], [361, 378]]
     nc = set(G["ecam_consensus"])
     # 9 Nov 2026 (Christian): nine large blocks (2 Nov: 21 - the large and huge ones in place of the small ones)
+    # 0.99.5 (16 Nov, Christian: "add some deck station and blocks in the 250-400 range"): three more
     assert nc == {"van_zyl_overlook_huge", "seitah_north_large", "threeforks_large", "delta_front_ascent", "belva_crater_large",
-                  "bell_island_large", "taylorfjellet_large", "origny_large", "hippo_pools"}
-    assert not nc & {"oeb_landing_site", "chal_rocks", "chal_rocks_large", "issole_seitah_south", "cheyava_falls", "taylorfjellet",
+                  "bell_island_large", "taylorfjellet_large", "origny_large", "hippo_pools",
+                  "issole_seitah_south", "artuby_ridge", "la_orotava_crater"}
+    assert not nc & {"oeb_landing_site", "chal_rocks", "chal_rocks_large", "cheyava_falls", "taylorfjellet",
                      "enchanted_lake", "pico_turquino", "south_arm", "witch_hazel_hill", "rochette", "groloy", "airey_hill",
                      "hans_amundsen_workspace"}
     assert "seitah_north_large" in G["navcam_baseline"] and "van_zyl_overlook_huge" in G["navcam_baseline"]
@@ -370,8 +374,8 @@ def test_sites_19_oct_afternoon():
 def test_zcam34_joint_group_is_the_joint_default(tmp_path):
     """22 Oct: the joints take zcam34_joint (the good blocks) by default and leave out FAIL blocks."""
     import argparse, json as _json
-    from mppp_studies.calibration.cli import _navcam_blocks
-    from mppp.waypoints.sites import load_site_table, work_folder
+    from rpp_studies.calibration.cli import _navcam_blocks
+    from rpp.waypoints.sites import load_site_table, work_folder
     t = load_site_table()
     g = t["groups"]["zcam34_joint"]
     # 24 Oct: chal_rocks, not large; 1 Nov (Christian): chal_rocks_large again (its second 34 mm 360)
@@ -389,7 +393,7 @@ def test_zcam34_joint_group_is_the_joint_default(tmp_path):
 
 def test_ecam_consensus_and_the_old_group_name():
     """0.94.4 (Christian): navcam_consensus is ecam_consensus (Navcam + both Hazcam pairs); the old name still works."""
-    from mppp.waypoints import sites as S
+    from rpp.waypoints import sites as S
     t = S.load_site_table()
     assert "ecam_consensus" in t["groups"] and S.GROUP_ALIASES == {"navcam_consensus": "ecam_consensus"}
     assert S.site_group("navcam_consensus") == S.site_group("ecam_consensus") and "hippo_pools" in S.site_group("ecam_consensus")
@@ -401,7 +405,7 @@ def test_site_fixes_24_oct():
     """Christian 24 Oct: Enchanted Lake's second visit starts at sol 422 (sol 421's station, 4.3 m away, stays out:
     NEARBY_FROM_FIRST_SOL); Knob Mountain Large includes sols 440-459 and 535-537.  The work folders keep their
     names (first sol 556, 437)."""
-    from mppp.waypoints.sites import load_site_table, work_folder
+    from rpp.waypoints.sites import load_site_table, work_folder
     t = load_site_table()["sites"]
     e, k = t["enchanted_lake"], t["knob_mountain_large"]
     assert e["sols"] == [[555, 590], [421, 423]] and e["settings"]["NEARBY_FROM_FIRST_SOL"] is True   # 27 Oct
@@ -415,13 +419,13 @@ def test_chal_rocks_110mm():
     """Christian 24 Oct: Chal Rocks' Mastcam-Z block took the 110 mm frames too; 25 Oct: left out again, with
     Taylorfjellet's, so that the blocks run faster (the tiny copy mirrors Chal Rocks); Taylorfjellet Huge is
     Taylorfjellet Large and Groloy is in ecam_consensus."""
-    from mppp.waypoints.sites import load_site_table
+    from rpp.waypoints.sites import load_site_table
     d = load_site_table()
     t = d["sites"]
     # 26 Oct (Christian): 79 and 110 mm out for now - 34, 48, 63 mm until the wider zooms have good models
     assert t["chal_rocks_tiny"]["zcam"] == [26, 34, 48, 63, 100] and t["chal_rocks"]["zcam"] == [34, 48, 63, 79, 100, 110]   # 0.97.22 (Christian, 13 Nov): 100 mm in
     assert 100 in t["chal_rocks_large"]["zcam"]
-    from mppp_studies.calibration import run_pipeline as RP                  # the freeze's zoom filter lets a site's 100 mm through
+    from rpp_studies.calibration import run_pipeline as RP                  # the freeze's zoom filter lets a site's 100 mm through
     assert RP.SITE_ZOOMS_WITHOUT_JOINT == (26, 100) and 100 not in RP.ZOOMS and 26 not in RP.ZOOMS
     assert t["taylorfjellet"]["zcam"] == [34, 48, 63, 79, 110]   # 0.95.1: 110 (zcam_include)
     assert t["rockytop"]["zcam"] == [34, 63, 79, 110] and set(t["rockytop"]["zcam_include"]) == {"110"}
@@ -432,7 +436,7 @@ def test_chal_rocks_110mm():
     assert t["marble_mountain"]["settings"] == {"exclude": ["*ZCAM10008_110*"]}   # 0.95.1 (Christian, 29 Oct)       # 0.95.0 (Christian, 27 Oct): ZCAM04469 back, the mis-tie guard drops it
     assert "exclude" not in t["seitah_overlook"]["settings"]                    # 27 Oct (Christian): ZCAM08111 stays - a primary set
     assert t["enchanted_lake"]["no_mask_inference_at"] == ["ZCAM07115"]        # 27 Oct (Christian)
-    from mppp.pipeline import Settings
+    from rpp.pipeline import Settings
     a = Settings(exclude=["seq:ZCAM05065"]).key_dict()
     assert a == Settings().key_dict()                                            # a Navcam run: the key stays
     assert Settings(exclude=["seq:ZCAM05065"], include_zcam=True).key_dict() != Settings(include_zcam=True).key_dict()
@@ -441,18 +445,18 @@ def test_chal_rocks_110mm():
 
 
 def test_maps_sync_study_waypoints(tmp_path, monkeypatch):
-    """0.96: ``mppp maps`` copies the waypoint table in use into the study folder (the scripts there read their own
+    """0.96: ``rpp maps`` copies the waypoint table in use into the study folder (the scripts there read their own
     M20_waypoints.json); a second call finds it current.  No download here (refresh=False: cache or snapshot)."""
     import hashlib
-    from mppp_studies.sites.cli import sync_study_waypoints
-    from mppp.waypoints import load_waypoints
-    monkeypatch.setenv("MPPP_CACHE", str(tmp_path / "cache"))
+    from rpp_studies.sites.cli import sync_study_waypoints
+    from rpp.waypoints import load_waypoints
+    monkeypatch.setenv("RPP_CACHE", str(tmp_path / "cache"))
     study = tmp_path / "study"
     study.mkdir()
     r1 = sync_study_waypoints(study, refresh=False)
     assert "study copy updated" in r1 and "waypoints to sol" in r1
     w = load_waypoints(refresh=False)
-    assert hashlib.sha256((study / "M20_waypoints.json").read_bytes()).hexdigest() == w["_mppp_source"]["sha256"]
+    assert hashlib.sha256((study / "M20_waypoints.json").read_bytes()).hexdigest() == w["_rpp_source"]["sha256"]
     r2 = sync_study_waypoints(study, refresh=False)
     assert "already current" in r2
 
@@ -462,8 +466,8 @@ def test_zcam_hold_keeps_chal_rocks_regular_and_large_out_of_a_filtered_run():
     tiny to get the first z100 and Z26 alignment"): a site's "zcam_hold" zooms stay out of a run with a zoom filter,
     so with 26 and 100 mm let through the filter the two sites align the zooms they did before (and keep their run
     keys), while Chal Rocks tiny and Seitah Overlook gain 26 and 100 mm."""
-    from mppp import pipeline as P
-    from mppp.waypoints.sites import load_site_table
+    from rpp import pipeline as P
+    from rpp.waypoints.sites import load_site_table
     t = load_site_table()["sites"]
     # 0.98.23 (Christian, 16 Nov 2026: "rerun chal rocks large ... so that we get the first good models for z26 and
     # z100"): Chal Rocks large holds nothing any more; Chal Rocks still holds 100 mm

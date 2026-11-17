@@ -1,4 +1,4 @@
-"""0.93.1: the Hazcam fit from block results (mppp_studies.calibration.hazfit), the fixed Mastcam-Z distortion terms per zoom, the
+"""0.93.1: the Hazcam fit from block results (rpp_studies.calibration.hazfit), the fixed Mastcam-Z distortion terms per zoom, the
 Z joint's fixed globals, and the new Windows scripts."""
 import json
 from pathlib import Path
@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 # ------------------------------------------------------------------------------------- fixed Mastcam-Z terms
 def test_zcam_fixed_terms_per_zoom():
-    from mppp.calib import forms
+    from rpp.calib import forms
     # 0.95.1 (Christian, 29 Oct): every zoom's k2 held at its last fit rounded down to the tenth
     assert forms.zcam_fixed_terms("ZL034") == {"k2": 0.5} and forms.zcam_fixed_terms("ZR034") == {"k2": 0.6}
     assert forms.zcam_fixed_terms("ZL048") == {"k2": 1.4} and forms.zcam_fixed_terms("ZR048_F02312_reg") == {"k2": 1.4}
@@ -25,7 +25,7 @@ def test_zcam_fixed_terms_per_zoom():
 
 
 def test_apply_zcam_fixed_terms_sets_and_holds():
-    from mppp.calib import forms
+    from rpp.calib import forms
     names = list(forms.FULL_OPENCV_PARAMS)
     cam = {"model": "FULL_OPENCV", "params": [6000, 6000, 800, 600, -0.4, 0.3, 1e-3, -2e-3, 0, 0, 0, 0],
            "fixed_params": ["k3"], "free_params": ["fx", "fy", "k1", "k2", "p1", "p2"]}
@@ -42,7 +42,7 @@ def test_apply_zcam_fixed_terms_sets_and_holds():
 def test_zcam_camera_at_keeps_the_promoted_model():
     """The per-image prior keeps the promoted model's own k1, k2 (they belong together); the fixed values are for the
     block BA and the joint."""
-    from mppp import calib
+    from rpp import calib
     zm = calib.load_zcam(34)
     if zm is None:
         pytest.skip("no Z34 focus model")
@@ -52,7 +52,7 @@ def test_zcam_camera_at_keeps_the_promoted_model():
 
 
 def test_zjoint_fixed_globals():
-    from mppp_studies.calibration import ztied
+    from rpp_studies.calibration import ztied
     G = ztied.GLOBAL_TERMS
     sg = {"eyes": {"ZL034": {"G": np.zeros(len(G))}, "ZR034": {"G": np.zeros(len(G))}}}
     fx = ztied.fixed_globals(sg)
@@ -67,7 +67,7 @@ def test_zjoint_fixed_globals():
 
 # ------------------------------------------------------------------------------------------------ Hazcam fit
 def _rows(eye, f0=2150.0, ppm=40.0, early_dfx=1.5, k1_per=2e-5, n=6, seed=0):
-    from mppp_studies.calibration.hazfit import T0_DEGC
+    from rpp_studies.calibration.hazfit import T0_DEGC
     rng = np.random.default_rng(seed)
     rows = []
     for i in range(n):
@@ -87,7 +87,7 @@ def _rows(eye, f0=2150.0, ppm=40.0, early_dfx=1.5, k1_per=2e-5, n=6, seed=0):
 
 
 def test_hazcam_fit_eye_recovers_the_law():
-    from mppp_studies.calibration import hazfit
+    from rpp_studies.calibration import hazfit
     e = hazfit.fit_eye(_rows("FL"), "FL", early_offsets=True)        # the data carry an early offset
     assert e["blocks"] == [f"b{i}" for i in range(6)] and e["weak_blocks"] == ["weak"]
     assert e["ppm_per_degC"] == pytest.approx(40.0, abs=1.0) and e["slope_fitted"]
@@ -100,7 +100,7 @@ def test_hazcam_fit_eye_recovers_the_law():
 
 def test_hazcam_fit_rig_drift_and_median():
     from scipy.spatial.transform import Rotation
-    from mppp_studies.calibration import hazfit
+    from rpp_studies.calibration import hazfit
     R0 = Rotation.from_euler("xyz", [0.5, -1.0, 0.2], degrees=True)
     rows = []
     for i, sol in enumerate((100, 400, 700, 1000)):
@@ -115,9 +115,33 @@ def test_hazcam_fit_rig_drift_and_median():
     assert few["drift"] is None and "no drift" in few["note"]
 
 
+def test_hazcam_rig_rates_without_support_are_held_at_zero():
+    """0.99.8: a rig drift rate is applied only from |z| >= 3; the angle of a held rate sits at its blocks' mean (the
+    3 Nov fit carried rates of z -1.8 ... +0.7, up to 25 mdeg by sol 2000)."""
+    from scipy.spatial.transform import Rotation
+    from rpp_studies.calibration import hazfit
+    rng = np.random.default_rng(4)
+    R0 = Rotation.from_euler("xyz", [0.5, -1.0, 0.2], degrees=True)
+    rows = []
+    for i, sol in enumerate(np.linspace(60, 2000, 20)):
+        v = np.array([10.0 * sol / 1000 + rng.normal(0, 1.0), 5.0 + rng.normal(0, 14.0), rng.normal(0, 2.7)])   # mdeg
+        off = Rotation.from_rotvec(np.radians(1e-3 * v))
+        rows.append({"block": f"b{i}", "R": (off * R0).as_matrix().tolist(), "R_start": R0.as_matrix().tolist(),
+                     "t": [-0.249, 0.0, 0.0], "sol": float(sol), "refined": True})
+    r = hazfit.fit_rig(rows, "F")
+    d = r["drift"]
+    assert d["pitch_mdeg_per_sol"] == pytest.approx(0.010, abs=0.002) and "pitch" not in d["held_at_zero"]
+    assert d["yaw_mdeg_per_sol"] == 0.0 and d["roll_mdeg_per_sol"] == 0.0 and set(d["held_at_zero"]) == {"yaw", "roll"}
+    assert abs(d["fitted_mdeg_per_1000sol"]["yaw"]) < 3 * d["se_mdeg_per_1000sol"]["yaw"]
+    yaw_mean = np.mean([(Rotation.from_matrix(np.asarray(x["R"])) * R0.inv()).as_rotvec()[1] for x in rows]) * 180e3 / np.pi
+    yaw0 = (Rotation.from_matrix(np.asarray(r["R"])) * R0.inv()).as_rotvec()[1] * 180e3 / np.pi
+    assert yaw0 == pytest.approx(yaw_mean, abs=0.05)
+    assert any("held at 0 (|z| < 3): yaw, roll" in ln for ln in hazfit.describe({"eyes": {}, "rigs": {"F": r}}))
+
+
 def test_hazcam_write_check_and_camera_at(tmp_path):
-    from mppp import calib
-    from mppp_studies.calibration import hazfit
+    from rpp import calib
+    from rpp_studies.calibration import hazfit
     res = {"when": "2026-10-22", "blocks": [f"b{i}" for i in range(6)], "T0_degC": hazfit.T0_DEGC,
            "eyes": {"FL": hazfit.fit_eye(_rows("FL"), "FL", early_offsets=True),
                     "FR": hazfit.fit_eye(_rows("FR", seed=1), "FR", early_offsets=True),
@@ -149,7 +173,7 @@ def test_new_windows_scripts_exist_crlf():
 
 
 def test_groups_and_block_sites():
-    t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))
+    t = json.loads((ROOT / "src" / "rpp" / "data" / "sites.json").read_text(encoding="utf-8"))
     g = t["groups"]
     # 24 Oct (Christian): Chal Rocks instead of Chal Rocks Large, without Pico Turquino - a faster run;
     # 27 Oct: Pico Turquino back (a third 48 mm block); later on 27 Oct (Christian's new lists): Chal Rocks Large
@@ -161,7 +185,8 @@ def test_groups_and_block_sites():
     # 2 Nov (Christian): the three longest blocks first; Cannery Passage out again
     # 9 Nov (Christian): butler_landing (sols 1-14, site 3 drive 0000) in the zcam consensus
     # 0.97.0 (12 Nov): Rockytop split into the two ridges; four more sites
-    assert g["zcam_consensus"] == ["butler_landing", "chal_rocks_large", "wildcat_ridge", "skinner_ridge", "taylorfjellet",
+    # 0.99.5 (16 Nov, the rig knee): Issole / Seitah South (sols 201, 286-339)
+    assert g["zcam_consensus"] == ["butler_landing", "chal_rocks_large", "issole_seitah_south", "wildcat_ridge", "skinner_ridge", "taylorfjellet",
                                    "seitah_overlook", "threeforks_north", "threeforks_south", "belva_crater_large",
                                    "marble_mountain", "bright_angel", "pico_turquino", "south_arm", "overlook_mountain",
                                    "airey_hill", "rose_river_falls", "hippo_pools"]
@@ -193,7 +218,7 @@ def test_groups_and_block_sites():
 
 
 def test_cli_calib_hazcam_and_navcam_group():
-    from mppp.cli import build_parser
+    from rpp.cli import build_parser
     a = build_parser().parse_args(["calib", "hazcam", "--variant", "hazcam", "--promote-if-ok"])
     assert a.which == "hazcam" and a.variant == "hazcam"
     a = build_parser().parse_args(["calib", "nz", "--group", "zcam34_joint,zcam_consensus",
@@ -202,7 +227,7 @@ def test_cli_calib_hazcam_and_navcam_group():
 
 
 def test_shipped_exclusions_22_oct():
-    from mppp.pipeline import shipped_exclusions
+    from rpp.pipeline import shipped_exclusions
     ex = shipped_exclusions()
     assert {"seq:ZCAM05060", "seq:ZCAM05062", "seq:ZCAM03017", "*_0076_0673685057_000*", "seq:ZCAM05114",
             "seq:ZCAM05069", "seq:ZCAM05070", "seq:ZCAM05071"} <= set(ex)
@@ -213,7 +238,7 @@ def test_reset_cameras_to_start_and_backlash_hold():
     backlash split included (in a Navcam + Mastcam-Z + Hazcam block the eyes had drifted 1.2 %)."""
     import inspect
     pycolmap = pytest.importorskip("pycolmap")
-    from mppp.sfm import backlash, reconstruction as R
+    from rpp.sfm import backlash, reconstruction as R
 
     class P:
         settings = {"database": {"cameras": {"FL": 1, "FR": 2}}}
@@ -230,10 +255,10 @@ def test_reset_cameras_to_start_and_backlash_hold():
 
 
 def test_sites_duplicate_keys_are_errors(tmp_path):
-    from mppp.waypoints.sites import validate_site_table
-    t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))
+    from rpp.waypoints.sites import validate_site_table
+    t = json.loads((ROOT / "src" / "rpp" / "data" / "sites.json").read_text(encoding="utf-8"))
     assert "delta_front_huge" in t["sites"]
-    assert not validate_site_table(ROOT / "src" / "mppp" / "data" / "sites.json")[0]
+    assert not validate_site_table(ROOT / "src" / "rpp" / "data" / "sites.json")[0]
     f = tmp_path / "sites.json"
     f.write_text('{"sites": {"a": {"sols": [[1, 2]]}, "a": {"sols": [[3, 4]]}}, "groups": {}}', encoding="utf-8")
     err, _ = validate_site_table(f)
@@ -243,10 +268,10 @@ def test_sites_duplicate_keys_are_errors(tmp_path):
 def test_excluded_station_is_not_selected_nor_an_anchor(tmp_path):
     """0.93.1 (Christian): rockytop without S026D0282 (sol 460, mid-drive) - its images are not selected and the two
     sol 456 waypoints within 10 m of it (S026D0218, S026D0160) are not added through it."""
-    from mppp import load_waypoints
-    from mppp.pipeline import load_settings
-    from mppp.select import find_imgs_near
-    from mppp.waypoints import blocks as B
+    from rpp import load_waypoints
+    from rpp.pipeline import load_settings
+    from rpp.select import find_imgs_near
+    from rpp.waypoints import blocks as B
     for sol, drive in ((460, 282), (461, 630), (456, 218)):
         for eye in ("NLF", "NRF"):
             (tmp_path / f"{eye}_{sol:04d}_0700000000_000RAD_N026{drive:04d}NCAM00200_0A0195J01.IMG").write_bytes(b"")
@@ -264,12 +289,12 @@ def test_excluded_station_is_not_selected_nor_an_anchor(tmp_path):
                                                       "seq:ZCAM05115", "seq:ZCAM05116",
                                                       "zoom:110 except seq:ZCAM08529,ZCAM07101,ZCAM08486,ZCAM08548"]
     st = B.site_waypoint_stats({"sols": [[460, 530]], "settings": {"EXCLUDE": ["S026D0282"]}},
-                               B.waypoint_points(ROOT / "src" / "mppp" / "data" / "M20_waypoints.json"))
+                               B.waypoint_points(ROOT / "src" / "rpp" / "data" / "M20_waypoints.json"))
     assert st["n_nearby"] == 0 and st["max_waypoint_separation_m"] < 30
 
 
 def test_rochette_excludes_s006d2594():
-    from mppp.pipeline import load_settings
+    from rpp.pipeline import load_settings
     s = load_settings(site="rochette")
     assert s.exclude == ["S006D2594", "*F_0180_0682923713*"] and s.nearby_from_first_sol   # 9 Nov: the sol 180 frame(s)
 
@@ -277,8 +302,8 @@ def test_rochette_excludes_s006d2594():
 def test_block_station_images_on_other_sols_are_selected(tmp_path):
     """0.93.3 (Christian): Chal Rocks' sol 102 Mastcam-Z sequence ZCAM08062 at S004D0218 - the block's own sol 99
     station, the rover not yet moved - comes in although sol 102 is outside the block's sols (91-101)."""
-    from mppp import load_waypoints
-    from mppp.select import find_imgs_near
+    from rpp import load_waypoints
+    from rpp.select import find_imgs_near
     for sol, drive, code, seq in ((99, 218, "NLF", "NCAM00599"), (102, 218, "ZL0", "ZCAM08062"),
                                   (102, 372, "ZL0", "ZCAM08070"), (102, 218, "NLF", "NCAM00502")):
         (tmp_path / f"{code}_{sol:04d}_0700000000_000RAD_N004{drive:04d}{seq}_034085A03.IMG").write_bytes(b"")
@@ -294,9 +319,9 @@ def test_block_station_images_on_other_sols_are_selected(tmp_path):
 
 def test_zcam00015_kept_and_origny_navcam_only():
     """22 Oct (Christian): ZCAM00015 is kept (not caught by seq:ZCAM00*); Origny has no Mastcam-Z 34 mm 360."""
-    from mppp.pipeline import shipped_exclusions
+    from rpp.pipeline import shipped_exclusions
     assert "!seq:ZCAM00015" in shipped_exclusions()
-    t = json.loads((ROOT / "src" / "mppp" / "data" / "sites.json").read_text(encoding="utf-8"))
+    t = json.loads((ROOT / "src" / "rpp" / "data" / "sites.json").read_text(encoding="utf-8"))
     assert t["sites"]["origny"]["zcam"] == [] and t["sites"]["origny_large"]["zcam"] == []
     origny = next(b for b in t["official_blocks"].values() if b["site"] == "origny")   # block 36 since Curtis Ridge (9 Nov)
     assert origny["mastcam_z_360"] == []
@@ -305,9 +330,9 @@ def test_zcam00015_kept_and_origny_navcam_only():
 def test_corner_check_skips_uncalibrated_zooms_and_rejudge():
     """0.93.3: the corner check leaves out the Mastcam-Z zooms without a calibrated focus model (Seitah Overlook,
     22 Oct: ZR063 the only FAIL); a saved FAIL report is judged again under the current rules at the joint gate."""
-    from mppp.sfm import health as H
-    from mppp_studies.calibration.screening import rejudge
-    from mppp import calib
+    from rpp.sfm import health as H
+    from rpp_studies.calibration.screening import rejudge
+    from rpp import calib
     edges = [0.0, 0.2, 0.4, 0.6, 0.7, 0.8, 0.85, 0.9, 0.95, 1.0]
     good = {"keypoints": [100] * 9, "triangulated_fraction": [0.5] * 9}
     bad = {"keypoints": [100] * 9, "triangulated_fraction": [0.5, 0.5, 0.5, 0.4, 0.3, 0.2, 0.02, 0.02, 0.02]}
@@ -330,8 +355,8 @@ def test_0936_defaults_and_hazcam_over_zcam_blocks(tmp_path):
     """0.93.6 (Christian, 23 Oct): a frame is high unless it is on the low-state list - the blocks split nothing off
     by their focal fits and the found list is not read; calib hazcam --zcam-blocks takes the _zcam folders;
     zcam_joints.bat fits the Hazcams first."""
-    from mppp import cli
-    from mppp.pipeline import Settings
+    from rpp import cli
+    from rpp.pipeline import Settings
     s = Settings()
     assert s.zcam_backlash == "list" and s.zcam_low_backlash_found == "auto"       # 0.94.4: on again
     ap = cli.build_parser() if hasattr(cli, "build_parser") else None
@@ -345,8 +370,8 @@ def test_0936_defaults_and_hazcam_over_zcam_blocks(tmp_path):
 def test_hazcam_rig_change_judged_at_its_own_limit():
     """0.93.6: a Hazcam rig's change from its (label) start fails at 0.5 deg, the Navcam / Mastcam-Z rigs at 0.3 -
     Marble Mountain's rear rig 0.304 deg (23 Oct) no longer fails the block, also in a report from before."""
-    from mppp.sfm.health import DEFAULT_THRESHOLDS
-    from mppp_studies.calibration.screening import rejudge
+    from rpp.sfm.health import DEFAULT_THRESHOLDS
+    from rpp_studies.calibration.screening import rejudge
     assert DEFAULT_THRESHOLDS["hazcam_rig_rotation_change_deg"][:2] == (0.06, 0.5)
     rep = {"checks": [{"check": "rig_rotation_change_deg", "value": 0.304, "status": "fail",
                        "note": "R: baseline 0.93353 -> 0.93353 m"}]}
@@ -357,7 +382,7 @@ def test_hazcam_rig_change_judged_at_its_own_limit():
 
 def test_mask_inference_off_by_sequence():
     """0.93.8 (Christian, 23 Oct): no_mask_inference_at takes sequence ids as well as stations."""
-    from mppp.config import mask_inference_skipped, parse_sequences, parse_stations, sequence_of
+    from rpp.config import mask_inference_skipped, parse_sequences, parse_stations, sequence_of
     spec = ["S032D1184", "NCAM00699", "seq:ZCAM00034"]
     assert parse_stations(spec) == {(32, 1184)} and parse_sequences(spec) == {"NCAM00699", "ZCAM00034"}
     assert sequence_of("FLF_0681_0727400287_565RAD_N0320908FHAZ08111_0A0095J01") == "FHAZ08111"
@@ -365,7 +390,7 @@ def test_mask_inference_off_by_sequence():
     assert mask_inference_skipped(spec, 4, 100, sequence="NCAM00699")
     assert mask_inference_skipped(spec, 4, 100, name="NLF_0093_0675031997_228RAS_N0040100NCAM00699_01_295J01")
     assert not mask_inference_skipped(spec, 4, 100, name="NLF_0093_0675031997_228RAS_N0040100NCAM00700_01_295J01")
-    from mppp.waypoints.sites import validate_site_table
+    from rpp.waypoints.sites import validate_site_table
     err, _ = validate_site_table()
     assert not err, err
 
@@ -373,21 +398,21 @@ def test_mask_inference_off_by_sequence():
 def test_zcam01023_01025_kept_and_lightglue_prior_pairs():
     """0.93.8: ZCAM01025 kept despite seq:ZCAM01* (0.94.4: ZCAM01023 excluded again, and FHAZ00202/215/216; 27 Oct
     (Christian): ZCAM01025 excluded too); LightGlue on a big block gets the prior pairs."""
-    from mppp.pipeline import shipped_exclusions
-    from mppp.sfm.workdir import apply_exclusions
+    from rpp.pipeline import shipped_exclusions
+    from rpp.sfm.workdir import apply_exclusions
     metas = [{"stem": f"ZL0_0682_0727400000_000RAD_N0320908{q}_034085A01", "sequence": q, "sol": 682, "site": 32,
               "drive": 908} for q in ("ZCAM01023", "ZCAM01025", "ZCAM01024", "FHAZ00202", "FHAZ00215", "FHAZ00216",
                                      "FHAZ00207")]
     kept, dropped = apply_exclusions(metas, shipped_exclusions())
     assert sorted(m["sequence"] for m in kept) == ["FHAZ00207"]
     import inspect
-    from mppp import pipeline
+    from rpp import pipeline
     assert '("lightglue", "sift+lightglue") and big' in inspect.getsource(pipeline)
 
 
 def test_promote_waits_for_a_held_file(tmp_path, monkeypatch):
     """0.93.8: a model file held by another process for a moment is copied once it is free."""
-    from mppp.calib import models as M
+    from rpp.calib import models as M
     src = tmp_path / "a.json"
     src.write_text('{"x": 1}')
     dst = tmp_path / "out" / "b.json"
@@ -415,20 +440,20 @@ def test_error_analysis_batch_and_pipeline_report(tmp_path, monkeypatch):
     import sys as _sys
     _sys.path.insert(0, str(ROOT / "tests"))
     from helpers import _synthetic_model
-    from mppp_studies.error import alignment as A
+    from rpp_studies.error import alignment as A
     model, X = _synthetic_model(noise_px=0.2)
     e = tmp_path / "work" / "colmap" / "error_input"
     (e / "native").mkdir(parents=True)
     (e / "stations.csv").write_text("name,station,instrument\n" + "".join(
         f"img{k}.png,{'A' if k <= 3 else 'B'},NL\n" for k in range(1, 7)))
     monkeypatch.setattr(A, "read_colmap", lambda path: copy.deepcopy(model))
-    eab = importlib.import_module("mppp_studies.error.batch")
+    eab = importlib.import_module("rpp_studies.error.batch")
     out = tmp_path / "ea"
     eab.main([str(out), f"good={tmp_path / 'work'}", f"missing={tmp_path / 'nothing'}", "--n-points", "300",
               "--n-boot", "0"])
     res = json.loads((out / "error_analysis_batch.json").read_text())
     assert "good" in res["alignments"] or "good" in (res.get("failed") or {})
-    rp = importlib.import_module("mppp_studies.calibration.run_pipeline")
+    rp = importlib.import_module("rpp_studies.calibration.run_pipeline")
     md = rp.error_report(res)
     assert md.startswith("# Error analysis on the SfM points")
     assert rp.STAGES == ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_analysis", "rover_frame",
@@ -438,17 +463,17 @@ def test_error_analysis_batch_and_pipeline_report(tmp_path, monkeypatch):
 def test_lightglue_ab_report_and_chal_rocks_tiny(tmp_path):
     """0.93.9: Chal Rocks tiny (sols 91-98) and the A/B report from two finished alignments."""
     import importlib.util
-    from mppp.waypoints.sites import load_site_table
+    from rpp.waypoints.sites import load_site_table
     t = load_site_table()["sites"]
     assert t["chal_rocks_tiny"]["sols"] == [[91, 98]] and set(t["chal_rocks_tiny"]["zcam"]) - {26} <= set(t["chal_rocks"]["zcam"])   # (the tiny copy without 79, 110; 26 mm since 0.97.22)
     for s in ("chal_rocks", "chal_rocks_large", "chal_rocks_tiny"):
         assert t[s]["no_mask_inference_at"][-3:] == ["ZCAM00034", "ZCAM08060", "RHAZ0*"]
     assert t["bell_island"]["no_mask_inference_at"] == ["RHAZ0*"] == t["bell_island_large"]["no_mask_inference_at"]
-    from mppp.config import mask_inference_skipped
+    from rpp.config import mask_inference_skipped
     assert mask_inference_skipped(["RHAZ0*"], 1, 1, name="RLF_0093_0675031997_228RAS_N0040100RHAZ00102_0A0095J01")
     assert not mask_inference_skipped(["RHAZ0*"], 1, 1, name="RLF_0093_0675031997_228RAS_N0040100RHAZ10102_0A0095J01")
     assert mask_inference_skipped(["RHAZ0"], 1, 1, sequence="RHAZ01234")
-    lab = importlib.import_module("mppp_studies.calibration.lightglue_ab")
+    lab = importlib.import_module("rpp_studies.calibration.lightglue_ab")
     work = tmp_path / "w"
     for v, m in (("sift", "sift"), ("lightglue", "lightglue")):
         c = work / f"colmap_{v}"
@@ -471,7 +496,7 @@ def test_lightglue_ab_report_and_chal_rocks_tiny(tmp_path):
 
 def test_check_zcam_rig_scatter_of_too_few_blocks():
     """0.93.9 (Z48 of 23 Oct): a rig scatter that could not be measured (one block per angle: None) is no crash."""
-    from mppp_studies.calibration.fit import check_zcam
+    from rpp_studies.calibration.fit import check_zcam
     ln = {"fx": {"a": 6700.0, "b": 0.0}, "fy": {"a": 6702.0, "b": 0.0}}
     new = {"cameras": {"ZL048": {"f0_px": 6701.0, "aspect": 1.0003, "lines": {"backlash": ln}}},
            "rig": {"baseline_m": 0.2436, "sd_rotvec_mdeg": [None, None, None], "blocks": ["a"]}}
@@ -482,7 +507,7 @@ def test_check_zcam_rig_scatter_of_too_few_blocks():
 def test_hazcam_athermal_fallback():
     """0.93.10 (Christian): an eye whose temperature law fails its thermal check gets the athermal law (fx, fy, k1
     constant) when that passes every check; else the temperature law stays, with the attempt recorded."""
-    from mppp_studies.calibration import hazfit as H
+    from rpp_studies.calibration import hazfit as H
     rng = np.random.default_rng(1)
     start = [2147.0, 2147.0, 2560.0, 1920.0, 0.01, -0.006, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
@@ -506,7 +531,7 @@ def test_hazcam_athermal_fallback():
 
 def test_0940_exclusions_before_processing_and_exposure_mask_off():
     """0.94.0: the shipped exclusion list applies to the selected products; no_mask_inference_at by exposure."""
-    from mppp.pipeline import PROCESS_RULES, exclude_products, product_meta, shipped_exclusions
+    from rpp.pipeline import PROCESS_RULES, exclude_products, product_meta, shipped_exclusions
     assert PROCESS_RULES == 6
     ps = ["/x/ZL0_0091_0675031997_228RAD_N0040100ZCAM03017_034085A03.IMG",
           "/x/ZL0_0091_0675031997_228RAD_N0040100ZCAM00034_034085A03.IMG",
@@ -515,12 +540,12 @@ def test_0940_exclusions_before_processing_and_exposure_mask_off():
                                                "sequence": "ZCAM03017"}
     kept, ex = exclude_products(ps, shipped_exclusions())
     assert [Path(k).name for k in kept] == [Path(ps[1]).name, Path(ps[2]).name] and len(ex) == 1
-    from mppp.config import mask_inference_skipped, parse_stations
+    from rpp.config import mask_inference_skipped, parse_stations
     spec = ["0093_0675176765_000", "S032D1184"]
     assert parse_stations(spec) == {(32, 1184)}
     assert mask_inference_skipped(spec, 4, 100, name=Path(ps[2]).stem)
     assert not mask_inference_skipped(spec, 4, 100, name="NLF_0093_0675176999_000RAS_N0040100NCAM00699_01_295J01")
-    from mppp.waypoints.sites import load_site_table
+    from rpp.waypoints.sites import load_site_table
     t = load_site_table()["sites"]
     for s in ("chal_rocks", "chal_rocks_large", "chal_rocks_tiny"):
         assert t[s]["no_mask_inference_at"] == ["0093_0675176765_000", "0093_0675177115_000", "0360_0698912834_738", "ZCAM00034", "ZCAM08060",
@@ -530,18 +555,18 @@ def test_0940_exclusions_before_processing_and_exposure_mask_off():
 def test_0940_models_in_use_and_first_calibration_ratio():
     """0.94.0: Z63 and FL (athermal) in use; a 110 mm model needs no low-state lines; the start of a new zoom has the
     default high / low ratio."""
-    from mppp import calib
-    from mppp.calib import forms
+    from rpp import calib
+    from rpp.calib import forms
     z63 = calib.load_zcam(63)
     # 0.95.0: form, not values (the models in use are promoted outside git; a measured Z63 ratio is in range)
     assert z63 is not None and all(1.004 <= gm["regular_ratio"] <= 1.016 for gm in z63["cameras"].values())
-    fl = json.loads((ROOT / "src" / "mppp" / "data" / "cmods" / "M2020_FL.json").read_text())
+    fl = json.loads((ROOT / "src" / "rpp" / "data" / "cmods" / "M2020_FL.json").read_text())
     assert "thermal" in fl and "fx_ppm_per_degC" in fl["thermal"] and "k1_per_degC" in fl["thermal"] and fl.get("source")
     m = {"cameras": {"ZL110": {"lines": {"backlash": {"fx": {"a": 1.0}, "fy": {"a": 1.0}}}, "pp0_px": [1, 2]}}}
     assert not forms.validate_zcam(m)
     m["cameras"]["ZL063"] = {"lines": {"backlash": {"fx": {"a": 1.0}, "fy": {"a": 1.0}}}, "pp0_px": [1, 2]}
     assert any("ZL063: no regular line" in x for x in forms.validate_zcam(m))
-    from mppp.pipeline import load_settings
+    from rpp.pipeline import load_settings
     assert load_settings(None, "chal_rocks_tiny").exclude == ["S004D0218", "seq:ZCAM08390"]
 
 
@@ -550,10 +575,10 @@ def test_0941_tiny_sites_and_joint_commands(tmp_path, monkeypatch):
     colmap_lightglue blocks, promoting only new models with as few blocks as there are."""
     import importlib.util
     from types import SimpleNamespace
-    from mppp.waypoints.sites import load_site_table, work_folder
+    from rpp.waypoints.sites import load_site_table, work_folder
     t = load_site_table()["sites"]
     assert t["seitah_overlook_tiny"]["sols"] == [[116, 121]]
-    lab = importlib.import_module("mppp_studies.calibration.lightglue_ab")
+    lab = importlib.import_module("rpp_studies.calibration.lightglue_ab")
     works = {}
     for s in ("chal_rocks_tiny", "seitah_overlook_tiny"):
         w = work_folder(tmp_path, s, True, t[s]["sols"])
@@ -569,7 +594,7 @@ def test_0941_tiny_sites_and_joint_commands(tmp_path, monkeypatch):
     haz = calls[0]
     assert "hazcam" in haz and "--variant" in haz and "--promote-new-only" in haz and "--min-blocks" in haz
     assert not [c for c in calls if "--zoom" in c and str(c[c.index("--zoom") + 1]) in ("79", "110")]
-    from mppp.cli import build_parser
+    from rpp.cli import build_parser
     a = build_parser().parse_args(["calib", "zcam", "--zoom", "48", "--min-blocks", "1", "--promote-new-only"])
     assert a.min_blocks == 1 and a.promote_new_only
 
@@ -578,7 +603,7 @@ def test_lightglue_ab_four_variants_and_the_joint_variant(tmp_path):
     """0.94.4: the A/B runs four variants (their settings), reports them side by side with the Navcam-Mastcam-Z
     tie points, and the tiny joint takes the variant with the most of them."""
     import importlib.util
-    lab = importlib.import_module("mppp_studies.calibration.lightglue_ab")
+    lab = importlib.import_module("rpp_studies.calibration.lightglue_ab")
     assert list(lab.VARIANTS)[:4] == ["sift", "lightglue", "lightglue_octaves", "sift_lightglue"]
     assert lab.DEFAULT_VARIANTS == ("sift", "lightglue", "lightglue_octaves", "sift_lightglue")
     assert "POSE_GUIDED=false" in lab.VARIANTS["sift_pg_off"] and "ISOLATED_POINTS_FACTOR=0" in lab.VARIANTS["sift_iso_off"]
@@ -612,7 +637,7 @@ def test_lightglue_ab_four_variants_and_the_joint_variant(tmp_path):
 def test_hazcam_fit_leaves_out_a_block_off_the_law_and_judges_many_blocks_by_precision():
     """0.94.4 (24 Oct): Belva Crater's rear eyes 0.7 % low on 1.5k observations (23 Oct) are left out; an eye of
     many blocks passes its scatter check on scatter / sqrt(blocks)."""
-    from mppp_studies.calibration import hazfit
+    from rpp_studies.calibration import hazfit
     rng = np.random.default_rng(4)
     rows = []
     for i in range(12):
@@ -634,8 +659,8 @@ def test_zcam_include_keeps_only_listed_sequences_at_a_zoom():
     """0.95.1 (Christian, 29 Oct: "add some z110 into Rockytop, but not all of them"): a site's zcam_include
     {zoom: [sequences]} becomes the exclusion "zoom:110 except seq:..." - the other 110 mm frames are left out, every
     other zoom and the listed sequences kept; the Navcam keys do not see it."""
-    from mppp.pipeline import load_settings as run_settings, zcam_include_entries
-    from mppp.sfm.workdir import apply_exclusions, exclusion_matches
+    from rpp.pipeline import load_settings as run_settings, zcam_include_entries
+    from rpp.sfm.workdir import apply_exclusions, exclusion_matches
     e = zcam_include_entries({"110": ["ZCAM08529", "zcam07101"]})
     assert e == ["zoom:110 except seq:ZCAM08529,ZCAM07101"]
     mk = lambda seq, z: {"filename": {"stem": f"ZL0_0500_0700000000_000RAD_N0260000{seq}_{z:03d}0LMA01", "sol": 500,  # noqa: E731
@@ -656,8 +681,8 @@ def test_zcam_include_keeps_only_listed_sequences_at_a_zoom():
 def test_marble_mountain_leaves_out_zcam10008_at_110mm():
     """0.95.1 (Christian, 29 Oct): Marble Mountain without ZCAM10008's 110 mm frames; a Mastcam-Z pattern stays out
     of the Navcam keys."""
-    from mppp.pipeline import load_settings
-    from mppp.sfm.workdir import exclusion_matches
+    from rpp.pipeline import load_settings
+    from rpp.sfm.workdir import exclusion_matches
     s = load_settings(site="marble_mountain")
     assert s.exclude == ["*ZCAM10008_110*"]
     mk = lambda z: {"filename": {"stem": f"ZR0_1980_0900000000_000RAD_N0910852ZCAM10008_{z:03d}0LMA01"}}   # noqa: E731
@@ -669,7 +694,7 @@ def test_marble_mountain_leaves_out_zcam10008_at_110mm():
 def test_check_zcam_per_zoom_ratio_window_and_two_block_promotion():
     """0.98.15 (Christian, 15 Nov): the 63 mm high / low ratio sits lowest in the zoom range (prior 1.0045, window
     from 1.0015) - 34 and 48 mm keep 1.004..1.016; 26 and 100 mm promote from two blocks (others need three)."""
-    from mppp_studies.calibration import fit as F
+    from rpp_studies.calibration import fit as F
     ln = {"fx": {"a": 8600.0, "b": 0.0}, "fy": {"a": 8601.0, "b": 0.0}}
 
     def checks(key, ratio, nb, old_cams=True):

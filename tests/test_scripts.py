@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_windows_bat_files():
     d = ROOT / "scripts" / "windows"
-    for n in ("align_here.bat", "run_sites.bat", "check_sites.bat", "mppp_env.bat", "_run_align.bat",
+    for n in ("align_here.bat", "run_sites.bat", "check_sites.bat", "rpp_env.bat", "_run_align.bat",
               "_run_sites.bat"):
         raw = (d / n).read_bytes()
         assert b"\r\n" in raw and b"\n" not in raw.replace(b"\r\n", b""), n     # CRLF line ends for cmd.exe
@@ -24,7 +24,7 @@ def test_windows_bat_files():
 
 
 def _rocky(zcam=False):
-    from mppp.waypoints.sites import folder_name, load_sites
+    from rpp.waypoints.sites import folder_name, load_sites
     return folder_name("rockytop", load_sites()["rockytop"][0], zcam=zcam)
 
 
@@ -55,29 +55,29 @@ def test_windows_bat_files_are_unversioned_and_crlf():
 
 
 def test_bat_files_work_from_any_folder_and_find_the_environment():
-    """0.43.1: top-level .bat files find MPPP through MPPP_HOME when copied elsewhere; mppp_env.bat searches the
+    """0.43.1: top-level .bat files find RPP through RPP_HOME when copied elsewhere; rpp_env.bat searches the
     conda environments and uses check_env.py."""
     import subprocess
     from pathlib import Path
     win = Path(__file__).resolve().parents[1] / "scripts" / "windows"
     for name in ("process_sites.bat", "run_sites.bat", "check_sites.bat"):
         s = (win / name).read_text()
-        assert 'call "%MPPP_WIN%\\mppp_env.bat"' in s and '"%~dp0mppp_env.bat" ||' not in s, name
+        assert 'call "%RPP_WIN%\\rpp_env.bat"' in s and '"%~dp0rpp_env.bat" ||' not in s, name
         assert "%~dp0_run" not in s, name
-    env = (win / "mppp_env.bat").read_text()
-    for part in ("check_env.py", "environments.txt", "mppp_python.txt", "MPPP_PYTHON", ":try_prefix", ":try_root",
+    env = (win / "rpp_env.bat").read_text()
+    for part in ("check_env.py", "environments.txt", "rpp_python.txt", "RPP_PYTHON", ":try_prefix", ":try_root",
                  "KMP_DUPLICATE_LIB_OK"):
         assert part in env, part
     body = env.split(":try_prefix\n")[1]
     assert "%~dp0" not in body                     # inside a call :label, %0 is the label
     r = subprocess.run([sys.executable, str(win.parent / "check_env.py")], capture_output=True, text=True)   # 0.94.4: scripts\
-    # the PC, 10 Nov: sys.executable came as ...\miniconda3\.\python.exe, check_env.py printed the normalised path
+    # the PC, 10 Nov: sys.executable came as ...\miniconda3\.\python.exe, check_env.py printed the normalized path
     assert r.returncode in (0, 1) and os.path.normcase(os.path.normpath(sys.executable)) in os.path.normcase(r.stdout)
 
 
 def _batch():
     sys.path.insert(0, str(ROOT / "scripts"))
-    from mppp import batch as _batch
+    from rpp import batch as _batch
     return _batch
 
 
@@ -101,12 +101,12 @@ def test_stop_runs_lists_nothing_here(capsys):
     sr = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(sr)
     assert sr.main(["--list", "--root", "/nonexistent"]) == 0
-    assert "MPPP run" in capsys.readouterr().out
+    assert "RPP run" in capsys.readouterr().out
 
 
-def test_stop_mppp_bat():
-    b = (ROOT / "scripts" / "windows" / "stop_mppp.bat").read_bytes()
-    assert b.count(b"\n") == b.count(b"\r\n") and b"stop_runs.py" in b and b"mppp_env.bat" in b
+def test_stop_rpp_bat():
+    b = (ROOT / "scripts" / "windows" / "stop_rpp.bat").read_bytes()
+    assert b.count(b"\n") == b.count(b"\r\n") and b"stop_runs.py" in b and b"rpp_env.bat" in b
     for name in ("process_sites.py", "run_sites.py"):
         assert "batch_lock(" in (ROOT / "scripts" / name).read_text()
     for name in ("align_scape.py", "process_sites.py", "run_sites.py", "stop_runs.py", "check_sites.py"):
@@ -117,10 +117,10 @@ def test_stop_mppp_bat():
 def test_promote_cmods(monkeypatch, tmp_path, capsys):
     import importlib.util
     import shutil
-    from mppp.sfm.project import NAVCAM_PACKAGE_CONSENSUS_DIR, navcam_consensus_dir
+    from rpp.sfm.project import NAVCAM_PACKAGE_CONSENSUS_DIR, navcam_consensus_dir
     dst = tmp_path / "cmods"
-    monkeypatch.setenv("MPPP_CMODS", str(dst))
-    pc = importlib.import_module("mppp_studies.calibration.promote_cmods")
+    monkeypatch.setenv("RPP_CMODS", str(dst))
+    pc = importlib.import_module("rpp_studies.calibration.promote_cmods")
     assert pc.main([str(NAVCAM_PACKAGE_CONSENSUS_DIR), "--note", "first"]) == 0
     assert navcam_consensus_dir() == dst and (dst / "CHANGES.md").read_text().count(" - first\n") == 1
     # a new NL camera replaces the old one; the change is logged (git history keeps the replaced file)
@@ -155,13 +155,13 @@ def test_run_sites_bat_files_navcam_and_zcam():
     z = (w / "run_sites_zcam.bat").read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")   # crlf on checkout
     assert b"\r\n" in nav
     assert b"--zcam" not in nav.split(b"start ")[-1] and b"%WHICH% --zcam" in z
-    # the Mastcam-Z joints after the Mastcam-Z blocks (MPPP_THEN, run by _run_sites.bat when the batch ran)
-    assert b'set "MPPP_THEN=zcam_joints.bat"' in z and b"MPPP_THEN" not in nav
+    # the Mastcam-Z joints after the Mastcam-Z blocks (RPP_THEN, run by _run_sites.bat when the batch ran)
+    assert b'set "RPP_THEN=zcam_joints.bat"' in z and b"RPP_THEN" not in nav
     r = (w / "_run_sites.bat").read_bytes()
-    assert b"if defined MPPP_THEN if %RC% LEQ 1" in r and b"%MPPP_THEN_ARGS%" in r
-    # the scapes root is checked after mppp_env.bat (mppp_scapes.txt), with D:\scapes as the fallback
-    for f in (nav, z, (w / "stop_mppp.bat").read_bytes()):
-        assert f.index(b'mppp_env.bat"') < f.index(b"if not defined MPPP_SCAPES if exist")
+    assert b"if defined RPP_THEN if %RC% LEQ 1" in r and b"%RPP_THEN_ARGS%" in r
+    # the scapes root is checked after rpp_env.bat (rpp_scapes.txt), with D:\scapes as the fallback
+    for f in (nav, z, (w / "stop_rpp.bat").read_bytes()):
+        assert f.index(b'rpp_env.bat"') < f.index(b"if not defined RPP_SCAPES if exist")
 
 
 def test_filter_zcam_and_consensus_bats(tmp_path):
@@ -183,7 +183,7 @@ def test_filter_zcam_and_consensus_bats(tmp_path):
 
 
 def test_batch_lock_refuses_a_second_batch(tmp_path):
-    from mppp.runner import read_status
+    from rpp.runner import read_status
     B = _batch()
     b = B.batch_lock(tmp_path, "process_sites")
     try:
@@ -219,41 +219,41 @@ def test_batches_side_by_side_on_other_sites(tmp_path):
         a.stop("finished")
     assert B.alive_batches(tmp_path) == []
     # the old one-file batch still counts while alive
-    from mppp.runner import RunStatus
+    from rpp.runner import RunStatus
     old = RunStatus(tmp_path / B.BATCH_FILE, pid=os.getpid())
     old.update(state="running")
     assert [x["file"] for x in B.alive_batches(tmp_path)] == [str(tmp_path / B.BATCH_FILE)]
 
 
-def test_mppp_processes_picks_the_tops_of_run_trees():
-    mppp_processes = _batch().mppp_processes
+def test_rpp_processes_picks_the_tops_of_run_trees():
+    rpp_processes = _batch().rpp_processes
     rows = [
         {"pid": 10, "ppid": 1, "cmd": r'cmd /c call "D:\code\MPPP\scripts\windows\_run_process.bat" --root D:\x --all'},
         {"pid": 11, "ppid": 10, "cmd": r'python "D:\code\MPPP\scripts\process_sites.py" --root D:\x --all'},
-        {"pid": 12, "ppid": 11, "cmd": r"python -m mppp.process_worker"},
+        {"pid": 12, "ppid": 11, "cmd": r"python -m rpp.process_worker"},
         {"pid": 20, "ppid": 1, "cmd": r"python D:\code\MPPP\scripts\run_sites.py --all"},
         {"pid": 21, "ppid": 20, "cmd": r"python D:\code\MPPP\scripts\align_scape.py D:\x\sid_colmap"},
         {"pid": 30, "ppid": 1, "cmd": r"python -m ipykernel_launcher -f kernel-2.json"},        # Jupyter: untouched
         {"pid": 31, "ppid": 1, "cmd": r"jupyter-lab"},
-        {"pid": 40, "ppid": 1, "cmd": r'cmd /c "D:\code\MPPP\scripts\windows\stop_mppp.bat"'},
-        {"pid": 50, "ppid": 1, "cmd": r"mppp align D:\x\mars2020_sol_0460_rockytop"},
+        {"pid": 40, "ppid": 1, "cmd": r'cmd /c "D:\code\MPPP\scripts\windows\stop_rpp.bat"'},
+        {"pid": 50, "ppid": 1, "cmd": r"rpp align D:\x\mars2020_sol_0460_rockytop"},
     ]
-    assert [r["pid"] for r in mppp_processes(rows)] == [10, 20, 50]
+    assert [r["pid"] for r in rpp_processes(rows)] == [10, 20, 50]
 
 
-def test_mppp_processes_never_includes_its_own_ancestors():
+def test_rpp_processes_never_includes_its_own_ancestors():
     import os
-    mppp_processes = _batch().mppp_processes
+    rpp_processes = _batch().rpp_processes
     me, parent = os.getpid(), os.getppid()
     rows = [{"pid": parent, "ppid": 1, "cmd": "bash -c 'python scripts/stop_runs.py; python scripts/process_sites.py'"},
             {"pid": me, "ppid": parent, "cmd": "python scripts/stop_runs.py"},
             {"pid": 999999, "ppid": 1, "cmd": "python scripts/process_sites.py --all"}]
-    assert [r["pid"] for r in mppp_processes(rows)] == [999999]
+    assert [r["pid"] for r in rpp_processes(rows)] == [999999]
 
 
 def test_mark_stopped(tmp_path):
     import os
-    from mppp.runner import STATUS_FILE, RunStatus, read_status
+    from rpp.runner import STATUS_FILE, RunStatus, read_status
     B = _batch()
     (tmp_path / "sid_colmap").mkdir()
     a = RunStatus(tmp_path / B.BATCH_FILE, pid=4242)
@@ -281,7 +281,7 @@ def test_run_sites_dry_run_and_finished(tmp_path):
     assert rs.main(["--sites", "rockytop", "--root", str(tmp_path), "--source", "processed", "--dry-run"]) == 0
     assert "has no processed/" in (tmp_path / "run_sites_log.txt").read_text()
     # a finished folder (run_done.json with the run key of these settings) is skipped
-    from mppp.pipeline import Settings, load_settings, resolve_site, run_key
+    from rpp.pipeline import Settings, load_settings, resolve_site, run_key
     st, s = resolve_site("rockytop", Settings(scapes_root=tmp_path))
     (st.work / "processed").mkdir(parents=True)
     (st.work / "colmap").mkdir()
@@ -293,19 +293,19 @@ def test_run_sites_dry_run_and_finished(tmp_path):
     assert rs.main(["--sites", "rockytop", "--root", str(tmp_path), "--source", "processed", "--dry-run",
                     "--set", "attitude_prior_deg=1.0"]) == 0
     assert "finished with other settings" in (tmp_path / "run_sites_log.txt").read_text()
-    # 31 Oct (freeze): a block finished without a run key (an older MPPP) is queued again, not skipped
+    # 31 Oct (freeze): a block finished without a run key (an older RPP) is queued again, not skipped
     (st.work / "colmap" / "run_done.json").unlink()
     (st.work / "colmap" / "error_input").mkdir()
     (st.work / "colmap" / "error_input" / "summary.json").write_text("{}")
     assert rs.main(["--sites", "rockytop", "--root", str(tmp_path), "--source", "processed", "--dry-run"]) == 0
-    assert "rockytop: would run (finished by an older MPPP without a run key" in \
+    assert "rockytop: would run (finished by an older RPP without a run key" in \
         (tmp_path / "run_sites_log.txt").read_text()
 
 
 def test_a_stopped_batch_does_not_go_on_to_the_joints(tmp_path, monkeypatch):
-    """31 Oct: stop_runs writes mppp_stopped.txt; _run_sites.bat then skips MPPP_THEN; a new batch clears it."""
+    """31 Oct: stop_runs writes mppp_stopped.txt; _run_sites.bat then skips RPP_THEN; a new batch clears it."""
     sys.path.insert(0, str(ROOT / "scripts"))
-    from mppp import batch as _batch
+    from rpp import batch as _batch
     import stop_runs
     monkeypatch.setattr(_batch, "list_processes", lambda: [{"pid": 99, "ppid": 1,
                                                             "cmd": "python scripts/run_sites.py --root x"}])
@@ -314,8 +314,8 @@ def test_a_stopped_batch_does_not_go_on_to_the_joints(tmp_path, monkeypatch):
     assert stop_runs.main(["--root", str(tmp_path), "--yes"]) == 0
     assert (tmp_path / _batch.STOP_MARKER).is_file()
     r = (ROOT / "scripts" / "windows" / "_run_sites.bat").read_bytes()
-    assert r.index(b"mppp_stopped.txt") < r.index(b"if defined MPPP_THEN if %RC% LEQ 1")
-    assert b"mppp_stopped.txt" in r and b'set "MPPP_THEN="' in r
+    assert r.index(b"mppp_stopped.txt") < r.index(b"if defined RPP_THEN if %RC% LEQ 1")
+    assert b"mppp_stopped.txt" in r and b'set "RPP_THEN="' in r
     rs = (ROOT / "scripts" / "run_sites.py").read_text()
     assert "(root / STOP_MARKER).unlink(missing_ok=True)" in rs
 
@@ -323,7 +323,7 @@ def test_a_stopped_batch_does_not_go_on_to_the_joints(tmp_path, monkeypatch):
 def test_experiment_scripts_live_in_studies():
     for name in ("lens_model_experiment.py", "lens_terms_experiment.py", "pair_experiment.py",
                  "temperature_bins_experiment.py", "error_sources.py"):
-        assert not (ROOT / "scripts" / name).exists() and (ROOT / "src" / "mppp_studies" / "misc" / "experiments" / name).is_file(), name
+        assert not (ROOT / "scripts" / name).exists() and (ROOT / "src" / "rpp_studies" / "misc" / "experiments" / name).is_file(), name
 
 
 def test_windows_run_sites_zcam_passes_extra_through():
@@ -332,18 +332,18 @@ def test_windows_run_sites_zcam_passes_extra_through():
 
 
 def test_scripts_and_bat_exist():
-    assert (ROOT / "src" / "mppp_studies" / "misc" / "calibration_old" / "prepare_next_run.py").is_file()   # 0.96: misc
+    assert (ROOT / "src" / "rpp_studies" / "misc" / "calibration_old" / "prepare_next_run.py").is_file()   # 0.96: misc
     assert not (ROOT / "scripts" / "prepare_next_run.py").exists()
     assert not (ROOT / "scripts" / "windows" / "prepare_next_run.bat").exists()
 
 
 def test_stop_runs_knows_the_pipeline(tmp_path):
     sys.path.insert(0, str(ROOT / "scripts"))
-    from mppp.batch import mark_stopped, mppp_processes
+    from rpp.batch import mark_stopped, rpp_processes
     rows = [{"pid": 10, "ppid": 1, "cmd": "python scripts/run_pipeline.py --root D:/x"},
             {"pid": 11, "ppid": 10, "cmd": "python scripts/run_sites.py --root D:/x --group zcam34_consensus"},
             {"pid": 12, "ppid": 11, "cmd": "python scripts/align_scape.py D:/x/site"}]
-    top = mppp_processes(rows)
+    top = rpp_processes(rows)
     assert [r["pid"] for r in top] == [10]                                  # the pipeline is the top of the tree
     d = tmp_path / "mppp_pipeline"
     d.mkdir()
@@ -379,10 +379,14 @@ def test_windows_folder_is_short():
     # anomalies"): 24; freeze_chain.bat (Christian, 2 Nov: the freeze run unattended): 25
     # 0.96.0 (9 Nov): claude_sync.bat and freeze_chain.bat out, sync_code.bat and freeze.bat in: 25
     # 0.96.1 (Christian, 11 Nov: "Please put that bat file in the MPPP/scripts/windows/ folder"):
-    # run_single_site_ibr.bat, the copy of mppp.ibr.single_sites.BAT: 26
+    # run_single_site_ibr.bat, the copy of rpp.ibr.single_sites.BAT: 26
     # 0.97.0: zcam_joints_097.bat is this version's one run (in place of trial_joints_0p95.bat) - not counted either
-    assert len([f for f in files if not f.name.startswith(("trial_joints_", "zcam_joints_0"))]) <= 26, sorted(f.name for f in files)
-    from mppp.ibr import single_sites as SS
+    # 0.99.0, the rename MPPP -> RPP: not counted while the rpp branch lives beside main - mppp_env.bat (the stub of
+    # the old name, it goes with the alias packages), sync_rpp.bat and check_rpp_reuse.bat (the rpp worktree's own)
+    transition = {"mppp_env.bat", "sync_rpp.bat", "check_rpp_reuse.bat"}
+    assert len([f for f in files if not f.name.startswith(("trial_joints_", "zcam_joints_0"))
+                and f.name not in transition]) <= 26, sorted(f.name for f in files)
+    from rpp.ibr import single_sites as SS
     assert (w / SS.BAT_NAME).read_bytes() == SS.BAT.replace("\r\n", "\n").replace("\n", "\r\n").encode("ascii")
     tm = (w / "train_masks.bat").read_bytes()
     assert tm.count(b"\n") == tm.count(b"\r\n") and b"masks_training_set_v*" in tm and b"--paper" in tm
@@ -399,18 +403,18 @@ def test_windows_folder_is_short():
     names = {f.name.lower() for f in files}
     for f in files:
         if f.suffix == ".bat":
-            for ref in re.findall(r"%MPPP_WIN%\\(\w+\.bat)", f.read_text(errors="replace")):
+            for ref in re.findall(r"%RPP_WIN%\\(\w+\.bat)", f.read_text(errors="replace")):
                 assert ref.lower() in names, (f.name, ref)
 
 
 def test_check_sites_shows_the_last_runs(tmp_path, capsys):
-    """0.94.4 (Christian): check_sites lists when each block last finished and with which MPPP version."""
+    """0.94.4 (Christian): check_sites lists when each block last finished and with which RPP version."""
     import importlib.util
     import json
     spec = importlib.util.spec_from_file_location("check_sites", ROOT / "scripts" / "check_sites.py")
     cs = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(cs)
-    from mppp.waypoints.sites import load_site_table, work_folder
+    from rpp.waypoints.sites import load_site_table, work_folder
     t = load_site_table()["sites"]
     n = work_folder(tmp_path, "rockytop", False, t["rockytop"]["sols"])
     z = work_folder(tmp_path, "rockytop", True, t["rockytop"]["sols"])
@@ -433,7 +437,7 @@ def test_check_sites_shows_the_last_runs(tmp_path, capsys):
 def test_archive_gaps_finds_and_fetches_the_missing_eye(tmp_path):
     """0.94.4: a right Hazcam (J01) whose left image is not in the archive; the PDS has both eyes as J02."""
     import importlib.util
-    ag = importlib.import_module("mppp_studies.misc.archive_gaps")
+    ag = importlib.import_module("rpp_studies.misc.archive_gaps")
     d = tmp_path / "00122" / "ids" / "rdr" / "fcam"
     d.mkdir(parents=True)
     (d / "FRF_0122_0677784010_631RAD_N0041422FHAZ02420_0A0295J01.IMG").write_bytes(b"r")
@@ -461,17 +465,17 @@ def test_archive_gaps_finds_and_fetches_the_missing_eye(tmp_path):
 
 
 def test_tie_point_studies_scaffold(tmp_path, capsys):
-    """0.95.0 (Christian, 28 Oct): the studies S1-S6 as variant sets run through ``mppp run --variant``, measured
+    """0.95.0 (Christian, 28 Oct): the studies S1-S6 as variant sets run through ``rpp run --variant``, measured
     the same way (completeness, quality, runtime per step from the log) and compared (S2 against the all-points
     solution, S6 the per-bin focal residuals by observation band)."""
     import importlib.util
     import json
-    T = importlib.import_module("mppp_studies.calibration.tie_point_studies")
+    T = importlib.import_module("rpp_studies.calibration.tie_point_studies")
     assert set(T.STUDIES) == {"S1", "S2", "S3", "S4", "S5", "S6"}
     for st, vs in T.STUDIES.items():
         assert next(iter(vs.values())) == {}                                  # the first variant: today's default
-    from mppp.pipeline import SETTING_NAMES, normalize
-    from mppp.runner import parse_set
+    from rpp.pipeline import SETTING_NAMES, normalize
+    from rpp.runner import parse_set
     for st, vs in T.STUDIES.items():
         for v, settings in vs.items():
             sets = T._sets(settings)
@@ -514,13 +518,13 @@ def test_tie_point_studies_scaffold(tmp_path, capsys):
 
 def test_zcam_joints_097_bat():
     """0.97.0 (Christian, 12 Nov 2026): the new blocks, the 63 / 79 / 110 mm joints, the 79 mm one-state test and
-    validation test 3; nothing promoted unless MPPP_PROMOTE=1; trial_joints_0p95.bat is gone."""
+    validation test 3; nothing promoted unless RPP_PROMOTE=1; trial_joints_0p95.bat is gone."""
     b = (ROOT / "scripts" / "windows" / "zcam_joints_097.bat").read_bytes()
     assert b"\r\n" in b and b.count(b"\n") == b.count(b"\r\n")
     t = b.decode("ascii")
     assert "--sites wildcat_ridge skinner_ridge chal_rocks_large seitah_overlook rose_river_falls" in t and "--zcam-hold-ratio 1.006" in t and "for %%Z in (63 79 110)" in t
     assert "--zcam-hold-ratio 1.0 --no-promote" in t and 'set "PROMOTE=--no-promote"' in t
-    assert "mppp_studies.validation.zpairs" in t and "cmods_freeze2" in t
+    assert "rpp_studies.validation.zpairs" in t and "cmods_freeze2" in t
     assert "--variant tri010 --set min_tri_angle_deg=0.10" in t and "--zcam-hold-ratio 1.0045" in t
     assert not (ROOT / "scripts" / "windows" / "trial_joints_0p95.bat").exists()
 
@@ -536,22 +540,23 @@ def test_sync_code_runs_from_a_copy_the_merge_cannot_touch():
     assert b.count(b"\n") == b.count(b"\r\n")
     t = b.decode("ascii")
     import re
-    hand = t.index('"%TEMP%\\mppp_sync_code_run.bat" --from-copy "%~dp0" %*')
+    hand = t.index('"%TEMP%\\rpp_sync_code_run.bat" --from-copy "%~dp0" %*')
     first_git = re.search(r"\n\s*git ", t).start()                        # the first git command (not the comments)
     assert t.index('if /i not "%~1"=="--from-copy"') < hand < t.index("setlocal") < first_git
     assert 'call "%TEMP%' not in t                                          # a transfer, not a call
     assert 'set "HERE=%~2"' in t and t.index('set "HERE=%~2"') < t.index("shift")
     commands = "\n".join(l for l in t.splitlines() if not l.strip().upper().startswith("REM"))
     assert "git stash pop" in commands and "git push" not in commands.split("echo next:")[0]   # no push by the script
-    # 0.98.19 (Christian, 16 Nov 2026): with no argument, the newest mppp_*.bundle of MPPP_TRANSFER
-    assert 'if "%~1"=="" call :newest_bundle' in t and ':newest_bundle' in t and '/o-d "%MPPP_TRANSFER%\\mppp_*.bundle"' in t
+    # 0.98.19 (Christian, 16 Nov 2026): with no argument, the newest bundle of RPP_TRANSFER (0.99.0: rpp_v*.bundle,
+    # not rpp_start_*)
+    assert 'if "%~1"=="" call :newest_bundle' in t and ':newest_bundle' in t and '/o-d "%RPP_TRANSFER%\\rpp_v*.bundle"' in t
     assert t.index('call :newest_bundle') < t.index('git bundle verify')
     assert "--ff-only" in t and 'MKL_THREADING_LAYER=SEQUENTIAL' in t and "-m pytest" in t
     # 0.98.25 (16 Nov: "fast-forward failed - main has commits the bundle does not"): the viewer's publish commits
     # on the PC - the bundle is merged then, and a merge with conflicts is aborted
     ff = t.index("--ff-only refs/remotes/bundle")
     assert ff < t.index("git merge -q --no-edit refs/remotes/bundle") < t.index("git merge --abort")
-    assert "mppp_studies.calibration.freeze" in t and "--update-code" in t
+    assert "rpp_studies.calibration.freeze" in t and "--update-code" in t
     assert not (ROOT / "scripts" / "windows" / "claude_sync.bat").exists()
 
 
@@ -561,8 +566,8 @@ def test_freeze_bat():
     b = (ROOT / "scripts" / "windows" / "freeze.bat").read_bytes()
     assert b.count(b"\n") == b.count(b"\r\n")
     t = b.decode("ascii")
-    assert "git clone" in t and "MPPP_FREEZE_CODE" in t and "mppp_studies.calibration.freeze" in t
-    assert 'PYTHONPATH=%MPPP_FREEZE_CODE%\\src' in t and "--from-tree" in t and "--ab-python" in t
+    assert "git clone" in t and "RPP_FREEZE_CODE" in t and "rpp_studies.calibration.freeze" in t
+    assert 'PYTHONPATH=%RPP_FREEZE_CODE%\\src' in t and "--from-tree" in t and "--ab-python" in t
     assert t.index(":quick") > t.index("goto :quick") and "--update-code" in t and "--status" in t
     assert not (ROOT / "scripts" / "windows" / "freeze_chain.bat").exists()
 
@@ -574,7 +579,7 @@ def test_run_sites_takes_several_groups():
     import argparse
     import sys
     sys.path.insert(0, str(ROOT / "scripts"))
-    from mppp.batch import choose_sites
+    from rpp.batch import choose_sites
     table = {"sites": {}, "groups": {"a": ["x", "y"], "b": ["y", "z"]}}
     ns = argparse.Namespace(all=False, group="a, b", sites=None)
     assert choose_sites(table, ns, None) == ["x", "y", "z"]
@@ -588,25 +593,25 @@ def test_run_sites_takes_several_groups():
 
 def test_zcam_backlash_rerun_bat():
     """0.95.3 (Christian, 31 Oct): the states run of the three blocks, the found list, the blocks again with every
-    zoom, the joints of 34-110 mm with more iterations, nothing promoted; stop_mppp.bat stops the chain."""
+    zoom, the joints of 34-110 mm with more iterations, nothing promoted; stop_rpp.bat stops the chain."""
     b = (ROOT / "scripts" / "windows" / "zcam_backlash_rerun.bat").read_bytes()
     assert b.count(b"\n") == b.count(b"\r\n")
     t = b.decode()
-    assert 'MPPP_RERUN_SITES=chal_rocks seitah_overlook rockytop' in t and 'MPPP_JOINT_ITERATIONS=300' in t
-    i_states = t.index("--variant %MPPP_STATES_VARIANT% --jobs 2 --force %SETS%")
-    i_apply = t.index("--sites %MPPP_RERUN_SITES% --apply")
-    i_blocks = t.index("--sites %MPPP_RERUN_SITES% --zcam --jobs 2 --force\r\n")
-    i_joints = t.index('zcam_joints.bat" --no-promote --iterations %MPPP_JOINT_ITERATIONS%')
+    assert 'RPP_RERUN_SITES=chal_rocks seitah_overlook rockytop' in t and 'RPP_JOINT_ITERATIONS=300' in t
+    i_states = t.index("--variant %RPP_STATES_VARIANT% --jobs 2 --force %SETS%")
+    i_apply = t.index("--sites %RPP_RERUN_SITES% --apply")
+    i_blocks = t.index("--sites %RPP_RERUN_SITES% --zcam --jobs 2 --force\r\n")
+    i_joints = t.index('zcam_joints.bat" --no-promote --iterations %RPP_JOINT_ITERATIONS%')
     assert i_states < i_apply < i_blocks < i_joints
-    assert 'MPPP_ZOOMS=34 48 63 79 110' in t and 'MPPP_HAZ=none' in t and "zcam_joints.lock" in t
+    assert 'RPP_ZOOMS=34 48 63 79 110' in t and 'RPP_HAZ=none' in t and "zcam_joints.lock" in t
     assert t.count('if exist "%ROOT%\\mppp_stopped.txt" goto :stopped') == 3
     sys.path.insert(0, str(ROOT / "scripts"))
-    from mppp.batch import mppp_processes
+    from rpp.batch import rpp_processes
     rows = [{"pid": 5, "ppid": 1, "cmd": 'cmd /c call "D:\\code\\MPPP\\scripts\\windows\\zcam_backlash_rerun.bat" --chain'}]
-    assert [r["pid"] for r in mppp_processes(rows)] == [5]
+    assert [r["pid"] for r in rpp_processes(rows)] == [5]
     # the exclusions of the rerun (sites.json)
-    from mppp.waypoints.sites import load_site_table
-    from mppp.sfm.workdir import exclusion_matches
+    from rpp.waypoints.sites import load_site_table
+    from rpp.sfm.workdir import exclusion_matches
     st = load_site_table()["sites"]
     sei, roc = st["seitah_overlook"]["settings"]["EXCLUDE"], st["rockytop"]["settings"]["EXCLUDE"]
     def hit(stem, entries):
@@ -619,7 +624,7 @@ def test_zcam_backlash_rerun_bat():
 
 
 def test_calib_iterations_option():
-    from mppp.cli import build_parser
+    from rpp.cli import build_parser
     a = build_parser().parse_args(["calib", "zcam", "--zoom", "48", "--iterations", "300", "--passes", "3"])
     assert a.iterations == 300 and a.passes == 3
     a = build_parser().parse_args(["calib", "zcam"])
@@ -631,7 +636,7 @@ def test_zcam_aspect_geometry_on_a_small_block(tmp_path):
     pytest.importorskip("pycolmap")
     pytest.importorskip("cv2")
     sys.path.insert(0, str(ROOT / "tests"))
-    from mppp_studies.calibration import zcam_aspect_geometry as G
+    from rpp_studies.calibration import zcam_aspect_geometry as G
     from test_nerfstudio import _scene
     proj, rec = _scene(tmp_path)
     proj.settings["database"] = {"cameras": {"NL": 1, "ZL063_F02000": 2}}
@@ -641,7 +646,7 @@ def test_zcam_aspect_geometry_on_a_small_block(tmp_path):
     assert len(rows) == 1 and rows[0]["bin"] == "ZL063_F02000" and rows[0]["ties"] == 300
     r = rows[0]
     assert -30 < r["elevation_deg"] < 0 and 5 < r["range_m"] < 12 and 0 < r["coverage"] <= 1
-    bins = G.summarise(rows * 9)
+    bins = G.summarize(rows * 9)
     assert len(bins) == 1 and bins[0]["aspect_ppm"] == 0.0 and bins[0]["images"] == 9
     md = G.report(bins)
     assert md[0].startswith("# Mastcam-Z bin aspect")
@@ -650,11 +655,11 @@ def test_zcam_aspect_geometry_on_a_small_block(tmp_path):
 
 
 def test_zcam_mast_head_chain_round_trip():
-    """0.95.5 (mppp_studies.calibration.zcam_mast_head): a Navcam pose from the chain goes back to the chain's own c and Q in the
+    """0.95.5 (rpp_studies.calibration.zcam_mast_head): a Navcam pose from the chain goes back to the chain's own c and Q in the
     head frame; the level mast frame puts NL ahead of the elevation axis, on the left, above it."""
     import importlib.util, json as _j
     import numpy as _np
-    zmh = importlib.import_module("mppp_studies.calibration.zcam_mast_head")
+    zmh = importlib.import_module("rpp_studies.calibration.zcam_mast_head")
     m = {"params": _j.loads('''{"W_rotvec_rad": [0.003913956929754023, 0.00266991321087316, -3.122261291130396], "P_xy_m": [0.8011894511997478, 0.5568794458630825], "h_m": [-0.0003506674984743533, 0.0, -1.9177004015584642], "c_L_m": [-0.05427324252593979, 0.2145980435045003, 0.1283363006047039], "c_R_m": [-0.05459462261361909, -0.2089250814636251, 0.12808116004673997], "Q_L_rotvec_rad": [-0.0571317210820025, -0.05495643684105014, 4.713989481400855], "Q_R_rotvec_rad": [0.017207252511186724, 0.01762287619051183, -1.5693821313696412], "G_rotvec_rad": [0.0015152142044422285, -0.0023839926438474776, -0.019291570441226168], "k_az": 0.0, "k_el": 0.0, "qT_L_rad_per_C": [1.918888638212186e-06, 8.55857117217576e-06, -2.203852941882726e-06], "qT_R_rad_per_C": [2.3541237840220355e-06, 7.687363792083791e-06, -8.992571276870773e-07], "T0_C": -20.0}''')}
     mast = zmh.Mast(m)
     for eye in ("L", "R"):

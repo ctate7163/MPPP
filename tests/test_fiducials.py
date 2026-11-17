@@ -1,12 +1,12 @@
-"""The rover deck fiducial check (mppp_studies.calibration.fiducials, 0.95.5): detection, the pair solutions, the summary."""
+"""The rover deck fiducial check (rpp_studies.calibration.fiducials, 0.95.5): detection, the pair solutions, the summary."""
 import json
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from mppp_studies.calibration import fiducials as F
-from mppp.paths import data_dir
+from rpp_studies.calibration import fiducials as F
+from rpp.paths import data_dir
 
 pytest.importorskip("cv2")
 pytest.importorskip("scipy")
@@ -35,7 +35,7 @@ def _look_at(C, target, up=(0, 0, -1)):
 
 def _scene():
     P = F.survey_nav_m()
-    C = np.array([0.55, 0.60, -1.90])                    # the NL centre seen on sol 203 (rover frame, m)
+    C = np.array([0.55, 0.60, -1.90])                    # the NL center seen on sol 203 (rover frame, m)
     R, t = _look_at(C, np.mean([P[k] for k in F.RIGID], 0))
     return P, R, t
 
@@ -51,7 +51,7 @@ def test_survey_nav():
 def test_pixel_conventions():
     xy = np.array([10.0, 20.0])
     assert np.allclose(F.full_to_native(F.native_to_full(xy, 0.5), 0.5), xy)
-    assert np.allclose(F.native_to_full([0.0, 0.0], 0.25), [2.0, 2.0])       # centre of the first native pixel
+    assert np.allclose(F.native_to_full([0.0, 0.0], 0.25), [2.0, 2.0])       # center of the first native pixel
 
 
 def _render(cx, cy, r=18.0, shape=(120, 120), aspect=0.6, angle=0.4, ss=6):
@@ -223,7 +223,7 @@ def test_write_csv(tmp_path):
 
 def test_script_finds_blocks(tmp_path):
     import importlib.util
-    mod = importlib.import_module("mppp_studies.calibration.fiducial_check")
+    mod = importlib.import_module("rpp_studies.calibration.fiducial_check")
     for b in ("mars2020_sol_0201_seitah_huge", "mars2020_sol_0413_threeforks_large"):
         d = tmp_path / b / "colmap"
         (d / "sparse" / "cahv_ba").mkdir(parents=True)
@@ -349,7 +349,7 @@ def test_pds_pairs_and_stretch():
 
 def test_deck_rig_trend_script_runs_on_an_empty_archive(tmp_path):
     import importlib.util
-    mod = importlib.import_module("mppp_studies.calibration.deck_rig_trend")
+    mod = importlib.import_module("rpp_studies.calibration.deck_rig_trend")
     (tmp_path / "pds" / "datadrive" / "00001").mkdir(parents=True)
     out = tmp_path / "out"
     assert mod.main(["--pds", str(tmp_path / "pds"), "--root", str(tmp_path), "--out", str(out), "--workers", "1"]) == 0
@@ -378,8 +378,8 @@ def test_tdf4_as_an_extra_rigid_target():
 def test_deck_figure_insets_doubled_and_the_second_frame_shows_all_nine():
     """0.98.21 (Christian, 16 Nov 2026: "Double the window patch window on the fiducial images. Replace the sol 31 image
     with another that shows all nine fiducials"): +-16 px insets; the second frame is sol 448's right Navcam frame."""
-    from mppp_studies.calibration import fiducials as FD
-    from mppp_studies.paper import paper_figures as PF
+    from rpp_studies.calibration import fiducials as FD
+    from rpp_studies.paper import paper_figures as PF
     assert FD.DECK_INSET_HALF_PX == 16
     assert "NRF_0448_0706724176" in PF.DECK_FRAME_EARLY and "0031" not in PF.DECK_FRAME_EARLY
     assert len(FD.RIGID) + len(FD.BAR) + len(FD.UNSURVEYED) == 9

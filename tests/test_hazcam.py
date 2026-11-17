@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from mppp.calib import labelfit
+from rpp.calib import labelfit
 
 # the label models of FLF / RLF_0461 (sol 461, S026D0630): FLF is a full-resolution sub-frame from detector line 961,
 # RLF a quarter-resolution full frame with entrance-pupil terms of several mm (a non-central CAHVORE)
@@ -25,7 +25,7 @@ RLF_0461 = {"MODEL_TYPE": "CAHVORE",
 
 def test_numpy_thin_prism_fisheye_is_colmaps():
     pytest.importorskip("pycolmap")
-    from mppp.colmap import project_camera
+    from rpp.colmap import project_camera
     rng = np.random.default_rng(0)
     X = np.c_[rng.uniform(-3, 3, (300, 2)), rng.uniform(0.05, 2, 300)]
     p = [2147, 2146, 2569, 1911, 0.009, -0.006, 1e-4, -2e-4, 1e-3, -1e-4, 0, 0]
@@ -55,8 +55,8 @@ def test_rear_hazcam_fit_is_non_central_over_the_terrain_ranges():
 def test_generic_hazcam_start_model_is_a_fisheye():
     """0.92's start model (f 2130, k1 -0.25, k2 +0.08) was 330 px rms from the label; the 0.93 one is close."""
     pytest.importorskip("pycolmap")
-    from mppp import calib
-    from mppp.cmod import PixelCamera, compare_cameras
+    from rpp import calib
+    from rpp.cmod import PixelCamera, compare_cameras
     m = calib.hazcam_start_model("F", "L")
     assert m["params"][4] > 0 and m["params"][5] < 0 and "generic" in m["source"]
     cm = labelfit.full_frame_model(FLF_0461, 1.0, 0.0, 960.0, "F")
@@ -66,8 +66,8 @@ def test_generic_hazcam_start_model_is_a_fisheye():
 
 
 def test_label_camera_uses_the_fit():
-    from mppp import calib
-    from mppp.cmod import CameraModel
+    from rpp import calib
+    from rpp.cmod import CameraModel
     cm = CameraModel.from_label(FLF_0461)
     R, lin = cm.decompose()
     K = [[lin["hs"], 0, lin["hc"]], [0, lin["vs"], lin["vc"] + 960.0], [0, 0, 1]]     # padded to the full frame
@@ -87,7 +87,7 @@ def _haz_meta(eye="L", fam="F", label=FLF_0461, scale=1.0, top=960):
 
 
 def test_block_camera_and_hazcam_start_camera():
-    from mppp.sfm.start_cameras import HAZCAM_INTRINSICS, hazcam_start_camera
+    from rpp.sfm.start_cameras import HAZCAM_INTRINSICS, hazcam_start_camera
     metas = [_haz_meta(), _haz_meta()]
     cam, info = labelfit.block_camera("FL", metas)
     assert cam["model"] == "THIN_PRISM_FISHEYE" and (cam["width"], cam["height"]) == (5120, 3840)
@@ -106,7 +106,7 @@ def test_block_camera_and_hazcam_start_camera():
 
 
 def test_hazcam_settings_keep_the_other_run_keys():
-    from mppp.pipeline import HAZCAM_FIELDS, Settings, hazcam_families, run_key
+    from rpp.pipeline import HAZCAM_FIELDS, Settings, hazcam_families, run_key
     s = Settings(pds_dir=None, scapes_root=None, gpu_python=None)
     assert s.hazcams == ("F", "R") and s.variant == ""                    # 0.93.1: Hazcams in every block by default
     assert set(HAZCAM_FIELDS) <= set(s.key_dict())
@@ -121,7 +121,7 @@ def test_hazcam_settings_keep_the_other_run_keys():
 
 
 def test_load_images_leaves_out_hazcams_not_asked_for(tmp_path):
-    from mppp.pipeline import Settings, load_images
+    from rpp.pipeline import Settings, load_images
 
     def meta(code, k):
         return {"source_product": f"{code}_0461_07078706{k:02d}_633RAD_N0260630FHAZ02008_0A0085J02.IMG",
@@ -140,10 +140,10 @@ def test_load_images_leaves_out_hazcams_not_asked_for(tmp_path):
 
 
 def test_hazcams_in_scope_and_cli():
-    from mppp.cli import _settings, build_parser
-    from mppp.process import SCOPE_CAMERA_CODES as P
-    from mppp.sfm.pairs import CAMERA_HEIGHT_BY_FAMILY_M
-    from mppp.sfm.project import SCOPE_CAMERA_CODES as S
+    from rpp.cli import _settings, build_parser
+    from rpp.process import SCOPE_CAMERA_CODES as P
+    from rpp.sfm.pairs import CAMERA_HEIGHT_BY_FAMILY_M
+    from rpp.sfm.project import SCOPE_CAMERA_CODES as S
     assert {"FLF", "FRF", "RLF", "RRF"} <= set(P) and {"FLF", "FRF", "RLF", "RRF"} <= set(S)
     assert CAMERA_HEIGHT_BY_FAMILY_M["F"] < 1.0 and CAMERA_HEIGHT_BY_FAMILY_M["R"] < 1.0
     a = build_parser().parse_args(["run", "rockytop", "--hazcam", "rear"])
@@ -159,7 +159,7 @@ def _hazcam_block(tmp_path, monkeypatch, rig_refine="hold", intrinsics="radial")
     pytest.importorskip("pyceres")
     pycolmap = pytest.importorskip("pycolmap")
     from helpers import _build_rec, _synthetic
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
     rec0, _ = _build_rec(proj, truth, P, cams, rigT, noise, rng)
     fids = sorted(rec0.frames)
@@ -199,7 +199,7 @@ def _hazcam_block(tmp_path, monkeypatch, rig_refine="hold", intrinsics="radial")
         if r["image_id"] in himg:
             r["instrument"] = "F" + r["instrument"][1:]
             r["camera_group"] = r["instrument"]
-    from mppp.sfm.start_cameras import HAZCAM_INTRINSICS
+    from rpp.sfm.start_cameras import HAZCAM_INTRINSICS
     names = ("fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3", "k4", "k5", "k6")
     for k in ("NL", "NR"):
         proj.cameras["F" + k[1:]] = dict(proj.cameras[k], hazcam_intrinsics=intrinsics,
@@ -269,7 +269,7 @@ def test_hazcam_intrinsics_hold_holds_the_cameras(tmp_path, monkeypatch):
 
 
 def test_hazcam_station_priors_follow_the_navcam_solution():
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
 
     class Im:
         def __init__(self, name, C):
@@ -310,7 +310,7 @@ def test_hazcam_station_priors_follow_the_navcam_solution():
     R.hazcam_station_priors(rec, proj, zcam_sigma_m=0.05)
     z1 = proj.images[-1]
     assert np.allclose(z1["prior_C"], [0.3, 0.3, 1.9]) and z1["prior_sigma_m"] == 0.05 and f1["prior_sigma_m"] == 0.1
-    from mppp.pipeline import Settings
+    from rpp.pipeline import Settings
     assert Settings().zcam_station_prior_sigma_m == R.ZCAM_STATION_PRIOR_SIGMA_M == 0.1
     assert "zcam_station_prior_sigma_m" not in Settings(include_zcam=False).key_dict()        # Navcam keys stay
 
@@ -319,9 +319,9 @@ def test_hazcam_rig_trends_figure_and_panel_letters(tmp_path):
     """0.95 (Christian, 27 Oct): rig trends for the front and rear Hazcams like the Navcam's, the panels lettered in
     their titles ("A. ..."), left-justified, as the maps."""
     from scipy.spatial.transform import Rotation
-    from mppp_studies.calibration import hazfit as H
-    from mppp.calib.constrain import panel_letters
-    from mppp_studies.calibration.plots import plot_hazcam_rig_trends
+    from rpp_studies.calibration import hazfit as H
+    from rpp.calib.constrain import panel_letters
+    from rpp_studies.calibration.plots import plot_hazcam_rig_trends
     R0 = Rotation.from_rotvec([0.001, 0.002, -0.001])
     rows = []
     for k, sol in enumerate((100, 400, 800, 1200, 1600)):
@@ -342,14 +342,14 @@ def test_hazcam_rig_trends_figure_and_panel_letters(tmp_path):
     assert axs[0].get_title(loc="left") == "A. pitch" and axs[1].get_title(loc="left") == "B. roll"
     assert axs[0].get_title() == ""
     plt.close(fig)
-    from mppp.calib import constrain as C
+    from rpp.calib import constrain as C
     assert C.STEREO_CX_YLIM == (-20.0, -16.0)
 
 
 def test_hazcam_efl_vs_temperature_figure(tmp_path):
     """0.95.2 (Christian, 30 Oct): the Hazcam eyes' focal length against temperature (make_figures, the fit folder)."""
     pytest.importorskip("matplotlib")
-    from mppp_studies.calibration.plots import plot_hazcam_efl_vs_temperature
+    from rpp_studies.calibration.plots import plot_hazcam_efl_vs_temperature
     rows = lambda eye, f0: [{"block": f"b{i}", "eye": eye, "T": T, "sol": sol, "images": 4, "observations": 900,
                              "ppm": 5.0, "sd_ppm": 10.0, "fx": f0 * (1 + 20e-6 * (T + 20)), "fy": f0, "k1": 0.0}
                             for i, (T, sol) in enumerate(((-30, 100), (-10, 500), (0, 900)))]
@@ -368,7 +368,7 @@ def test_make_figures_finds_the_newest_joints_and_hazcam_fit(tmp_path):
     import importlib.util
     import os
     import time
-    pf = importlib.import_module("mppp_studies.paper.paper_figures")
+    pf = importlib.import_module("rpp_studies.paper.paper_figures")
     ca = tmp_path / "camera_analysis"
     for d in ("zcam34_joint_20261028", "trial_0p95_20261029/zcam34_joint", "zcam34_joint_20261029",
               "hazcam_fit_ecam_20261027", "trial_0p95_20261029/hazcam_fit"):

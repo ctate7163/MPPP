@@ -1,85 +1,85 @@
 @echo off
 REM ======================================================================================================
-REM MPPP 0.93 - zcam_joints.bat (Christian, 22 Oct 2026): after run_sites_zcam.bat (it calls this file when its blocks
+REM RPP 0.93 - zcam_joints.bat (Christian, 22 Oct 2026): after run_sites_zcam.bat (it calls this file when its blocks
 REM are done), the Mastcam-Z joint of EVERY zoom over the good blocks (finished, health not FAIL, the zoom in the
 REM site's "zcam" list), each zoom's new focus model checked against the one in use and promoted when every check
 REM passes:
 REM   34 mm            the blocks of zcam34_joint and zcam_consensus (a calibrated model exists: >= 3 blocks to promote)
 REM   48, 63, 79, 110  the blocks of zcam_consensus (no model yet: the joint starts from the blocks' refined focus
 REM                    bins; a first calibration needs >= 2 blocks to be promoted)
-REM Held at fixed values in every joint (mppp.calib.forms.ZCAM_FIXED_TERMS): 34 mm k2 (ZL +0.5, ZR +0.6); 48 mm k2
+REM Held at fixed values in every joint (rpp.calib.forms.ZCAM_FIXED_TERMS): 34 mm k2 (ZL +0.5, ZR +0.6); 48 mm k2
 REM (+1.4, 0.95.1); 63, 79, 110 mm k2 = p1 = p2 = 0.  p1, p2 vary at 34 and 48 mm.
 REM Last, the Navcam + Mastcam-Z 34 mm combined joint with every finished ecam_consensus block added (a check of
-REM the Navcam law against the Mastcam-Z frames, never promoted; about an hour; set MPPP_NZ=none to skip it).
+REM the Navcam law against the Mastcam-Z frames, never promoted; about an hour; set RPP_NZ=none to skip it).
 REM
 REM   zcam_joints.bat                 the joints and the promotions
-REM   zcam_joints.bat --no-promote    the joints only (arguments go to every "mppp calib zcam")
-REM   set MPPP_ZOOMS=34 63            only these zooms
-REM   set MPPP_HAZ=none               no Hazcam fit (0.93.6: it runs first, over the zcam_consensus blocks)
-REM   set MPPP_ZOOMS=none             no Mastcam-Z joint (the Hazcam fit, and the N+Z check unless MPPP_NZ=none)
-REM   one copy at a time: %MPPP_SCAPES%\camera_analysis\zcam_joints.lock (a folder) while it runs
+REM   zcam_joints.bat --no-promote    the joints only (arguments go to every "rpp calib zcam")
+REM   set RPP_ZOOMS=34 63            only these zooms
+REM   set RPP_HAZ=none               no Hazcam fit (0.93.6: it runs first, over the zcam_consensus blocks)
+REM   set RPP_ZOOMS=none             no Mastcam-Z joint (the Hazcam fit, and the N+Z check unless RPP_NZ=none)
+REM   one copy at a time: %RPP_SCAPES%\camera_analysis\zcam_joints.lock (a folder) while it runs
 REM
-REM Writes %MPPP_SCAPES%\camera_analysis\zcam<zoom>_joint_<date>[_N]\ (report.md, check.json, the candidate model,
+REM Writes %RPP_SCAPES%\camera_analysis\zcam<zoom>_joint_<date>[_N]\ (report.md, check.json, the candidate model,
 REM zcam_joint.json, block_lines.json, zcam_rig_trends.png) and nz34_joint_<date>\.
 REM ======================================================================================================
 setlocal EnableExtensions EnableDelayedExpansion
-for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
-call "%MPPP_HOME%\scripts\windows\mppp_env.bat" || ( pause & exit /b 1 )
-if not defined MPPP_SCAPES set "MPPP_SCAPES=D:\rover_blocks"
-if not defined MPPP_ZOOMS set "MPPP_ZOOMS=34 48 63 79 110"
+for %%I in ("%~dp0..\..") do set "RPP_HOME=%%~fI"
+call "%RPP_HOME%\scripts\windows\rpp_env.bat" || ( pause & exit /b 1 )
+if not defined RPP_SCAPES set "RPP_SCAPES=D:\rover_blocks"
+if not defined RPP_ZOOMS set "RPP_ZOOMS=34 48 63 79 110"
 for /f %%d in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd"') do set "TODAY=%%d"
 REM 0.93.8: one zcam_joints at a time (23 Oct: two copies ran the same joints into the same folders and promoted twice)
 REM 1 Nov (0.95.3): 300 Ceres iterations per pass in every joint (the Z48 and N+Z joints stopped at 101 with 100)
-if not defined MPPP_JOINT_ITERATIONS set "MPPP_JOINT_ITERATIONS=300"
-set "LOCK=%MPPP_SCAPES%\camera_analysis\zcam_joints.lock"
-if not exist "%MPPP_SCAPES%\camera_analysis" mkdir "%MPPP_SCAPES%\camera_analysis"
+if not defined RPP_JOINT_ITERATIONS set "RPP_JOINT_ITERATIONS=300"
+set "LOCK=%RPP_SCAPES%\camera_analysis\zcam_joints.lock"
+if not exist "%RPP_SCAPES%\camera_analysis" mkdir "%RPP_SCAPES%\camera_analysis"
 mkdir "%LOCK%" 2>nul || (
   echo zcam_joints.bat is already running ^(%LOCK% exists^). Wait for it to finish, or - if no other zcam_joints
   echo window is open - delete that folder and start again.
-  if not defined MPPP_NOPAUSE_END pause
+  if not defined RPP_NOPAUSE_END pause
   exit /b 1
 )
-python -m mppp cmods list
+python -m rpp cmods list
 REM 0.93.6 (Christian, 23 Oct): first the Hazcam law from the same blocks (their Hazcam cameras and rigs), promoted
-REM when its checks pass (set MPPP_HAZ=none to skip it)
-if /i not "%MPPP_HAZ%"=="none" (
-  set "HOUT=%MPPP_SCAPES%\camera_analysis\hazcam_fit_zcam_%TODAY%"
+REM when its checks pass (set RPP_HAZ=none to skip it)
+if /i not "%RPP_HAZ%"=="none" (
+  set "HOUT=%RPP_SCAPES%\camera_analysis\hazcam_fit_zcam_%TODAY%"
   set "HN=1"
   call :freehaz
   echo.
   echo %DATE% %TIME%  Hazcam fit over the zcam_consensus blocks -^> !HOUT!
-  python -m mppp --log "!HOUT!_log.txt" calib hazcam --zcam-blocks --group zcam_consensus --root "%MPPP_SCAPES%" --out "!HOUT!" --promote-if-ok
+  python -m rpp --log "!HOUT!_log.txt" calib hazcam --zcam-blocks --group zcam_consensus --root "%RPP_SCAPES%" --out "!HOUT!" --promote-if-ok
   if errorlevel 1 echo Hazcam fit: not run or FAILED - see !HOUT!_log.txt
 )
-if /i "%MPPP_ZOOMS%"=="none" set "MPPP_ZOOMS="
-for %%Z in (%MPPP_ZOOMS%) do (
+if /i "%RPP_ZOOMS%"=="none" set "RPP_ZOOMS="
+for %%Z in (%RPP_ZOOMS%) do (
   set "GROUP=zcam_consensus"
   if "%%Z"=="34" set "GROUP=zcam34_joint,zcam_consensus"
-  set "OUT=%MPPP_SCAPES%\camera_analysis\zcam%%Z_joint_%TODAY%"
+  set "OUT=%RPP_SCAPES%\camera_analysis\zcam%%Z_joint_%TODAY%"
   set "N=1"
   call :freeout %%Z
   echo.
   echo %DATE% %TIME%  Mastcam-Z %%Z mm joint over !GROUP! -^> !OUT!
-  python -m mppp --log "!OUT!_log.txt" calib zcam --zoom %%Z --group "!GROUP!" --root "%MPPP_SCAPES%" --out "!OUT!" --promote-if-ok --iterations %MPPP_JOINT_ITERATIONS% %*
+  python -m rpp --log "!OUT!_log.txt" calib zcam --zoom %%Z --group "!GROUP!" --root "%RPP_SCAPES%" --out "!OUT!" --promote-if-ok --iterations %RPP_JOINT_ITERATIONS% %*
   if errorlevel 1 echo Mastcam-Z %%Z mm joint: not run or FAILED - see !OUT!_log.txt
 )
-set "MPPP_NOPAUSE=1"
-if exist "%MPPP_SCAPES%\camera_analysis\zcam34_joint_%TODAY%\zcam_joint.json" call "%MPPP_HOME%\scripts\windows\make_figures.bat" - "%MPPP_SCAPES%\camera_analysis\zcam34_joint_%TODAY%"
-if /i not "%MPPP_NZ%"=="none" (
+set "RPP_NOPAUSE=1"
+if exist "%RPP_SCAPES%\camera_analysis\zcam34_joint_%TODAY%\zcam_joint.json" call "%RPP_HOME%\scripts\windows\make_figures.bat" - "%RPP_SCAPES%\camera_analysis\zcam34_joint_%TODAY%"
+if /i not "%RPP_NZ%"=="none" (
   echo.
   echo %DATE% %TIME%  Navcam + Mastcam-Z 34 mm combined joint with the ecam_consensus blocks ^(a check, nothing promoted^)
-  python -m mppp --log "%MPPP_SCAPES%\camera_analysis\nz34_joint_%TODAY%_log.txt" calib nz --group "zcam34_joint,zcam_consensus" --navcam-group ecam_consensus --root "%MPPP_SCAPES%" --out "%MPPP_SCAPES%\camera_analysis\nz34_joint_%TODAY%" --iterations %MPPP_JOINT_ITERATIONS%
-  if errorlevel 1 echo the combined joint FAILED - see %MPPP_SCAPES%\camera_analysis\nz34_joint_%TODAY%_log.txt
+  python -m rpp --log "%RPP_SCAPES%\camera_analysis\nz34_joint_%TODAY%_log.txt" calib nz --group "zcam34_joint,zcam_consensus" --navcam-group ecam_consensus --root "%RPP_SCAPES%" --out "%RPP_SCAPES%\camera_analysis\nz34_joint_%TODAY%" --iterations %RPP_JOINT_ITERATIONS%
+  if errorlevel 1 echo the combined joint FAILED - see %RPP_SCAPES%\camera_analysis\nz34_joint_%TODAY%_log.txt
 )
 echo %DATE% %TIME%  done
 rmdir "%LOCK%" 2>nul
-if not defined MPPP_NOPAUSE_END pause
+if not defined RPP_NOPAUSE_END pause
 exit /b 0
 
 :freehaz
 if exist "!HOUT!\hazcam_fit.json" (
   set /a HN+=1
-  set "HOUT=%MPPP_SCAPES%\camera_analysis\hazcam_fit_zcam_%TODAY%_!HN!"
+  set "HOUT=%RPP_SCAPES%\camera_analysis\hazcam_fit_zcam_%TODAY%_!HN!"
   goto :freehaz
 )
 exit /b 0
@@ -87,7 +87,7 @@ exit /b 0
 :freeout
 if exist "!OUT!\zcam_joint.json" (
   set /a N+=1
-  set "OUT=%MPPP_SCAPES%\camera_analysis\zcam%1_joint_%TODAY%_!N!"
+  set "OUT=%RPP_SCAPES%\camera_analysis\zcam%1_joint_%TODAY%_!N!"
   goto :freeout
 )
 exit /b 0

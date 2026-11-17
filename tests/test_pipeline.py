@@ -1,4 +1,4 @@
-"""The pipeline as functions (mppp.pipeline): settings, run keys, selection and processing on the two test IMGs."""
+"""The pipeline as functions (rpp.pipeline): settings, run keys, selection and processing on the two test IMGs."""
 import json
 import shutil
 from pathlib import Path
@@ -12,12 +12,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 def clean_env(monkeypatch):
-    for k in ("MPPP_PDS", "MPPP_SCAPES", "MPPP_GPU_PYTHON", "COLMAP_BAT"):
+    for k in ("RPP_PDS", "RPP_SCAPES", "RPP_GPU_PYTHON", "COLMAP_BAT"):
         monkeypatch.delenv(k, raising=False)
 
 
 def test_settings_defaults(clean_env):
-    from mppp.pipeline import Settings, setting_names
+    from rpp.pipeline import Settings, setting_names
     s = Settings()
     assert s.pds_dir is None and s.scapes_root is None and s.gpu_python is None and s.colmap_bat is None
     assert s.source == "pds" and s.variant == "" and s.add_nearby_waypoints == 10 and s.include_zcam is False
@@ -34,10 +34,10 @@ def test_settings_defaults(clean_env):
 
 
 def test_settings_from_environment(monkeypatch):
-    from mppp.pipeline import Settings
-    monkeypatch.setenv("MPPP_PDS", "/pds")
-    monkeypatch.setenv("MPPP_SCAPES", "/scapes")
-    monkeypatch.setenv("MPPP_GPU_PYTHON", "/envs/gpu/python")
+    from rpp.pipeline import Settings
+    monkeypatch.setenv("RPP_PDS", "/pds")
+    monkeypatch.setenv("RPP_SCAPES", "/scapes")
+    monkeypatch.setenv("RPP_GPU_PYTHON", "/envs/gpu/python")
     monkeypatch.setenv("COLMAP_BAT", "/tools/COLMAP.bat")
     s = Settings()
     assert s.pds_dir == Path("/pds") and s.scapes_root == Path("/scapes")
@@ -46,8 +46,8 @@ def test_settings_from_environment(monkeypatch):
 
 
 def test_settings_merge_json_and_set(tmp_path, clean_env):
-    from mppp.pipeline import Settings, load_settings, normalize
-    from mppp.runner import parse_set
+    from rpp.pipeline import Settings, load_settings, normalize
+    from rpp.runner import parse_set
     work = tmp_path / "mars2020_sol_0460_rockytop"
     work.mkdir()
     (work / "mppp_settings.json").write_text(json.dumps({"ATTITUDE_PRIOR_DEG": 1.0, "thermal_bins_deg": None,
@@ -72,8 +72,8 @@ def test_settings_merge_json_and_set(tmp_path, clean_env):
 
 
 def test_run_key_stability(tmp_path, clean_env, monkeypatch):
-    from mppp import pipeline
-    from mppp.pipeline import Settings, process_key, run_key
+    from rpp import pipeline
+    from rpp.pipeline import Settings, process_key, run_key
     a, b = Settings(), Settings()
     assert run_key(a) == run_key(b) and len(run_key(a)) == 16
     assert run_key(a.replace(pds_dir=tmp_path, workers=1, gpu_python="x")) == run_key(a)     # machine settings: no
@@ -82,10 +82,10 @@ def test_run_key_stability(tmp_path, clean_env, monkeypatch):
     assert run_key(a, "processed", "v") == run_key(a.replace(source="processed", variant="v"))
     assert process_key(a) == process_key(b) and process_key(a) != run_key(a)
     assert process_key(a.replace(variant="v")) == process_key(a)
-    import mppp.calib
-    import mppp.calib.models
+    import rpp.calib
+    import rpp.calib.models
     k = run_key(a)
-    for mod in (mppp.calib, mppp.calib.models):
+    for mod in (rpp.calib, rpp.calib.models):
         monkeypatch.setattr(mod, "models_fingerprint", lambda folder=None: "other")
     assert run_key(a) != k and process_key(a) == process_key(b)      # new camera models rerun the alignments only
     monkeypatch.setattr(pipeline, "ALIGN_RULES", pipeline.ALIGN_RULES + 1)
@@ -93,7 +93,7 @@ def test_run_key_stability(tmp_path, clean_env, monkeypatch):
 
 
 def test_resolve_site(tmp_path, clean_env):
-    from mppp.pipeline import Settings, resolve_site
+    from rpp.pipeline import Settings, resolve_site
     s = Settings(scapes_root=tmp_path)
     st, s2 = resolve_site("rockytop", s)
     assert st.name == "rockytop" and st.sol_ranges == [(460, 530)] and st.zooms == [] and not st.zcam
@@ -130,7 +130,7 @@ def pds(tmp_path):
 
 
 def _test_settings(tmp_path, pds):
-    from mppp.pipeline import Settings
+    from rpp.pipeline import Settings
     # the Navcam test product is a Sun-pointing SAPP tile: the selection rules are off for it
     return Settings(pds_dir=pds, scapes_root=tmp_path / "scapes", sites_extra={"rockytop_test": (461, 464)},
                     add_nearby_waypoints=0, include_zcam=True, zcam_zooms=[34], sequence_prefixes=("NCAM", "SAPP"),
@@ -140,7 +140,7 @@ def _test_settings(tmp_path, pds):
 
 
 def test_select_images_on_a_pds_folder(tmp_path, pds, clean_env):
-    from mppp.pipeline import select_images, select_products
+    from rpp.pipeline import select_images, select_products
     s = _test_settings(tmp_path, pds)
     paths = select_images("rockytop_test", s)
     assert sorted(p.name for p in paths) == sorted([NLF.name, ZL0.name])
@@ -153,8 +153,8 @@ def test_select_images_on_a_pds_folder(tmp_path, pds, clean_env):
 
 
 def test_process_site_end_to_end(tmp_path, pds, clean_env):
-    from mppp.pipeline import PROCESS_DONE, load_images, process_key, process_site, processed_done, resolve_site
-    from mppp.sfm.workdir import load_manifest
+    from rpp.pipeline import PROCESS_DONE, load_images, process_key, process_site, processed_done, resolve_site
+    from rpp.sfm.workdir import load_manifest
     s = _test_settings(tmp_path, pds)
     processed = process_site("rockytop_test", s)
     work = tmp_path / "scapes" / "mars2020_sol_0461_rockytop_test_zcam"
@@ -177,7 +177,7 @@ def test_process_site_end_to_end(tmp_path, pds, clean_env):
 
 
 def test_align_refuses_a_folder_without_processed(tmp_path, clean_env):
-    from mppp.pipeline import Settings, align, run_site
+    from rpp.pipeline import Settings, align, run_site
     work = tmp_path / "mars2020_sol_0460_rockytop"
     work.mkdir()
     with pytest.raises(FileNotFoundError, match="processed/"):
@@ -189,7 +189,7 @@ def test_align_refuses_a_folder_without_processed(tmp_path, clean_env):
 
 
 def test_processing_config_and_project_settings(tmp_path, clean_env):
-    from mppp.pipeline import Settings, processing_config, wanted_project_settings, _zero_terms, _refine_tangential
+    from rpp.pipeline import Settings, processing_config, wanted_project_settings, _zero_terms, _refine_tangential
     cfg = processing_config(Settings())
     assert cfg["export"]["formats"] == ["PNG8"] and cfg["export"]["store_mask_in_alpha"] == 0.5
     assert cfg["masking"]["skip_inference_at"] == [] and cfg["masking"]["infer_mask"] is True
@@ -204,7 +204,7 @@ def test_processing_config_and_project_settings(tmp_path, clean_env):
     wz = wanted_project_settings(s.replace(include_zcam=True), tmp_path)
     assert wz["zcam_zero_terms"] is None and wz["zcam_low_backlash_sha256"]        # zcam-v2: p1, p2 refined
     assert wanted_project_settings(s.replace(include_zcam=True, zcam_tangential="zero"), tmp_path)["zcam_zero_terms"] == ["p1", "p2", "b1", "b2"]
-    from mppp.pipeline import _check_settings
+    from rpp.pipeline import _check_settings
     with pytest.raises(ValueError, match="navcam_rig_refine"):
         _check_settings(s.replace(navcam_rig_refine="sometimes"))
     with pytest.raises(ValueError, match="navcam_pp"):
@@ -212,7 +212,7 @@ def test_processing_config_and_project_settings(tmp_path, clean_env):
 
 
 def test_pipeline_defaults_v0p61():
-    from mppp.pipeline import Settings
+    from rpp.pipeline import Settings
     s = Settings()
     assert s.store_mask_in_alpha == 0.5 and s.zcam_k3 == "label" and s.zcam_backlash == "list"
     assert s.zcam_low_backlash is None and s.zcam_focus_line is True and s.thermal_after_stage1 is True
@@ -220,7 +220,7 @@ def test_pipeline_defaults_v0p61():
 
 
 def test_pipeline_and_script_defaults_v0p64(tmp_path):
-    from mppp.pipeline import Settings, resolve_site
+    from rpp.pipeline import Settings, resolve_site
     s = Settings(scapes_root=tmp_path)
     assert s.sift["num_octaves"] is None and s.pose_guided is True
     assert resolve_site("rockytop", s)[1].sift["num_octaves"] == 4          # 6 with Mastcam-Z, else COLMAP's 4
@@ -228,7 +228,7 @@ def test_pipeline_and_script_defaults_v0p64(tmp_path):
 
 
 def test_run_key_includes_the_alignment_rules(monkeypatch):
-    from mppp import pipeline
+    from rpp import pipeline
     s = pipeline.Settings()
     k1 = pipeline.run_key(s)
     p1 = pipeline.process_key(s)
@@ -239,15 +239,15 @@ def test_run_key_includes_the_alignment_rules(monkeypatch):
 
 
 def test_pipeline_defaults_v0p65():
-    from mppp.pipeline import Settings
+    from rpp.pipeline import Settings
     assert Settings().navcam_aspect == "hold"
 
 
 def test_selection_defaults_v0p65p1():
     """0.65.1: Navcam tiles below 1/5 of the frame left out (was 1/4), LMST window 6-18 h, saturated fraction 0.2."""
-    from mppp.pipeline import PROCESS_RULES, Settings
-    from mppp.sfm.project import NAVCAM_MIN_FRAME_FRACTION
-    from mppp.config import default_config
+    from rpp.pipeline import PROCESS_RULES, Settings
+    from rpp.sfm.project import NAVCAM_MIN_FRAME_FRACTION
+    from rpp.config import default_config
     sel = default_config()["selection"]
     assert sel["lmst_window_h"] == [6.0, 18.0] and sel["max_saturated_fraction"] == 0.2
     assert NAVCAM_MIN_FRAME_FRACTION == pytest.approx(1 / 3) and PROCESS_RULES == 6     # v0p85: 1/3; 0.94.0: 6
@@ -257,20 +257,20 @@ def test_selection_defaults_v0p65p1():
 
 
 def test_run_key_holds_the_camera_models(monkeypatch):
-    import mppp.calib
-    import mppp.calib.models
-    from mppp import pipeline
+    import rpp.calib
+    import rpp.calib.models
+    from rpp import pipeline
     assert pipeline.ALIGN_RULES >= 73
     s = pipeline.Settings()
     k1 = pipeline.run_key(s)
-    for mod in (mppp.calib, mppp.calib.models):
+    for mod in (rpp.calib, rpp.calib.models):
         monkeypatch.setattr(mod, "models_fingerprint", lambda folder=None: "other")
     assert pipeline.run_key(s) != k1
     assert pipeline.process_key(s) == pipeline.process_key(pipeline.Settings())
 
 
 def test_pipeline_settings_v0p73():
-    from mppp.pipeline import Settings
+    from rpp.pipeline import Settings
     s = Settings()
     assert s.zcam_bin_refine == "focal_pp" and s.zcam_backlash == "list"
     assert s.zcam_line_params == {"ZL": ["fx", "fy", "k1", "k2", "p1", "p2"], "ZR": ["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2"]}
@@ -278,7 +278,7 @@ def test_pipeline_settings_v0p73():
 
 
 def test_resolved_site_carries_the_visits(tmp_path):
-    from mppp.pipeline import Settings, resolve_site
+    from rpp.pipeline import Settings, resolve_site
     extra = {"sid2": {"sols": [[361, 378], [91, 101]], "zcam": [34]}, "one": {"sols": [700, 712], "zcam": [34]}}
     s = Settings(scapes_root=tmp_path, sites_extra=extra)
     st, _ = resolve_site("sid2", s)
@@ -288,7 +288,7 @@ def test_resolved_site_carries_the_visits(tmp_path):
 
 
 def test_pipeline_v0p80_settings(tmp_path):
-    from mppp.pipeline import Settings, _rig_refine, wanted_project_settings
+    from rpp.pipeline import Settings, _rig_refine, wanted_project_settings
     s = Settings()
     assert s.navcam_pp == "hold" and s.round1_hold is True and s.rig_translation_sigma_m == 0.005
     assert _rig_refine(s) == "rotation" and _rig_refine(s.replace(navcam_rig_refine="full")) is True
@@ -297,7 +297,7 @@ def test_pipeline_v0p80_settings(tmp_path):
 
 
 def test_pipeline_carries_the_v0p82_settings(tmp_path):
-    from mppp.pipeline import ALIGN_RULES, Settings, wanted_project_settings
+    from rpp.pipeline import ALIGN_RULES, Settings, wanted_project_settings
     s = Settings()
     assert s.min_included_fraction is None and s.no_position_prior_at == [] and s.prior_gauge_recentre is True
     assert s.prior_sigma_m == 1.0 and wanted_project_settings(s, tmp_path)["prior_sigma_m"] == [1.0, 1.0, 1.0]
@@ -307,9 +307,9 @@ def test_pipeline_carries_the_v0p82_settings(tmp_path):
 def test_one_third_rule_is_about_subframes():
     """Christian (19 Oct): the 1/3 rule leaves out sub-frames covering less than 1/3 of the frame - not images whose
     mask keeps less than 1/3 (v0p82's reading, now off)."""
-    from mppp.pipeline import ALIGN_RULES, Settings
-    from mppp.sfm.project import NAVCAM_MIN_FRAME_FRACTION
-    from mppp.sfm.workdir import MIN_INCLUDED_FRACTION
+    from rpp.pipeline import ALIGN_RULES, Settings
+    from rpp.sfm.project import NAVCAM_MIN_FRAME_FRACTION
+    from rpp.sfm.workdir import MIN_INCLUDED_FRACTION
     assert NAVCAM_MIN_FRAME_FRACTION == pytest.approx(1 / 3) and MIN_INCLUDED_FRACTION is None and ALIGN_RULES >= 85
     s = Settings()
     assert s.min_included_fraction is None and s.subframe_families == ("N",)
@@ -317,7 +317,7 @@ def test_one_third_rule_is_about_subframes():
 
 def test_one_eye_exposures():
     """0.94.4: the right Hazcam of an exposure whose left image is missing from the local archive is reported."""
-    from mppp.pipeline import one_eye_exposures
+    from rpp.pipeline import one_eye_exposures
     paths = ["FLF_0116_0677245019_226RAD_N0041250FHAZ02420_0A0295J01.IMG",
              "FRF_0116_0677245019_226RAD_N0041250FHAZ02420_0A0295J01.IMG",
              "FRF_0122_0677784010_631RAD_N0041422FHAZ02420_0A0295J01.IMG",
@@ -331,15 +331,15 @@ def test_navcam_run_key_ignores_the_zcam_models(tmp_path, monkeypatch):
     """27 Oct: promoting a Mastcam-Z model (Z48) queued every Navcam site again - a Navcam block's key now leaves
     the Mastcam-Z focus models out of the camera-model fingerprint; a Mastcam-Z block's keeps them."""
     import shutil
-    from mppp import calib
-    from mppp.calib.models import models_fingerprint
+    from rpp import calib
+    from rpp.calib.models import models_fingerprint
     src = Path(calib.__file__).parent.parent / "data" / "cmods"
     d = tmp_path / "cmods"
     shutil.copytree(src, d)
     nav0, all0 = models_fingerprint(d, include_zcam=False), models_fingerprint(d)
     (d / "M2020_ZCAM048_focus_model.json").write_text("{}")
     assert models_fingerprint(d, include_zcam=False) == nav0 and models_fingerprint(d) != all0
-    from mppp import pipeline as P
+    from rpp import pipeline as P
     seen = []
     monkeypatch.setattr(calib, "models_fingerprint", lambda include_zcam=True: seen.append(include_zcam) or str(include_zcam))
     P.run_key({"include_zcam": False}); P.run_key({"include_zcam": True})

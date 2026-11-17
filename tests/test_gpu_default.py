@@ -1,19 +1,19 @@
 """0.91: the batch runs find the GPU environment like the notebook does (Chal Rocks Z34, 20 Oct: SIFT on the CPU in the
 run's own process, killed by a COLMAP abort)."""
-from mppp.pipeline import Settings
+from rpp.pipeline import Settings
 
 
 def test_gpu_python_from_the_pointer_file(tmp_path, monkeypatch):
-    py = tmp_path / "envs" / "mppp_gpu" / "python.exe"
+    py = tmp_path / "envs" / "rpp_gpu" / "python.exe"
     py.parent.mkdir(parents=True)
     py.write_text("")
     (tmp_path / "mppp").mkdir()
     (tmp_path / "mppp" / "gpu_python.txt").write_text(f'"{py}"\n', encoding="utf-8")
-    for k in ("MPPP_GPU_PYTHON", "MPPP_GPU_PY"):
+    for k in ("RPP_GPU_PYTHON", "RPP_GPU_PY"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     assert Settings().gpu_python == str(py)
-    monkeypatch.setenv("MPPP_GPU_PYTHON", "C:/other/python.exe")         # the explicit setting still wins
+    monkeypatch.setenv("RPP_GPU_PYTHON", "C:/other/python.exe")         # the explicit setting still wins
     assert Settings().gpu_python == "C:/other/python.exe"
 
 
@@ -21,7 +21,7 @@ def test_no_gpu_python(tmp_path, monkeypatch):
     import sys
     (tmp_path / "python.exe").write_text("")
     monkeypatch.setattr(sys, "executable", str(tmp_path / "python.exe"))
-    for k in ("MPPP_GPU_PYTHON", "MPPP_GPU_PY"):
+    for k in ("RPP_GPU_PYTHON", "RPP_GPU_PY"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     assert Settings().gpu_python is None
@@ -29,16 +29,16 @@ def test_no_gpu_python(tmp_path, monkeypatch):
 
 
 def test_gpu_python_from_the_conda_envs_folder(tmp_path, monkeypatch):
-    """The old notebook's fallback: <conda>/envs/mppp_gpu next to the running python."""
+    """The old notebook's fallback: <conda>/envs/rpp_gpu next to the running python."""
     import sys
-    from mppp.sfm import gpu
+    from rpp.sfm import gpu
     base = tmp_path / "miniconda3"
-    other = base / "envs" / "mppp_gpu" / "python.exe"
+    other = base / "envs" / "rpp_gpu" / "python.exe"
     other.parent.mkdir(parents=True)
     other.write_text("")
     (base / "python.exe").write_text("")
     monkeypatch.setattr(sys, "executable", str(base / "python.exe"))
-    for k in ("MPPP_GPU_PYTHON", "MPPP_GPU_PY"):
+    for k in ("RPP_GPU_PYTHON", "RPP_GPU_PY"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
     assert gpu.conda_env_python() == str(other)
@@ -48,7 +48,7 @@ def test_gpu_python_from_the_conda_envs_folder(tmp_path, monkeypatch):
 def test_big_blocks_match_prior_pairs_and_keep_their_run_key():
     """21 Oct: exhaustive matching over more than max_exhaustive_images images matches the prior-overlap pairs; the
     threshold is not in the run key (finished blocks stay finished)."""
-    from mppp.pipeline import effective_match_mode, run_key
+    from rpp.pipeline import effective_match_mode, run_key
     s = Settings(match_mode="exhaustive")                # 0.93.9: the default is "lightglue"
     assert effective_match_mode(s, 299) == "exhaustive" and effective_match_mode(s, 347) == "prior_pairs"
     assert effective_match_mode(Settings(match_mode="exhaustive", max_exhaustive_images=0), 2713) == "exhaustive"
@@ -59,8 +59,8 @@ def test_big_blocks_match_prior_pairs_and_keep_their_run_key():
 def test_shipped_exclusion_list():
     """22 Oct (Christian): one list of observations left out of every alignment (Mastcam-Z movies, ZCAM01*, four
     Navcam stereo pairs) - on by default, EXCLUDE_LIST=false keeps them; not in the run key."""
-    from mppp.pipeline import run_key, shipped_exclusions
-    from mppp.sfm.workdir import apply_exclusions
+    from rpp.pipeline import run_key, shipped_exclusions
+    from rpp.sfm.workdir import apply_exclusions
     e = shipped_exclusions()
     assert {"seq:ZCAM05179", "seq:ZCAM05180", "seq:ZCAM05114", "seq:ZCAM05093", "seq:ZCAM05062", "seq:ZCAM01*", "seq:ZCAM00*",
             "seq:ZCAM08512"} <= set(e)

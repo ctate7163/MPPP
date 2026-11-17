@@ -1,10 +1,10 @@
 @echo off
 REM ======================================================================================================
-REM MPPP v0p74 - the whole calibration and alignment run in one go, unattended (several days):
+REM RPP v0p74 - the whole calibration and alignment run in one go, unattended (several days):
 REM   wait for a running batch, check/promote the camera models, Navcam consensus (v0p73 form) + rig residuals,
 REM   Mastcam-Z start model and low-backlash list from the current blocks, all Navcam + Mastcam-Z 34 mm blocks,
 REM   all Navcam blocks, the Mastcam-Z 34 mm calibration from the 3 best blocks, the N+Z blocks again with it,
-REM   a point cloud per block, a report.  Runs in a minimised window.  To stop it: stop_mppp.bat (it stops the
+REM   a point cloud per block, a report.  Runs in a minimized window.  To stop it: stop_rpp.bat (it stops the
 REM   pipeline and the alignment it is running; closing the window alone leaves the alignment running).
 REM   Double-click again after a stop (or a reboot): it continues after the last finished stage.
 REM
@@ -15,26 +15,26 @@ REM ============================================================================
 setlocal
 REM 2 Nov 2026 (0.95.3 freeze): the blocks live in D:\rover_blocks (was D:\scapes)
 set "ROOT=D:\rover_blocks"
-if not defined MPPP_HOME for %%I in ("%~dp0..\..") do set "MPPP_HOME=%%~fI"
-if not defined MPPP_HOME set "MPPP_HOME=D:\code\MPPP"
-set "MPPP_WIN=%MPPP_HOME%\scripts\windows"
-if not exist "%MPPP_WIN%\mppp_env.bat" (
-  echo MPPP not found in "%MPPP_HOME%": set MPPP_HOME to the MPPP folder, e.g.  set MPPP_HOME=D:\code\MPPP
+if not defined RPP_HOME for %%I in ("%~dp0..\..") do set "RPP_HOME=%%~fI"
+if not defined RPP_HOME set "RPP_HOME=D:\code\RPP"
+set "RPP_WIN=%RPP_HOME%\scripts\windows"
+if not exist "%RPP_WIN%\rpp_env.bat" (
+  echo RPP not found in "%RPP_HOME%": set RPP_HOME to the RPP folder, e.g.  set RPP_HOME=D:\code\RPP
   pause
   exit /b 1
 )
-call "%MPPP_WIN%\mppp_env.bat" || ( pause & exit /b 1 )
+call "%RPP_WIN%\rpp_env.bat" || ( pause & exit /b 1 )
 if /i "%~1"=="--status" (
-  python -m mppp_studies.calibration.run_pipeline --root "%ROOT%" --status
+  python -m rpp_studies.calibration.run_pipeline --root "%ROOT%" --status
   pause
   exit /b 0
 )
 if /i "%~1"=="--dry-run" (
-  python -m mppp_studies.calibration.run_pipeline --root "%ROOT%" %*
+  python -m rpp_studies.calibration.run_pipeline --root "%ROOT%" %*
   pause
   exit /b 0
 )
-start "MPPP pipeline - %ROOT%" /min cmd /c python -m mppp_studies.calibration.run_pipeline --root "%ROOT%" %* ^|^| pause
-echo MPPP pipeline started in a minimised window. Log: "%ROOT%\mppp_pipeline\pipeline_log.txt"
+start "RPP pipeline - %ROOT%" /min cmd /c python -m rpp_studies.calibration.run_pipeline --root "%ROOT%" %* ^|^| pause
+echo RPP pipeline started in a minimized window. Log: "%ROOT%\mppp_pipeline\pipeline_log.txt"
 echo Status: run_pipeline.bat --status
 timeout /t 15

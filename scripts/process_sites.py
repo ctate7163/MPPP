@@ -1,15 +1,15 @@
 """
 Select and process the images of many sites (or some of them) into their WORK folders, without aligning them.
 
-The sites and their sol ranges come from the site definitions ``src/mppp/data/sites.json`` (or ``--sites-file``).
+The sites and their sol ranges come from the site definitions ``src/rpp/data/sites.json`` (or ``--sites-file``).
 Each site goes to ``<root>/mars2020_sol_<first sol>_<site>`` (Navcam) or ``..._zcam`` (``--zcam``, with the
-Mastcam-Z frames of the site's ``"zcam"`` zooms).  For each site :func:`mppp.pipeline.process_site` runs with the
+Mastcam-Z frames of the site's ``"zcam"`` zooms).  For each site :func:`rpp.pipeline.process_site` runs with the
 default settings: one PDS product per exposure is selected from the archive, then processed into
 ``<WORK>/processed`` (8-bit PNG, terrain mask, CAHV + waypoint pose, manifest).  Images already processed with
 the same configuration are reused.  The site's ``settings`` and ``no_mask_inference_at`` in the site
 definitions, ``<WORK>/mppp_settings.json``, ``--settings`` and ``--set`` apply as in an alignment run.
 
-Then align a site with ``mppp align <WORK>`` (or ``align_here.bat`` copied into its WORK folder).
+Then align a site with ``rpp align <WORK>`` (or ``align_here.bat`` copied into its WORK folder).
 
 Examples::
 
@@ -20,7 +20,7 @@ Examples::
     python scripts/process_sites.py --status                        # every WORK folder under --root
 
 Only one batch (process_sites or run_sites) runs on a scapes folder at a time: a second start stops at once and
-says which one is running (``stop_mppp.bat`` / ``scripts/stop_runs.py`` stops it).  A site whose WORK folder
+says which one is running (``stop_rpp.bat`` / ``scripts/stop_runs.py`` stops it).  A site whose WORK folder
 has a run going on (e.g. ``align_here.bat``) is skipped.
 
 A site whose ``<WORK>/processed/process_done.json`` records the same settings is skipped (``--force`` processes
@@ -30,13 +30,13 @@ that fails is logged and the next one starts.
 """
 from __future__ import annotations
 import os as _os
-_os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")   # 27 Oct: as mppp_env.bat - two OpenMP runtimes (torch, pycolmap) abort a plain "python" start
+_os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")   # 27 Oct: as rpp_env.bat - two OpenMP runtimes (torch, pycolmap) abort a plain "python" start
 
 import argparse
-import os
 import sys
 import time
 from pathlib import Path
+from rpp import env as rpp_env
 
 HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
@@ -49,11 +49,11 @@ def main(argv=None) -> int:
     g.add_argument("--all", action="store_true", help="every site in the site definitions")
     g.add_argument("--group", help="a site group of the site definitions (e.g. ecam_consensus)")
     g.add_argument("--sites", nargs="+", help="site names")
-    ap.add_argument("--root", default=os.environ.get("MPPP_SCAPES"), help="the WORK folders go below it (default: MPPP_SCAPES)")
+    ap.add_argument("--root", default=rpp_env.get("RPP_SCAPES"), help="the WORK folders go below it (default: RPP_SCAPES)")
     ap.add_argument("--zcam", action="store_true", help="the Navcam + Mastcam-Z blocks (..._zcam) of the sites with a \"zcam\" list")
     ap.add_argument("--settings", default=None, help="a JSON file of settings for every site")
     ap.add_argument("--set", action="append", default=[], metavar="NAME=VALUE", help="a pipeline setting")
-    ap.add_argument("--sites-file", default=None, help="site definitions (default mppp/data/sites.json)")
+    ap.add_argument("--sites-file", default=None, help="site definitions (default rpp/data/sites.json)")
     ap.add_argument("--force", action="store_true", help="process sites already processed with these settings again")
     ap.add_argument("--force-start", action="store_true",
                     help="start even if the batch file says another batch is running on --root")
@@ -61,16 +61,16 @@ def main(argv=None) -> int:
     ap.add_argument("--status", action="store_true", help="the run status of every WORK folder under --root")
     a = ap.parse_args(argv)
     if not a.root:
-        ap.error("--root (or the MPPP_SCAPES environment variable) is required")
+        ap.error("--root (or the RPP_SCAPES environment variable) is required")
     root = Path(a.root)
-    from mppp.batch import BatchRunning, batch_lock, choose_sites, filter_zcam, site_settings, status_table
+    from rpp.batch import BatchRunning, batch_lock, choose_sites, filter_zcam, site_settings, status_table
     if a.status:
         return status_table(root)
 
-    import mppp
-    from mppp.pipeline import process_key, process_site, processed_done
-    from mppp.runner import STATUS_FILE, Log, RunAlive, parse_set, read_status, run_logged
-    from mppp.waypoints.sites import load_site_table
+    import rpp
+    from rpp.pipeline import process_key, process_site, processed_done
+    from rpp.runner import STATUS_FILE, Log, RunAlive, parse_set, read_status, run_logged
+    from rpp.waypoints.sites import load_site_table
     table = load_site_table(a.sites_file)
     sites = choose_sites(table, a, ap)
     unknown = [s for s in sites if s not in table["sites"]]
@@ -81,7 +81,7 @@ def main(argv=None) -> int:
     sets = parse_set(a.set)
     root.mkdir(parents=True, exist_ok=True)
     log = Log(root / "process_sites_log.txt")
-    log(f"process_sites: MPPP {mppp.__version__}, {len(sites)} sites, root {root}, Mastcam-Z {a.zcam}, "
+    log(f"process_sites: RPP {rpp.__version__}, {len(sites)} sites, root {root}, Mastcam-Z {a.zcam}, "
         f"settings {sets or '-'}")
     todo = []
     for s in sites:
@@ -99,7 +99,7 @@ def main(argv=None) -> int:
         batch = batch_lock(root, "process_sites", force=a.force_start, sites=[t[0] for t in todo])
     except BatchRunning as e:
         log(f"not started: {e}")
-        print(f"\nMPPP: {e}", file=sys.stderr)
+        print(f"\nRPP: {e}", file=sys.stderr)
         return 3
     results, busy = {}, []
     try:

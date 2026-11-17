@@ -1,5 +1,5 @@
 """
-Build ``src/mppp/data/rover/perseverance_rmech.npz`` - the simplified Perseverance model of mppp.ibr.rover_model -
+Build ``src/rpp/data/rover/perseverance_rmech.npz`` - the simplified Perseverance model of rpp.ibr.rover_model -
 from NASA's glTF model (https://science.nasa.gov/resource/mars-perseverance-rover-3d-model/, 25042_Perseverance.glb,
 credit NASA/JPL-Caltech; Christian, 10 Nov 2026: "take this model of perseverance's, simplify it, add it to the mesh,
 and project the images onto it. The arm is stowed, so you would need to rotate the arm joints").
@@ -8,7 +8,7 @@ and project the images onto it. The arm is stowed, so you would need to rotate t
 
 The changes to NASA's model are described for users in docs/rover-model.md; the numbers are the constants below.
 
-* Frame: the model is in metres, x left, y up, z forward, the wheels on y = 0; RMECH (x forward, y right, z down,
+* Frame: the model is in meters, x left, y up, z forward, the wheels on y = 0; RMECH (x forward, y right, z down,
   z 0 = the deck top) is x = z_model, y = -x_model, z = 1.135 - y_model, then the rigid fit of seven fiducial discs
   of the model's deck to their surveyed positions (2.2 mm rms; before 0.97.0 an ICP of the Van Zyl rover cloud).
 * Left out: the mast above its base and the head (they turn with the cameras), the parts under the belly.
@@ -21,7 +21,7 @@ The changes to NASA's model are described for users in docs/rover-model.md; the 
 * Pieces of the body moved to where the images show them (BODY_COMPONENT_SHIFTS).
 * The front Hazcams' own lenses and housings taken out of their view (HAZCAM_VIEWS, clear_camera_views).
 * Not simplified since 0.97.7: NASA's triangles as they are (TARGET_FACES; 0.96.1-0.97.6 decimated every part).
-* scripts/export_rover_glb.py writes the result as docs/rover/perseverance_rmech.glb for use outside MPPP.
+* scripts/export_rover_glb.py writes the result as docs/rover/perseverance_rmech.glb for use outside RPP.
 """
 import argparse
 import json
@@ -54,7 +54,7 @@ ARM_STOW_DEG = (90.09, 16.37, 71.66, -88.18, 81.48)
 # frame - with the turret in the Rockytop frame still in place.
 # Then (Christian: "az90 is more right for that joint", "the turret ... maybe down just a little"): the shoulder
 # azimuth held at 90 and the other four angles fitted by least squares to marked points - the drill's dome, PIXL and
-# the bit in NLF_0461_0707871340 (Rockytop), PIXL and the nameplate's centre line in NRF_0052_0671568531 (Van Zyl):
+# the bit in NLF_0461_0707871340 (Rockytop), PIXL and the nameplate's center line in NRF_0052_0671568531 (Van Zyl):
 # (14.5, 66.3, -86.9, 77.5), rms 44 px at half resolution (the marks are good to 20-30 px); with the azimuth free the
 # same fit gives 90.9.
 # Then (Christian: "the arm turret is too high. Bring it down a little while leaving the far side of the forearm in
@@ -63,24 +63,24 @@ ARM_STOW_DEG = (90.09, 16.37, 71.66, -88.18, 81.48)
 # Before (10 Nov): the fit to the Van Zyl cloud, which left the turret's own angle the least certain - it was 180 deg off.
 # 0.97.0 (Christian, 12 Nov 2026: "there's a black rubber thing on the far side of the middle deck at looks like it
 # should be rotated 30-45 degrees" ... "rotate it in azimuth back 30 degrees"): the ribbed block of the body (a
-# connected component 21 cm along y, 7 cm tall, centred at near_m) turned 30 deg about the vertical through its own
-# centre, so that its ribbed face looks towards the mast as in NRF_0461_0707874458 (-30 in turn_components' sense;
+# connected component 21 cm along y, 7 cm tall, centered at near_m) turned 30 deg about the vertical through its own
+# center, so that its ribbed face looks toward the mast as in NRF_0461_0707874458 (-30 in turn_components' sense;
 # +30 shows it end on).  A lean about its long axis (tried first) was the wrong axis.  Then ("the back thing should
 # be anchored on the right side and then rotated so that its right extent stays in place"): the pivot is the block's
-# -y end (y = -0.194 m, the right end as the mast cameras see it looking aft, by the roller bracket), not its centre.
+# -y end (y = -0.194 m, the right end as the mast cameras see it looking aft, by the roller bracket), not its center.
 BODY_TURNS = ({"near_m": (-0.323, -0.088, -0.048), "pivot_xy_m": (-0.323, -0.194), "angle_deg": -30.0},)
 STRAY_M = 0.012              # a decimated triangle this far from the model it was made from is a stray one
 HGA_NODES = ("antenna_hg",)
 HGA_AZ_DEG = 90.0            # 0.97.0 (Christian, 12 Nov 2026: "put the high gain antenna back in and have it point in a
-HGA_TILT_DEG = -45.0         # neutral direction ... tilted forward at a 45 degree angle"): the gimbal's arm towards +y
+HGA_TILT_DEG = -45.0         # neutral direction ... tilted forward at a 45 degree angle"): the gimbal's arm toward +y
 #                              (the dish to the right of the gimbal), the dish turned 45 deg about that arm so that it
 #                              faces forward and up.  Checked against NRF_0461_0707874458 (Rockytop) and
 #                              NLF_0052_0671568487 (Van Zyl): the dish's outline falls on the dish in both.
 HGA_AXIS_XY_M = (-0.46, -0.475)          # RMECH: the gimbal's vertical (azimuth) axis
 HGA_GIMBAL_M = (-0.436, -0.463, -0.25)   # RMECH: the top of the gimbal, where the dish's arm starts
 HGA_MODEL_AZ_DEG = 25.0                  # the direction of that arm in NASA's model (dish flat, pointing up)
-HGA_FIXED_BELOW_Z_M = -0.13              # RMECH z (down): components centred below this height do not turn (the base)
-# 0.97.0 (Christian, 12 Nov 2026, in VR: "the grey cylinder above the caltargets ... looks a little out of place"):
+HGA_FIXED_BELOW_Z_M = -0.13              # RMECH z (down): components centered below this height do not turn (the base)
+# 0.97.0 (Christian, 12 Nov 2026, in VR: "the gray cylinder above the caltargets ... looks a little out of place"):
 # the UHF antenna's can is too small in NASA's model.  Through the label camera of NRF_0052_0671564560 its stand
 # falls on the stand, but the can is 0.81 of the real one across and its top 27 px (1 deg) low.  The can (the
 # geometry of the node above UHF_CAN_BELOW_Z_M) is scaled about its own axis and from its base.
@@ -89,7 +89,7 @@ UHF_CAN_BELOW_Z_M = -0.43         # RMECH z (down): the can is the geometry whol
 # 13 Nov 2026 (Christian: "the gray cylinder uhf antenna looks mis-sized again"): that enlargement was wrong.  With
 # the model placed by the deck discs, the silhouette through the label cameras of four frames (NLF / NRF_0052_0671564560,
 # NLF_0474_0709026896, NLF_0688_0728025880) puts NASA's can on the real one at its original width; its wall ends
-# about 10 % below the real rim (its far edge), and its domed cap is not there (the real can is open): width as modelled, height
+# about 10 % below the real rim (its far edge), and its domed cap is not there (the real can is open): width as modeled, height
 # 1.10, the cap flattened and set just inside the rim.
 UHF_CAN_RADIAL = 1.0
 UHF_CAN_HEIGHT = 1.10              # 13 Nov, later: to the far top rim (it blends into the ground; found on contrast-stretched crops)
@@ -115,7 +115,7 @@ TARGET_FACES = {"body": None, "arm": None, "arm_base": None, "suspension": None,
 PARTS = ("body", "arm", "arm_base", "suspension", "wheels", "mast", "antenna", "head")
 MAST_PARTS = ("bottom", "bottom.002", "bottom.003", "probe.001", "top", "probe")   # turn with the head's azimuth: the
 # mast tube and the wind-sensor booms on it; kept as the part "mast" (not for the mesh: for masking them in the
-# frames, mppp.ibr.rover_model.mast_mask), in the model's own azimuth - the head looking forward (0 deg)
+# frames, rpp.ibr.rover_model.mast_mask), in the model's own azimuth - the head looking forward (0 deg)
 HEAD = ("head", "lens", "Mastcam_Z_cams", "microphones.001", "NavCams")
 MAST = ("bottom", "bottom.002", "bottom.003", "probe.001", "top", "probe", "head", "lens", "Mastcam_Z_cams",
         "microphones.001", "NavCams")
@@ -180,7 +180,7 @@ def turn_components(v: np.ndarray, f: np.ndarray, turns=None) -> np.ndarray:
 
 def pose_hga(X: np.ndarray, F: np.ndarray, az_deg: float = HGA_AZ_DEG, tilt_deg: float = HGA_TILT_DEG):
     """The high-gain antenna of NASA's model (vertices ``X`` in RMECH) in a pose: every connected component above the
-    base turned about the gimbal's vertical axis so that the dish's arm points to ``az_deg`` (from +x towards +y),
+    base turned about the gimbal's vertical axis so that the dish's arm points to ``az_deg`` (from +x toward +y),
     then the dish (the largest component, and what sits on it) turned by ``tilt_deg`` about that arm."""
     import trimesh
     from scipy.spatial.transform import Rotation as R
@@ -222,19 +222,19 @@ BODY_COMPONENT_SHIFTS = [
 
 
 # 0.97.11 (Christian, 13 Nov 2026: "the fhazcam renders from inside the rover model.  Remove the front lens in the 3d
-# model so that doesn't happen"): the front Hazcams' optical centres lie inside NASA's camera bodies - every ray of
+# model so that doesn't happen"): the front Hazcams' optical centers lie inside NASA's camera bodies - every ray of
 # a Hazcam met the model within 5 cm.  Whatever of the body a Hazcam would see nearer than HAZCAM_CLEAR_M within
-# HAZCAM_CLEAR_HALF_ANGLE_DEG of its axis is taken out, and everything within HAZCAM_BODY_M of its optical centre
+# HAZCAM_CLEAR_HALF_ANGLE_DEG of its axis is taken out, and everything within HAZCAM_BODY_M of its optical center
 # (its own lens and body; 5,186 triangles in all since 0.97.12, 448 in 0.97.11); after that the
 # model fills 5 % of the left Hazcam's view and 10 % of the right one's (arm, wheels, and for the right one the dark
-# block of BODY_COMPONENT_SHIFTS, 14 cm away - at 0.20 m a quarter of that block went too, so 0.10 m).  Centres and axes (RMECH)
+# block of BODY_COMPONENT_SHIFTS, 14 cm away - at 0.20 m a quarter of that block went too, so 0.10 m).  Centers and axes (RMECH)
 # from the deck_joint mast model of 7 Nov (fhaz: C_FL, R_FL, rig FR <- FL).
 HAZCAM_VIEWS = {"FL": {"centre": (1.0107, -0.0092, 0.4062), "axis": (0.8851, -0.1719, 0.4326)},
                 "FR": {"centre": (0.9988, 0.2393, 0.4004), "axis": (0.8854, 0.1731, 0.4313)}}
 HAZCAM_CLEAR_M = 0.10
 HAZCAM_CLEAR_HALF_ANGLE_DEG = 89.0    # 0.97.12: the whole field of view (the frame's corners are 86 deg off the axis;
 #                                       70 before, which left the camera body clipping the corners)
-HAZCAM_BODY_M = 0.06                  # 0.97.12: and every triangle this near the optical centre, in any direction
+HAZCAM_BODY_M = 0.06                  # 0.97.12: and every triangle this near the optical center, in any direction
 
 
 def clear_camera_views(v: np.ndarray, f: np.ndarray, views=HAZCAM_VIEWS, clear_m: float = HAZCAM_CLEAR_M,
@@ -432,9 +432,9 @@ def build(glb: Path, out: Path) -> dict:
         off += len(v)
         rep[kind] = {"faces_in": int(n0), "faces": int(len(f)), "stray_faces_removed": stray, "bounds_mech_m": np.round([v.min(0), v.max(0)], 3).tolist()}
     V, F, P = np.vstack(V).astype(np.float32), np.vstack(F).astype(np.int32), np.concatenate(P)
-    axis_xy = [0.716, 0.559]                                         # the pivot fit of the Van Zyl frames; the tube is centred on it
+    axis_xy = [0.716, 0.559]                                         # the pivot fit of the Van Zyl frames; the tube is centered on it
     meta = {"source": glb.name, "credit": "NASA/JPL-Caltech", "url": "https://science.nasa.gov/resource/mars-perseverance-rover-3d-model/",
-            "frame": "RMECH (x forward, y right, z down, z 0 = the deck top), metres", "parts": list(PARTS),
+            "frame": "RMECH (x forward, y right, z down, z 0 = the deck top), meters", "parts": list(PARTS),
             "arm_chain": list(ARM_CHAIN), "arm_axes": list(ARM_AXES), "arm_stow_deg": list(ARM_STOW_DEG), "report": rep,
             "hga": {"az_deg": HGA_AZ_DEG, "tilt_deg": HGA_TILT_DEG, "note": "a neutral pose, not the sol's pointing"},
             "mast_axis_xy_m": axis_xy, "mast_model_azimuth_deg": 0.0,
@@ -447,7 +447,7 @@ def build(glb: Path, out: Path) -> dict:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("glb")
-    ap.add_argument("--out", default=str(Path(__file__).resolve().parents[1] / "src" / "mppp" / "data" / "rover" / "perseverance_rmech.npz"))
+    ap.add_argument("--out", default=str(Path(__file__).resolve().parents[1] / "src" / "rpp" / "data" / "rover" / "perseverance_rmech.npz"))
     a = ap.parse_args()
     m = build(Path(a.glb), Path(a.out))
     print(json.dumps(m["report"], indent=1))

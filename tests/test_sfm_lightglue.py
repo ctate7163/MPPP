@@ -1,4 +1,4 @@
-"""SIFT + LightGlue matching (mppp.sfm.lightglue): keypoint geometry, keypoint selection, and the end-to-end match
+"""SIFT + LightGlue matching (rpp.sfm.lightglue): keypoint geometry, keypoint selection, and the end-to-end match
 and verification on the two test products."""
 import json
 import shutil
@@ -10,7 +10,7 @@ from conftest import NLF, ZL0, needs_data
 
 
 def test_keypoint_scale_and_orientation():
-    from mppp.sfm.lightglue import keypoint_scale_ori, select_keypoints
+    from rpp.sfm.lightglue import keypoint_scale_ori, select_keypoints
     s, o = 3.0, 0.7
     kp = np.array([[10, 20, s * np.cos(o), -s * np.sin(o), s * np.sin(o), s * np.cos(o)],
                    [30, 40, 1.0, 0.0, 0.0, 1.0]])
@@ -24,7 +24,7 @@ def test_keypoint_scale_and_orientation():
 
 
 def test_descriptors_are_unit_vectors():
-    from mppp.sfm.lightglue import _descriptors_float
+    from rpp.sfm.lightglue import _descriptors_float
     d = (np.random.default_rng(0).random((5, 128)) * 255).astype(np.uint8)
     f = _descriptors_float(d)
     assert f.dtype == np.float32 and np.allclose(np.linalg.norm(f, axis=1), 1.0)
@@ -33,9 +33,9 @@ def test_descriptors_are_unit_vectors():
 @needs_data
 def test_lightglue_matches_and_verifies(tmp_path, monkeypatch):
     pytest.importorskip("kornia")
-    for k in ("MPPP_PDS", "MPPP_SCAPES", "MPPP_GPU_PYTHON", "COLMAP_BAT"):
+    for k in ("RPP_PDS", "RPP_SCAPES", "RPP_GPU_PYTHON", "COLMAP_BAT"):
         monkeypatch.delenv(k, raising=False)
-    from mppp.pipeline import Settings, align, process_site
+    from rpp.pipeline import Settings, align, process_site
     pds = tmp_path / "pds" / "sol0461"
     pds.mkdir(parents=True)
     for f in (NLF, ZL0):
@@ -53,8 +53,8 @@ def test_lightglue_matches_and_verifies(tmp_path, monkeypatch):
     # the two test products do not overlap (a Sun tile and a Mastcam-Z frame): give the Navcam image the Mastcam-Z
     # image's keypoints and descriptors, so that the pair must match
     import pycolmap
-    from mppp.sfm import match
-    from mppp.sfm.project import SfmProject
+    from rpp.sfm import match
+    from rpp.sfm.project import SfmProject
     db_path = work / "colmap" / "database.db"
     db = pycolmap.Database.open(str(db_path))
     try:
@@ -100,7 +100,7 @@ def test_lightglue_matches_and_verifies(tmp_path, monkeypatch):
 
 def test_keypoints_of_every_octave():
     """0.94.4: "octaves" keeps a share of every octave of scale (the fine ones too), "largest" the coarse ones."""
-    from mppp.sfm.lightglue import select_keypoints
+    from rpp.sfm.lightglue import select_keypoints
     rng = np.random.default_rng(0)
     # most keypoints fine (as SIFT finds them): 20000 at scale ~1-2, 6000 at 2-4, 2000 at 4-8, 500 at 8-16, 50 above
     scales = np.concatenate([rng.uniform(1, 2, 20000), rng.uniform(2, 4, 6000), rng.uniform(4, 8, 2000),
@@ -135,7 +135,7 @@ def test_merge_inliers_adds_lightglue_to_sift(tmp_path):
     """0.94.4: LightGlue's inliers join the SIFT inliers of a pair; a keypoint SIFT uses keeps its SIFT match;
     a pair SIFT did not verify gets LightGlue's geometry."""
     import pycolmap
-    from mppp.sfm.matching import merge_inliers
+    from rpp.sfm.matching import merge_inliers
     dst, src = tmp_path / "sift.db", tmp_path / "lg.db"
     ids = _db_with_images(dst)
     import shutil
@@ -168,7 +168,7 @@ def test_sift_plus_lightglue_mode(monkeypatch, tmp_path):
     """0.94.4: "sift+lightglue" runs the SIFT matcher, then LightGlue in a copy, merged; the record says so; without
     LightGlue the SIFT matches stand alone."""
     from types import SimpleNamespace
-    from mppp.sfm import matching as M
+    from rpp.sfm import matching as M
     calls = []
     real_match, real_inner = M.match, M._match
 
@@ -200,8 +200,8 @@ def test_sift_plus_lightglue_mode(monkeypatch, tmp_path):
 def test_keypoint_selection_keeps_old_run_keys_and_records():
     """0.94.4: the default ("largest") is in neither the run key nor the matches record, so finished runs and
     their matches stay valid; "octaves" is in both."""
-    from mppp.pipeline import Settings, run_key
-    from mppp.sfm.matching import match_settings
+    from rpp.pipeline import Settings, run_key
+    from rpp.sfm.matching import match_settings
     s = Settings()
     assert s.lightglue_keypoints == "largest" and "lightglue_keypoints" not in s.key_dict()
     o = s.replace(lightglue_keypoints="octaves")
@@ -213,5 +213,5 @@ def test_keypoint_selection_keeps_old_run_keys_and_records():
 def test_lightglue_budget_is_three_hours():
     """0.94.4 (Christian): a block's LightGlue matching may take up to 3 h (projected) before the SIFT fallback."""
     import inspect
-    from mppp.sfm.matching import match
+    from rpp.sfm.matching import match
     assert inspect.signature(match).parameters["max_hours"].default == 3.0

@@ -1,12 +1,12 @@
 """
-Stop every MPPP run on this computer: process_sites, run_sites / run_sites, align_here / align_scape and
+Stop every RPP run on this computer: process_sites, run_sites / run_sites, align_here / align_scape and
 run_scapes, with their image-processing workers.
 
     python scripts\\stop_runs.py            # list the runs, ask, stop them
     python scripts\\stop_runs.py --yes      # stop them without asking
     python scripts\\stop_runs.py --list     # only list them
 
-Runs are found by their command lines (the minimised .bat windows and the Python runners); each is stopped with
+Runs are found by their command lines (the minimized .bat windows and the Python runners); each is stopped with
 everything it started (Windows: ``taskkill /T /F``).  Notebooks open in Jupyter are not touched.  The status files
 under ``--root`` (``mppp_batch.json`` and each WORK folder's ``mppp_status.json``) are then marked "stopped", so a
 new run can start at once.  A site stopped half-way is completed by the next run: images already processed are
@@ -15,10 +15,10 @@ reused and the rest are processed.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import time
 from pathlib import Path
+from rpp import env as rpp_env
 
 HERE = Path(__file__).resolve().parent
 if str(HERE) not in sys.path:
@@ -28,17 +28,17 @@ if str(HERE) not in sys.path:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", action="append", default=None,
-                    help="scapes folder(s) whose status files are updated (default: MPPP_SCAPES)")
+                    help="scapes folder(s) whose status files are updated (default: RPP_SCAPES)")
     ap.add_argument("--yes", action="store_true", help="stop without asking")
     ap.add_argument("--list", action="store_true", help="only list the runs")
     a = ap.parse_args(argv)
-    from mppp.batch import STOP_MARKER, kill_tree, list_processes, mark_stopped, mppp_processes
-    roots = [Path(r) for r in (a.root or [os.environ.get("MPPP_SCAPES", ".")])]
-    runs = mppp_processes(list_processes())
+    from rpp.batch import STOP_MARKER, kill_tree, list_processes, mark_stopped, rpp_processes
+    roots = [Path(r) for r in (a.root or [rpp_env.get("RPP_SCAPES", ".")])]
+    runs = rpp_processes(list_processes())
     if not runs:
-        print("No MPPP runs are running.")
+        print("No RPP runs are running.")
     else:
-        print(f"{len(runs)} MPPP run(s):")
+        print(f"{len(runs)} RPP run(s):")
         for r in runs:
             print(f"  pid {r['pid']:>6}  {str(r['cmd'])[:150]}")
     if a.list:
@@ -60,7 +60,7 @@ def main(argv=None) -> int:
         time.sleep(2)
     for root in roots:
         if root.is_dir():
-            if killed:                # 31 Oct: the window of a stopped batch must not go on to MPPP_THEN (the joints)
+            if killed:                # 31 Oct: the window of a stopped batch must not go on to RPP_THEN (the joints)
                 (root / STOP_MARKER).write_text(f"stopped by stop_runs {time.strftime('%Y-%m-%d %H:%M:%S')}\n",
                                                 encoding="utf-8")
                 print(f"  wrote {root / STOP_MARKER} (no follow-on step after the stopped batch)")

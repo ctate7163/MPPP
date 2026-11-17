@@ -1,4 +1,4 @@
-"""Pair selection and matching (mppp.sfm.matching, pairs, guided): defaults, pose-guided Navcam - Mastcam-Z matching."""
+"""Pair selection and matching (rpp.sfm.matching, pairs, guided): defaults, pose-guided Navcam - Mastcam-Z matching."""
 import copy
 import json
 from pathlib import Path
@@ -10,14 +10,14 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[1]
 def test_feature_and_matching_defaults():
     import inspect
-    from mppp.sfm import database as D
-    from mppp.sfm.matching import match
+    from rpp.sfm import database as D
+    from rpp.sfm.matching import match
     assert D.DEFAULT_MAX_NUM_FEATURES == 32768 and D.DEFAULT_NUM_OCTAVES == 4 and D.DEFAULT_FIRST_OCTAVE == -1
     assert inspect.signature(match).parameters["guided_matching"].default is False   # v0p64.1: off again
     assert D._feature_settings(32768, 5120, False) == {"max_num_features": 32768, "max_image_size": 5120,
                                                         "domain_size_pooling": False}     # old records stay valid
     assert D._feature_settings(32768, 5120, False, num_octaves=5)["num_octaves"] == 5
-    from mppp.pipeline import Settings
+    from rpp.pipeline import Settings
     s = Settings()
     # 0.95.0 (Christian, 27 Oct): twice the features on the Navcam frames; the rest as before
     # 0.95.2 (Christian, 30 Oct): 16384 at 63 and 79 mm, 8192 at 110 mm
@@ -46,15 +46,15 @@ def test_feature_and_matching_defaults():
     assert D._feature_settings({"*": 32768}, 5120, False)["max_num_features"] == 32768       # one count: as before
 
 
-# pose-guided Navcam - Mastcam-Z matching (mppp.sfm.guided, v0p64)
+# pose-guided Navcam - Mastcam-Z matching (rpp.sfm.guided, v0p64)
 
 
 def test_pose_guided_matching_finds_the_navcam_zcam_matches(tmp_path):
     pytest.importorskip("pyceres")
     import pycolmap
     from helpers import _block_without_navcam_zcam_matches
-    from mppp.sfm import reconstruction as R
-    from mppp.sfm.guided import _family_ties, pose_guided_matching
+    from rpp.sfm import reconstruction as R
+    from rpp.sfm.guided import _family_ties, pose_guided_matching
     proj, rec, zf, fam = _block_without_navcam_zcam_matches(tmp_path)
     truth = {(e.image_id, e.point2D_idx): pid for pid, pt in rec.points3D.items() for e in pt.track.elements}
     rec = R.triangulate(rec, proj, max_reproj_px=8.0)
@@ -80,7 +80,7 @@ def test_pose_guided_matching_finds_the_navcam_zcam_matches(tmp_path):
 def test_staged_reconstruct_runs_pose_guided_matching(tmp_path, monkeypatch):
     pytest.importorskip("pyceres")
     from helpers import _block_without_navcam_zcam_matches
-    from mppp.sfm import reconstruction as R
+    from rpp.sfm import reconstruction as R
     proj, new, zf, fam = _block_without_navcam_zcam_matches(tmp_path)
     monkeypatch.setattr(R, "initial_reconstruction", lambda project: copy.deepcopy(new))
     kw = dict(sigma_px=0.3, schedule=((24.0, 10.0, 8.0), (8.0, 3.0, 4.0)), max_iterations=5, verbose=False,
@@ -123,8 +123,8 @@ def test_weak_pass_reaches_a_frame_with_no_tie_points_before_its_exclusion(tmp_p
     it (select_pairs the other way round, partner_depth_range) and its matches before the exclusion, and stays."""
     pytest.importorskip("pyceres")
     from helpers import _write_database, _zcam_rig_rec
-    from mppp.sfm import reconstruction as R
-    from mppp.sfm.guided import select_pairs, weak_zcam_images
+    from rpp.sfm import reconstruction as R
+    from rpp.sfm.guided import select_pairs, weak_zcam_images
     proj, rec0, zf = _zcam_rig_rec(tmp_path)
     fam = {r["image_id"]: r["instrument"][0] for r in proj.images}
     lone = sorted(i for i, f in fam.items() if f == "Z")[0]              # one Mastcam-Z frame with no matches at all
@@ -161,7 +161,7 @@ def test_weak_pass_reaches_a_frame_with_no_tie_points_before_its_exclusion(tmp_p
 
 def test_local_depths_bracket_the_true_depth(tmp_path):
     from helpers import _zcam_rig_rec
-    from mppp.sfm.guided import _pose, local_depths
+    from rpp.sfm.guided import _pose, local_depths
     proj, rec, zf = _zcam_rig_rec(tmp_path)
     iid = sorted(rec.images)[-1]
     im = rec.images[iid]
@@ -178,7 +178,7 @@ def test_local_depths_bracket_the_true_depth(tmp_path):
 
 
 def test_guided_defaults_v0p65_and_options():
-    from mppp.sfm.guided import GUIDED_DEFAULTS
+    from rpp.sfm.guided import GUIDED_DEFAULTS
     assert GUIDED_DEFAULTS["depth"] == "local" and GUIDED_DEFAULTS["local_factor"] == 1.4
     assert GUIDED_DEFAULTS["workers"] == 1                                    # 0.94.4: one thread unless asked
     assert GUIDED_DEFAULTS["local_fallback"] == "skip"
@@ -187,8 +187,8 @@ def test_guided_defaults_v0p65_and_options():
 def test_pose_guided_local_depth_matches(tmp_path):
     pytest.importorskip("pyceres")
     from helpers import _block_without_navcam_zcam_matches
-    from mppp.sfm import reconstruction as R
-    from mppp.sfm.guided import pose_guided_matching
+    from rpp.sfm import reconstruction as R
+    from rpp.sfm.guided import pose_guided_matching
     proj, rec, zf, fam = _block_without_navcam_zcam_matches(tmp_path)
     truth = {(e.image_id, e.point2D_idx): pid for pid, pt in rec.points3D.items() for e in pt.track.elements}
     rec = R.triangulate(rec, proj, max_reproj_px=8.0)
@@ -218,7 +218,7 @@ def test_pose_guided_local_depth_matches(tmp_path):
 
 def test_set_prior_focal(tmp_path):
     import pycolmap
-    from mppp.sfm.matching import CALIBRATED_ABORT_SIGNS, set_prior_focal
+    from rpp.sfm.matching import CALIBRATED_ABORT_SIGNS, set_prior_focal
     db_path = tmp_path / "database.db"
     db = pycolmap.Database.open(str(db_path))
     ids = {}
@@ -245,7 +245,7 @@ def test_mastcam_z_pairs_verified_uncalibrated_from_the_start(tmp_path, monkeypa
     get it back after, and the matches record says so (a rematch when the setting changes); the pipeline passes
     it for a Mastcam-Z run only, and the Navcam run keys stay what they were."""
     import pycolmap
-    from mppp.sfm import matching as M
+    from rpp.sfm import matching as M
     db_path = tmp_path / "database.db"
     db = pycolmap.Database.open(str(db_path))
     ids = {}
@@ -274,11 +274,11 @@ def test_mastcam_z_pairs_verified_uncalibrated_from_the_start(tmp_path, monkeypa
     seen.clear()
     assert "uncalibrated" not in M.match(proj, "exhaustive") and seen["fams"] == ()
     # the record: only when any (the records of every run before 0.95.0 stay valid)
-    from mppp.sfm.database import MATCH_KEYS
+    from rpp.sfm.database import MATCH_KEYS
     assert "uncalibrated" in MATCH_KEYS and "uncalibrated" not in M.match_settings("exhaustive")
     assert M.match_settings("exhaustive", uncalibrated_families=("Z",))["uncalibrated"] == ["Z"]
     assert M.match_settings("exhaustive", uncalibrated=["Z"])["uncalibrated"] == ["Z"]
-    from mppp.pipeline import Settings
+    from rpp.pipeline import Settings
     s = Settings()
     assert s.zcam_uncalibrated_matching is True
     assert "zcam_uncalibrated_matching" not in s.key_dict()                  # a Navcam run: the keys unchanged
@@ -290,8 +290,8 @@ def test_pose_guided_threads_give_the_same_matches(tmp_path):
     pytest.importorskip("pyceres")
     import pycolmap
     from helpers import _block_without_navcam_zcam_matches
-    from mppp.sfm import reconstruction as R
-    from mppp.sfm.guided import pose_guided_matching
+    from rpp.sfm import reconstruction as R
+    from rpp.sfm.guided import pose_guided_matching
     proj, rec, zf, fam = _block_without_navcam_zcam_matches(tmp_path)
     rec = R.triangulate(rec, proj, max_reproj_px=8.0)
     _, r1 = pose_guided_matching(rec, proj, proj.database, out_database=tmp_path / "w1.db", verbose=False, workers=1)
@@ -317,8 +317,8 @@ def test_pose_guided_writes_elsewhere_when_its_database_is_held(tmp_path, monkey
     """0.94.4 (23 Oct 16:20, WinError 32): database_guided.db held by another process - a fresh name instead."""
     pytest.importorskip("pyceres")
     from helpers import _block_without_navcam_zcam_matches
-    from mppp.sfm import reconstruction as R
-    from mppp.sfm import guided as G
+    from rpp.sfm import reconstruction as R
+    from rpp.sfm import guided as G
     proj, rec, zf, fam = _block_without_navcam_zcam_matches(tmp_path)
     rec = R.triangulate(rec, proj, max_reproj_px=8.0)
     held = proj.root / "database_guided.db"

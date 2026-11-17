@@ -1,4 +1,4 @@
-"""The rover deck targets inside the bundle adjustment (mppp_studies.calibration.deck, 4 Nov 2026)."""
+"""The rover deck targets inside the bundle adjustment (rpp_studies.calibration.deck, 4 Nov 2026)."""
 import numpy as np
 import pycolmap
 import pytest
@@ -7,7 +7,7 @@ from helpers import _build_rec, _synthetic
 
 
 def test_survey_tie_jacobian():
-    from mppp_studies.calibration.deck import survey_tie_class
+    from rpp_studies.calibration.deck import survey_tie_class
     from scipy.spatial.transform import Rotation
     Tie = survey_tie_class()
     P = np.array([0.4, -0.2, -1.1])
@@ -32,7 +32,7 @@ def test_survey_tie_jacobian():
 
 
 def test_interval_of():
-    from mppp_studies.calibration.deck import interval_of
+    from rpp_studies.calibration.deck import interval_of
     r = {"station": "S032D1184", "sol": 686}
     assert interval_of(r) == "S032D1184" and interval_of(r, "sol") == "S032D1184_sol0686"
     assert interval_of({"site": 32, "drive": 1174, "sol": 684}) == "S032D1174"
@@ -41,7 +41,7 @@ def test_interval_of():
 def _deck_block(tmp_path, baseline_error=0.01):
     """The synthetic two-station block with a rover deck in view of station 1's pan; the rig's baseline started
     ``baseline_error`` long.  -> rec, proj, obs, T_true, true baseline (m)."""
-    from mppp_studies.calibration import fiducials as F
+    from rpp_studies.calibration import fiducials as F
     from scipy.spatial.transform import Rotation
     proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path, noise_native_px=0.1)
     rec, _ = _build_rec(proj, truth, P, cams_d, rigT, noise, rng, perturb=False)
@@ -77,8 +77,8 @@ def _deck_block(tmp_path, baseline_error=0.01):
 
 def test_deck_sets_the_baseline(tmp_path):
     """With the rig translation refined, the deck survey (rigid) brings a 1 % long baseline back to the truth."""
-    from mppp_studies.calibration.deck import make_hook, deck_residuals
-    from mppp.sfm.reconstruction import bundle_adjust, _scales
+    from rpp_studies.calibration.deck import make_hook, deck_residuals
+    from rpp.sfm.reconstruction import bundle_adjust, _scales
     rec, proj, obs, T_true, b_true = _deck_block(tmp_path)
     assert len(obs) >= 8 and len({o["image_id"] for o in obs}) >= 3
     T = {"S001D0000": np.ascontiguousarray(T_true + np.r_[0.003, -0.002, 0.004, 0.01, -0.01, 0.005, 0.0])}
@@ -94,8 +94,8 @@ def test_deck_sets_the_baseline(tmp_path):
 
 
 def test_deck_hold_poses_moves_only_T(tmp_path):
-    from mppp_studies.calibration.deck import make_hook
-    from mppp.sfm.reconstruction import bundle_adjust, _scales
+    from rpp_studies.calibration.deck import make_hook
+    from rpp.sfm.reconstruction import bundle_adjust, _scales
     rec, proj, obs, T_true, b_true = _deck_block(tmp_path, baseline_error=0.0)
     before = {i: np.array(rec.images[i].cam_from_world().translation) for i in rec.reg_image_ids()}
     T = {"S001D0000": np.ascontiguousarray(T_true + np.r_[0.002, 0.0, -0.002, 0.004, 0.0, 0.0, 0.0])}

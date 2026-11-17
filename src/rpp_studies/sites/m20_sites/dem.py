@@ -1,0 +1,151 @@
+"""DEM access for figures. Looks for the USGS HiRISE DTM mosaics (1 m posts, equirectangular, R = 3,396,190 m).
+Order of preference: MSR TRN HiRISE DTM (Bland et al. 2024/25, 77.057-77.380E) then Mars 2020 TRN HiRISE DTM (Fergason et al. 2020).
+Set M20_DEMS to a os.pathsep-separated list of GeoTIFF paths, or drop the files into ./dem/.
+Orthomosaics (optional background): M20_ORTHOS (same form) or files with ORTHO in the name under ./dem/.
+M20_BACKGROUND chooses the background: "dtm" (default: elevation tint + hillshade) or "ortho" (orthomosaic in gray,
+light elevation tint, no contour lines; falls back to the DTM/tiles where no orthomosaic covers the panel).
+Waypoint easting/northing (lat_ts ~18.47 deg) are converted through lon/lat, never used directly against the DEM grid."""
+import os, glob, json, numpy as np
+from scipy.ndimage import map_coordinates
+try:
+    import rasterio
+    from pyproj import Transformer
+except Exception:
+    rasterio = None
+
+def _env_paths(var):
+    """Existing GeoTIFF paths listed in the variable; a missing one (e.g. a placeholder left in the environment) is
+    reported once and skipped."""
+    out = []
+    for p in os.environ.get(var, '').split(os.pathsep):
+        if not p: continue
+        if os.path.isfile(p): out.append(p)
+        elif p not in _warned:
+            _warned.add(p); print(f'{var}: {p} not found - skipped', flush=True)
+    return out
+_warned = set()
+
+def _found(test):
+    found = sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dem', '**', '*.tif'), recursive=True))
+    return [p for p in found if test(os.path.basename(p).upper())]
+
+def _msr_first(paths):
+    return sorted(set(paths), key=lambda p: (0 if 'MSR' in os.path.basename(p).upper() else 1, p))
+
+def background_mode():
+    """'dtm' (default), 'ortho' or 'white' (the cluster zooms on white, no terrain), from M20_BACKGROUND."""
+    m = os.environ.get('M20_BACKGROUND', 'dtm').strip().lower()
+    return 'ortho' if m.startswith('ortho') else ('white' if m.startswith('white') else 'dtm')
+
+def ortho_paths():
+    """Orthomosaic GeoTIFFs: M20_ORTHOS in its order (make_maps.bat: the Mars 2020 TRN mosaic first - it covers the
+    whole traverse in one radiometry - then the MSR mosaics), then ./dem/**/*ORTHO*.tif."""
+    seen, out = set(), []
+    for p in _env_paths('M20_ORTHOS') + _msr_first(_found(lambda b: 'ORTHO' in b)):
+        if p not in seen: seen.add(p); out.append(p)
+    return out
+
+def dem_paths():
+    found = sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'dem', '**', '*.tif'), recursive=True))
+    # the USGS zips also hold orthoimages and confidence maps: keep elevation rasters only
+    found = [p for p in found if any(t in os.path.basename(p).upper() for t in ('DTM', 'DEM')) and not any(t in os.path.basename(p).upper() for t in ('ORTHO', 'CONF', 'FOM'))]
+    paths = _env_paths('M20_DEMS') + found
+    # MSR first (name contains MSR), then the rest
+    return sorted(set(paths), key=lambda p: (0 if 'MSR' in os.path.basename(p).upper() else 1, p))
+
+class LocalFrame:
+    """Linear map between waypoint easting/northing and lon/lat, fitted on the waypoint file."""
+    def __init__(self, P):
+        lon = np.array([p['lon'] for p in P]); lat = np.array([p['lat'] for p in P])
+        self.ce = np.polyfit(lon, [p['easting'] for p in P], 1); self.cn = np.polyfit(lat, [p['northing'] for p in P], 1)
+    def to_lonlat(self, e, n):
+        return (np.asarray(e) - self.ce[1]) / self.ce[0], (np.asarray(n) - self.cn[1]) / self.cn[0]
+
+def _sample(paths, lon, lat, order=1, zero_is_nodata=False, max_px=3000, band=1):
+    """Values of the first raster (in `paths` order) covering each lon/lat point; NaN where none does.
+    Large footprints are decimated on read to about max_px pixels a side (overview maps)."""
+    lon = np.asarray(lon, float); lat = np.asarray(lat, float)
+    z = np.full(lon.shape, np.nan); used = []
+    if rasterio is None: return z, used
+    for path in paths:
+        todo = np.isnan(z)
+        if not todo.any(): break
+        with rasterio.open(path) as src:
+            tr = Transformer.from_crs("+proj=longlat +R=3396190 +no_defs", src.crs, always_xy=True)
+            x, y = tr.transform(lon[todo], lat[todo])
+            r, c = rasterio.transform.rowcol(src.transform, x, y, op=lambda v: v)  # fractional
+            r = np.asarray(r, float) - 0.5; c = np.asarray(c, float) - 0.5
+            ok = (r >= 0) & (c >= 0) & (r <= src.height - 1) & (c <= src.width - 1)
+            if not ok.any(): continue
+            r0, r1 = int(np.floor(r[ok].min())), int(np.ceil(r[ok].max())) + 1
+            c0, c1 = int(np.floor(c[ok].min())), int(np.ceil(c[ok].max())) + 1
+            r1 = min(r1, src.height - 1); c1 = min(c1, src.width - 1)
+            win = rasterio.windows.Window(c0, r0, c1 - c0 + 1, r1 - r0 + 1)
+            step = max(1, int(max(win.height, win.width) / max_px))
+            if band > src.count: continue
+            arr = src.read(band, window=win, out_shape=(int(win.height // step) or 1, int(win.width // step) or 1), masked=True).astype(float)
+            arr = arr.filled(np.nan)
+            if zero_is_nodata: arr[arr == 0] = np.nan
+            vals = map_coordinates(arr, [(r[ok] - r0) / step, (c[ok] - c0) / step], order=order, mode='nearest', cval=np.nan)
+            sub = z[todo]; sub[ok] = vals; z[todo] = sub
+            used.append(os.path.basename(path))
+    return z, used
+
+def sample_dem(lon, lat):
+    """Bilinear DEM heights at lon/lat arrays. Returns (z, source_names) with NaN where no DEM covers the point."""
+    return _sample(dem_paths(), lon, lat)
+
+def ortho_bands():
+    """3 when the first orthomosaic is a color (RGB) raster, else 1."""
+    paths = ortho_paths()
+    if rasterio is None or not paths: return 1
+    with rasterio.open(paths[0]) as src:
+        return 3 if src.count >= 3 else 1
+
+def sample_ortho(lon, lat, max_px=4000, stretch='auto'):
+    """Orthomosaic brightness at lon/lat arrays: a 2-D array (gray) or, for a color mosaic, (..., 3).  ``stretch``:
+    'auto' - to 0-1 by the 0.5th-99.5th percentile of these samples; None - raw values; (lo, hi) - a fixed linear
+    stretch (one for every panel: :func:`ortho_stretch`).  Returns (img, source_names); NaN where no orthomosaic
+    covers the point (0 = no data in the USGS mosaics)."""
+    nb = ortho_bands()
+    if nb == 3:
+        chans = [_sample(ortho_paths(), lon, lat, order=1, zero_is_nodata=True, max_px=max_px, band=b) for b in (1, 2, 3)]
+        g = np.stack([c[0] for c in chans], axis=-1); used = sorted({u for c in chans for u in c[1]})
+    else:
+        g, used = _sample(ortho_paths(), lon, lat, order=1, zero_is_nodata=True, max_px=max_px)
+    if stretch is None or not np.isfinite(g).any():
+        return g, used
+    lo, hi = np.nanpercentile(g, [0.5, 99.5]) if stretch == 'auto' else stretch
+    return np.clip((g - lo)/max(hi - lo, 1e-6), 0, 1), used
+
+def ortho_stretch(samples, lo_pct=0.5, hi_pct=99.8):
+    """One linear stretch (lo, hi) for a set of raw orthomosaic samples (all panels of a figure): gentle percentiles
+    of everything, so bright and dark blocks keep their brightness relative to each other."""
+    v = np.concatenate([np.asarray(s, float).ravel() for s in samples]) if samples else np.array([])
+    v = v[np.isfinite(v)]
+    if not len(v): return (0.0, 1.0)
+    return tuple(map(float, np.percentile(v, [lo_pct, hi_pct])))
+
+def hillshade(z, dx, dy, az=315, alt=40, exag=1.0):
+    zf = np.where(np.isnan(z), np.nanmean(z) if np.isfinite(z).any() else 0, z)
+    gy, gx = np.gradient(zf * exag, dy, dx)
+    slope = np.pi/2 - np.arctan(np.hypot(gx, gy)); aspect = np.arctan2(-gx, gy)
+    a, b = np.deg2rad(az), np.deg2rad(alt)
+    hs = np.sin(b)*np.sin(slope) + np.cos(b)*np.cos(slope)*np.cos(a - aspect)
+    return np.clip(hs, 0, 1)
+
+
+def save_figure(fig, path, **kw):
+    """savefig; when Windows refuses the file (open in a viewer: OSError 22 / 13), the next free _2, _3 ... name."""
+    import os
+    base, ext = os.path.splitext(str(path))
+    for k in range(1, 20):
+        p = path if k == 1 else f"{base}_{k}{ext}"
+        try:
+            fig.savefig(p, **kw)
+            if k > 1: print(f"{path} is in use (close the viewer); written to {p}", flush=True)
+            return p
+        except OSError as e:
+            if getattr(e, "errno", None) not in (13, 22):
+                raise
+    raise OSError(f"cannot write {path}: the file is in use")

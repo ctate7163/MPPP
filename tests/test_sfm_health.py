@@ -1,4 +1,4 @@
-"""Alignment health (mppp.sfm.health). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
+"""Alignment health (rpp.sfm.health). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
 from pathlib import Path
 import numpy as np
 import pytest
@@ -10,8 +10,8 @@ from types import SimpleNamespace
 def test_alignment_health_on_synthetic_block(tmp_path):
     import pycolmap
     from helpers import _build_rec, _synthetic
-    from mppp.sfm.health import assess_alignment, health_table, write_health
-    from mppp.sfm.reconstruction import bundle_adjust
+    from rpp.sfm.health import assess_alignment, health_table, write_health
+    from rpp.sfm.reconstruction import bundle_adjust
     proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
     rec, _ = _build_rec(proj, truth, P, cams_d, rigT, noise, rng)
     bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, refine_rig="rotation", max_iterations=200)
@@ -57,7 +57,7 @@ def test_alignment_health_on_synthetic_block(tmp_path):
 
 
 def test_weak_image_causes():
-    from mppp.sfm.health import classify_weak_image as c
+    from rpp.sfm.health import classify_weak_image as c
     assert c(100, 0, 0, 0) == "few_keypoints"
     assert c(5000, None, None, 0) == "no_database"
     assert c(5000, 3, 10, 0) == "unmatched"
@@ -69,7 +69,7 @@ def test_weak_image_causes():
 
 def test_health_lists_weak_images_with_advice(tmp_path):
     from helpers import _build_rec, _synthetic
-    from mppp.sfm.health import DEFAULT_THRESHOLDS, assess_alignment, health_table
+    from rpp.sfm.health import DEFAULT_THRESHOLDS, assess_alignment, health_table
     assert DEFAULT_THRESHOLDS["rig_rotation_change_deg"][:2] == (0.06, 0.3)            # 22 Oct 2026 (0.2 before)
     assert DEFAULT_THRESHOLDS["excluded_fraction"][:2] == (0.05, 0.33)          # 24 Oct (Christian)
     assert DEFAULT_THRESHOLDS["outlier_image_fraction"][:2] == (0.04, 0.20)
@@ -103,8 +103,8 @@ def _rational(eye="L", zero=()):
 
 def test_coverage_by_radius_and_corner_ratio():
     pycolmap = pytest.importorskip("pycolmap")
-    from mppp.sfm.health import _corner_ratio, coverage_by_radius
-    from mppp.sfm.project import SfmProject
+    from rpp.sfm.health import _corner_ratio, coverage_by_radius
+    from rpp.sfm.project import SfmProject
     rng = np.random.default_rng(0)
     rec = pycolmap.Reconstruction()
     cam = pycolmap.Camera(camera_id=1, model="PINHOLE", width=1000, height=800, params=[800, 800, 500, 400])
@@ -139,7 +139,7 @@ def test_coverage_by_radius_and_corner_ratio():
 
 
 def test_health_thresholds_v0p20():
-    from mppp.sfm.health import DEFAULT_THRESHOLDS
+    from rpp.sfm.health import DEFAULT_THRESHOLDS
     assert DEFAULT_THRESHOLDS["station_shift_median_m"][:2] == (2.0, 6.0)
     assert DEFAULT_THRESHOLDS["within_station_shift_spread_m"][:2] == (0.1, 0.4)
     assert DEFAULT_THRESHOLDS["corner_triangulated_ratio"] == (0.5, 0.15, "below")      # 0.94.5: fail 0.25 -> 0.15
@@ -147,7 +147,7 @@ def test_health_thresholds_v0p20():
 
 def test_camera_change_reaches_the_corners():
     pycolmap = pytest.importorskip("pycolmap")
-    from mppp.sfm.health import _camera_change
+    from rpp.sfm.health import _camera_change
     c0 = _rational("L")
     p1 = np.array(c0["params"])
     p1[9] += 0.01                                                           # k4 acts mostly in the corners
@@ -164,7 +164,7 @@ def test_camera_change_reaches_the_corners():
 def test_write_health_adds_station_map(tmp_path):
     pytest.importorskip("pyceres")
     from helpers import _build_rec, _synthetic
-    from mppp.sfm.health import assess_alignment, write_health
+    from rpp.sfm.health import assess_alignment, write_health
     proj, truth, P, cams, rigT, noise, rng = _synthetic(tmp_path)
     proj.settings["database"] = {"cameras": {"NL": 1, "NR": 2}}
     rec, _ = _build_rec(proj, truth, P, cams, rigT, noise, rng, perturb=False)
@@ -175,9 +175,9 @@ def test_write_health_adds_station_map(tmp_path):
 # beyond-ground and aspect checks, block screening (v0p65)
 
 
-def _mock_rec(points, centres):
+def _mock_rec(points, centers):
     ims = {i: SimpleNamespace(has_pose=True, projection_center=(lambda c=c: np.asarray(c, float)))
-           for i, c in centres.items()}
+           for i, c in centers.items()}
     pts = {k + 1: SimpleNamespace(xyz=np.asarray(X, float),
                                   track=SimpleNamespace(elements=[SimpleNamespace(image_id=i) for i in t]))
            for k, (X, t) in enumerate(points)}
@@ -185,7 +185,7 @@ def _mock_rec(points, centres):
 
 
 def test_beyond_ground_flags_points_far_below_the_horizon():
-    from mppp.sfm.health import beyond_ground
+    from rpp.sfm.health import beyond_ground
     C = {1: [0, 0, 1.9], 2: [0.4, 0, 1.9]}
     good = [([5, y, 0.0], (1, 2)) for y in np.linspace(-2, 2, 17)]          # on flat ground 5 m away
     far = [([40, 0, -1.9 * 40 / 5 + 1.9], (1, 2))] * 3                       # along a ray that meets ground at 5 m
@@ -201,7 +201,7 @@ def test_beyond_ground_flags_points_far_below_the_horizon():
 
 
 def test_health_thresholds_v0p65():
-    from mppp.sfm.health import DEFAULT_THRESHOLDS, _status
+    from rpp.sfm.health import DEFAULT_THRESHOLDS, _status
     assert DEFAULT_THRESHOLDS["beyond_ground_fraction"] == (0.05, 0.15, "above")
     assert DEFAULT_THRESHOLDS["navcam_aspect_change_pct"] == (0.06, 0.15, "above")
     thr = DEFAULT_THRESHOLDS
@@ -213,7 +213,7 @@ def test_health_thresholds_v0p65():
 
 
 def test_navcam_aspect_changes():
-    from mppp.sfm.health import navcam_aspect_changes
+    from rpp.sfm.health import navcam_aspect_changes
     p = [1500.0, 1500.0, 512, 512, 0, 0, 0, 0, 0, 0, 0, 0]
     proj = SimpleNamespace(settings={"database": {"cameras": {"NL": 1, "NR_T-030-020": 2, "ZL034": 3}}},
                            cameras={"NL": {"model": "THIN_PRISM_FISHEYE", "params": p},
@@ -230,8 +230,8 @@ def test_navcam_aspect_changes():
 def test_screen_block(tmp_path, monkeypatch):
     pytest.importorskip("pyceres")
     from helpers import _block_without_navcam_zcam_matches
-    from mppp.sfm import reconstruction as R
-    from mppp_studies.calibration.screening import screen_block, screen_blocks
+    from rpp.sfm import reconstruction as R
+    from rpp_studies.calibration.screening import screen_block, screen_blocks
     proj, new, zf, fam = _block_without_navcam_zcam_matches(tmp_path)
     monkeypatch.setattr(R, "initial_reconstruction", lambda project: copy.deepcopy(new))
     R.reconstruct(proj, sigma_px=0.3, schedule=((24.0, 10.0, 8.0),), max_iterations=5, verbose=False,
@@ -248,7 +248,7 @@ def test_screen_block(tmp_path, monkeypatch):
 
 
 def test_screen_block_cache(tmp_path, monkeypatch):
-    from mppp_studies.calibration import screening as H
+    from rpp_studies.calibration import screening as H
     root = tmp_path / "w" / "colmap"
     sp = root / "sparse" / "cahv_ba"
     sp.mkdir(parents=True)
@@ -277,7 +277,7 @@ def test_restation_uses_the_label_priors(tmp_path):
     FAIL 1.06 m at a station whose Navcam moved 2.1 m) is judged again from the label priors."""
     import csv
     import json
-    from mppp_studies.calibration.screening import rejudge, restation
+    from rpp_studies.calibration.screening import rejudge, restation
     root = tmp_path / "colmap"
     (root / "error_input").mkdir(parents=True)
     shift = np.array([2.1, 0.0, 0.0])
@@ -314,8 +314,8 @@ def test_restation_uses_the_label_priors(tmp_path):
 def test_hazcam_eye_ratio_does_not_fail_a_block():
     """0.94.4: Knob Mountain Large failed on the rear Hazcams' eye ratio (RL 0.184 / RR 0.422 px = 2.29); a Hazcam
     pair has its own check, and saved reports are judged again with it."""
-    from mppp.sfm.health import DEFAULT_THRESHOLDS
-    from mppp_studies.calibration.screening import rejudge
+    from rpp.sfm.health import DEFAULT_THRESHOLDS
+    from rpp_studies.calibration.screening import rejudge
     assert DEFAULT_THRESHOLDS["hazcam_residual_eye_ratio"][1] > DEFAULT_THRESHOLDS["residual_eye_ratio"][1]
     rep = {"checks": [{"check": "residual_eye_ratio", "value": 2.29, "status": "fail",
                        "note": "median residual, worse eye / better eye: RL: 0.184, RR: 0.422"},
@@ -330,7 +330,7 @@ def test_hazcam_eye_ratio_does_not_fail_a_block():
 def test_label_pointing_checks_do_not_keep_a_block_out_of_the_joints():
     """0.94.4: Witch Hazel Hill (one site's heading 3.3 deg off its label) and Tuxedo Park (block rotation 1.62 deg)
     are judged WARN for the calibration joints; elsewhere the FAIL stands."""
-    from mppp_studies.calibration.screening import LABEL_POINTING_CHECKS, rejudge
+    from rpp_studies.calibration.screening import LABEL_POINTING_CHECKS, rejudge
     rep = {"checks": [{"check": "attitude_residual_p95_deg", "value": 3.363, "status": "fail"},
                       {"check": "block_rotation_deg", "value": 1.62, "status": "fail"},
                       {"check": "residual_median_px", "value": 0.12, "status": "pass"}]}
@@ -344,7 +344,7 @@ def test_a_zoom_joint_judges_the_block_on_its_zoom(tmp_path):
     """0.94.4 (Chal Rocks Mastcam-Z, 24 Oct): 30 % of the frames excluded, nearly all at 79 mm - a FAIL that kept the
     block out of the Z34 joint.  The joint of one zoom counts that zoom's frames (and the Navcam, Hazcams) only."""
     import json as _json
-    from mppp_studies.calibration.screening import LABEL_POINTING_CHECKS, rejudge, restrict_to_zoom
+    from rpp_studies.calibration.screening import LABEL_POINTING_CHECKS, rejudge, restrict_to_zoom
     nav = [f"NLF_0091_0000000{i:03d}_000RAD_N0040136NCAM00500_0A0195J01.png" for i in range(60)]
     z34 = [f"ZL0_0091_0000001{i:03d}_000RAD_N0040136ZCAM08060_034085A03.png" for i in range(30)]
     z79 = [f"ZL0_0091_0000002{i:03d}_000RAD_N0040136ZCAM08060_079085A03.png" for i in range(50)]
@@ -361,7 +361,7 @@ def test_a_zoom_joint_judges_the_block_on_its_zoom(tmp_path):
 def test_a_zoom_joint_sets_aside_other_zooms_camera_checks(tmp_path):
     """0.94.4 (Christian, 27 Oct): Taylorfjellet failed on its one 48 mm pair (ZR048_F02070 principal point +90 px)
     and was left out of the Z34 and Z63 joints.  Another zoom's camera-model checks no longer fail the block."""
-    from mppp_studies.calibration.screening import LABEL_POINTING_CHECKS, rejudge, restrict_to_zoom
+    from rpp_studies.calibration.screening import LABEL_POINTING_CHECKS, rejudge, restrict_to_zoom
 
     def rep():
         return {"checks": [
@@ -389,7 +389,7 @@ def test_a_zoom_joint_sets_aside_other_zooms_camera_checks(tmp_path):
 
 
 def _cov(groups):
-    from mppp.sfm.health import RADIUS_EDGES
+    from rpp.sfm.health import RADIUS_EDGES
     n = len(RADIUS_EDGES) - 1
     cams = {}
     for g, (fin, fout) in groups.items():
@@ -402,8 +402,8 @@ def _cov(groups):
 def test_corner_check_warns_for_mastcam_z_fails_for_navcam(monkeypatch):
     """0.94.5 (Christian, 27 Oct: Chal Rocks out of the 63 mm joint on ZL063's corners, 0.205): a Mastcam-Z camera's
     corner coverage warns, a Navcam camera's still fails; rejudging an old report follows."""
-    from mppp.sfm.health import DEFAULT_THRESHOLDS, corner_check
-    from mppp_studies.calibration.screening import rejudge
+    from rpp.sfm.health import DEFAULT_THRESHOLDS, corner_check
+    from rpp_studies.calibration.screening import rejudge
     thr = dict(DEFAULT_THRESHOLDS)
     wc, st = corner_check(_cov({"NL": (0.5, 0.45), "ZL063": (0.46, 0.046)}), thr, skip_groups=[])
     assert wc[0] == "ZL063" and wc[1] == pytest.approx(0.10, abs=1e-3) and st == "warn"      # below the 0.15 fail
@@ -413,7 +413,7 @@ def test_corner_check_warns_for_mastcam_z_fails_for_navcam(monkeypatch):
     assert st == "warn"                                                        # 0.20: a warning since 0.94.5
     rep = {"checks": [{"check": "corner_triangulated_ratio", "status": "fail", "value": 0.205, "note": "ZL063: 9 %"}],
            "coverage_by_radius": _cov({"NL": (0.5, 0.45), "ZL063": (0.46, 0.046)})}
-    import mppp.sfm.health as H
+    import rpp.sfm.health as H
     monkeypatch.setattr(H, "zcam_uncalibrated_groups", lambda groups: set())      # 63 mm calibrated here
     v, changed = rejudge(rep)
     assert v == "warn" and changed == ["corner_triangulated_ratio: fail -> warn (ZL063: 9 %)"]
@@ -422,7 +422,7 @@ def test_corner_check_warns_for_mastcam_z_fails_for_navcam(monkeypatch):
 def test_rejudge_corner_without_a_camera_to_judge_is_info():
     """0.94.5 regression: a saved corner FAIL whose coverage has no camera left to judge (Hazcams only) is "info",
     as before - not the old status."""
-    from mppp_studies.calibration.screening import rejudge
+    from rpp_studies.calibration.screening import rejudge
     rep = {"checks": [{"check": "corner_triangulated_ratio", "status": "fail", "value": 0.04, "note": "FL: 3 %"}],
            "coverage_by_radius": _cov({"FL": (0.5, 0.02)})}
     v, changed = rejudge(rep)

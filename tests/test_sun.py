@@ -1,11 +1,11 @@
-"""mppp.sun (0.95.0): the label sun vector, the Sun-Mars distance, a block's tilt and the sun in the block frame -
+"""rpp.sun (0.95.0): the label sun vector, the Sun-Mars distance, a block's tilt and the sun in the block frame -
 recorded at freeze time for the paper-3 work (Christian, 27 Oct 2026)."""
 import json
 
 import numpy as np
 import pytest
 
-from mppp import sun as S
+from rpp import sun as S
 
 
 def test_sun_vector_and_mars_distance():
@@ -27,11 +27,11 @@ def test_sun_vector_and_mars_distance():
 
 
 def test_spice_without_kernels_falls_back(monkeypatch, tmp_path):
-    monkeypatch.setenv("MPPP_KERNELS", str(tmp_path))                        # an empty folder: no kernels
+    monkeypatch.setenv("RPP_KERNELS", str(tmp_path))                        # an empty folder: no kernels
     assert S.mars_sun_distance_spice("2021-02-18T20:55:00") is None
     d, src = S.mars_sun_distance_au(5.0, utc="2021-02-18T20:55:00")
     assert src == "ls_ellipse"
-    monkeypatch.delenv("MPPP_KERNELS")
+    monkeypatch.delenv("RPP_KERNELS")
     assert S.kernels_dir() is None and S.mars_sun_distance_spice("2021-02-18T20:55:00") is None
 
 

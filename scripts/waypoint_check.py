@@ -1,11 +1,11 @@
 """
-Waypoint localisation check (mppp.sfm.waypoint_check): which rover stations' waypoint positions disagree
+Waypoint localization check (rpp.sfm.waypoint_check): which rover stations' waypoint positions disagree
 with the bundle adjustments, over finished blocks.
 
     python scripts\\waypoint_check.py [--root <scapes root>] [--groups ecam_consensus navcam_baseline]
                                       [--variant ""] [--out DIR] [--folders WORK ...]
 
-Each block's refined camera centres against its waypoint priors, station by station, after a robust similarity
+Each block's refined camera centers against its waypoint priors, station by station, after a robust similarity
 (scale, rotation, translation; translation only for blocks under 30 m or with fewer than 5 stations).  Flagged:
 horizontal residual > 1 m, or > 0.5 m and > 3 x the block's scatter.  Writes ``waypoint_flags.json`` / ``.csv`` /
 ``.md`` (default ``<root>/camera_analysis/waypoint_flags_<date>``); ``flagged`` there is the list for notebook 03
@@ -15,15 +15,15 @@ from __future__ import annotations
 
 import argparse
 import datetime
-import os
 import sys
 from pathlib import Path
+from rpp import env as rpp_env
 
 
 
 def block_folders(root: Path, groups, variant: str = ""):
     """{site: project dir} of the finished blocks of ``groups`` (the site's own WORK folder, ``colmap[_variant]``)."""
-    from mppp.waypoints.sites import load_site_table, site_group, work_folder
+    from rpp.waypoints.sites import load_site_table, site_group, work_folder
     table = load_site_table()
     out = {}
     for g in groups:
@@ -39,13 +39,13 @@ def block_folders(root: Path, groups, variant: str = ""):
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--root", default=os.environ.get("MPPP_SCAPES"), help="the root of the WORK folders (MPPP_SCAPES)")
+    ap.add_argument("--root", default=rpp_env.get("RPP_SCAPES"), help="the root of the WORK folders (RPP_SCAPES)")
     ap.add_argument("--groups", nargs="*", default=["ecam_consensus", "navcam_baseline"])
     ap.add_argument("--variant", default="", help="results of <WORK>/colmap_<variant> (default <WORK>/colmap)")
     ap.add_argument("--folders", nargs="*", help="project folders to check instead of the groups")
     ap.add_argument("--out", help="output folder (default <root>/camera_analysis/waypoint_flags_<date>)")
     a = ap.parse_args(argv)
-    from mppp.sfm import waypoint_check as WC
+    from rpp.sfm import waypoint_check as WC
     root = Path(a.root)
     folders = ({Path(f).parent.name if Path(f).name.startswith("colmap") else Path(f).name: Path(f) for f in a.folders}
                if a.folders else block_folders(root, a.groups, a.variant))

@@ -1,7 +1,7 @@
-"""Features, database, matching, pairs, GPU steps (mppp.sfm.database, matching, pairs, gpu). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
+"""Features, database, matching, pairs, GPU steps (rpp.sfm.database, matching, pairs, gpu). (v0p50: the tests of the earlier test_v0pNN.py files, by module)."""
 import numpy as np
 import pytest
-from mppp.paths import data_dir  # noqa: E402
+from rpp.paths import data_dir  # noqa: E402
 import json
 from pathlib import Path
 
@@ -15,7 +15,7 @@ DATA_DIR = data_dir()
 def _synthetic(tmp_path, noise_native_px=0.3, seed=0):
     """Two stations, a mast pan of 6 stereo exposures each (half and quarter resolution), terrain points."""
     from helpers import synthetic_navcam_cameras
-    from mppp.sfm.project import SfmProject
+    from rpp.sfm.project import SfmProject
     from scipy.spatial.transform import Rotation
     rng = np.random.default_rng(seed)
     cams = synthetic_navcam_cameras()
@@ -55,17 +55,17 @@ def _synthetic(tmp_path, noise_native_px=0.3, seed=0):
 
 
 def test_keypoint_scaling_is_exact_for_binned_padded_frames():
-    from mppp.sfm.database import scale_keypoints
-    kp = np.array([[0.5, 0.5, 2, 0, 0, 2], [1279.5, 959.5, 1, 0, 0, 1]], np.float32)   # quarter-res pixel centres
+    from rpp.sfm.database import scale_keypoints
+    kp = np.array([[0.5, 0.5, 2, 0, 0, 2], [1279.5, 959.5, 1, 0, 0, 1]], np.float32)   # quarter-res pixel centers
     full = scale_keypoints(kp, 4.0)
-    assert np.allclose(full[:, :2], [[2.0, 2.0], [5118.0, 3838.0]])                  # centre of the 4x4 bin
+    assert np.allclose(full[:, :2], [[2.0, 2.0], [5118.0, 3838.0]])                  # center of the 4x4 bin
     assert np.allclose(full[0, 2:], [8, 0, 0, 8])
     kp4 = np.array([[10.0, 20.0, 3.0, 0.7]], np.float32)
     assert np.allclose(scale_keypoints(kp4, 2.0), [[20, 40, 6, 0.7]])
 
 
 def test_prior_pairs_see_overlap_and_reject_opposite_views(tmp_path):
-    from mppp.sfm.pairs import footprints, _visible_fraction
+    from rpp.sfm.pairs import footprints, _visible_fraction
     proj, truth, *_ = _synthetic(tmp_path)
     for r in proj.images:
         R, C = truth[r["name"]]
@@ -86,7 +86,7 @@ def test_gpu_steps_run_in_another_python(tmp_path):
     Windows, whose ceres types are incompatible with pip pyceres); settings come back through project.json."""
     import shutil, sys
     import cv2
-    from mppp.sfm import SfmProject, check_gpu_python, extract_features, match
+    from rpp.sfm import SfmProject, check_gpu_python, extract_features, match
     rng = np.random.default_rng(3)
     big = cv2.GaussianBlur((rng.random((700, 900)) * 255).astype(np.uint8), (0, 0), 2)
     big = cv2.equalizeHist(big)
@@ -97,7 +97,7 @@ def test_gpu_steps_run_in_another_python(tmp_path):
         cv2.imwrite(str(tmp_path / "images" / n), cv2.cvtColor(big[50:650, x0:x0 + 600], cv2.COLOR_GRAY2BGR))
         names.append(n)
     proj = SfmProject(tmp_path, [{"name": n, "has_mask": False} for n in names], {}, {}, [0, 0, 0], {"keep": 1})
-    from mppp.sfm import check_ba_environment
+    from rpp.sfm import check_ba_environment
     assert check_ba_environment()["pyceres"]                                  # pip pair: BA works here
     with pytest.warns(UserWarning, match="own python"):
         info = check_gpu_python(sys.executable, require_cuda=False)
@@ -112,7 +112,7 @@ def test_gpu_steps_run_in_another_python(tmp_path):
     db0 = pycolmap.Database.open(str(proj.features_db))
     assert {im.name for im in db0.read_all_images()} == set(names)
     db0.close()
-    from mppp.sfm.database import features_up_to_date
+    from rpp.sfm.database import features_up_to_date
     assert features_up_to_date(proj, max_num_features={"N": 120, "*": 60}, num_octaves=5)
     assert not features_up_to_date(proj, max_num_features={"N": 120, "*": 70}, num_octaves=5)
     extract_features(proj, max_num_features=2000, use_gpu=False, python=sys.executable, num_octaves=5)
@@ -131,13 +131,13 @@ def test_gpu_steps_run_in_another_python(tmp_path):
 
 def test_build_database_overwrites_by_default():
     import inspect
-    from mppp.sfm.database import build_database
+    from rpp.sfm.database import build_database
     assert inspect.signature(build_database).parameters["overwrite"].default is True
 
 
 def test_features_reused_only_with_same_settings(tmp_path):
-    from mppp.sfm.database import features_up_to_date, _features_record, image_fingerprints
-    from mppp.sfm.project import SfmProject
+    from rpp.sfm.database import features_up_to_date, _features_record, image_fingerprints
+    from rpp.sfm.project import SfmProject
     proj = SfmProject(tmp_path, [{"name": "a.png"}, {"name": "b.png"}], {}, {}, [0, 0, 0], {})
     assert not features_up_to_date(proj)                                # nothing yet
     proj.features_db.write_bytes(b"")
@@ -162,8 +162,8 @@ def test_features_reused_only_with_same_settings(tmp_path):
 
 def test_features_extracted_again_when_an_image_or_mask_changes(tmp_path):
     import os
-    from mppp.sfm.database import features_up_to_date, _features_record, image_fingerprints
-    from mppp.sfm.project import SfmProject
+    from rpp.sfm.database import features_up_to_date, _features_record, image_fingerprints
+    from rpp.sfm.project import SfmProject
     proj = SfmProject(tmp_path, [{"name": "a.png"}], {}, {}, [0, 0, 0], {})
     proj.images_dir.mkdir(parents=True, exist_ok=True)
     proj.masks_dir.mkdir(parents=True, exist_ok=True)
@@ -181,13 +181,13 @@ def test_features_extracted_again_when_an_image_or_mask_changes(tmp_path):
 
 
 def test_colmap_gui_project_files(tmp_path):
-    from mppp.sfm.database import write_gui_project
-    from mppp.sfm.project import SfmProject
+    from rpp.sfm.database import write_gui_project
+    from rpp.sfm.project import SfmProject
     (tmp_path / "masks").mkdir()
     proj = SfmProject(tmp_path, [{"name": "a.png", "has_mask": True}], {}, {}, [0, 0, 0], {})
     out = write_gui_project(proj, model="cahv_ba")
     ini = Path(out["ini"]).read_text().splitlines()
-    assert ini[0].startswith("# MPPP") and f"database_path={tmp_path.resolve() / 'database.db'}" in ini
+    assert ini[0].startswith("# RPP") and f"database_path={tmp_path.resolve() / 'database.db'}" in ini
     assert f"image_path={tmp_path.resolve() / 'images'}" in ini and "[ImageReader]" in ini
     bat = Path(out["bat"]).read_bytes()
     assert b"\r\n" in bat and b"--import_path \"%MODEL%\"" in bat and b"sparse\\cahv_ba" in bat
@@ -196,20 +196,20 @@ def test_colmap_gui_project_files(tmp_path):
 
 def test_feature_extraction_default_is_native_resolution():
     import inspect
-    from mppp.sfm.database import DEFAULT_MAX_IMAGE_SIZE, extract_features
+    from rpp.sfm.database import DEFAULT_MAX_IMAGE_SIZE, extract_features
     assert DEFAULT_MAX_IMAGE_SIZE == 5120
     assert inspect.signature(extract_features).parameters["max_image_size"].default == 5120
 
 
 def test_affine_shape_is_part_of_the_feature_record():
-    from mppp.sfm.database import _feature_settings
+    from rpp.sfm.database import _feature_settings
     assert "estimate_affine_shape" not in _feature_settings(16380, 5120, False)       # older records stay valid
     assert _feature_settings(16380, 5120, True, True)["estimate_affine_shape"] is True
 
 
 def test_launcher_searches_colmap_bat(tmp_path):
-    from mppp.sfm.project import SfmProject
-    from mppp.sfm.database import write_gui_project, COLMAP_BAT_CANDIDATES
+    from rpp.sfm.project import SfmProject
+    from rpp.sfm.database import write_gui_project, COLMAP_BAT_CANDIDATES
     proj = SfmProject(tmp_path, [], {}, {}, [0, 0, 0], {})
     out = write_gui_project(proj, model="cahv_ba", colmap_bat=r"D:\tools\colmap-x64-windows-nocuda\COLMAP.bat")
     bat = Path(out["bat"]).read_bytes().decode()
@@ -223,8 +223,8 @@ def test_launcher_searches_colmap_bat(tmp_path):
 
 def test_matching_block_size_and_fisheye_param_names():
     import inspect
-    from mppp.sfm.matching import match
-    from mppp.sfm.reconstruction import _PARAM_NAMES, _FIXED_EXTRA
+    from rpp.sfm.matching import match
+    from rpp.sfm.reconstruction import _PARAM_NAMES, _FIXED_EXTRA
     assert inspect.signature(match).parameters["block_size"].default == 100
     assert _PARAM_NAMES["THIN_PRISM_FISHEYE"].index("sx1") == 10 and _FIXED_EXTRA["THIN_PRISM_FISHEYE"] == [6, 7, 10, 11]
 
@@ -233,8 +233,8 @@ def test_right_only_exposure_gets_a_single_eye_rig(tmp_path):
     """v0p30: a right image whose left partner is missing is posed in a one-sensor rig, not dropped."""
     import pycolmap
     from helpers import _synthetic
-    from mppp.sfm.database import build_database
-    from mppp.sfm.reconstruction import initial_reconstruction
+    from rpp.sfm.database import build_database
+    from rpp.sfm.reconstruction import initial_reconstruction
     proj, truth, *_ = _synthetic(tmp_path)
     lone = proj.images[3]["name"]
     assert lone.startswith("NR")
@@ -273,7 +273,7 @@ def test_match_reuse(tmp_path):
     pycolmap = pytest.importorskip("pycolmap")
     from PIL import Image
     from scipy.ndimage import affine_transform, gaussian_filter
-    from mppp.sfm import database as D
+    from rpp.sfm import database as D
     (tmp_path / "images").mkdir()
     rng = np.random.default_rng(3)
     base = gaussian_filter(rng.random((500, 650)), 1.5)
@@ -356,7 +356,7 @@ def test_match_reuse(tmp_path):
 
 
 def test_match_settings_defaults():
-    from mppp.sfm.matching import match_settings
+    from rpp.sfm.matching import match_settings
     s = match_settings("exhaustive", max_ratio=0.9, max_distance=1.0, cross_check=True, guided_matching=False,
                        max_error_px=6.0)
     assert s["min_num_inliers"] == 15 and s["max_num_matches"] == 32768 and s["max_error_px"] == 6.0
@@ -371,8 +371,8 @@ def test_database_puts_epoch_frames_on_their_own_rig(tmp_path):
     """Navcam images of a later rig epoch (cameras NL#1, NR#1, rig N#1) get frames on that epoch's rig."""
     import pycolmap
     from helpers import _synthetic
-    from mppp.sfm.database import build_database
-    from mppp.sfm.reconstruction import initial_reconstruction
+    from rpp.sfm.database import build_database
+    from rpp.sfm.reconstruction import initial_reconstruction
     proj, truth, *_ = _synthetic(tmp_path)
     nav = [r for r in proj.images if r["instrument"] in ("NL", "NR")]
     assert len(nav) >= 4
@@ -403,7 +403,7 @@ def test_database_puts_epoch_frames_on_their_own_rig(tmp_path):
     assert {by_name[r["name"]].camera_id for r in last} == {summary["cameras"]["NL#1"], summary["cameras"]["NR#1"]}
     assert rec.num_reg_images() == len(proj.images)
     # the consensus sees the epoch cameras as their eyes
-    from mppp.sfm.thermal import eye_key
+    from rpp.sfm.thermal import eye_key
     assert {eye_key(k) for k in summary["cameras"] if k.startswith("N")} == {"NL", "NR"}
 
 
@@ -413,7 +413,7 @@ def test_other_matchers_matches_kept_for_an_ab(tmp_path):
     import sqlite3
     import pycolmap
     from helpers import _synthetic
-    from mppp.sfm import database as D
+    from rpp.sfm import database as D
     proj, *_ = _synthetic(tmp_path)
     fdb = pycolmap.Database.open(str(proj.features_db))
     cam = fdb.write_camera(pycolmap.Camera(model="PINHOLE", width=100, height=100, params=[100, 100, 50, 50]))
@@ -466,7 +466,7 @@ def test_feature_count_per_family(tmp_path):
     """0.95.0 (Christian, 27 Oct): {"N": 2 x, "*": x} - the Navcam copy of one image gets more features than the
     other two copies (one pass per count into one features.db); an int is every family's count."""
     import cv2
-    from mppp.sfm import SfmProject, extract_features
+    from rpp.sfm import SfmProject, extract_features
     rng = np.random.default_rng(5)
     img = cv2.equalizeHist(cv2.GaussianBlur((rng.random((600, 600)) * 255).astype(np.uint8), (0, 0), 2))
     (tmp_path / "images").mkdir()
@@ -486,7 +486,7 @@ def test_feature_count_per_family(tmp_path):
 def test_copy_database_without_descriptors(tmp_path):
     """0.95.0 (Christian, 27 Oct: the thermal and guided copies take 5-20 GB per site): a copy keeps every table
     but the descriptors (the largest), with the indices; with descriptors=True it is a full copy."""
-    from mppp.sfm.database import copy_database
+    from rpp.sfm.database import copy_database
     src = tmp_path / "database.db"
     db = pycolmap.Database.open(str(src))
     cam = pycolmap.Camera(model="SIMPLE_RADIAL", width=100, height=80, params=[90.0, 50.0, 40.0, 0.0])

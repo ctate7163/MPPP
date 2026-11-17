@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from mppp.paths import data_dir  # noqa: E402
+from rpp.paths import data_dir  # noqa: E402
 import cv2
 
 
@@ -46,7 +46,7 @@ def synthetic_navcam_cameras():
 
 def _synthetic(tmp_path, noise_native_px=0.3, seed=0):
     """Two stations, a mast pan of 6 stereo exposures each (half and quarter resolution), terrain points."""
-    from mppp.sfm.project import SfmProject
+    from rpp.sfm.project import SfmProject
     from scipy.spatial.transform import Rotation
     rng = np.random.default_rng(seed)
     cams = synthetic_navcam_cameras()
@@ -180,15 +180,15 @@ def _quat(R):
 
 def _synthetic_model(noise_px=0.0, seed=0, full_keypoint_lists=True):
     """Two stations 6 m apart, three cameras each, 200 terrain points seen by all six."""
-    from mppp.colmap import project_camera
-    from mppp.colmap import ColmapCamera, ColmapImage, ColmapModel, ColmapPoint
+    from rpp.colmap import project_camera
+    from rpp.colmap import ColmapCamera, ColmapImage, ColmapModel, ColmapPoint
     rng = np.random.default_rng(seed)
     cam = ColmapCamera(1, "FULL_OPENCV", 1280, 960, np.array([1000, 1000, 640, 480, -0.2, 0.05, 1e-4, -1e-4,
                                                                0, 0, 0, 0], float))
     X = np.c_[rng.uniform(-3, 3, 200), rng.uniform(8, 12, 200), rng.uniform(-0.3, 0.3, 200)]
-    centres = [np.array([sx + dx, 0, 2.0]) for sx in (-3.0, 3.0) for dx in (-0.2, 0.0, 0.2)]
+    centers = [np.array([sx + dx, 0, 2.0]) for sx in (-3.0, 3.0) for dx in (-0.2, 0.0, 0.2)]
     images, obs = {}, {}
-    for k, C in enumerate(centres, start=1):
+    for k, C in enumerate(centers, start=1):
         R = _look_at(C, [0, 10, 0])
         t = -R @ C
         uv = project_camera(cam.model, cam.params, X @ R.T + t) + rng.normal(0, noise_px, (len(X), 2))
@@ -214,7 +214,7 @@ def _synthetic_block(tmp_path):
 
 def _tiny_checkpoint(tmp_path):
     import torch
-    from mppp.mask.model import ConvNeXtSeg, write_card
+    from rpp.mask.model import ConvNeXtSeg, write_card
     m = ConvNeXtSeg("convnext_tiny", pretrained=False, fpn_width=32, stride4=True)
     ck = tmp_path / "tiny_s4_seg_test.pt"
     torch.save({"model": m.state_dict(), "val_iou": 0.5, "epoch": 1}, ck)

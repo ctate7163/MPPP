@@ -1,9 +1,9 @@
 """
-Align one WORK folder with the pipeline's default settings, with a log and a status file (what ``mppp align``
+Align one WORK folder with the pipeline's default settings, with a log and a status file (what ``rpp align``
 does; ``scripts/run_sites.py`` starts one of these per site).
 
 A WORK folder is a site folder (``mars2020_sol_<sol>_<site>`` or ``..._zcam``) or any folder with a ``processed/``
-sub-folder (images, masks and the ``mppp_manifest_v*.json`` of ``mppp process`` or notebook 01).  By default the
+sub-folder (images, masks and the ``mppp_manifest_v*.json`` of ``rpp process`` or notebook 01).  By default the
 images already processed there are aligned (no PDS search, no image processing)::
 
     python scripts/align_scape.py <scapes root>/mars2020_sol_1408_south_arm_zcam
@@ -15,7 +15,7 @@ and the matches while the features and matching settings are the same.  So:
 
 - **leave images out**: list them in ``<WORK>/exclude_images.txt`` (stations ``S032D1184``, ``sol:658``,
   ``seq:NCAM08111`` or file-name patterns ``ZR0_0690_*``) and run again;
-- **other settings**: ``--set NAME=VALUE`` (a :class:`mppp.pipeline.Settings` field; VALUE is JSON or Python,
+- **other settings**: ``--set NAME=VALUE`` (a :class:`rpp.pipeline.Settings` field; VALUE is JSON or Python,
   e.g. ``--set "schedule=((24,10,8),(12,4,4),(8,2,2),(8,2,2))"``), or put them in ``<WORK>/mppp_settings.json``
   (``{"attitude_prior_deg": 1.0}``) or a file given with ``--settings``;
 - **try a camera model** without losing the default results: ``--variant candidate --set navcam_cameras=<folder>``;
@@ -26,7 +26,7 @@ heartbeat is older than 5 minutes has stopped).
 """
 from __future__ import annotations
 import os as _os
-_os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")   # 27 Oct: as mppp_env.bat - two OpenMP runtimes (torch, pycolmap) abort a plain "python" start
+_os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")   # 27 Oct: as rpp_env.bat - two OpenMP runtimes (torch, pycolmap) abort a plain "python" start
 
 import argparse
 import sys
@@ -34,7 +34,7 @@ from pathlib import Path
 
 
 def show_status(work: Path) -> int:
-    from mppp.runner import STATUS_FILE, read_status
+    from rpp.runner import STATUS_FILE, read_status
     st = read_status(work / STATUS_FILE)
     if st is None:
         print(f"{work}: no run recorded ({STATUS_FILE} missing)")
@@ -68,14 +68,14 @@ def main(argv=None) -> int:
     ap.add_argument("--variant", default="", help="results in <WORK>/colmap_<variant> instead of colmap/")
     ap.add_argument("--settings", default=None, help="a JSON file of settings {NAME: value}")
     ap.add_argument("--set", action="append", default=[], metavar="NAME=VALUE", help="a pipeline setting")
-    ap.add_argument("--sites-file", default=None, help="site definitions (default mppp/data/sites.json)")
+    ap.add_argument("--sites-file", default=None, help="site definitions (default rpp/data/sites.json)")
     ap.add_argument("--force", action="store_true", help="start even if the status says a run is alive")
     ap.add_argument("--status", action="store_true", help="print the folder's run status and exit")
     ap.add_argument("--is-running", action="store_true", help="exit 0 if a run of the folder is alive, else 1")
     a = ap.parse_args(argv)
     work = Path(a.work).expanduser().resolve()
     if a.is_running:
-        from mppp.runner import STATUS_FILE, read_status
+        from rpp.runner import STATUS_FILE, read_status
         st = read_status(work / STATUS_FILE)
         return 0 if st and st.get("alive") else 1
     if a.status:
@@ -83,7 +83,7 @@ def main(argv=None) -> int:
     if (work / SKIP_FILE).is_file():                  # 21 Oct: a block taken out of a batch that is already running
         print(f"{work.name}: skipped - {work / SKIP_FILE} exists (delete it to align this block again)")
         return SKIP_EXIT
-    from mppp.cli import main as cli
+    from rpp.cli import main as cli
     cmd = ["align" if a.source == "processed" else "run", str(work), "--variant", a.variant]
     if a.settings:
         cmd += ["--settings", a.settings]

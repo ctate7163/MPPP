@@ -29,7 +29,7 @@ def _normals(A, base):
 def test_epipolar_candidates_equal_every_pair_test():
     """The sorted-window search finds exactly the pairs of the test of every pair, on random geometry with rays
     along the baseline (either way), exactly parallel ones, unnormalised rays and tolerances up to 0.3 rad."""
-    from mppp.sfm.guided import epipolar_candidates, epipolar_dense
+    from rpp.sfm.guided import epipolar_candidates, epipolar_dense
     rng = np.random.default_rng(7)
     for k in range(150):
         base = rng.normal(size=3) * rng.uniform(0.01, 40)
@@ -59,7 +59,7 @@ def test_epipolar_candidates_equal_every_pair_test():
 
 def test_epipolar_dense_bounds_its_memory():
     """At most about 2**21 products at a time, whatever the chunk."""
-    from mppp.sfm import guided as G
+    from rpp.sfm import guided as G
     rng = np.random.default_rng(1)
     A, B = rng.normal(size=(3000, 3)), rng.normal(size=(5000, 3))
     base = np.array([0.3, 1.0, 0.1])
@@ -80,7 +80,7 @@ def test_epipolar_dense_bounds_its_memory():
 _HOLDER = textwrap.dedent("""
     import sys, time
     sys.path.insert(0, sys.argv[1])
-    from mppp.sfm.gpu import gpu_lock
+    from rpp.sfm.gpu import gpu_lock
     with gpu_lock("holder", path=sys.argv[2], poll_s=0.1):
         open(sys.argv[3], "w").write(str(time.time()))
         time.sleep(float(sys.argv[4]))
@@ -98,10 +98,10 @@ def _hold(tmp_path, seconds):
 
 
 def test_gpu_lock_makes_a_second_process_wait(tmp_path, caplog):
-    from mppp.sfm.gpu import gpu_lock
+    from rpp.sfm.gpu import gpu_lock
     p = _hold(tmp_path, 2.0)
     t0 = time.time()
-    with caplog.at_level("INFO", logger="mppp.sfm"):
+    with caplog.at_level("INFO", logger="rpp.sfm"):
         with gpu_lock("second", path=tmp_path / "gpu.lock", poll_s=0.1) as g:
             waited = time.time() - t0
     p.wait(30)
@@ -113,7 +113,7 @@ def test_gpu_lock_makes_a_second_process_wait(tmp_path, caplog):
 
 
 def test_gpu_lock_nested_in_one_process_does_not_wait(tmp_path):
-    from mppp.sfm.gpu import gpu_lock
+    from rpp.sfm.gpu import gpu_lock
     t0 = time.time()
     with gpu_lock("outer", path=tmp_path / "gpu.lock", poll_s=0.1, max_wait_h=0.01):
         with gpu_lock("inner", path=tmp_path / "gpu.lock", poll_s=0.1, max_wait_h=0.01) as g:
@@ -125,7 +125,7 @@ def test_gpu_lock_nested_in_one_process_does_not_wait(tmp_path):
 
 
 def test_gpu_lock_is_freed_when_its_holder_dies(tmp_path):
-    from mppp.sfm.gpu import gpu_lock
+    from rpp.sfm.gpu import gpu_lock
     p = _hold(tmp_path, 60.0)
     p.kill()
     p.wait(30)
@@ -135,19 +135,19 @@ def test_gpu_lock_is_freed_when_its_holder_dies(tmp_path):
 
 
 def test_gpu_lock_gives_up_waiting_and_can_be_off(tmp_path, monkeypatch, caplog):
-    from mppp.sfm.gpu import gpu_lock
+    from rpp.sfm.gpu import gpu_lock
     p = _hold(tmp_path, 20.0)
     try:
         t0 = time.time()
-        with caplog.at_level("INFO", logger="mppp.sfm"):
+        with caplog.at_level("INFO", logger="rpp.sfm"):
             with gpu_lock("impatient", path=tmp_path / "gpu.lock", poll_s=0.1, max_wait_h=1.0 / 3600):
                 pass
         assert time.time() - t0 < 10 and "going ahead anyway" in caplog.text
-        monkeypatch.setenv("MPPP_GPU_LOCK", "0")
+        monkeypatch.setenv("RPP_GPU_LOCK", "0")
         t0 = time.time()
         with gpu_lock("off", path=tmp_path / "gpu.lock") as g:
             assert not g.enabled and time.time() - t0 < 1
-        monkeypatch.delenv("MPPP_GPU_LOCK")
+        monkeypatch.delenv("RPP_GPU_LOCK")
         with gpu_lock("cpu step", enabled=False, path=tmp_path / "gpu.lock") as g:
             assert not g.enabled
     finally:
@@ -157,8 +157,8 @@ def test_gpu_lock_gives_up_waiting_and_can_be_off(tmp_path, monkeypatch, caplog)
 
 def test_run_step_takes_the_gpu_lock(monkeypatch, tmp_path):
     from types import SimpleNamespace
-    from mppp.sfm import gpu as GP
-    from mppp.sfm import project as PR
+    from rpp.sfm import gpu as GP
+    from rpp.sfm import project as PR
     used = []
 
     class Lock:
@@ -171,7 +171,7 @@ def test_run_step_takes_the_gpu_lock(monkeypatch, tmp_path):
         def __exit__(self, *e):
             pass
     monkeypatch.setattr(GP, "gpu_lock", Lock)
-    monkeypatch.setattr(GP, "_run", lambda python, args, echo=True: 'MPPP_RESULT {"ok": 1}\n')
+    monkeypatch.setattr(GP, "_run", lambda python, args, echo=True: 'RPP_RESULT {"ok": 1}\n')
     monkeypatch.setattr(PR.SfmProject, "load", staticmethod(lambda root: SimpleNamespace(settings={})))
     proj = SimpleNamespace(root=tmp_path / "site" / "colmap", save=lambda: None, settings={})
     assert GP.run_step("py", "match", proj, use_gpu=True) == {"ok": 1}
@@ -184,7 +184,7 @@ def test_run_step_takes_the_gpu_lock(monkeypatch, tmp_path):
 _WRITER = textwrap.dedent("""
     import sys, json
     sys.path.insert(0, sys.argv[1])
-    from mppp.paths import atomic_write_bytes
+    from rpp.paths import atomic_write_bytes
     k = int(sys.argv[3])
     for r in range(40):
         atomic_write_bytes(sys.argv[2], json.dumps({"w": k, "r": r, "x": [k] * 200000}).encode())
@@ -193,7 +193,7 @@ _WRITER = textwrap.dedent("""
 
 def test_atomic_write_never_shows_half_a_file(tmp_path):
     """Two writers and a reader of one cache file at the same time (two alignments refreshing the waypoints)."""
-    from mppp.paths import atomic_write_bytes
+    from rpp.paths import atomic_write_bytes
     f = tmp_path / "cache.json"
     atomic_write_bytes(f, json.dumps({"w": -1}).encode())
     ws = [subprocess.Popen([sys.executable, "-c", _WRITER, str(SRC), str(f), str(k)]) for k in range(2)]
@@ -212,7 +212,7 @@ def test_atomic_write_never_shows_half_a_file(tmp_path):
 
 
 def test_replace_retry_waits_for_a_busy_file(tmp_path, monkeypatch):
-    from mppp import paths as P
+    from rpp import paths as P
     tmp, dst = tmp_path / "a.tmp", tmp_path / "a"
     tmp.write_text("new")
     dst.write_text("old")
@@ -234,7 +234,7 @@ def test_replace_retry_waits_for_a_busy_file(tmp_path, monkeypatch):
 
 def test_waypoint_refresh_writes_atomically(tmp_path, monkeypatch):
     import io
-    from mppp.waypoints import table as T
+    from rpp.waypoints import table as T
     good = json.dumps({"type": "FeatureCollection", "features": [{"properties": {"site": 1}}]}).encode()
 
     class R(io.BytesIO):
@@ -246,7 +246,7 @@ def test_waypoint_refresh_writes_atomically(tmp_path, monkeypatch):
     monkeypatch.setattr(T.urllib.request, "urlopen", lambda url, timeout=0: R(good))
     target = tmp_path / "wp.json"
     d = T.load_waypoints(target, refresh=True)
-    assert d["_mppp_source"]["n_features"] == 1 and not list(tmp_path.glob(".*.tmp"))
+    assert d["_rpp_source"]["n_features"] == 1 and not list(tmp_path.glob(".*.tmp"))
     # the cache in use by another process: the old copy stays, with a warning
     monkeypatch.setattr(T, "atomic_write_bytes", lambda p, b: False)
     with pytest.warns(UserWarning, match="in use"):
@@ -260,8 +260,8 @@ def test_lightglue_out_of_memory_falls_back_to_sift(monkeypatch, tmp_path):
     pytest.importorskip("torch")
     pytest.importorskip("kornia")
     from types import SimpleNamespace
-    from mppp.sfm import lightglue as LG
-    from mppp.sfm import matching as M
+    from rpp.sfm import lightglue as LG
+    from rpp.sfm import matching as M
     proj = SimpleNamespace(root=tmp_path / "site" / "colmap")
 
     def oom(*a, **k):
@@ -290,7 +290,7 @@ def _run_sites():
 def _stub_finished(monkeypatch):
     """The stub alignments' finished record: their own output files (a real one writes run_done.json with the run key;
     0.98.26: an exit code 0 counts only with it)."""
-    import mppp.batch as B
+    import rpp.batch as B
     monkeypatch.setattr(B, "finished", lambda work, variant, key: (
         (Path(work) / "stub.json").is_file() or any(Path(work).glob("try_*")), "stub record"))
 
@@ -309,13 +309,13 @@ _STUB = textwrap.dedent("""
 def test_run_sites_runs_two_sites_at_once(tmp_path, monkeypatch):
     rs = _run_sites()
     _stub_finished(monkeypatch)
-    monkeypatch.delenv("MPPP_JOBS", raising=False)
+    monkeypatch.delenv("RPP_JOBS", raising=False)
     assert rs.default_jobs() == 2
-    monkeypatch.setenv("MPPP_JOBS", "3")
+    monkeypatch.setenv("RPP_JOBS", "3")
     assert rs.default_jobs() == 3
-    monkeypatch.setenv("MPPP_JOBS", "x")
+    monkeypatch.setenv("RPP_JOBS", "x")
     assert rs.default_jobs() == 2
-    monkeypatch.delenv("MPPP_JOBS")
+    monkeypatch.delenv("RPP_JOBS")
     stub = tmp_path / "stub.py"
     stub.write_text(_STUB)
     fetched = []
@@ -358,8 +358,8 @@ def test_run_sites_survives_a_child_that_cannot_start(tmp_path, monkeypatch):
 
 def test_prefetch_only_logs_failures(monkeypatch):
     rs = _run_sites()
-    from mppp.waypoints import table as T
-    from mppp.mask import hub as H
+    from rpp.waypoints import table as T
+    from rpp.mask import hub as H
     lines = []
     monkeypatch.setattr(T, "load_waypoints", lambda refresh=None: (_ for _ in ()).throw(OSError("offline")))
     monkeypatch.setattr(H, "resolve_checkpoint", lambda c=None: (_ for _ in ()).throw(FileNotFoundError("no model")))
@@ -397,7 +397,7 @@ def test_epipolar_candidates_memory_is_bounded_driving_toward_the_scene():
     """Rays along the baseline (the rover drove toward what it photographs) put many rays in wide windows: the
     gathered candidates stay bounded, and the result does not depend on the bound."""
     import tracemalloc
-    from mppp.sfm.guided import epipolar_candidates
+    from rpp.sfm.guided import epipolar_candidates
     rng = np.random.default_rng(3)
     base = np.array([0.0, 0.0, 5.0])                              # along the view direction
     A = np.c_[rng.normal(scale=0.3, size=(12000, 2)), np.ones(12000)]
