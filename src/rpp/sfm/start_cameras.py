@@ -116,9 +116,12 @@ def navcam_start_rig(rig: Dict[str, Any], images: Sequence[Dict[str, Any]], fami
                      folder: Optional[PathLike] = None) -> Optional[Dict[str, Any]]:
     """
     Start the stereo rig of ``family`` (a ``_rig_from_pairs`` entry, changed in place) from the promoted rig file
-    (:func:`rpp.calib.load_rig`): the rotation at the block's median sol (:func:`rpp.calib.rig_at`), the fitted
+    (:func:`rpp.calib.load_rig`): the rotation at the block's median sol (:func:`rpp.calib.rig_at`) and - 0.99.11, a
+    rig file with temperature rates (the rig_T form) - at the block's median camera temperature, the fitted
     translation when the file has one (else the block's CAHV baseline).  Returns the info for
-    ``settings["navcam_cameras"]["rig"]`` (None when the family has no rig file: the CAHV rig stays).
+    ``settings["navcam_cameras"]["rig"]`` (None when the family has no rig file: the CAHV rig stays); its
+    ``thermal`` (T_degC, the rates) is what the temperature bins turn their rigs about
+    (:func:`rpp.sfm.thermal.thermal_model_for_project`).
     """
     shipped = calib.load_rig(family, folder)
     if shipped is None:
@@ -127,7 +130,8 @@ def navcam_start_rig(rig: Dict[str, Any], images: Sequence[Dict[str, Any]], fami
     sols = [int(r["sol"]) for r in rows if r.get("sol") is not None]
     Ts = [float(r["camera_temperature_degC"]) for r in rows if r.get("camera_temperature_degC") is not None]
     sol = float(np.median(sols)) if sols else None
-    R, t, applied = calib.rig_at(shipped, sol)
+    T_med = float(np.median(Ts)) if Ts else None
+    R, t, applied = calib.rig_at(shipped, sol, T_med)
     rig["R_sensor_from_ref_cahv"] = rig["R_sensor_from_ref"]
     rig["R_sensor_from_ref"] = R.tolist()
     info: Dict[str, Any] = {"file": shipped["file"], "T_median_degC": float(np.median(Ts)) if Ts else None, **applied}

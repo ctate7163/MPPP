@@ -184,7 +184,8 @@ def deviations(free: Dict[str, Any], st: Dict[str, Any], pointing: Optional[Dict
             r[f"z_{k}"] = d / (s_ * scale) if s_ else None
         cams.append(r)
     for u in free["rigs"]:
-        R_law = T.R_of_q(T.rig_q_at(st["Q0"], st["D"], st["H"], u["sol"], st["knot"]))
+        R_law = T.R_of_q(T.rig_q_at(st["Q0"], st["D"], st["H"], u["sol"], st["knot"], K=st.get("K"), T=u.get("T"),
+                                    T0=st.get("T0_rig", st["T0"])))       # 0.99.11: the rig_T form's temperature rates
         a = J.rig_angles(np.asarray(u["R"], float), R_ref=R_law)
         r = {k: u.get(k) for k in ("scape", "epoch", "bin", "early", "sol", "T", "frames")}
         for ang in T.ANGLES:

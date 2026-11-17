@@ -5,10 +5,13 @@ image or block, and their fits.
 The forms (:mod:`rpp.calib.forms`):
 
 * **Navcam** (family N, eyes L and R): COLMAP ``THIN_PRISM_FISHEYE`` at the full 5120 x 3840 frame with sx1 = sy1 = 0
-  held.  fx and fy are linear in the camera temperature (ppm/degC about T0), cx and cy too (px/degC), and so is k1
-  (per degC); fx, fy, cx, cy carry offsets for the images before the early-mission sol.  NL is the rig reference
-  (it keeps the label CAHVORE pointing and position); the stereo rig (NR from NL) has one yaw for every temperature
-  and a rotation drift linear in sol (with the knot of the pitch rate).
+  held.  fx and fy are linear in the camera temperature (ppm/degC about T0), and so is k1 (per degC); fx, fy, cx, cy
+  carry offsets for the images before the early-mission sol.  NL is the rig reference (it keeps the label CAHVORE
+  pointing and position).  0.99.11 (Christian, 17 Nov 2026), the ``rig_T`` form: cx and cy are constant and the
+  stereo rig (NR from NL) rotates linearly in sol (with the knot of the pitch and yaw rates) and in the camera
+  temperature (pitch, yaw and roll per degC, the rig file's ``thermal``) - the stereo temperature change is a rotation
+  of the camera bar, not a principal-point motion.  The ``pp_T`` form (up to 0.99.10: cx, cy linear in temperature,
+  the rig with one rotation for every temperature) is still read; a folder must not have both.
 * **Hazcam** (families F and R): the same form, not calibrated yet; each image starts from the fisheye fitted to its
   own label CAHVORE (:mod:`rpp.calib.labelfit`, 0.93), a block from the median of its images' fits.
 * **Mastcam-Z** (family Z, zooms 34, 48, 63, 79, 110 mm): one calibration per zoom, ``FULL_OPENCV`` at 1648 x 1200
@@ -31,7 +34,8 @@ from .models import (NAVCAM_FILES, check_form, describe, hazcam_start_model, loa
                      zcam_fingerprint)
 from . import labelfit  # noqa: F401,E402  (the Navcam / Hazcam label CAHVORE fit, 0.93)
 from .constrain import (camera_at, drift_offset_mdeg, early_share, focus_state, label_camera, rig_at, scaled,  # noqa: F401
-                        sol_epochs, thermal_scale, thermal_terms, zcam_camera_at, zcam_line_value, zcam_lines_at)
+                        rig_thermal_terms, sol_epochs, thermal_offset_mdeg, thermal_scale, thermal_terms, zcam_camera_at,
+                        zcam_line_value, zcam_lines_at)
 
 __all__ = [
     "Form", "NAVCAM", "HAZCAM", "ZCAM", "PARAM_NAMES", "NAVCAM_PARAMS", "FULL_OPENCV_PARAMS", "FULL_FRAME",
@@ -40,6 +44,6 @@ __all__ = [
     "form_for", "validate", "zcam_line_form",
     "NAVCAM_FILES", "load_camera", "load_rig", "load_zcam", "load_zcam_all", "zcam_files", "hazcam_start_model",
     "models_fingerprint", "navcam_fingerprint", "zcam_fingerprint", "check_form", "describe", "promote", "write_model",
-    "camera_at", "scaled", "rig_at", "drift_offset_mdeg", "early_share", "sol_epochs", "thermal_terms", "thermal_scale",
+    "camera_at", "scaled", "rig_at", "drift_offset_mdeg", "rig_thermal_terms", "thermal_offset_mdeg", "early_share", "sol_epochs", "thermal_terms", "thermal_scale",
     "zcam_camera_at", "zcam_lines_at", "zcam_line_value", "focus_state", "label_camera",
 ]

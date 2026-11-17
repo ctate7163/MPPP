@@ -55,6 +55,10 @@ def add_parsers(sub) -> None:
                    help="navcam (3 Nov 2026): global terms set to 0 and held, besides --hold: D_roll (one roll for the "
                         "mission), S_NL_cx S_NL_cy S_NR_cy (those principal points constant with temperature) ...")
     p.add_argument("--knot", type=float, default=None, help="the pitch hinge sol (default the rig file's)")
+    p.add_argument("--form", default=None, choices=("rig_T", "pp_T"),
+                   help="navcam (0.99.11, Christian 17 Nov 2026): the Navcam form - rig_T (default): the principal-point "
+                        "slopes held at 0 and the rig rotation linear in temperature (pitch, yaw, roll mdeg/degC); pp_T: "
+                        "the form up to 0.99.10 (cx, cy linear in temperature, no rig temperature rate)")
     p.add_argument("--tie-f-slope", action="store_true",
                    help="navcam: NR's focal thermal slope tied to NL's ppm/degC (0.95.0; the comparison run before it becomes the form)")
     p.add_argument("--aniso-f", action="store_true",
@@ -90,6 +94,12 @@ def add_parsers(sub) -> None:
                    help="zcam (0.96): fit the focus-approach offset again (off since 9 Nov: held at 0)")
     p.add_argument("--zcam-take", nargs="+", default=None, metavar="SITE",
                    help="zcam (0.97.0): sites taken although their zcam_joint_exclude names the zoom (rockytop at 63 mm)")
+    p.add_argument("--zcam-rig-T-test", type=float, nargs="?", const=4.0, default=0.0, metavar="DEG",
+                   help="zcam (0.99.11, Christian 17 Nov 2026: \"If the bar is rotating then the zcams would have a similar "
+                        "trend and temp dependence. Test that\"): the bar test in the diagnostics - one Mastcam-Z rig per "
+                        "block, epoch and lens-temperature bin of DEG (default 4 degC), the rotation against the lens "
+                        "temperature within and between the blocks, beside the Navcam rig's rates (report.md, "
+                        "zcam_joint.json diagnostics.rig_T_test)")
     p.add_argument("--zcam-hold-ratio", type=float, default=None, metavar="RATIO",
                    help="zcam (0.97.0, Christian 12 Nov: \"The 79 mm high and low gap might not be separable, so test if "
                         "one state fits both\"): the high / low focal ratio of every eye held at RATIO - 1.0: one state "
@@ -266,6 +276,7 @@ def cmd_calib(a: argparse.Namespace) -> int:
     res = TJ.fit_tied(blocks, points=pts, hold=tuple(a.hold) if a.hold is not None else TJ.HOLD_DEFAULT,
                       knot_sol=a.knot, diagnostics=not a.no_diagnostics, iso_f=not a.aniso_f,
                       tie_f=bool(getattr(a, "tie_f_slope", False)) or None, zero=tuple(getattr(a, "zero", None) or ()),
+                      form=getattr(a, "form", None) or TJ.NAVCAM_FORM,                                   # 0.99.11
                       **({"iterations": int(a.iterations)} if getattr(a, "iterations", None) else {}))   # 2 Nov 2026
     cand = TJ.write_tied(res, out / "navcam_joint", note=a.note)
     rep = check_navcam(cand)
@@ -307,7 +318,8 @@ def _calib_zcam(a: argparse.Namespace) -> int:
                        pool=(Z.DIAG_POOL if getattr(a, "zcam_pool", None) is None
                              else (None if a.zcam_pool == "none" else a.zcam_pool)),
                        focus_below=bool(getattr(a, "zcam_focus_below", False)) or Z.FOCUS_BELOW_FIT,
-                       ratio_hold=getattr(a, "zcam_hold_ratio", None))
+                       ratio_hold=getattr(a, "zcam_hold_ratio", None),
+                       rig_T_bin_deg=float(getattr(a, "zcam_rig_T_test", 0.0) or 0.0))
     from rpp.calib import models_fingerprint
     from rpp.pipeline import run_done
     res["models_fingerprint"] = models_fingerprint()

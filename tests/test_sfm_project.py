@@ -126,7 +126,10 @@ def test_project_bins_mastcamz_by_focus(processed_pair, tmp_path):
     assert z["fixed_params"] == [n for n in FULL_OPENCV_NAMES if n in set(ZCAM_BIN_HELD) | {"k2"}]   # + Z34 k2 fixed
     assert "focus bin" in z["source"] and z["fixed_terms"] == {"k2": 0.5}
     r = [r for r in proj.images if r["camera_group"] == "ZL034"][0]
-    assert r["instrument"] == key and r["focus_count"] == fc and abs(r["label_f_px"] - z["params"][0]) < 1e-9
+    # 0.99.11: a high-state bin of a zoom without a focus model starts at the label f x the high-state ratio
+    from rpp.sfm.project import ZCAM_NO_MODEL_HIGH_RATIO
+    assert r["instrument"] == key and r["focus_count"] == fc
+    assert abs(r["label_f_px"] * ZCAM_NO_MODEL_HIGH_RATIO - z["params"][0]) < 1e-6
     assert proj.settings["zcam_focus_bin"] == 30.0 and proj.settings["zcam_bin_refine"] == "focal"
     pa = SfmProject.create(man["images"], out, tmp_path / "q", link=False, zcam_min_zoom_images=0, zcam_bin_refine="all",
                            zcam_intrinsics="label", zcam_low_backlash=False)
@@ -135,7 +138,9 @@ def test_project_bins_mastcamz_by_focus(processed_pair, tmp_path):
     pm = SfmProject.create(man["images"], out, tmp_path / "m", link=False, zcam_min_zoom_images=0, zcam_low_backlash=False)
     zm = pm.cameras[key]
     assert "focus model" in zm["source"] and {"fx", "fy"} <= set(zm["fixed_params"])
-    assert zm["params"][0] > z["params"][0]                           # the label f is ~1 % short
+    assert zm["params"][0] > r["label_f_px"]                          # the label f is ~1 % short
+    # 0.99.11: the label start of a high-state bin (no model) is the label f x 1.0095 - near the model's high state
+    assert abs(z["params"][0] / zm["params"][0] - 1.0) < 0.003
     with pytest.raises(ValueError):
         SfmProject.create(man["images"], out, tmp_path / "r", zcam_bin_refine="some", zcam_min_zoom_images=0)
     # 0.94.4: the states run - one camera per Mastcam-Z image, f free (no image count holds it)
@@ -257,7 +262,10 @@ def test_focus_model_start_and_hold():
     assert abs(f_out - want) < 0.01 and "outside" in by[-2600]["source"]
     assert "fx" not in by[-2600]["fixed_params"]
     lab = _split_by_focus(rows, {"ZL034": base}, {"ZL034": "Z"}, 30.0, "focal")      # without a model: label f
-    assert {round(c["params"][0]) for c in lab.values()} == {4680, 4700, 4600}
+    from rpp.sfm.project import ZCAM_NO_MODEL_HIGH_RATIO                               # x the high ratio (0.99.11)
+    assert {round(c["params"][0] / ZCAM_NO_MODEL_HIGH_RATIO) for c in lab.values()} == {4680, 4700, 4600}
+    lab_r = _split_by_focus([dict(r, focus_state="regular") for r in rows], {"ZL034": base}, {"ZL034": "Z"}, 30.0, "focal")
+    assert {round(c["params"][0]) for c in lab_r.values()} == {4680, 4700, 4600}          # the low state at the label
 
 
 def test_shipped_rig_and_cameras_agree():
@@ -568,7 +576,8 @@ def test_zcam_focus_models_per_zoom(tmp_path):
     g = f"ZL{free:03d}"
     rows63 = [{"camera_group": g, "focus_count": 700, "label_f_px": 6500.0} for _ in range(4)]
     lab = _split_by_focus(rows63, {g: dict(base)}, {g: "Z"}, 30.0, "focal", model=m)
-    assert abs(next(iter(lab.values()))["params"][0] - 6500.0) < 1e-6
+    from rpp.sfm.project import ZCAM_NO_MODEL_HIGH_RATIO                               # 0.99.11: the high state
+    assert abs(next(iter(lab.values()))["params"][0] - 6500.0 * ZCAM_NO_MODEL_HIGH_RATIO) < 1e-6
 
 
 def _zrows(group, counts, regular=()):

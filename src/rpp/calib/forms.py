@@ -3,8 +3,13 @@ The frozen camera-model forms: which COLMAP model each camera family uses, which
 and what varies with what.  :func:`validate` says whether a model file follows its form.
 
 Navcam and Hazcam: ``THIN_PRISM_FISHEYE`` at the full detector frame (5120 x 3840) with sx1 = sy1 = 0 held;
-fx, fy, cx, cy and k1 are linear in the camera temperature; fx, fy, cx, cy carry early-mission offsets before a sol;
-the stereo rig rotation drifts linearly in sol.  Mastcam-Z: ``FULL_OPENCV`` at 1648 x 1200 with p1 = p2 = k3 = 0
+fx, fy and k1 are linear in the camera temperature; fx, fy, cx, cy carry early-mission offsets before a sol; the
+stereo rig rotation drifts linearly in sol.  The Navcam's stereo temperature change is carried one of two ways
+(:func:`navcam_form`): ``rig_T`` (0.99.11, Christian 17 Nov 2026: "remove the pp temp dependence and instead fit the
+roll pitch and yaw change with sol and temperature") - cx, cy constant, the rig rotation linear in temperature too (the
+rig file's ``thermal``: pitch, yaw, roll mdeg/degC about T0_degC); or ``pp_T`` (up to 0.99.10) - cx, cy linear in
+temperature (px/degC), the rig one rotation for every temperature.  A model folder with both counts the change twice
+(:func:`rpp.calib.models.check_form`).  Mastcam-Z: ``FULL_OPENCV`` at 1648 x 1200 with p1 = p2 = k3 = 0
 held; fx, fy are lines in focus count per eye and backlash state, cx, cy per the ``pp`` terms, k1, k2 constant; no
 temperature term.
 """
@@ -96,10 +101,12 @@ class Form:
 NAVCAM = Form(
     name="navcam", families=("N",), colmap_model="THIN_PRISM_FISHEYE", param_names=NAVCAM_PARAMS,
     frame=FULL_FRAME["N"], held_zero=("sx1", "sy1"),
-    temperature=("fx", "fy", "cx", "cy", "k1"), sol=("early_mission", "rig_drift"), focus=(),
-    description=("THIN_PRISM_FISHEYE at 5120 x 3840, sx1 = sy1 = 0; fx, fy in ppm/degC, cx, cy in px/degC and k1 "
-                 "per degC about T0; fx, fy, cx, cy offsets before early_mission.before_sol; NL is the rig reference "
-                 "(it keeps the label CAHVORE pointing and position); the rig rotation drifts linearly in sol"))
+    temperature=("fx", "fy", "k1", "rig_rotation"), sol=("early_mission", "rig_drift"), focus=(),
+    description=("THIN_PRISM_FISHEYE at 5120 x 3840, sx1 = sy1 = 0; fx, fy in ppm/degC and k1 per degC about T0; "
+                 "fx, fy, cx, cy offsets before early_mission.before_sol; NL is the rig reference (it keeps the label "
+                 "CAHVORE pointing and position); the rig rotation drifts linearly in sol and - 0.99.11, the rig_T form "
+                 "- in temperature (pitch, yaw, roll mdeg/degC), cx and cy constant.  The pp_T form of 0.99.10 and "
+                 "before (cx, cy in px/degC, no rig temperature term) is still read"))
 
 HAZCAM = Form(
     name="hazcam", families=("F", "R"), colmap_model="THIN_PRISM_FISHEYE", param_names=NAVCAM_PARAMS,
@@ -239,23 +246,43 @@ def validate_camera(model: Dict[str, Any], form: Form = NAVCAM) -> List[str]:
                 out.append(f"thermal.{k} missing")
     rig_th = model.get("rig_thermal")
     if rig_th:
-        out.append("a rig temperature term: the form carries the stereo temperature change on the principal points")
+        out.append("a rig temperature term in a camera file: it belongs in the rig file (thermal, the rig_T form)")
     return out
 
 
+NAVCAM_FORMS = ("rig_T", "pp_T")
+
+
+def navcam_form(cameras: Dict[str, Dict[str, Any]], rig: Optional[Dict[str, Any]]) -> str:
+    """0.99.11: the way a Navcam model set ({"NL": camera file, "NR": ...} and the rig file) carries the stereo
+    temperature change: ``"rig_T"`` (the rig's ``thermal`` rates, no principal-point slopes), ``"pp_T"`` (principal-point
+    slopes, no rig rates), ``"none"`` (neither) or ``"both"`` (each - the change counted twice: not a valid set)."""
+    pp = any(abs(float(((c or {}).get("thermal") or {}).get(k) or 0.0)) > TOL
+             for c in (cameras or {}).values() for k in ("cx_px_per_degC", "cy_px_per_degC"))
+    th = (rig or {}).get("thermal") or {}
+    rt = isinstance(th, dict) and any(abs(float(th.get(f"{a}_mdeg_per_degC") or 0.0)) > TOL for a in ("pitch", "yaw", "roll"))
+    return "both" if (pp and rt) else "rig_T" if rt else "pp_T" if pp else "none"
+
+
 def validate_rig(rig: Dict[str, Any]) -> List[str]:
-    """Problems of a stereo rig file (``R_sensor_from_ref``, translation, ``drift`` rates in sol; no temperature
-    term)."""
+    """Problems of a stereo rig file (``R_sensor_from_ref``, translation, ``drift`` rates in sol; 0.99.11: the rig_T
+    form's ``thermal`` rates - pitch, yaw, roll mdeg/degC about T0_degC)."""
     out: List[str] = []
     R = rig.get("R_sensor_from_ref")
     if not (isinstance(R, list) and len(R) == 3 and all(isinstance(r, list) and len(r) == 3 for r in R)):
         out.append("R_sensor_from_ref is not a 3 x 3 matrix")
     if rig.get("t_sensor_from_ref_m") is None and rig.get("t_sensor_from_ref") is None:
         out.append("no translation (t_sensor_from_ref_m)")
-    th = rig.get("thermal") or {}
-    if th.get("yaw_mdeg_per_degC") or th.get("pitch_mdeg_per_degC"):
-        out.append("the rig has a temperature term: the form carries the stereo temperature change on the principal "
-                   "points")
+    th = rig.get("thermal")
+    if th is not None and not isinstance(th, dict):
+        out.append("thermal is not a dict of <angle>_mdeg_per_degC rates")
+    elif isinstance(th, dict) and any(th.get(f"{a}_mdeg_per_degC") for a in ("pitch", "yaw", "roll")):
+        if "T0_degC" not in th:
+            out.append("thermal.T0_degC missing (the temperature of the file's rotation)")
+        for a in ("pitch", "yaw", "roll"):
+            v = th.get(f"{a}_mdeg_per_degC")
+            if v is not None and not isinstance(v, (int, float)):
+                out.append(f"thermal.{a}_mdeg_per_degC is not a number")
     dr = rig.get("drift")
     if dr is not None and not isinstance(dr, dict):
         out.append("drift is not a dict of <angle>_mdeg_per_sol rates")

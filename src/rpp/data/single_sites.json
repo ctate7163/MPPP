@@ -536,7 +536,7 @@
     "NRF_0178_0682754853_667RAD_N0062666NCAM02178_0A0195J03.png",
     "NRF_0178_0682754989_758RAD_N0062666NCAM02178_0A0195J03.png"
    ],
-   "note": "Rochette, sol 180: the 4 left and 5 right Navcam frames of station S007D0000 between the two frames Christian named (14 Nov 2026) - NCAM02180, NCAM03180; names as in the block mars2020_sol_0178_rochette_zcam. Context: 4 frames he named, both eyes where the block has them. 0.98.19 (Christian, 16 Nov 2026: \"Rochette should include sol 178 eod Site 6, Drive 2666 as context\"): the whole end-of-drive 360 of sol 178 at S006D2666 (NCAM03178 x3, NCAM02178 x2, both eyes) - the pair named before and the other four."
+   "note": "Rochette, sol 180: the 4 left and 5 right Navcam frames of station S007D0000 between the two frames Christian named (14 Nov 2026) - NCAM02180, NCAM03180; names as in the block mars2020_sol_0178_rochette_zcam. Context: 4 frames he named, both eyes where the block has them. 0.98.19 (Christian, 16 Nov 2026: \"Rochette should include sol 178 eod Site 6, Drive 2666 as context\"): the whole end-of-drive 360 of sol 178 at S006D2666 (NCAM03178 x3, NCAM02178 x2, both eyes) - the pair named before and the other four. 0.99.11 (Christian, 17 Nov 2026: \"rerun rochette and rockytop from the ods using whole block terrain models\"): \"terrain\": \"block\" - the terrain from every Navcam frame of the block (42: the end-of-drive 360s of sols 178 and 180, the mid-drive pairs, the later frames at S007D0000 and the sol 341 frames; colmap/dense_block_N), the panorama from the station's own frames as before.", "terrain": "block"
   },
   "Sol0204_S007D1836": {
    "site": "seitah_huge",

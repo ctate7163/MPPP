@@ -206,7 +206,8 @@ def fit_nzjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = N
     _, gz_h, _ = Z.adjust_z(rec_h, proj_h, idx, st, units, zunits, sg, iterations=iterations, passes=passes,
                                covariance=False, verbose=verbose, hold=zhold)
     gn0 = {"G_NL": st["G"]["NL"], "G_NR": st["G"]["NR"], "S_NL": st["S"]["NL"], "S_NR": st["S"]["NR"],
-           "E_NL": st["E"]["NL"], "E_NR": st["E"]["NR"], "Q0": st["Q0"], "D": st["D"], "H": st["H"]}
+           "E_NL": st["E"]["NL"], "E_NR": st["E"]["NR"], "Q0": st["Q0"], "D": st["D"], "H": st["H"],
+           "K": np.asarray(st.get("K", np.zeros(3)), float)}           # 0.99.11
     held_stats = family_stats(rec_h, proj_h, units, idx, gn0)
     if verbose:
         log.info(f"  Navcam held: {_stats_line(held_stats)} ({time.time() - t:.0f} s)")

@@ -1154,11 +1154,169 @@ def _block_meta(blocks: Dict[str, PathLike], proj) -> Dict[str, Dict[str, Any]]:
     return out
 
 
-def _law_copy(rec, proj, zunits, sg, g, zoom: int = ZOOM):
+# 0.99.11 (Christian, 17 Nov 2026, 07:10: "If the bar is rotating then the zcams would have a similar trend and temp
+# dependence. Test that"): the bar test - an extra diagnostic pass with one Mastcam-Z rig per block, rig epoch and
+# lens-temperature bin (RIG_T_BIN_DEG wide, at least RIG_T_MIN_PAIRS stereo pairs), the law held; the rigs' rotation
+# against the lens temperature within the blocks (each block its own offset) and between them (with sol), for the
+# comparison with the Navcam rig's rates (the 16 Nov deck joint: roll +0.25, stereo yaw -1.2 mdeg/degC; a uniformly
+# bending bar gives the Mastcam-Z pair 244 / 424 of that, a hinge between the left and right camera mounts all of it).
+# The between-block test on the 15-16 Nov joints (21 sites, 43 block-zoom rigs) gave yaw -0.36 +- 0.22, pitch -0.08 +-
+# 0.19, roll -0.14 +- 0.57 mdeg/degC and the Navcam rig's sol trends at 0.4-1.4 x (same signs on all three angles).
+RIG_T_BIN_DEG = 4.0
+RIG_T_MIN_PAIRS = 6
+
+
+def _rig_T_units(rows: List[Dict[str, Any]], eps: Sequence[Tuple[int, int]], bin_deg: float, min_pairs: int,
+                 fam0: str, scape: str) -> List[Dict[str, Any]]:
+    """0.99.11: the rig units of one block for the bar test - its stereo pairs by rig epoch (``eps``, sol ranges) and
+    lens-temperature bin (``bin_deg``; a pair's temperature is its two images' mean, else the left's); a bin with fewer
+    than ``min_pairs`` pairs joins the neighbor of its epoch nearest in temperature.  Sets every row's
+    ``zcam_rig_epoch`` to its unit's index and returns the units [{"index", "rig_key", "epoch", "sols", "sol_median",
+    "T_median_degC", "T_range_degC", "pairs"}] (index 0 keeps the block's own key)."""
+    by_sclk: Dict[Any, Dict[str, Dict[str, Any]]] = {}
+    for r in rows:
+        by_sclk.setdefault(r.get("sclk_key"), {})[str(r["camera_group"])[:2]] = r
+    pairs = []
+    for sk, d in by_sclk.items():
+        if "ZL" not in d or "ZR" not in d or d["ZL"].get("sol") is None:
+            continue
+        ts = [float(x["zcam_optics_temperature_degC"]) for x in (d["ZL"], d["ZR"]) if x.get("zcam_optics_temperature_degC") is not None]
+        if not ts:
+            continue
+        s_ = int(d["ZL"]["sol"])
+        k = next((i for i, (a, b) in enumerate(eps) if a <= s_ <= b), 0)
+        pairs.append({"sclk": sk, "sol": s_, "T": float(np.mean(ts)), "epoch": k})
+    groups: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
+    for q in pairs:
+        groups.setdefault((q["epoch"], int(np.floor(q["T"] / bin_deg))), []).append(q)
+    changed = True
+    while changed:                                  # thin bins join the nearer neighbor of their epoch
+        changed = False
+        for key in sorted(groups, key=lambda k_: len(groups[k_])):
+            if len(groups[key]) >= min_pairs:
+                continue
+            nb = [k_ for k_ in groups if k_[0] == key[0] and k_ != key]
+            if not nb:
+                continue
+            Tm = np.median([q["T"] for q in groups[key]])
+            j = min(nb, key=lambda k_: abs(np.median([q["T"] for q in groups[k_]]) - Tm))
+            groups[j] += groups.pop(key)
+            changed = True
+            break
+    units = []
+    unit_of: Dict[Any, int] = {}
+    for i, key in enumerate(sorted(groups, key=lambda k_: (k_[0], np.median([q["T"] for q in groups[k_]])))):
+        mem = groups[key]
+        rk = f"{fam0}@{scape}" + (f"#{i}" if i else "")
+        units.append({"index": i, "rig_key": rk, "epoch": int(key[0]),
+                      "sols": [int(min(q["sol"] for q in mem)), int(max(q["sol"] for q in mem))],
+                      "sol_median": float(np.median([q["sol"] for q in mem])),
+                      "T_median_degC": float(np.median([q["T"] for q in mem])),
+                      "T_range_degC": [float(min(q["T"] for q in mem)), float(max(q["T"] for q in mem))], "pairs": len(mem)})
+        for q in mem:
+            unit_of[q["sclk"]] = i
+    for r in rows:
+        r["zcam_rig_epoch"] = int(unit_of.get(r.get("sclk_key"), 0))
+    return units
+
+
+def rig_T_test(units: Sequence[Dict[str, Any]], navcam_rates: Optional[Dict[str, float]] = None,
+               min_pairs: int = RIG_T_MIN_PAIRS) -> Dict[str, Any]:
+    """0.99.11: the bar test's fits on the rig units of the extra diagnostic pass ({block, sol_median, T_median_degC,
+    pairs, pitch/yaw/roll_mdeg}): per angle the slope against the lens temperature within the blocks (each block its own
+    offset: the blocks with two units or more), and the joint fit a_block + c (sol / 1000) + k (T - T_mean) over every
+    unit; errors from the residual scatter and a delete-one-block jackknife.  ``navcam_rates``: the Navcam rig's
+    temperature rates (mdeg/degC) for the ratios."""
+    us = [u for u in units if u.get("T_median_degC") is not None and u.get("pairs", 0) >= min_pairs]
+    blocks = sorted({u["block"] for u in us})
+    out: Dict[str, Any] = {"units": len(us), "blocks": len(blocks), "min_pairs": int(min_pairs), "angles": {},
+                           "navcam_rates_mdeg_per_degC": navcam_rates,
+                           "bending_ratio_uniform": 244.0 / 424.0,
+                           "note": "within: each block its own offset; joint: a block offset, sol and lens temperature"}
+    multi = [b for b in blocks if sum(1 for u in us if u["block"] == b) >= 2]
+    out["blocks_with_two_or_more_units"] = len(multi)
+
+    def lsq(rows_, ang):
+        bl = sorted({u["block"] for u in rows_})
+        X = np.array([[1.0 if u["block"] == b else 0.0 for b in bl] + [float(u["sol_median"]) / 1000.0, float(u["T_median_degC"])]
+                      for u in rows_])
+        y = np.array([float(u[f"{ang}_mdeg"]) for u in rows_])
+        x, *_ = np.linalg.lstsq(X, y, rcond=None)
+        r = y - X @ x
+        dof = len(y) - np.linalg.matrix_rank(X)
+        s2 = float(r @ r / dof) if dof > 0 else float("nan")
+        se = np.sqrt(np.clip(np.diag(np.linalg.pinv(X.T @ X)) * s2, 0, None)) if dof > 0 else np.full(len(x), np.nan)
+        return x, se, dof, float(np.sqrt(s2)) if dof > 0 else float("nan")
+
+    for ang in ("pitch", "yaw", "roll"):
+        e: Dict[str, Any] = {}
+        rows_w = [u for u in us if u["block"] in multi]
+        if len(rows_w) >= len(multi) + 2:
+            # within: block offsets and T only (the sol column is constant within a block up to its epochs)
+            bl = sorted({u["block"] for u in rows_w})
+            X = np.array([[1.0 if u["block"] == b else 0.0 for b in bl] + [float(u["T_median_degC"])] for u in rows_w])
+            y = np.array([float(u[f"{ang}_mdeg"]) for u in rows_w])
+            x, *_ = np.linalg.lstsq(X, y, rcond=None)
+            r = y - X @ x
+            dof = len(y) - np.linalg.matrix_rank(X)
+            s2 = float(r @ r / dof) if dof > 0 else float("nan")
+            se = float(np.sqrt(np.linalg.pinv(X.T @ X)[-1, -1] * s2)) if dof > 0 else float("nan")
+            jk = []
+            for b in bl:
+                sub = [u for u in rows_w if u["block"] != b]
+                if len({u["block"] for u in sub}) < 2:
+                    continue
+                bl2 = sorted({u["block"] for u in sub})
+                X2 = np.array([[1.0 if u["block"] == c else 0.0 for c in bl2] + [float(u["T_median_degC"])] for u in sub])
+                y2 = np.array([float(u[f"{ang}_mdeg"]) for u in sub])
+                jk.append(float(np.linalg.lstsq(X2, y2, rcond=None)[0][-1]))
+            jse = float(np.sqrt((len(jk) - 1) / len(jk) * np.sum((np.array(jk) - np.mean(jk)) ** 2))) if len(jk) >= 3 else None
+            e["within_mdeg_per_degC"] = {"slope": float(x[-1]), "se": se, "jackknife_se": jse, "units": len(rows_w),
+                                         "blocks": len(bl), "scatter_mdeg": float(np.sqrt(s2)) if dof > 0 else None}
+        if len(us) >= len(blocks) + 3:
+            x, se, dof, sc = lsq(us, ang)
+            e["joint"] = {"sol_mdeg_per_1000sol": float(x[-2]), "se_sol": float(se[-2]), "T_mdeg_per_degC": float(x[-1]),
+                          "se_T": float(se[-1]), "dof": int(dof), "scatter_mdeg": sc}
+        if navcam_rates and navcam_rates.get(ang) and (e.get("within_mdeg_per_degC") or {}).get("slope") is not None:
+            e["ratio_to_navcam_within"] = float(e["within_mdeg_per_degC"]["slope"] / navcam_rates[ang])
+        out["angles"][ang] = e
+    return out
+
+
+def rig_T_lines(t: Optional[Dict[str, Any]]) -> List[str]:
+    """0.99.11: the bar test's report lines."""
+    if not t:
+        return []
+    if t.get("error"):
+        return [f"bar test (Mastcam-Z rig against the lens temperature): not run ({t['error']})"]
+    out = [f"bar test (Mastcam-Z rig per block, epoch and {t.get('bin_deg', RIG_T_BIN_DEG):g} degC lens-temperature bin; "
+           f"{t['units']} units in {t['blocks']} blocks, {t.get('blocks_with_two_or_more_units', 0)} with two or more):"]
+    nr = t.get("navcam_rates_mdeg_per_degC") or {}
+    for ang, e in (t.get("angles") or {}).items():
+        w, j = e.get("within_mdeg_per_degC") or {}, e.get("joint") or {}
+        line = f"  {ang:5s}"
+        if w:
+            line += (f" within the blocks {w['slope']:+.3f} +- {w['se']:.3f}"
+                     + (f" (jackknife {w['jackknife_se']:.3f})" if w.get("jackknife_se") is not None else "") + " mdeg/degC")
+        if j:
+            line += (f"; joint: {j['T_mdeg_per_degC']:+.3f} +- {j['se_T']:.3f} mdeg/degC, {j['sol_mdeg_per_1000sol']:+.2f} +- "
+                     f"{j['se_sol']:.2f} mdeg/1000 sol")
+        if nr.get(ang):
+            line += f"; Navcam rig {nr[ang]:+.3f} mdeg/degC" + (f" (ratio {e['ratio_to_navcam_within']:+.2f}; uniform bending "
+                                                                  f"{t.get('bending_ratio_uniform', 0.575):.2f})"
+                                                                  if e.get("ratio_to_navcam_within") is not None else "")
+        out.append(line)
+    return out
+
+
+def _law_copy(rec, proj, zunits, sg, g, zoom: int = ZOOM, rig_T_bin_deg: float = 0.0,
+              rig_T_min_pairs: int = 0):
     """0.96: a deep copy of the joint's reconstruction with every Mastcam-Z bin camera at the joint's law (its
     state's line at the bin's focus, plus its sequence, focus-from-below and early-mission offsets; the distortion
     and principal point of the law) and one Mastcam-Z rig per block (``Z0nn@block``, rotation free, at the joint's
-    rig) - the start of the diagnostic passes.  Returns (rec, proj, law {bin camera id: params at the law}, R0, t0)."""
+    rig) - the start of the diagnostic passes.  0.99.11 (the bar test, Christian 17 Nov 2026): with ``rig_T_bin_deg``
+    one rig per block, epoch and lens-temperature bin of that width (a bin with fewer than ``rig_T_min_pairs`` pairs
+    joins its nearer neighbor of the epoch).  Returns (rec, proj, law {bin camera id: params at the law}, R0, t0)."""
     rec = copy.deepcopy(rec)
     proj = copy.deepcopy(proj)
     fam0 = f"Z{zoom:03d}"
@@ -1218,6 +1376,14 @@ def _law_copy(rec, proj, zunits, sg, g, zoom: int = ZOOM):
         psols = [int(r["sol"]) for r in rr if r.get("sol") is not None and str(r["camera_group"]).startswith("ZL")
                  and {"ZL", "ZR"} <= eyes.get(r.get("sclk_key"), set())]
         eps = zcam_epoch_ranges(psols)
+        if rig_T_bin_deg and rig_T_bin_deg > 0 and f"{fam0}@{sc}" in vr:
+            tab = _rig_T_units(rr, eps, float(rig_T_bin_deg), int(rig_T_min_pairs or 1), fam0, sc)
+            for e_ in tab:
+                if e_["index"]:
+                    vr[e_["rig_key"]] = {"R_sensor_from_ref": R0.tolist(), "t_sensor_from_ref": t0.tolist(), "hold": False}
+            if len(tab) > 1:
+                epochs[sc] = tab
+            continue
         if len(eps) < 2 or f"{fam0}@{sc}" not in vr:
             continue
         bounds = [e[1] for e in eps[:-1]]
@@ -1366,7 +1532,7 @@ def pooled_pass(rec, proj, idx, st, units, zunits, sg, g, law: Dict[int, np.ndar
 
 def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[Dict[str, PathLike]] = None,
                     zoom: int = ZOOM, iterations: int = 60, verbose: bool = True,
-                    pool: Optional[str] = DIAG_POOL) -> Dict[str, Any]:
+                    pool: Optional[str] = DIAG_POOL, rig_T_bin_deg: float = 0.0) -> Dict[str, Any]:
     """The global law held: every Mastcam-Z bin at the law with fx, fy free (no ties), one Mastcam-Z rig per block
     (rotation free).  Returns {"blocks": per block the lines (a, b of fx, fy per eye and state, weighted by the
     bins' observations) and the rig rotation about the joint (yaw, pitch, roll mdeg), "fits": the rig's trends with
@@ -1388,6 +1554,7 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
             pooled_error = f"{type(e).__name__}: {e}"
             log.warning(f"Mastcam-Z pooled diagnostic pass failed ({pooled_error}); the aspect gate reads the per-bin lines")
         del rec_p, proj_p
+    rec_in, proj_in = rec, proj                       # 0.99.11: the bar test makes its own copy
     rec, proj, law, R0, t0 = _law_copy(rec, proj, zunits, sg, g, zoom)
     fam0 = f"Z{zoom:03d}"
     scapes = sorted({u["scape"] for u in zunits.values()})
@@ -1479,12 +1646,72 @@ def diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks: Optional[D
                      "weak": bool((weak.get(f"{u['group']}|{u.get('seq')}") or {}).get("weak"))})
     out = {"blocks": rows, "fits": fits, "brief": ba["brief"], "bins": bins, "pool": pool,
            "weak_sequences": {k: v for k, v in weak.items() if v.get("weak")}}
+    if rig_T_bin_deg and rig_T_bin_deg > 0:          # 0.99.11: the bar test (its own pass; the per-block rigs above stay)
+        try:
+            out["rig_T_test"] = rig_T_pass(rec_in, proj_in, idx, st, units, zunits, sg, g, zoom=zoom,
+                                           iterations=iterations, bin_deg=float(rig_T_bin_deg), verbose=verbose)
+        except Exception as e:                        # noqa: BLE001 - a diagnostic: the joint stands without it
+            out["rig_T_test"] = {"error": f"{type(e).__name__}: {e}"}
+            log.warning(f"Mastcam-Z bar test failed ({out['rig_T_test']['error']})")
     if pooled_error:
         out["pooled_error"] = pooled_error
     if pooled:
         out.update({"pools": pooled["pools"], "pooled_brief": pooled["brief"], "pooled_seconds": pooled["seconds"],
                     "frames_at_own_focus": pooled["frames_at_own_focus"]})
     return out
+
+
+def rig_T_pass(rec, proj, idx, st, units, zunits, sg, g, zoom: int = ZOOM, iterations: int = 60,
+               bin_deg: float = RIG_T_BIN_DEG, min_pairs: int = RIG_T_MIN_PAIRS, verbose: bool = True) -> Dict[str, Any]:
+    """0.99.11, the bar test: the law held, the Mastcam-Z bins' fx, fy free, one Mastcam-Z rig per block, rig epoch and
+    lens-temperature bin (rotation free; :func:`_law_copy` with ``rig_T_bin_deg``); returns :func:`rig_T_test` of the
+    units, with the units themselves and the Navcam rig's temperature rates of ``st`` (its rig_T rates plus the stereo
+    equivalent of its principal-point slopes)."""
+    from rpp.sfm.reconstruction import bundle_adjust
+    from scipy.spatial.transform import Rotation
+    rec_t, proj_t, _law, R0, _t0 = _law_copy(rec, proj, zunits, sg, g, zoom, rig_T_bin_deg=bin_deg, rig_T_min_pairs=min_pairs)
+    fam0 = f"Z{zoom:03d}"
+    navkeys = [k for k in proj_t.settings["database"]["cameras"] if str(k).startswith("N")]
+    ks, kmap = T.keypoint_terms(units, proj_t, idx["temps"], _navcam_globals(st))
+    t = time.time()
+    ba = bundle_adjust(rec_t, proj_t, zcam_aspect="free", sigma_px=0.5, loss_scale=2.0, refine_intrinsics=True,
+                       refine_tangential=False, refine_principal_point=False, refine_rig=False, max_iterations=iterations,
+                       attitude_prior_deg=5.0, hold_cameras=navkeys, linear_solver="sparse_schur", keypoint_scale=ks,
+                       keypoint_map=kmap, refine_zcam_rig="rotation")
+    if verbose:
+        log.info(f"Mastcam-Z bar test pass: {ba['brief'][:160]} ({time.time() - t:.0f} s)")
+    vr = proj_t.settings["zcam_virtual_rig"]
+    tabs = (proj_t.settings.get("zcam_rig_epochs_diag") or {}).get("blocks") or {}
+    rows: List[Dict[str, Any]] = []
+    for sc in sorted({u["scape"] for u in zunits.values()}):
+        tab = tabs.get(sc)
+        if not tab:                                   # one unit: the block's rig (its pairs' median temperature)
+            rr = [r for r in proj_t.images if r.get("scape") == sc and str(r.get("camera_group", "")).startswith("ZL")
+                  and r.get("zcam_optics_temperature_degC") is not None]
+            if not rr:
+                continue
+            tab = [{"index": 0, "rig_key": f"{fam0}@{sc}", "sol_median": float(np.median([float(r["sol"]) for r in rr])),
+                    "T_median_degC": float(np.median([float(r["zcam_optics_temperature_degC"]) for r in rr])), "pairs": len(rr)}]
+        for e_ in tab:
+            v = vr.get(e_["rig_key"])
+            if v is None:
+                continue
+            Rb = np.asarray(v.get("R_refined") or v["R_sensor_from_ref"], float)
+            rv = np.degrees(Rotation.from_matrix(Rb @ R0.T).as_rotvec()) * 1e3
+            rows.append(dict(e_, block=sc, pitch_mdeg=float(rv[0]), yaw_mdeg=float(rv[1]), roll_mdeg=float(rv[2])))
+    nav_rates = None
+    try:
+        K = np.asarray(st.get("K", np.zeros(3)), float) + T.pp_stereo_rates(st)
+        nav_rates = dict(zip(T.ANGLES, map(float, K)))
+    except Exception:                                 # noqa: BLE001 - the ratios are optional
+        pass
+    res = rig_T_test(rows, navcam_rates=nav_rates, min_pairs=min_pairs)
+    res.update({"bin_deg": float(bin_deg), "rows": rows, "brief": ba["brief"], "seconds": time.time() - t,
+                "navcam_form": "rig_T" if np.any(np.asarray(st.get("K", np.zeros(3)), float)) else "pp_T"})
+    if verbose:
+        for line in rig_T_lines(res):
+            log.info(line)
+    return res
 
 
 def set_ratio_holds(sg: Dict[str, Any], zoom: int, verbose: bool = True) -> Dict[str, float]:
@@ -1704,8 +1931,11 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
                slope_tests: bool = False, rig_fit: str = ZJOINT_RIG_FIT,
                early_sol: Optional[int] = ZCAM_EARLY_SOL, aspect_hold: Optional[float] = None,
                pool: Optional[str] = DIAG_POOL, focus_below: bool = FOCUS_BELOW_FIT,
-               ratio_hold: Optional[float] = None) -> Dict[str, Any]:
-    """0.97.0: ``ratio_hold`` - every eye's high / low focal ratio held at this value (1.0: one state for both - the
+               ratio_hold: Optional[float] = None, rig_T_bin_deg: float = 0.0) -> Dict[str, Any]:
+    """0.99.11: ``rig_T_bin_deg`` - the bar test (:func:`rig_T_pass`) in the diagnostics, one Mastcam-Z rig per block,
+    epoch and lens-temperature bin of that width (0: not run).
+
+    0.97.0: ``ratio_hold`` - every eye's high / low focal ratio held at this value (1.0: one state for both - the
     test of whether a zoom's two backlash states can be told apart at all; such a run is a test, never promoted).
 
     The Mastcam-Z joint over ``blocks`` {name: WORK}: build, adjust, the distortion tests (:func:`distortion_tests`,
@@ -1822,7 +2052,7 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
             log.info(line)
     if diagnostics:
         res["diagnostics"] = diagnostic_pass(rec, proj, idx, st, units, zunits, sg, g, blocks=blocks, zoom=zoom,
-                                             verbose=verbose, pool=pool)
+                                             verbose=verbose, pool=pool, rig_T_bin_deg=rig_T_bin_deg)
         if navcam_aspect:                            # 0.94.5: the per-block aspect against the Navcam's
             try:
                 nav = navcam_block_aspect(sg.get("_scapes") or [], st, nav_points, verbose=verbose)
@@ -2519,6 +2749,7 @@ def describe(res: Dict[str, Any]) -> List[str]:
                    f"vs lens T {sl(b, 'mdeg/degC')}"
                    + (f" ({fz.get('blocks')} blocks; under {fz.get('min_observations')} observations, left out: "
                       f"{', '.join(fz['left_out_under_min_observations'])})" if fz.get("left_out_under_min_observations") else ""))
+    out += rig_T_lines(d.get("rig_T_test"))                        # 0.99.11: the bar test
     ba_ = res.get("block_aspect") or {}
     if ba_.get("error"):
         out.append(f"per-block aspect vs the Navcam: not run ({ba_['error']})")

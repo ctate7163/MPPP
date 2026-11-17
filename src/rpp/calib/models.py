@@ -266,6 +266,11 @@ def check_form(folder: Optional[PathLike] = None) -> Dict[str, Any]:
             errors.append(f"N{eye}: {p}")
     for p in forms.validate_rig(_read(d / RIG_FILE["N"])):
         errors.append(f"rig: {p}")
+    # 0.99.11: the stereo temperature change on the rig (rig_T) or on the principal points (pp_T), not on both
+    nform = forms.navcam_form({e: _read(d / CAMERA_FILE[("N", e[1])]) for e in ("NL", "NR")}, _read(d / RIG_FILE["N"]))
+    if nform == "both":
+        errors.append("Navcam: principal-point temperature slopes and rig temperature rates both set - the stereo "
+                      "temperature change is counted twice (rig_T: cx_px_per_degC = cy_px_per_degC = 0)")
     for fam in ("F", "R"):
         for eye in ("L", "R"):
             f = d / CAMERA_FILE[(fam, eye)]
@@ -279,7 +284,8 @@ def check_form(folder: Optional[PathLike] = None) -> Dict[str, Any]:
         files[f.name] = sha12(f)
         for p in forms.validate_zcam(_read(f)):
             errors.append(f"ZCAM{z:03d}: {p}")
-    return {"ok": not errors, "errors": errors, "warnings": warnings, "folder": str(d), "files": files}
+    return {"ok": not errors, "errors": errors, "warnings": warnings, "folder": str(d), "files": files,
+            "navcam_form": nform}
 
 
 def describe(folder: Optional[PathLike] = None) -> List[str]:
@@ -309,9 +315,14 @@ def describe(folder: Optional[PathLike] = None) -> List[str]:
             continue
         j = _read(f)
         dr = j.get("drift") or {}
+        th = j.get("thermal") or {}
         out.append(f"  {f.name} {sha12(f)}: baseline {float(j.get('baseline_m', 0)):.5f} m, translation "
                    f"{j.get('translation', 'cahv')}, drift mdeg/1000 sol "
-                   + ", ".join(f"{a} {1000 * float(dr.get(f'{a}_mdeg_per_sol') or 0):+.2f}" for a in ("pitch", "yaw", "roll")))
+                   + ", ".join(f"{a} {1000 * float(dr.get(f'{a}_mdeg_per_sol') or 0):+.2f}" for a in ("pitch", "yaw", "roll"))
+                   + (("; thermal mdeg/degC " + ", ".join(f"{a} {float(th.get(f'{a}_mdeg_per_degC') or 0):+.3f}"
+                                                        for a in ("pitch", "yaw", "roll"))
+                       + f" about {float(th.get('T0_degC', -20.0)):g} degC")
+                      if isinstance(th, dict) and any(th.get(f"{a}_mdeg_per_degC") for a in ("pitch", "yaw", "roll")) else ""))
     for z, f in zcam_files(d).items():
         j = _read(f)
         cams = j.get("cameras") or {}
@@ -505,6 +516,19 @@ def promote(sources: Sequence[PathLike], note: str = "", folder: Optional[PathLi
     if not todo:
         raise ValueError(f"no camera model files found in {list(map(str, sources))}")
     desc = {name: check_file(name, f) for name, f in todo.items()}
+    # 0.99.11: the Navcam set after the copy (the sources over the folder's files) must not carry the stereo temperature
+    # change twice - a rig_T rig (thermal rates) goes in with its cameras (principal-point slopes 0), and back
+    navset = {}
+    for e in ("L", "R"):
+        n_ = CAMERA_FILE[("N", e)]
+        f_ = todo.get(n_) or (dst / n_ if (dst / n_).is_file() else None)
+        if f_ is not None:
+            navset["N" + e] = _read(Path(f_))
+    rf_ = todo.get(RIG_FILE["N"]) or (dst / RIG_FILE["N"] if (dst / RIG_FILE["N"]).is_file() else None)
+    if len(navset) == 2 and rf_ is not None and forms.navcam_form(navset, _read(Path(rf_))) == "both":
+        raise ValueError("the promotion would leave the Navcam with principal-point temperature slopes and rig temperature "
+                         "rates at once (the stereo temperature change counted twice): promote the rig_T rig with its two "
+                         "camera files (slopes 0), or the pp_T cameras with a rig without thermal rates")
     if dry_run:
         return {"folder": str(dst), "files": {n: sha12(f) for n, f in todo.items()}, "checked": desc, "stamp": None}
     dst.mkdir(parents=True, exist_ok=True)

@@ -302,6 +302,17 @@ def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg
         next_cid += 1
         return bin_cam[(cid, b)]
 
+    # 0.99.11 (the rig_T form): a Navcam stereo rig's bin copy is turned by the rig's temperature rates from the
+    # temperature the block's rigs were set at to the bin's median frame temperature
+    rig_th = (thermal_model or {}).get("rig")
+    bin_T: Dict[Any, float] = {}
+    if rig_th:
+        for b in bins:
+            ts_ = [frame_T[f] for f, e in fbin.items() if e == b and f in frame_T]
+            if ts_:
+                bin_T[b] = float(np.median(ts_))
+    turned: List[Dict[str, Any]] = []
+
     def _rig_of(rid: int, b) -> int:
         if (rid, b) in rig_for:
             return rig_for[(rid, b)]
@@ -311,7 +322,11 @@ def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg
         r = pycolmap.Rig(rig_id=next_rid)
         r.add_ref_sensor(sensor(_bin_cam(ref, b)))
         for sid in old.non_ref_sensors:
-            r.add_sensor(sensor(_bin_cam(sid.id, b)), old.sensor_from_rig(sid))
+            pose_ = old.sensor_from_rig(sid)
+            if rig_th and ref in nav_cids and sid.id in nav_cids and b in bin_T:
+                pose_, d_ = _turn_rig(pose_, rig_th, bin_T[b])
+                turned.append({"rig": int(rid), "bin_degC": list(b), "T_bin_degC": bin_T[b], "offset_mdeg": d_})
+            r.add_sensor(sensor(_bin_cam(sid.id, b)), pose_)
         new.add_rig(r)
         rig_for[(rid, b)] = next_rid
         next_rid += 1
@@ -343,7 +358,24 @@ def split_by_temperature(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg
         for el in pt.track.elements:
             tr.add_element(el.image_id, el.point2D_idx)
         new.add_point3D(pt.xyz, tr, pt.color)
+    if rig_th:
+        proj.settings["navcam_bin_rigs_turned"] = {"rig_thermal": dict(rig_th), "rigs": turned}
     return new, proj, rows
+
+
+def _turn_rig(pose, rig_th: Dict[str, float], T_bin: float):
+    """0.99.11: a Navcam rig's sensor_from_rig turned by the rig's temperature rates from ``rig_th["T0_degC"]`` (the
+    temperature the block's rig was set at) to ``T_bin``: R' = Rot(rates (T_bin - T0)) R, with the right camera's center
+    in the reference frame kept (t' = R' R^T t).  Returns (the new pose, {pitch, yaw, roll} mdeg)."""
+    import pycolmap
+    from scipy.spatial.transform import Rotation
+    dT = float(T_bin) - float(rig_th["T0_degC"])
+    d = {a: float(rig_th.get(f"{a}_mdeg_per_degC") or 0.0) * dT for a in ("pitch", "yaw", "roll")}
+    R = np.asarray(pose.rotation.matrix(), float)
+    t = np.asarray(pose.translation, float)
+    Rn = Rotation.from_rotvec(np.radians(1e-3 * np.array([d["pitch"], d["yaw"], d["roll"]]))).as_matrix() @ R
+    tn = Rn @ (R.T @ t)
+    return pycolmap.Rigid3d(pycolmap.Rotation3d(Rn), tn), d
 
 
 def _stats(rec, project) -> Dict[str, float]:
@@ -442,6 +474,7 @@ def thermal_stage(rec, project, temps: Dict[str, Dict[str, Any]], bin_deg: float
               "k1_held_bins": [r["camera"] for r in rows if "k1" in free and "k1" not in r.get("free", [])],
               "weak_bins_held": [] if hold else weak, "ba_termination": ba.get("termination"), "ba_retried": ba.get("retried"),
               "thermal_model": thermal_model, "bins": len({tuple(r["bin_degC"]) for r in rows}), "rows": rows,
+              "bin_rigs_turned": p1.settings.get("navcam_bin_rigs_turned"),                 # 0.99.11 (rig_T form)
               "before": before, "after": after, "initial_cost": ba["initial_cost"], "final_cost": ba["final_cost"],
               "seconds": ba["seconds"],
               "images_with_temperature": int(sum(1 for r in project.images if r["name"] in temps))}
@@ -537,4 +570,11 @@ def thermal_model_for_project(project) -> Optional[Dict[str, Dict[str, float]]]:
             out[eye] = {"T0_degC": float(th["T_median_degC"]), "fx_ppm_per_degC": t["fx_ppm"],
                         "fy_ppm_per_degC": t["fy_ppm"], "cx_px_per_degC": t["cx_px"], "cy_px_per_degC": t["cy_px"],
                         "k1_per_degC": t["k1"]}
+    # 0.99.11 (the rig_T form): the Navcam rig's temperature rates about the temperature the block's rigs were set at -
+    # each temperature bin's rig is turned by them (:func:`split_by_temperature`)
+    rt = project.settings.get("navcam_rig_thermal") or (nav.get("rig") or {}).get("thermal")
+    if isinstance(rt, dict) and rt.get("T_degC") is not None and rt.get("rates_mdeg_per_degC"):
+        rates = {a: float(rt["rates_mdeg_per_degC"].get(a) or 0.0) for a in ("pitch", "yaw", "roll")}
+        if any(rates.values()):
+            out["rig"] = {"T0_degC": float(rt["T_degC"]), **{f"{a}_mdeg_per_degC": v for a, v in rates.items()}}
     return out or None

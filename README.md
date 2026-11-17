@@ -46,7 +46,7 @@ distortion and the stereo rig to about 0.2 px, so the blocks across the mission 
 no single sol can provide. RPP versions those refined models, checks them across blocks, and feeds them back as
 the default cameras for the next run.
 
-Version **0.99.10** (`v0p99`): the core (`rpp`, the pipeline) and the research studies (`rpp_studies`) apart, the
+Version **0.99.11** (`v0p99`): the core (`rpp`, the pipeline) and the research studies (`rpp_studies`) apart, the
 freeze run as a driver of its own, and the products of one rover station past the block - a cleaned mesh with a
 model of the rover, per-image depth and photometric maps, and a stereoscopic 360 degree panorama with a web
 viewer (below). The paper's freeze release is 0.95 (`paper/paper.md`). Versions before 1.0 are

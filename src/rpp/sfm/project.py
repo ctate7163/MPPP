@@ -640,7 +640,9 @@ class SfmProject:
                     "navcam_pp": navcam_pp,
                     "navcam_rig_yaw": navcam_rig_yaw,
                     "navcam_rig_roll": navcam_rig_roll,                 # 0.91: the roll held at the file's trend
-                    "navcam_rig_thermal": False,                      # no rig temperature term
+                    # 0.99.11: the rig_T form's temperature rates and the block's reference temperature (the rig and
+                    # eye cameras are set at it; the temperature bins turn their rigs about it), else False
+                    "navcam_rig_thermal": ((nav_info.get("rig") or {}).get("thermal") or False),
                     "navcam_cameras": {"dir": str(nav_dir), "fingerprint": navcam_cameras_fingerprint(nav_dir),
                                        "models_fingerprint": calib.models_fingerprint(nav_dir), **nav_info}})
         haz = sorted(k for k, f in instruments.items() if f in HAZCAM_FAMILIES)
@@ -817,6 +819,11 @@ def zcam_model_pp_shift(gm: Optional[Dict[str, Any]], focus: Optional[float],
     return float(pp.get("cx_px_per_count") or 0.0) * d, float(pp.get("cy_px_per_count") or 0.0) * d
 
 
+# 0.99.11: the start f / label f of a high-state (backlash) focus bin of a zoom without a focus model (26, 100 mm) - the
+# backlash classification's ratio (rpp.sfm.backlash.DEFAULT_BACKLASH_RATIO, 1.0095; the joints measure 1.005-1.012)
+from .backlash import DEFAULT_BACKLASH_RATIO as ZCAM_NO_MODEL_HIGH_RATIO  # noqa: E402
+
+
 def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, Any]], families: Dict[str, str],
                     width: float, refine: str, model: Optional[Dict[str, Any]] = None,
                     hold_f_images: int = 0, line_params: Optional[Dict[str, Any]] = None,
@@ -899,8 +906,13 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
                     src += f"; f held (<= {hold_f_images} images)"
             elif fl and "label" in base.get("source", ""):
                 f = float(np.median(fl))
-                params[0], params[1] = f, f * params[1] / params[0]
-                src = f"{base['source']}; focus bin {key} ({len(members)} images, f from the bin's labels)"
+                # 0.99.11 (Seitah Overlook sol 121, 16 Nov: the 26 mm frames held at the label f slid 3.4 m along the
+                # boresight - a 1 % f error at 340 m): a zoom without a focus model starts its high-state (backlash)
+                # bins at the label f x DEFAULT_BACKLASH_RATIO (the low state sits at the label; 110 mm has one state)
+                hi_ratio = (ZCAM_NO_MODEL_HIGH_RATIO if (not regular and not forms.is_single_state(group)) else 1.0)
+                params[0], params[1] = f * hi_ratio, f * hi_ratio * params[1] / params[0]
+                src = (f"{base['source']}; focus bin {key} ({len(members)} images, f from the bin's labels"
+                       + (f" x {hi_ratio:.4f}: the high (backlash) state without a focus model)" if hi_ratio != 1.0 else ")"))
             else:
                 src = f"{base['source']}; focus bin {key}"
             # principal point against focus (the model's right-minus-left slope), about the model's reference focus
@@ -974,7 +986,16 @@ def _split_by_focus(images: List[Dict[str, Any]], cameras: Dict[str, Dict[str, A
                 seqs = sorted({str(r.get("sequence")) for r in members if r.get("sequence")})
                 sols_ = sorted({int(r["sol"]) for r in members if r.get("sol") is not None})
                 extra = dict(extra, sequence=seqs[0] if len(seqs) == 1 else None, sequence_sol=sols_[0] if len(sols_) == 1 else None)
-            if held_zoom:
+            if held_zoom and not gm:
+                # 0.99.11 (Seitah Overlook sol 121): a zoom without a focus model has no model to hold its few images
+                # at - its start is the label's f (x the high-state ratio), about 1 % off.  Held, a frame slides along
+                # the boresight (26 mm: 3.4 m at 340 m; the station-shift test then drops it): the principal point and
+                # the distortion stay held, f is refined
+                fixed = [n_ for n_ in FULL_OPENCV_NAMES if n_ not in ("fx", "fy")]
+                src += (f"; {len(rows)} images of {group} at the site (< {int(min_zoom_images)}) and no focus model: "
+                        f"principal point and distortion held, f refined")
+                extra = dict(extra, held_at_model=False, held_except_f=True)
+            elif held_zoom:
                 fixed = list(FULL_OPENCV_NAMES)
                 src += f"; held at the model: {len(rows)} images of {group} at the site (< {int(min_zoom_images)})"
                 extra = dict(extra, held_at_model=True)
@@ -1155,6 +1176,11 @@ def navcam_rig_epochs(images: List[Dict[str, Any]], rig: Dict[str, Any], gap: fl
             shipped = None
     base = dict(rig["N"])
     ref_key, sen_key = str(base["ref"]), str(base["sensor"])
+    # 0.99.11: the reference temperature of the rig rotations (the start rig's, navcam_start_rig), else the block's
+    T_rig = (((nav_info or {}).get("rig") or {}).get("thermal") or {}).get("T_degC")
+    if T_rig is None:
+        _T = [float(r["camera_temperature_degC"]) for r in nav if r.get("camera_temperature_degC") is not None]
+        T_rig = float(np.median(_T)) if _T else None
     table = []
     for k, (a, b) in enumerate(eps):
         key = "N" if k == 0 else f"N#{k}"
@@ -1176,8 +1202,10 @@ def navcam_rig_epochs(images: List[Dict[str, Any]], rig: Dict[str, Any], gap: fl
                 r["instrument"] = f"{r['instrument']}#{k}"
         else:
             rig["N"]["epoch"] = ep
-        if shipped and shipped.get("drift"):
-            R2, _, applied = calib.rig_at(shipped, float(np.median(sols)))
+        if shipped and (shipped.get("drift") or calib.rig_thermal_terms(shipped)):
+            # 0.99.11: a rig with temperature rates (the rig_T form) at the block's reference temperature - the one the
+            # start rig and the eye cameras were set at - so that the temperature bins turn every epoch rig about it
+            R2, _, applied = calib.rig_at(shipped, float(np.median(sols)), T_rig)
             ent["R_sensor_from_ref"] = R2.tolist()
             ent["epoch"]["drift_applied"] = applied
         ent["rotation_source"] = (base.get("rotation_source", "CAHV")

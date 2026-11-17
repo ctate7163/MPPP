@@ -1078,13 +1078,36 @@ def check_navcam(candidate_dir: PathLike, current_dir: Optional[PathLike] = None
     def stereo(m, k):           # the stereo temperature change: NR's principal-point slope minus NL's (x fR/fL)
         ratio = float(m["NR"]["params"][0]) / float(m["NL"]["params"][0])
         return thermal_terms(m["NR"].get("thermal"))[k] - ratio * thermal_terms(m["NL"].get("thermal"))[k]
-    dpp = max(abs(stereo(new, k) - stereo(old, k)) for k in ("cx_px", "cy_px"))
-    add("stereo pp thermal slope change", round(dpp, 4), lim["max_pp_slope_change"], dpp <= lim["max_pp_slope_change"],
-        f"px/degC, NR - NL x fR/fL: cx {stereo(new, 'cx_px'):+.4f} (in use {stereo(old, 'cx_px'):+.4f}), "
-        f"cy {stereo(new, 'cy_px'):+.4f} (in use {stereo(old, 'cy_px'):+.4f})")
+
+    def stereo_rot(m, rig):     # 0.99.11: the whole stereo temperature change as a rotation rate (mdeg/degC):
+        # the principal-point slopes' equivalent (yaw = d(cx)/fx, pitch = -d(cy)/fy) plus the rig's thermal rates
+        tR, tL = thermal_terms(m["NR"].get("thermal")), thermal_terms(m["NL"].get("thermal"))
+        pR, pL = m["NR"]["params"], m["NL"]["params"]
+        md = 180e3 / np.pi
+        yaw = (tR["cx_px"] / float(pR[0]) - tL["cx_px"] / float(pL[0])) * md
+        pitch = -(tR["cy_px"] / float(pR[1]) - tL["cy_px"] / float(pL[1])) * md
+        th = (rig or {}).get("thermal") if isinstance((rig or {}).get("thermal"), dict) else {}
+        return {"pitch": pitch + float(th.get("pitch_mdeg_per_degC") or 0.0), "yaw": yaw + float(th.get("yaw_mdeg_per_degC") or 0.0),
+                "roll": float(th.get("roll_mdeg_per_degC") or 0.0)}
+    forms_ = (forms.navcam_form({e: new[e] for e in ("NL", "NR")}, rn), forms.navcam_form({e: old[e] for e in ("NL", "NR")}, ro))
+    if forms_[0] == forms_[1] == "pp_T" or "none" in forms_ and "rig_T" not in forms_:
+        dpp = max(abs(stereo(new, k) - stereo(old, k)) for k in ("cx_px", "cy_px"))
+        add("stereo pp thermal slope change", round(dpp, 4), lim["max_pp_slope_change"], dpp <= lim["max_pp_slope_change"],
+            f"px/degC, NR - NL x fR/fL: cx {stereo(new, 'cx_px'):+.4f} (in use {stereo(old, 'cx_px'):+.4f}), "
+            f"cy {stereo(new, 'cy_px'):+.4f} (in use {stereo(old, 'cy_px'):+.4f})")
+    else:
+        # 0.99.11: a rig_T candidate (or models in use): the stereo temperature change compared as a rotation rate, the
+        # limit the pp one at the Navcam's fx (0.02 px/degC = 0.39 mdeg/degC); roll is new in rig_T (reported)
+        sn, so = stereo_rot(new, rn), stereo_rot(old, ro)
+        lim_rot = float(lim["max_pp_slope_change"]) / float(old["NL"]["params"][0]) * 180e3 / np.pi
+        drot = max(abs(sn[a] - so[a]) for a in ("pitch", "yaw"))
+        add("stereo thermal rotation change", round(drot, 4), round(lim_rot, 4), drot <= lim_rot,
+            f"mdeg/degC (forms: candidate {forms_[0]}, in use {forms_[1]}): pitch {sn['pitch']:+.3f} (in use {so['pitch']:+.3f}), "
+            f"yaw {sn['yaw']:+.3f} (in use {so['yaw']:+.3f}), roll {sn['roll']:+.3f} (in use {so['roll']:+.3f}, not gated)")
     fm = M.check_form(cand)
-    add("form", FORM_ID if fm["ok"] else "not in the form", "THIN_PRISM_FISHEYE, sx1 = sy1 = 0, NL reference, no rig "
-        "temperature term", fm["ok"], "; ".join(fm["errors"] + fm["warnings"]) or "ok")
+    add("form", FORM_ID if fm["ok"] else "not in the form", "THIN_PRISM_FISHEYE, sx1 = sy1 = 0, NL reference; the stereo "
+        "temperature change on the rig (rig_T) or the principal points (pp_T), not both", fm["ok"],
+        "; ".join(fm["errors"] + fm["warnings"] + [f"Navcam form {fm.get('navcam_form')}"]) or "ok")
     lo = res.get("leave_one_out")
     ag = res.get("block_agreement")
     if res.get("method") == "tied" and (cand / "tied_joint.json").is_file():

@@ -3,6 +3,71 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.11 — 2026-11-17 (branch `rpp`)
+
+Christian, 17 Nov 07:08: "The ncam rig likely has a yaw and roll temp component. Let's remove the pp temp dependence and
+instead fit the roll pitch and yaw change with sol and temperature. Make this change for both the freeze3 and deck
+joint runs. Will do the deck joint first and use its results for the freeze3. Also prepare prefreeze3c to rerun seitah
+and do one last joint on all the zcams, plus hazcams, and a n+z34 joint using the new temp dependence forms."  07:10:
+"If the bar is rotating then the zcams would have a similar trend and temp dependence. Test that."  06:59: "How can we
+ensure the all the sol 121 seitah images align?"
+
+- **The rig_T Navcam form.** The stereo temperature change is a rotation of the camera bar, not a principal-point
+  motion: cx and cy are constant, and the rig rotation is linear in sol and in the camera temperature (the rig file's
+  `thermal`: `pitch_mdeg_per_degC`, `yaw_mdeg_per_degC`, `roll_mdeg_per_degC` about `T0_degC`). The 16 Nov deck joint
+  and the 3 Nov blocks agree on a roll of +0.25 mdeg/degC (not modeled until now) and a stereo yaw of -1.2 mdeg/degC.
+  - `rpp.calib.rig_at(rig, sol, T_degC)` turns the rotation by the rates (`rig_thermal_terms`, `thermal_offset_mdeg`).
+  - A block's rigs are set at its median camera temperature (`navcam_start_rig`, the rig epochs); the temperature bins
+    turn each bin's Navcam rig by the rates from there (`rpp.sfm.thermal`, `settings["navcam_rig_thermal"]`,
+    the thermal stage's `bin_rigs_turned`).
+  - The forms (`rpp.calib.forms`): a rig with rates is valid; `navcam_form` says which form a model set has
+    (`rig_T`, `pp_T`, `none`, `both`). `check_form` refuses `both` (the change counted twice), and so does a
+    promotion that would leave a folder with both.
+  - `rpp calib navcam --form rig_T` (the default; `pp_T`: the old form). The tied joint holds the principal-point
+    slopes of both eyes at 0 and fits one temperature rate per angle `K` in the rig law
+    `q(s, T) = Q0 + 1/2 [D s + H min(s, knot)] + 1/2 K (T - T0)`; the rig units already sit per temperature bin.
+    From a pp_T folder `K` starts at the slopes' stereo equivalent (`pp_stereo_rates`). The law files carry the
+    rates with their sd. The N+Z joint, the law check, the Mastcam-Z and Hazcam joints read them.
+  - `check_navcam` compares the whole stereo temperature change (the slopes' equivalent rotation plus the rig's
+    rates) when either side is rig_T.
+  - `rpp_studies.calibration.deck_rig`: from a rig_T deck joint (`all_rig.json` `form`), the candidate rig carries
+    the rates. `--cameras-from` writes the two Navcam cameras with their slopes set to 0 (the rig_T model set), and
+    `--station-cameras` carries the rig over to those cameras (the 16 Nov stations against cmods_freeze2: pitch
+    +0.60, yaw -1.61 mdeg). The check compares the stereo temperature change at T0 -/+ 10 degC.
+  - The knee profile fits pitch against temperature too when the deck joint is rig_T.
+  - Test: a synthetic block whose NR images see a rig turned by (0.3, -1.2, 0.25) mdeg/degC - the tied joint recovers
+    the rates to 0.05; the pp_T form on the same data ends 20 % higher in cost.
+- **The bar test** (`rpp calib zcam --zcam-rig-T-test [DEG]`): an extra diagnostic pass of the Mastcam-Z joint, with one
+  rig per block, epoch and lens-temperature bin. It fits the rigs' rotation against the lens temperature within the
+  blocks and between them (with sol), beside the Navcam rig's rates (`diagnostics.rig_T_test`, report lines).
+  - On the 15-16 Nov joints, the existing per-block rigs (21 sites, 43 block-zoom rigs) follow the Navcam rig in sol on
+    all three angles: pitch +5.8 +- 1.2, yaw +5.4 +- 1.1, roll -2.7 +- 1.9 mdeg/1000 sol after sol 250 (Navcam +6.1,
+    +3.9, -6.8). The early yaw reversal is there too (-22 +- 10 against -39 +- 7).
+  - Against the lens temperature between the blocks: yaw -0.45 +- 0.16, pitch -0.13 +- 0.18, roll -0.15 +- 0.28
+    mdeg/degC. The within-block test needs the new pass.
+- **Seitah Overlook sol 121** (the zoom ladder ZCAM08114).
+  - A zoom without a focus model (26, 100 mm) starts its high-state bins at the label f x 1.0095
+    (`ZCAM_NO_MODEL_HIGH_RATIO`, the backlash ratio). The low state stays at the label; 110 mm has one state.
+  - With fewer than `zcam_min_zoom_images` images, such a zoom refines f and holds the principal point and the
+    distortion. Before, everything was held at a label f about 1 % off, and the 26 mm frames slid 3.4 m along the
+    boresight and were dropped.
+  - The 63 / 79 mm frames take the pre3 models (ZR063's 2.7-3.6 px and the 79 mm low state's 0.3-0.9 m slides came
+    from the 16 Nov models).
+- **Rochette's panorama on the whole block's terrain** (Christian, 17 Nov 08:21: "rerun rochette and rockytop from the
+  ods using whole block terrain models. upload them to hugging face"). `Sol0180_S007D0000` gets `"terrain": "block"`
+  in `single_sites.json`: the terrain is fused from all 42 Navcam frames of `mars2020_sol_0178_rochette_zcam`
+  (`colmap/dense_block_N`): the end-of-drive 360s of sols 178 and 180, the mid-drive pairs, the later frames at
+  S007D0000 and the 6 frames of sol 341. The panorama still comes from the station's own frames and its context frames.
+  The four Rockytop stations already use the block's terrain set (`block:rockytop`, 119 frames, 0.98.19).
+- `M20_waypoints.json` (both copies) to sol 2022: the waypoints 92_130 and 93_0, which a download had added to the
+  PC's working copy (the rename stops on changed tracked files; the PC's copy is stashed).
+- Outside the repository:
+  - the deck-joint packages run every joint in the rig_T form (`joint_ba.py --nav-pp-T off`), taking each station's
+    own applied slopes out;
+  - `all_report.py` fits pitch, yaw and roll against sol and temperature;
+  - `run_prefreeze3c.bat` builds the candidate, the model folder `cmods_prefreeze3c`, (`--ecam`) the full ecam
+    joint, Seitah, the seven Mastcam-Z joints with the bar test, the Hazcam fit, the N+Z34 joint and a summary.
+
 ## 0.99.10 — 2026-11-17 (branch `rpp`)
 
 - **The viewer's panoramas out of the repository.** `docs/ods/panos.json` and `docs/ods/panos/orientation_test_360_3DTD.jpg`

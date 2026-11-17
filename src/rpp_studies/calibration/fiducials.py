@@ -881,7 +881,10 @@ def check_pds_pair(fL: Dict[str, Any], fR: Dict[str, Any], cams: Optional[Dict[s
         from rpp.labels import read_pds
         read = lambda p: read_pds(p)[1]                   # noqa: E731
     sol = fL["sol"]
-    R_law, t_law, _ = rig_at(rig, sol)
+    # 0.99.11: the rig_T form's rig at the frame's camera temperature too (the two eyes' mean when both are known)
+    T_rig = (0.5 * (float(fL["T"]) + float(fR["T"])) if fL.get("T") is not None and fR.get("T") is not None
+             else fL.get("T"))
+    R_law, t_law, _ = rig_at(rig, sol, T_rig)
     if t_law is None:                                      # the labels' baseline when the rig keeps no translation
         (RL0, tL0), (RR0, tR0) = label_pose(fL["cm"]), label_pose(fR["cm"])
         t_law = tR0 - RR0 @ RL0.T @ tL0

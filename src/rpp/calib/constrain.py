@@ -1,6 +1,6 @@
 """
 A promoted model constrained to one image or block: the Navcam / Hazcam camera at a temperature and sol
-(:func:`camera_at`), the stereo rig at a sol (:func:`rig_at`), the Mastcam-Z camera at a focus count and backlash
+(:func:`camera_at`), the stereo rig at a sol and temperature (:func:`rig_at`), the Mastcam-Z camera at a focus count and backlash
 state (:func:`zcam_camera_at`), a camera scaled to an image resolution (:func:`scaled`), and the start camera from a
 PDS label where no promoted model exists (:func:`label_camera`).
 
@@ -124,26 +124,64 @@ def drift_offset_mdeg(drift: Dict[str, Any], sol: float) -> Dict[str, float]:
 
 
 RIG_TRANSLATIONS_USED = ("fitted", "deck")   # 0.95.5: a rig file's translation the projects use ("deck": the survey's length)
+RIG_ANGLES = ("pitch", "yaw", "roll")       # rotation-vector x, y, z of the sensor camera
 
 
-def rig_at(rig: Dict[str, Any], sol: Optional[float] = None) -> Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
+def rig_thermal_terms(rig: Optional[Dict[str, Any]]) -> Optional[Dict[str, float]]:
+    """0.99.11: the rig's temperature rates {"pitch", "yaw", "roll" (mdeg/degC), "T0"} of a rig file's ``thermal``
+    entry (``<angle>_mdeg_per_degC`` about ``T0_degC``), None when the rig has none (or all rates are 0)."""
+    th = (rig or {}).get("thermal") or {}
+    if not isinstance(th, dict):
+        return None
+    out = {a: float(th.get(f"{a}_mdeg_per_degC") or 0.0) for a in RIG_ANGLES}
+    if not any(out.values()):
+        return None
+    out["T0"] = float(th.get("T0_degC", NAVCAM_T0_DEGC))
+    return out
+
+
+def thermal_offset_mdeg(rig: Dict[str, Any], T_degC: float, T_ref_degC: Optional[float] = None) -> Dict[str, float]:
+    """0.99.11: the rig rotation offset (pitch, yaw, roll mdeg) of a rig file's temperature rates at camera temperature
+    ``T_degC``: rate x (T - T0), or rate x (T - ``T_ref_degC``) relative to another temperature (a temperature bin
+    against its block's rig); zeros without a ``thermal`` entry."""
+    th = rig_thermal_terms(rig)
+    if th is None:
+        return {f"{a}_mdeg": 0.0 for a in RIG_ANGLES}
+    ref = th["T0"] if T_ref_degC is None else float(T_ref_degC)
+    return {f"{a}_mdeg": th[a] * (float(T_degC) - ref) for a in RIG_ANGLES}
+
+
+def rig_at(rig: Dict[str, Any], sol: Optional[float] = None,
+           T_degC: Optional[float] = None) -> Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
     """
-    The stereo rig (x_sensor = R x_ref + t) of a rig file at ``sol``: the file's rotation turned by the drift offset
-    at that sol (:func:`drift_offset_mdeg`; pitch, yaw, roll about x, y, z of the sensor camera).  Returns (R, t,
-    applied): ``t`` is the file's translation when the projects use it (``translation`` "fitted" or "deck": the
-    length set from the rover-deck survey) or None when the block keeps its CAHV baseline.  0.95.5: "deck" was
-    ignored before - the 6 Nov 2026 rig file (423.60 mm) left every block at its CAHV baseline (~424.36 mm).
+    The stereo rig (x_sensor = R x_ref + t) of a rig file at ``sol`` and camera temperature ``T_degC``: the file's
+    rotation turned by the drift offset at that sol (:func:`drift_offset_mdeg`; pitch, yaw, roll about x, y, z of the
+    sensor camera) and - 0.99.11, the rig_T Navcam form - by the temperature offset at that temperature
+    (:func:`thermal_offset_mdeg`, when the file has a ``thermal`` entry; without ``T_degC`` none, the rotation at the
+    file's T0).  Returns (R, t, applied): ``t`` is the file's translation when the projects use it (``translation``
+    "fitted" or "deck": the length set from the rover-deck survey) or None when the block keeps its CAHV baseline.
+    0.95.5: "deck" was ignored before - the 6 Nov 2026 rig file (423.60 mm) left every block at its CAHV baseline
+    (~424.36 mm).
     """
     from scipy.spatial.transform import Rotation
     R = np.asarray(rig["R_sensor_from_ref"], float)
     applied: Dict[str, Any] = {}
+    rv = np.zeros(3)
     dr = rig.get("drift")
     if dr and sol is not None:
         off = drift_offset_mdeg(dr, float(sol))
-        rv = np.radians(1e-3 * np.array([off["pitch_mdeg"], off["yaw_mdeg"], off["roll_mdeg"]]))
-        R = Rotation.from_rotvec(rv).as_matrix() @ R
+        rv += np.radians(1e-3 * np.array([off["pitch_mdeg"], off["yaw_mdeg"], off["roll_mdeg"]]))
         applied["drift"] = {**dr, "sol_median": float(sol),
                             "offset_mdeg": {"pitch": off["pitch_mdeg"], "yaw": off["yaw_mdeg"], "roll": off["roll_mdeg"]}}
+    th = rig_thermal_terms(rig)
+    if th is not None and T_degC is not None:
+        off = thermal_offset_mdeg(rig, float(T_degC))
+        rv += np.radians(1e-3 * np.array([off[f"{a}_mdeg"] for a in RIG_ANGLES]))
+        applied["thermal"] = {"T_degC": float(T_degC), "T0_degC": th["T0"],
+                              "rates_mdeg_per_degC": {a: th[a] for a in RIG_ANGLES},
+                              "offset_mdeg": {a: off[f"{a}_mdeg"] for a in RIG_ANGLES}}
+    if np.any(rv):
+        R = Rotation.from_rotvec(rv).as_matrix() @ R
     t = None
     if rig.get("translation") in RIG_TRANSLATIONS_USED and rig.get("t_sensor_from_ref_m") is not None:
         t = np.asarray(rig["t_sensor_from_ref_m"], float)

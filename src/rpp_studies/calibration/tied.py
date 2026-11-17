@@ -26,6 +26,14 @@ profiles of :func:`rpp_studies.calibration.fit.fit_navcam`:
 
   so yaw and roll are linear in sol and pitch has its early-mission hinge.  Q0's yaw is held at its start (the
   runs hold the yaw; a constant yaw is the mirror of NR's cx), the translation (baseline) is held.
+* 0.99.11, the ``rig_T`` form (Christian, 17 Nov 2026: "The ncam rig likely has a yaw and roll temp component.  Let's
+  remove the pp temp dependence and instead fit the roll pitch and yaw change with sol and temperature"): the
+  principal-point slopes S.cx, S.cy of both eyes are held at 0 and the rig law gets one temperature rate per angle,
+
+      q_xyz(s, T) = Q0 + 1/2 [D s + H min(s, knot)] / 1000 + 1/2 K (T - T0)      (K: pitch, yaw, roll mdeg/degC)
+
+  with T the rig unit's median frame temperature (the units are per temperature bin already).  ``form="pp_T"`` is the
+  form up to 0.99.10 (K = 0 and held, the slopes free).
 
 The global parameters, with their covariance from the one normal matrix, go into the candidate files
 (:func:`write_tied`); :func:`diagnostic_pass` then holds them and frees one camera per (block, eye, bin, era) and one
@@ -105,6 +113,14 @@ HOLD_DEFAULT = ("Q0_yaw", "G_NL_k4", "G_NR_k4", "G_NL_cy", "E_NL_cy")
 # 0.95.0 (Christian, 27 Oct): a held early-mission offset of the reference eye is held at 0, not at the value the
 # 24 Oct fit left in the model in use (E_NL_cy 0.137 px): NR's early cy is then the stereo early offset (~0.015 px)
 EARLY_HELD_AT_ZERO = ("E_NL_cy",)
+# 0.99.11 (Christian, 17 Nov 2026, 07:08): the rig_T form - the stereo temperature change is a rotation of the camera
+# bar.  The 16 Nov deck joint and the 3 Nov blocks agree on a roll of +0.25 mdeg/degC (not modeled until now) and the
+# stereo yaw of -1.2 mdeg/degC (the pp_T law's NR - NL cx slopes, -1.06, plus -0.1 to -0.2 on top); the common part of
+# the slopes (cy +0.023 px/degC in both eyes) is head pointing, which every block's poses take.  pp_T: the form up to
+# 0.99.10 (the slopes free, no rig temperature rate).
+NAVCAM_FORM = "rig_T"
+NAVCAM_FORMS = ("rig_T", "pp_T")
+PP_SLOPE_TERMS = ("S_NL_cx", "S_NL_cy", "S_NR_cx", "S_NR_cy")
 # 0.95.4 (Christian, 3 Nov 2026: "let's remove early mission offset altogether"): the early-mission offsets are held at
 # 0 for both eyes.  The 3 Nov joint had NR fy +0.057 px and NR cy +0.039 px (z 11 and 16 per observation); on block
 # means the fy step is not significant (NL -223 +- 112, NR -165 +- 119 ppm, opposite sign) and the cy offsets are
@@ -153,10 +169,15 @@ def R_of_q(qxyz: np.ndarray) -> np.ndarray:
     return Rotation.from_quat([q[0], q[1], q[2], w]).as_matrix()
 
 
-def rig_q_at(Q0: np.ndarray, D: np.ndarray, H: np.ndarray, sol: float, knot: float) -> np.ndarray:
-    """The law: q_xyz(s) = Q0 + 1/2 mdeg [D s + H min(s, knot)] / 1000."""
+def rig_q_at(Q0: np.ndarray, D: np.ndarray, H: np.ndarray, sol: float, knot: float, K: Optional[np.ndarray] = None,
+             T: Optional[float] = None, T0: float = -20.0) -> np.ndarray:
+    """The law: q_xyz(s, T) = Q0 + 1/2 mdeg [D s + H min(s, knot)] / 1000 + 1/2 mdeg K (T - T0) (0.99.11: the
+    temperature rates K, mdeg/degC, when given with the unit's temperature ``T``)."""
     s = float(sol)
-    return np.asarray(Q0, float) + 0.5 * _MDEG * (np.asarray(D, float) * s + np.asarray(H, float) * min(s, knot)) / 1000.0
+    q = np.asarray(Q0, float) + 0.5 * _MDEG * (np.asarray(D, float) * s + np.asarray(H, float) * min(s, knot)) / 1000.0
+    if K is not None and T is not None:
+        q = q + 0.5 * _MDEG * np.asarray(K, float) * (float(T) - float(T0))
+    return q
 
 
 def start_values(cmods_dir: Optional[PathLike] = None, knot_sol: Optional[float] = KNOT_SOL) -> Dict[str, Any]:
@@ -192,10 +213,52 @@ def start_values(cmods_dir: Optional[PathLike] = None, knot_sol: Optional[float]
     # the file's rotation is the law at sol0 (offset rate (s - sol0) + (early - rate)(min(s, knot) - knot_ref)):
     # refer it to sol 0 with knot_ref 0
     q0 = q_file - 0.5 * _MDEG * (D * sol0 + H * (min(sol0, knot) - knot_ref)) / 1000.0
+    # 0.99.11: the rig file's temperature rates (the rig_T form), about its T0 (the file's rotation is the law at T0)
+    th = rj.get("thermal") if isinstance(rj.get("thermal"), dict) else {}
+    K = np.array([float(th.get(f"{a}_mdeg_per_degC") or 0.0) for a in ANGLES])
     out.update({"knot": knot, "D": D, "H": H, "Q0": q0, "t": np.asarray(rj["t_sensor_from_ref_m"], float),
-                "hinge_angles": ["pitch", "yaw"] if yaw_hinge else ["pitch"],
+                "hinge_angles": ["pitch", "yaw"] if yaw_hinge else ["pitch"], "K": K,
+                "T0_rig": float(th.get("T0_degC", out["T0"])) if th else out["T0"],
                 "R": np.asarray(rj["R_sensor_from_ref"], float), "cameras": {"NL": nl, "NR": nr}, "rig": rj})
     return out
+
+
+def pp_stereo_rates(st: Dict[str, Any]) -> np.ndarray:
+    """0.99.11: the stereo rotation rate (pitch, yaw, roll mdeg/degC) equivalent to the principal-point slopes of the
+    start values (an NR - NL cx slope is a yaw, cy a pitch: dcx = fx w_y, dcy = -fy w_x; no roll)."""
+    S, G = st["S"], st["G"]
+    yaw = float(S["NR"][2] / G["NR"][0] - S["NL"][2] / G["NL"][0])
+    pitch = -float(S["NR"][3] / G["NR"][1] - S["NL"][3] / G["NL"][1])
+    return np.degrees(np.array([pitch, yaw, 0.0])) * 1e3
+
+
+def apply_form(st: Dict[str, Any], form: str = NAVCAM_FORM) -> Tuple[Dict[str, Any], Tuple[str, ...]]:
+    """0.99.11: the start values in a Navcam form and the global terms it holds.  ``rig_T``: the principal-point
+    slopes of both eyes set to 0 (held) and the rig's temperature rates K free - started at the rig file's rates, or,
+    from a pp_T folder (no rates), at the slopes' stereo equivalent (:func:`pp_stereo_rates`); ``pp_T``: K = 0 and
+    held (the form up to 0.99.10).  Returns (a copy of ``st``, the terms to hold)."""
+    if form not in NAVCAM_FORMS:
+        raise ValueError(f"Navcam form {form!r}: one of {NAVCAM_FORMS}")
+    st = copy.deepcopy(st)
+    st["form"] = form
+    if "K" not in st:
+        st["K"] = np.zeros(3)
+        st.setdefault("T0_rig", st["T0"])
+    if form == "pp_T":
+        st["K_start_source"] = "held at 0 (pp_T form)"
+        st["K"] = np.zeros(3)
+        return st, ("K",)
+    if not np.any(np.asarray(st["K"], float)):
+        st["K"] = pp_stereo_rates(st)
+        st["K_start_source"] = "the start folder's principal-point slopes as a stereo rotation (pp_T folder)"
+        st["T0_rig"] = st["T0"]
+    else:
+        st["K_start_source"] = "the start folder's rig file (thermal)"
+    st["pp_slopes_start"] = {e: [float(st["S"][e][2]), float(st["S"][e][3])] for e in ("NL", "NR")}
+    for e in ("NL", "NR"):
+        st["S"][e] = np.asarray(st["S"][e], float).copy()
+        st["S"][e][2] = st["S"][e][3] = 0.0
+    return st, PP_SLOPE_TERMS
 
 
 def camera_params(st: Dict[str, Any], eye: str, T: float, early: bool) -> np.ndarray:
@@ -384,7 +447,8 @@ def tied_reconstruction(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], bin_
         if key[0] == "stereo":
             scape, b, early = key[1], key[3], key[4]
             s_med = float(np.median([frames[k]["sol"] for k in mem]))
-            q = rig_q_at(st["Q0"], st["D"], st["H"], s_med, knot)
+            T_med = float(np.median([frames[k]["T"] for k in mem]))
+            q = rig_q_at(st["Q0"], st["D"], st["H"], s_med, knot, K=st.get("K"), T=T_med, T0=st.get("T0_rig", T0))
             ck = lambda eye: cam_key({"scape": scape, "bin": b, "early": early}, eye)      # noqa: E731
             r.add_ref_sensor(sensor(cam_id[ck("NL")]))
             r.add_sensor(sensor(cam_id[ck("NR")]), pycolmap.Rigid3d(pycolmap.Rotation3d(R_of_q(q)), t0))
@@ -482,7 +546,7 @@ def tied_reconstruction(rec, proj, idx: Dict[str, Any], st: Dict[str, Any], bin_
 
 # ====================================================================================== the ties
 _HELD_NAMES = {"S_NL": SLOPE_TERMS, "S_NR": SLOPE_TERMS, "E_NL": EARLY_TERMS, "E_NR": EARLY_TERMS,
-               "G_NL": TIED_PARAMS, "G_NR": TIED_PARAMS, "D": ANGLES, "H": ANGLES, "Q0": ANGLES}
+               "G_NL": TIED_PARAMS, "G_NR": TIED_PARAMS, "D": ANGLES, "H": ANGLES, "Q0": ANGLES, "K": ANGLES}
 
 
 def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = HOLD_DEFAULT, tie_rigs: bool = True,
@@ -501,7 +565,9 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
     LinearTie = _linear_tie_class()
     g = {"G_NL": st["G"]["NL"].copy(), "G_NR": st["G"]["NR"].copy(), "S_NL": st["S"]["NL"].copy(),
          "S_NR": st["S"]["NR"].copy(), "E_NL": st["E"]["NL"].copy(), "E_NR": st["E"]["NR"].copy(),
-         "Q0": st["Q0"].copy(), "D": st["D"].copy(), "H": st["H"].copy()}
+         "Q0": st["Q0"].copy(), "D": st["D"].copy(), "H": st["H"].copy(),
+         "K": np.asarray(st.get("K", np.zeros(3)), float).copy()}         # 0.99.11: the rig's temperature rates
+    T0_rig = float(st.get("T0_rig", st["T0"]))
     if STEREO_PP_TERMS and tie_cameras:                 # 0.95.0: the stereo differences NR - NL, a block of their own
         g["DS"] = np.array([g["G_NR"][2] - g["G_NL"][2], g["G_NR"][3] - g["G_NL"][3],
                             g["S_NR"][2] - g["S_NL"][2], g["S_NR"][3] - g["S_NL"][3]], float)
@@ -531,7 +597,16 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
     if tie_rigs and (not any(s_ < knot for s_ in sols) or len(sols) < 3):
         hold.append("H")                                   # the hinge needs a unit before the knot and three sols
     if not tie_rigs:
-        hold += ["Q0", "D", "H"]
+        hold += ["Q0", "D", "H", "K"]
+    # 0.99.11: the Navcam form of the start values (apply_form sets it; else a rig file with rates is rig_T): pp_T holds
+    # the rig's temperature rates, rig_T the principal-point slopes (at 0) - never both free (they are nearly one term)
+    form_ = st.get("form") or ("rig_T" if np.any(g["K"]) else "pp_T")
+    if form_ == "pp_T":
+        hold.append("K")
+    else:
+        hold += list(PP_SLOPE_TERMS)
+        for e_ in ("NL", "NR"):
+            g[f"S_{e_}"][2] = g[f"S_{e_}"][3] = 0.0
     if not tie_cameras:
         hold += ["G_NL", "G_NR", "S_NL", "S_NR", "E_NL", "E_NR"]
 
@@ -587,15 +662,17 @@ def make_ties(st: Dict[str, Any], units: Dict[str, Any], hold: Sequence[str] = H
                 if blk is None or not prob.has_parameter_block(blk) or prob.is_parameter_block_constant(blk):
                     continue
                 s = float(u["sol"])
-                A = np.zeros((3, 7 + 3 + 3 + 3))
+                dT_r = float(u.get("T", T0_rig)) - T0_rig
+                A = np.zeros((3, 7 + 3 + 3 + 3 + 3))
                 for i in range(3):
                     A[i, i] = 1.0                                    # the rig unit's quaternion x, y, z
                     A[i, 7 + i] = -1.0                               # Q0
                     A[i, 10 + i] = -0.5 * _MDEG * s / 1000.0         # D (mdeg / 1000 sol)
                     A[i, 13 + i] = -0.5 * _MDEG * min(s, knot) / 1000.0   # H
-                bl = [blk, g["Q0"], g["D"], g["H"]]
-                tie_ids.append(prob.add_residual_block(LinearTie(A, np.full(3, TIE_SIGMA["q"]), [7, 3, 3, 3]), None, bl))
-                specs.append({"id": tie_ids[-1], "A": A, "sigma": np.full(3, TIE_SIGMA["q"]), "sizes": [7, 3, 3, 3],
+                    A[i, 16 + i] = -0.5 * _MDEG * dT_r               # K (mdeg / degC), 0.99.11
+                bl = [blk, g["Q0"], g["D"], g["H"], g["K"]]
+                tie_ids.append(prob.add_residual_block(LinearTie(A, np.full(3, TIE_SIGMA["q"]), [7, 3, 3, 3, 3]), None, bl))
+                specs.append({"id": tie_ids[-1], "A": A, "sigma": np.full(3, TIE_SIGMA["q"]), "sizes": [7, 3, 3, 3, 3],
                               "blocks": bl, "quaternion": True})
                 n_rig += 1
         if "DS" in g and tie_cameras:                   # 0.95.0: DS = (G_NR - G_NL, S_NR - S_NL) for cx, cy, exactly
@@ -949,6 +1026,15 @@ def globals_result(st: Dict[str, Any], g: Dict[str, np.ndarray], ba: Dict[str, A
                   "pitch_early_mdeg_per_1000sol": float(g["D"][0] + g["H"][0]),
                   "sd_pitch_early": None if sdH is None else float(np.hypot(sdD[0] if sdD is not None else 0.0, sdH[0])),
                   "hinge_angles": list(st.get("hinge_angles") or ["pitch"])}
+    K_ = g.get("K")
+    if K_ is not None:                                   # 0.99.11: the rig's temperature rates (rig_T form)
+        sdK = _sd(cov, "K", 3, held.get("K", ()))
+        out["rig"]["thermal_mdeg_per_degC"] = dict(zip(ANGLES, map(float, K_)))
+        out["rig"]["sd_thermal"] = None if sdK is None else dict(zip(ANGLES, map(float, sdK)))
+        out["rig"]["T0_degC"] = float(st.get("T0_rig", st["T0"]))
+    out["navcam_form"] = st.get("form") or ("rig_T" if K_ is not None and np.any(K_) else "pp_T")
+    out["K_start_source"] = st.get("K_start_source")
+    out["pp_slopes_start"] = st.get("pp_slopes_start")
     if "yaw" in out["rig"]["hinge_angles"]:              # 0.95.5: the yaw knee
         out["rig"]["yaw_early_mdeg_per_1000sol"] = float(g["D"][1] + g["H"][1])
         out["rig"]["sd_yaw_early"] = (None if sdH is None or not np.isfinite(sdH[1]) else
@@ -967,7 +1053,7 @@ def unit_rows(rec, proj, idx: Dict[str, Any], units: Dict[str, Any], st: Dict[st
     the law at the unit's temperature (fx, fy in ppm; cx, cy in px; k1); per rig unit the angles and their
     difference from the trend at the unit's sol (mdeg)."""
     stl = dict(st, G={"NL": g["G_NL"], "NR": g["G_NR"]}, S={"NL": g["S_NL"], "NR": g["S_NR"]},
-               E={"NL": g["E_NL"], "NR": g["E_NR"]}, Q0=g["Q0"], D=g["D"], H=g["H"])
+               E={"NL": g["E_NL"], "NR": g["E_NR"]}, Q0=g["Q0"], D=g["D"], H=g["H"], K=g.get("K", st.get("K")))
     cams = []
     for cid, u in units["cameras"].items():
         if cid not in rec.cameras:
@@ -986,7 +1072,8 @@ def unit_rows(rec, proj, idx: Dict[str, Any], units: Dict[str, Any], st: Dict[st
         if sid is None:
             continue
         R = np.asarray(rg.sensor_from_rig(sid).rotation.matrix())
-        R_law = R_of_q(rig_q_at(g["Q0"], g["D"], g["H"], u["sol"], st["knot"]))
+        R_law = R_of_q(rig_q_at(g["Q0"], g["D"], g["H"], u["sol"], st["knot"], K=stl.get("K"), T=u.get("T"),
+                                T0=st.get("T0_rig", st["T0"])))
         a = J.rig_angles(R, R_ref=R_law)
         rigs.append(dict(u, **{f"d{k}": v for k, v in a.items()}, **J.rig_angles(R)))
     return {"cameras": cams, "rigs": rigs}
@@ -1019,7 +1106,7 @@ def zero_terms(st: Dict[str, Any], names: Sequence[str]) -> Dict[str, Any]:
     for h in names:
         base, _, c = h.rpartition("_")
         arr = None
-        if base in ("D", "Q0", "H"):
+        if base in ("D", "Q0", "H", "K"):
             arr = st[base]
         elif base[:2] in ("G_", "S_", "E_") and base[2:] in ("NL", "NR"):
             arr = st[base[0]][base[2:]]
@@ -1036,12 +1123,18 @@ def fit_tied(scapes_cfg: Dict[str, PathLike], start_dir: Optional[PathLike] = No
              covariance: bool = True, passes: int = 2, diagnostics: bool = True, exclude: Sequence[str] = (),
              verbose: bool = True, iso_f: bool = ISO_F, early_z_min: float = EARLY_Z_MIN,
              tie_f: Optional[bool] = None, early_offsets: Optional[bool] = None,
-             zero: Sequence[str] = ()) -> Dict[str, Any]:
+             zero: Sequence[str] = (), form: str = NAVCAM_FORM) -> Dict[str, Any]:
     """The one-adjustment Navcam joint over the blocks ``{name: WORK folder}`` (module docstring), then the
     diagnostic pass.  ``zero``: global terms set to 0 and held (:func:`zero_terms`; 3 Nov 2026).  Returns the global terms with their sd (:func:`globals_result`), the residual statistics, the
     units of the joint and of the diagnostic pass (:func:`unit_rows`) - what :func:`write_tied` writes."""
     import pycolmap
     st = start_values(start_dir, knot_sol=knot_sol)
+    st, form_hold = apply_form(st, form)                # 0.99.11: rig_T (pp slopes 0, K free) or pp_T
+    hold = tuple(dict.fromkeys(tuple(hold) + tuple(form_hold)))
+    if verbose:
+        log.info(f"tied joint: Navcam form {form} (" + ("principal-point slopes held at 0, rig temperature rates K free from "
+                 f"{np.round(st['K'], 3).tolist()} mdeg/degC: {st.get('K_start_source')}" if form == "rig_T" else
+                 "principal-point slopes free, no rig temperature rate") + ")")
     if zero:
         st = zero_terms(st, zero)
         hold = tuple(dict.fromkeys(tuple(hold) + tuple(zero)))
@@ -1083,7 +1176,7 @@ def fit_tied(scapes_cfg: Dict[str, PathLike], start_dir: Optional[PathLike] = No
                                    passes=passes, verbose=verbose, iso_f=iso_f, tie_f=tie_f)
         res = globals_result(st, g, ba, units)
     res["early_test"] = {"z_min": early_z_min, "judged": judged, "held": list(early_held), "first_fit": res_first}
-    res.update({"blocks": list(scapes_cfg), "points_per_block": idx.get("points_per_block") or points, "bin_deg": bin_deg, "max_span_sols": max_span,
+    res.update({"navcam_form": form, "blocks": list(scapes_cfg), "points_per_block": idx.get("points_per_block") or points, "bin_deg": bin_deg, "max_span_sols": max_span,
                 "start_dir": st["folder"], "final_cost": float(ba["final_cost"]), "iterations": ba["iterations"],
                 "brief": ba["brief"], "seconds": time.time() - t, "residuals": stats,
                 "images": {s: len(v) for s, v in idx["images"].items()}, "hold": list(hold),
@@ -1110,12 +1203,18 @@ def _epoch_rows(res: Dict[str, Any], min_frames: int = 8) -> List[Dict[str, Any]
     """The diagnostic pass's rig epochs as :func:`rpp_studies.calibration.fit.fit_rig_drift` rows (absolute angles, a nominal
     sd of 1 mdeg at 100 images)."""
     rows = []
+    rig = res.get("rig") or {}
+    K = rig.get("thermal_mdeg_per_degC") or {}                # 0.99.11: the law's temperature part taken out (rig_T)
+    T0 = float(rig.get("T0_degC", res.get("T0_degC", -20.0)))
     for r in (res.get("diagnostics") or {}).get("rigs") or []:
         if r.get("frames", 0) < min_frames:
             continue
         sd = 1.0 * np.sqrt(100.0 / max(2 * r["frames"], 1))
+        dT = float(r["T"]) - T0
         rows.append({"block": r["scape"], "epoch": r["epoch"], "sol": float(r["sol"]), "T": float(r["T"]), "images": 2 * r["frames"],
-                     "sols": r.get("sols"), "pitch_mdeg": r["pitch_mdeg"], "yaw_mdeg": r["yaw_mdeg"], "roll_mdeg": r["roll_mdeg"],
+                     "sols": r.get("sols"), "pitch_mdeg": r["pitch_mdeg"] - float(K.get("pitch") or 0.0) * dT,
+                     "yaw_mdeg": r["yaw_mdeg"] - float(K.get("yaw") or 0.0) * dT,
+                     "roll_mdeg": r["roll_mdeg"] - float(K.get("roll") or 0.0) * dT,
                      "sd_pitch_mdeg": sd, "sd_yaw_mdeg": sd, "sd_roll_mdeg": sd})
     return rows
 
@@ -1213,7 +1312,7 @@ def diagnostic_pass(rec0, proj0, idx: Dict[str, Any], st: Dict[str, Any], g: Dic
     units' values against the law (:func:`unit_rows`) - the per-block, per-bin and per-sol scatter about the
     global solution that the figures draw."""
     stl = dict(st, G={"NL": g["G_NL"], "NR": g["G_NR"]}, S={"NL": g["S_NL"], "NR": g["S_NR"]},
-               E={"NL": g["E_NL"], "NR": g["E_NR"]}, Q0=g["Q0"], D=g["D"], H=g["H"])
+               E={"NL": g["E_NL"], "NR": g["E_NR"]}, Q0=g["Q0"], D=g["D"], H=g["H"], K=g.get("K", st.get("K")))
     rec, proj, units = tied_reconstruction(rec0, proj0, idx, stl, bin_deg=bin_deg, early_sol=early_sol,
                                            max_span=max_span, per_block=True, merge_min_images=DIAG_BIN_MIN_IMAGES)
     ba, g2, stats = adjust_tied(rec, proj, idx, stl, units, hold=(), tie_rigs=False, tie_cameras=False,
@@ -1258,7 +1357,7 @@ def pointing_pass(rec0, proj0, idx: Dict[str, Any], stl: Dict[str, Any], g: Dict
     stereo rows {block, era, T, dcx_stereo_px (NR - NL x fR/fL about the law), sd}."""
     rec, proj, units = tied_reconstruction(rec0, proj0, idx, stl, bin_deg=BIN_DEG, early_sol=early_sol,
                                            max_span=max_span, per_block=True, pointing=True)
-    ba, _g, stats = adjust_tied(rec, proj, idx, stl, units, hold=("Q0", "D", "H"), tie_rigs=True, tie_cameras=False,
+    ba, _g, stats = adjust_tied(rec, proj, idx, stl, units, hold=("Q0", "D", "H", "K"), tie_rigs=True, tie_cameras=False,
                                 iterations=iterations, covariance=True, passes=1, verbose=verbose,
                                 pp_prior=dict(PP_PRIOR_PX if pp_prior is None else pp_prior), stereo_units=True)
     rows = unit_rows(rec, proj, idx, units, stl, g)["cameras"]
@@ -1425,6 +1524,9 @@ def write_law_files(res: Dict[str, Any], out_dir: PathLike, note: str = "", temp
                         "fy_ppm_per_degC": o["fy_ppm_per_degC"], "cx_px_per_degC": o["cx_px_per_degC"],
                         "cy_px_per_degC": o["cy_px_per_degC"], "k1_per_degC": o["k1_per_degC"],
                         "k1_source": "tied joint", "note": f"one adjustment of every term ({stamp})"}
+        if res.get("navcam_form") == "rig_T":            # 0.99.11
+            c["thermal"]["form"] = "rig_T"
+            c["thermal"]["note"] += "; rig_T: cx, cy constant (the stereo temperature change is the rig's thermal rates)"
         for k in ("fx_ppm_per_degC", "fy_ppm_per_degC", "cx_px_per_degC", "cy_px_per_degC", "k1_per_degC"):
             if sd.get(k) is not None and np.isfinite(sd[k]):
                 c["thermal"]["sd_" + k] = float(sd[k])
@@ -1464,13 +1566,28 @@ def write_law_files(res: Dict[str, Any], out_dir: PathLike, note: str = "", temp
                              + f", all fitted with the cameras in one adjustment; sd mdeg/1000 sol {r.get('sd_rate')}"}
     if r.get("yaw_early_mdeg_per_1000sol") is not None:   # 0.95.5: the yaw knee
         rj["drift"]["yaw_early_mdeg_per_sol"] = float(r["yaw_early_mdeg_per_1000sol"]) / 1000.0
+    th = r.get("thermal_mdeg_per_degC")
+    if res.get("navcam_form") == "rig_T" and th:          # 0.99.11: the rig's temperature rates
+        sdT = r.get("sd_thermal") or {}
+        rj["thermal"] = {"T0_degC": float(r.get("T0_degC", res["T0_degC"])),
+                         **{f"{a}_mdeg_per_degC": float(th[a]) for a in ANGLES},
+                         **{f"sd_{a}_mdeg_per_degC": float(sdT[a]) for a in ANGLES
+                            if sdT.get(a) is not None and np.isfinite(sdT[a])},
+                         "form": "rig_T", "source": f"tied joint ({stamp}): the rig rotation linear in the camera temperature, "
+                                                    f"the principal-point slopes held at 0"}
+    else:
+        rj.pop("thermal", None)
     a = r["angles_sol0_mdeg"]
     rj["note"] = (f"x_NR = R x_NL + t. Navcam tied joint {stamp} ({len(blocks)} blocks): rotation at sol 0, yaw "
                   f"{a['yaw_mdeg']:+.2f}, pitch {a['pitch_mdeg']:+.2f}, roll {a['roll_mdeg']:+.2f} mdeg; rates "
                   f"pitch {rates['pitch']:+.2f}, yaw {rates['yaw']:+.2f}, roll {rates['roll']:+.2f} mdeg/1000 sol "
                   f"(pitch before sol {r['knot_sol']:g}: {r['pitch_early_mdeg_per_1000sol']:+.2f}"
                   + (f", yaw {r['yaw_early_mdeg_per_1000sol']:+.2f}" if r.get("yaw_early_mdeg_per_1000sol") is not None else "")
-                  + f"). Translation held. {note}".strip())
+                  + f")"
+                  + (f"; temperature pitch {r['thermal_mdeg_per_degC']['pitch']:+.3f}, yaw {r['thermal_mdeg_per_degC']['yaw']:+.3f}, "
+                     f"roll {r['thermal_mdeg_per_degC']['roll']:+.3f} mdeg/degC about {r.get('T0_degC', res['T0_degC']):g} degC (rig_T)"
+                     if res.get("navcam_form") == "rig_T" and r.get("thermal_mdeg_per_degC") else "")
+                  + f". Translation held. {note}".strip())
     rj["source"] = f"{method}, {stamp})"
     M.write_model(out / M.rig_file("N", tdir).name, rj)
     return out
@@ -1547,7 +1664,9 @@ def consensus_record(res: Dict[str, Any]) -> Dict[str, Any]:
             "residuals": res.get("residuals"), "covariance_error": res.get("covariance_error"),
             "covariance_damping": res.get("covariance_damping"), "early_mission": em,
             "thermal": {"yaw_rate_mdeg_per_1000sol": r["rate_mdeg_per_1000sol"]["yaw"],
-                        "sd": {"yaw_rate": (r.get("sd_rate") or {}).get("yaw")}},
+                        "sd": {"yaw_rate": (r.get("sd_rate") or {}).get("yaw")},
+                        "rig_mdeg_per_degC": r.get("thermal_mdeg_per_degC"), "sd_rig_mdeg_per_degC": r.get("sd_thermal")},
+            "navcam_form": res.get("navcam_form", "pp_T"),
             "sd_source": res.get("sd_source"), "rig_sd": rig_sd_free(res), "pass_costs": res.get("pass_costs"),
             "block_agreement": block_agreement(res) if res.get("diagnostics") else None,
             "rig_abs_mdeg": r["angles_sol0_mdeg"], "hold": res.get("hold"), "seconds": res.get("seconds")}
@@ -1580,7 +1699,8 @@ def figure_inputs(res: Dict[str, Any], min_images: int = 8, bin_min_images: Opti
     cons["thermal"] = {"axis_ppm": {e: [res[e]["fx_ppm_per_degC"], res[e]["fy_ppm_per_degC"]] for e in ("NL", "NR")},
                        "pp_slopes": {e: [res[e]["cx_px_per_degC"], res[e]["cy_px_per_degC"]] for e in ("NL", "NR")},
                        "k1_slopes": {e: res[e]["k1_per_degC"] for e in ("NL", "NR")},
-                       "yaw_rate_mdeg_per_1000sol": res["rig"]["rate_mdeg_per_1000sol"]["yaw"]}
+                       "yaw_rate_mdeg_per_1000sol": res["rig"]["rate_mdeg_per_1000sol"]["yaw"],
+                       "rig_mdeg_per_degC": res["rig"].get("thermal_mdeg_per_degC")}
     d = res.get("diagnostics") or {}
     rows = []
     for r in d.get("rigs") or []:

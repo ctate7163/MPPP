@@ -121,7 +121,10 @@ def analyze(deck: Optional[Dict[str, Any]], blocks: Optional[Dict[str, Any]]) ->
         sets["blocks"] = block_sets(blocks["residuals"], blocks["drift"])
     res: Dict[str, Any] = {"sets": {k: {a: int(len(v[a][0])) for a in v} for k, v in sets.items()}, "pitch": {}, "yaw": {},
                            "roll": {}}
-    for ang, temp in (("pitch", False), ("yaw", True)):
+    # 0.99.11: in the rig_T form the deck joint's station rigs carry the whole stereo temperature change on every angle
+    # (all_rig.json "form"), so pitch gets its temperature term too (yaw and roll always had one)
+    pitch_T = bool(deck is not None and deck.get("form") == "rig_T")
+    for ang, temp in (("pitch", pitch_T), ("yaw", True)):
         for name, ss in sets.items():
             res[ang][name] = profile(*ss[ang], temp)
         if len(sets) == 2:
