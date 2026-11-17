@@ -4,7 +4,7 @@ rpp.ibr.hf - the panoramas on Hugging Face (0.99.3).
 Christian, 16 Nov 2026: "v0p99 should upload rpv products to hugging face near to where the mask CNN are", and
 "Prepare ibr run to reprocess everything and upload to hugging face".
 
-The pictures go to a public dataset next to the mask models (``ctate7163/rpv-panoramas``; ``RPP_HF_DATASET``), one
+The pictures go to a public dataset next to the mask models (``ctate7163/rpp-rpv``; ``RPP_HF_DATASET``), one
 commit per station; the viewer's page, ``vendor/`` and ``panos.json`` stay on GitHub Pages (``ctate7163/RPV``),
 whose ``panos.json`` points at the dataset with addresses pinned to the station's commit
 (``https://huggingface.co/datasets/<repo>/resolve/<commit>/<station>/viewer/<file>``), so a link never changes
@@ -39,7 +39,8 @@ from .. import env as rpp_env
 
 log = logging.getLogger("rpp.ibr.hf")
 
-DATASET = "ctate7163/rpv-panoramas"
+DATASET = "ctate7163/rpp-rpv"          # 0.99.12 (Christian, 17 Nov 2026: "there should be a separate rpp-rpv repository")
+OLD_DATASETS = ("ctate7163/rpv-panoramas",)    # 0.99.3-0.99.11: moved to DATASET by ensure_dataset (commits kept)
 LICENSE = "cc-by-4.0"              # the proposal of 16 Nov (the code is Apache-2.0); RPP_HF_LICENSE to choose another
 RESOLVE = "https://huggingface.co/datasets/{repo}/resolve/{rev}/{path}"
 PAGE_ORIGIN = "https://ctate7163.github.io"
@@ -156,10 +157,54 @@ def _api(api=None):
     return HfApi()
 
 
+def _exists(api, repo: str) -> bool:
+    try:
+        return bool(api.repo_exists(repo, repo_type="dataset"))
+    except Exception:                                            # noqa: BLE001 - unknown: create_repo decides
+        return False
+
+
+def move_old_dataset(repo: Optional[str] = None, api=None) -> Optional[str]:
+    """0.99.12: when ``repo`` (the default ``ctate7163/rpp-rpv``) does not exist and a dataset of an earlier name does
+    (``OLD_DATASETS``: ``ctate7163/rpv-panoramas``, 0.99.3-0.99.11), that one is renamed to ``repo``, so what it holds
+    and its commits stay (Hugging Face forwards the old addresses).  Returns the old name moved, else None."""
+    repo = repo or dataset()
+    if repo != DATASET:                                          # another dataset named by RPP_HF_DATASET: as it is
+        return None
+    api = _api(api)
+    if _exists(api, repo):
+        return None
+    for old in OLD_DATASETS:
+        if old != repo and _exists(api, old):
+            api.move_repo(from_id=old, to_id=repo, repo_type="dataset")
+            log.info("hf: the dataset %s renamed %s", old, repo)
+            return old
+    return None
+
+
+def old_to_new(obj: Any, repo: str) -> Any:
+    """0.99.12: ``panos.json`` addresses into an earlier dataset (``OLD_DATASETS``) pointed at ``repo`` - the same
+    commit and path (a renamed dataset keeps its commits)."""
+    if isinstance(obj, dict):
+        return {k: old_to_new(v, repo) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [old_to_new(v, repo) for v in obj]
+    if isinstance(obj, str):
+        for old in OLD_DATASETS:
+            if old != repo:
+                obj = obj.replace(f"/datasets/{old}/", f"/datasets/{repo}/")
+        return obj
+    return obj
+
+
 def ensure_dataset(repo: Optional[str] = None, api=None) -> str:
-    """The dataset exists (public) and has its card.  Returns the repo id."""
+    """The dataset exists (public) and has its card - an earlier dataset renamed to it if there is one
+    (:func:`move_old_dataset`).  Returns the repo id."""
     repo = repo or dataset()
     api = _api(api)
+    moved = move_old_dataset(repo, api)
+    if moved:
+        print(f"the Hugging Face dataset {moved} is now {repo} (its files and commits kept)")
     api.create_repo(repo, repo_type="dataset", exist_ok=True, private=False)
     try:
         has = api.file_exists(repo, "README.md", repo_type="dataset")
@@ -220,6 +265,8 @@ def publish(web_dir, doc: Dict[str, Any], labels: Sequence[str], out_root, previ
         failed = {k: f"the dataset {repo}: {e}" for k in labels}
         api = None
     panos = []
+    doc = old_to_new(doc, repo)                                  # 0.99.12: entries made for ctate7163/rpv-panoramas
+    prev = {k: old_to_new(v, repo) for k, v in prev.items()}
     for p in doc.get("panos", []):
         lab = p.get("id")
         if lab not in labels or not refs(p):                    # another run's station, or already on the dataset

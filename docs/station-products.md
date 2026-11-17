@@ -86,7 +86,7 @@ for this). The eyes are rendered at 16384 x 8192 (`rpp ods --width`); publishing
 
 `run_single_site_ibr.bat <station>` publishes and uploads each station when it is done (0.97.24: by default;
 `--no-upload` skips it; `--publish-only` does it without rendering; `--all` takes the experimental stations too).
-Since 0.99.3 the pictures go to the public Hugging Face dataset `ctate7163/rpv-panoramas` (`RPP_HF_DATASET`), one
+Since 0.99.3 the pictures go to the public Hugging Face dataset `ctate7163/rpp-rpv` (`RPP_HF_DATASET`), one
 commit per station (`rpp.ibr.hf`):
 
 - `<station>/viewer/`: what the viewer loads - the 8K stereo JPEGs of every view and variant, the nadir mark, the
@@ -96,7 +96,7 @@ commit per station (`rpp.ibr.hf`):
 
 `panos.json` stays in the viewer's GitHub checkout (`D:\code\RPV`, published at https://ctate7163.github.io/RPV/),
 committed and pushed as before; its addresses point at the station's commit on the dataset
-(`https://huggingface.co/datasets/ctate7163/rpv-panoramas/resolve/<commit>/<station>/viewer/<file>`), so a link
+(`https://huggingface.co/datasets/ctate7163/rpp-rpv/resolve/<commit>/<station>/viewer/<file>`), so a link
 never changes under a browser's cache. Pictures an earlier upload left in the checkout are removed once the station
 is on the dataset. A station whose upload fails keeps its entry of before; its pictures stay in
 `<output root>/_hf_stage/panos` and go up with the next run. `rpp hf-check [--create]` makes the dataset and its card

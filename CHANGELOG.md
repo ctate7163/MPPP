@@ -3,6 +3,24 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.12 — 2026-11-17 (branch `rpp`)
+
+- **The panoramas' own dataset, `ctate7163/rpp-rpv`** (Christian, 17 Nov 09:09: "upload the current ods to hugging face.
+  there should be a separate rpp-rpv repository"). `rpp.ibr.hf.DATASET` is `ctate7163/rpp-rpv` (`RPP_HF_DATASET` still
+  names another). When it does not exist and the morning's `ctate7163/rpv-panoramas` does, `ensure_dataset`
+  (`rpp hf-check --create`, every upload) renames that one, so its files and commits stay. `panos.json` addresses into
+  the old name are pointed at the new one, with the same commit and path.
+  `rpp single-sites --all --publish-only --upload` puts every station's current panoramas there without rendering
+  them again.
+- **The MSL blocks in `D:\rover_blocks`** (Christian, 17 Nov 09:14: "put the msl blocks in the rover_blocks folder.
+  Use the naming convention D:/rover_blocks/msl_sol_0{sol start}_{block name}").
+  - The folder is `msl_sol_<first sol, 4 digits>_<block>`: `msl_sol_0124_yellowknife_bay` for the preset, and
+    `--sols 162 296` gives `msl_sol_0162_yellowknife_bay`.
+  - `--block` names the block; `first_block` uses `msl_sol_3047_mont_mercou`. The root is `RPP_SCAPES`, else
+    `D:\rover_blocks`.
+  - `python -m rpp_studies.msl.block where ...` prints the folder, for the batch files.
+  - The Mars 2020 code reads only `mars2020_sol_*` folders, so it leaves these alone.
+
 ## 0.99.11 — 2026-11-17 (branch `rpp`)
 
 Christian, 17 Nov 07:08: "The ncam rig likely has a yaw and roll temp component. Let's remove the pp temp dependence and
