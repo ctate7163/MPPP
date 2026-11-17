@@ -170,7 +170,7 @@ def welcome_pano(web: Path, station_entry: Optional[Dict[str, Any]], pano_dir: O
 
 
 def _welcome_entry(dst: Path) -> Dict[str, Any]:
-    return {"id": WELCOME_ID, "title": "Welcome", "welcome": True, "site_name": "Rover Photogrammetry Viewer (RPV)",
+    return {"id": WELCOME_ID, "title": "Welcome", "welcome": True, "site_name": "Mars rover panorama viewer (RPV)",
             "yaw_deg": WELCOME_YAW_DEG,                       # 0.98.19 (Christian, 16 Nov 2026): it opens looking west
             "variants": [{"key": "welcome", "label": "welcome", "views": {"standard": "panos/" + dst.name}}]}
 
@@ -482,7 +482,7 @@ def _copy(src: Path, dst: Path, width: int, quality: int) -> Dict[str, Any]:
 
 def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[str]] = None,
             views: Sequence[str] = DEFAULT_VIEWS, width: int = DEFAULT_WIDTH, quality: int = 88,
-            titles: Optional[Dict[str, Dict[str, Any]]] = None, title: str = "RPP stereo panoramas",
+            titles: Optional[Dict[str, Dict[str, Any]]] = None, title: str = "Mars rover panorama viewer (RPV)",
             ortho_root: Optional[PathLike] = None, render_map: bool = False,
             files_dir: Optional[PathLike] = None) -> Dict[str, Any]:
     """Every station folder of ``out_root`` (the output of ``rpp single-sites``) that has a stereo JPEG, into
@@ -595,7 +595,7 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
     return doc
 
 
-VIEWER_URL = "https://ctate7163.github.io/RPV/"        # 0.98.29: the viewer's own repository, ctate7163/RPV
+VIEWER_URL = "https://ctate7163.github.io/rpv/"        # 0.98.29: the viewer's own repository, ctate7163/rpv (lower case, 0.99.13)
 
 
 def viewer_dir() -> Path:
@@ -608,9 +608,10 @@ def viewer_dir() -> Path:
     if env:
         return Path(env)
     home = Path(__file__).resolve().parents[3]
-    sib = home.parent / "RPV"
-    if (sib / ".git").exists():
-        return sib
+    for name in ("rpv", "RPV"):                      # 0.99.13: the checkout may be renamed with the repository
+        sib = home.parent / name
+        if (sib / ".git").exists():
+            return sib
     return home / "docs" / "ods"
 
 

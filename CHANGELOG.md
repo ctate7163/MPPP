@@ -3,6 +3,44 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.13 — 2026-11-17 (branch `rpp`)
+
+Christian, 17 Nov 09:26–09:39.
+
+- **The viewer** (`docs/ods/index.html`):
+  - ◀ and ▶ at the lower right step to the previous and next station.
+  - A rover button between them switches between terrain only and with the rover. It goes back to the rover variant
+    shown last, else the 3D model, else the projected rover, and keeps the color view. It is orange while the rover
+    shows and grayed out where a station has no rover variant.
+  - The icon is a drawn Curiosity-class rover: Unicode has no rover emoji.
+  - The title is "Mars rover panorama viewer (RPV)" in the bar, the tab, the welcome view and the published list.
+    The old list titles ("MPPP / RPP stereo panoramas") are ignored.
+  - The site is lower case, https://ctate7163.github.io/rpv/ (`web.VIEWER_URL`).
+  - The page sends a copy served at `/RPV/` (and the old `/RPP/ods/`, `/MPPP/ods/`) there. `viewer_dir` finds the
+    checkout as `rpv` or `RPV`. `_transfer\rpv_lowercase\rename_rpv.bat` renames the repository; the user site
+    `ctate7163.github.io` forwards `/RPV/...`. GitHub Pages paths are case-sensitive, and a renamed repository's site
+    is not forwarded.
+- **The Mastcam-Z disc** has the block's name, as the Navcam one does (`single_sites.mark_name`): "Three Forks North
+  (Z34)" is "Three Forks North" on the disc. The station list keeps the full name.
+- **The Z34 panorama is blended without per-image gains** (`--no-gains` in its `ods_args`; they ran 0.88–1.19). The
+  frames are calibrated radiance taken within minutes of each other.
+- **Taylorfjellet (`Sol1635_S079D0732`) gets context frames from similar times of day** (Christian, 09:42: "Add the mid
+  drive pair from sol 1606 plus the north-west looking eod stereos from 1606, 1608, 1615 stations"). The 1606 mid-drive
+  pair is at 13:01 LMST. The end-of-drive pairs that look north-west toward the station, 9-11 m away, are 02606, 03608,
+  02608, 03615 and 14615 (11:10-14:06); the station's own frames are 12:07-12:42. NCAM14608 is left out: it was taken
+  on sol 1609 at 09:31, in morning light.
+- **`python -m rpp.ibr.nzcolor BLOCK ...`**: the Navcam to Mastcam-Z color conversion from points that a Navcam and a
+  Mastcam-Z frame, taken within 45 min of each other, both see in an N+Z block.
+  - It reads the 16-bit linear frames, each divided by its own factors, so the comparison is radiance against
+    radiance.
+  - It reports the per-channel ratio, its spread between scenes, the display ratio with the balances in use, and the
+    Navcam and Hazcam white balances that make the engineering cameras look like Mastcam-Z (color only; the
+    brightness is reported).
+  - A first look from the Three Forks North panoramas (Navcam sols 686/688, Z34 sol 690, 10 M terrain pixels, the
+    sun normalized): Z/N chromaticity R 1.064, B 0.835 against G, steady over azimuth and brightness. With the
+    balances in use, the displayed colors differ by R × 1.04 only. The frames were days apart; the tool's same-time
+    pairs decide.
+
 ## 0.99.12 — 2026-11-17 (branch `rpp`)
 
 - **The panoramas' own dataset, `ctate7163/rpp-rpv`** (Christian, 17 Nov 09:09: "upload the current ods to hugging face.

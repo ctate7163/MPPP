@@ -5,7 +5,7 @@ Christian, 16 Nov 2026: "v0p99 should upload rpv products to hugging face near t
 "Prepare ibr run to reprocess everything and upload to hugging face".
 
 The pictures go to a public dataset next to the mask models (``ctate7163/rpp-rpv``; ``RPP_HF_DATASET``), one
-commit per station; the viewer's page, ``vendor/`` and ``panos.json`` stay on GitHub Pages (``ctate7163/RPV``),
+commit per station; the viewer's page, ``vendor/`` and ``panos.json`` stay on GitHub Pages (``ctate7163/rpv``),
 whose ``panos.json`` points at the dataset with addresses pinned to the station's commit
 (``https://huggingface.co/datasets/<repo>/resolve/<commit>/<station>/viewer/<file>``), so a link never changes
 under a browser's cache.  Layout of the dataset:
@@ -116,7 +116,7 @@ def card(repo: str) -> str:
     from .. import __version__
     return f"""---
 license: {licence()}
-pretty_name: Rover Photogrammetry Viewer panoramas
+pretty_name: Mars rover panorama viewer (RPV) panoramas
 tags:
 - mars
 - perseverance
@@ -126,11 +126,11 @@ tags:
 - photogrammetry
 ---
 
-# Rover Photogrammetry Viewer (RPV) panoramas
+# Mars rover panorama viewer (RPV) panoramas
 
 Omnidirectional stereo (ODS) panoramas of Mars 2020 Perseverance rover stations, made with the Rover Photogrammetry
 Pipeline (RPP, https://github.com/ctate7163/RPP) by Christian Tate (Malin Space Science Systems) for research purposes.
-They are shown by the Rover Photogrammetry Viewer: {PAGE_ORIGIN}/RPV/
+They are shown by the Mars rover panorama viewer: {PAGE_ORIGIN}/rpv/
 
 **Image credit:** NASA/JPL-Caltech/MSSS (Navcam); NASA/JPL-Caltech/MSSS/ASU (Mastcam-Z).
 

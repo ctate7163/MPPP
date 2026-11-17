@@ -162,17 +162,7 @@
     "masked",
     "rover"
    ],
-   "ods_args": [
-    "--cameras",
-    "Z",
-    "--sols",
-    "690",
-    "692",
-    "--zcam-scale",
-    "0.5",
-    "--fill-cameras",
-    "NF"
-   ],
+   "ods_args": ["--cameras", "Z", "--sols", "690", "692", "--zcam-scale", "0.5", "--fill-cameras", "NF", "--no-gains"],
    "note": "0.98.2, experimental (Christian, 14 Nov 2026: 'prepare a ods with z34 frames projected onto the ncam model. threeforks north should be the first attempt'): the terrain from the station's Navcam frames in the Navcam + Mastcam-Z block, the panorama from the 34 mm frames of sol 690 (ZCAM08692, 109 pairs) at half size - 0.42 mrad a pixel, still finer than an 8192-wide panorama's 0.77 - with the Navcam and front Hazcam frames filling what Mastcam-Z did not see. Run only when named. 0.98.22 (Christian, 16 Nov 2026: \"for the z34 ods, somehow the z34 frames are not projecting on to the rover very well\"): ZCAM08692 and the sol 688 Navcam 360 are processed without the mask model here (the deck-fiducial work), so their rover was painted on the ground in the terrain-only panorama; frames whose mask leaves the rover in now take the rover model's silhouette (rpp.ibr.ods.model_rover_masks), and the station renders the rover variant too, where the Mastcam-Z frames color the rover model. 0.98.25 (Christian, 16 Nov 2026: \"the z34 without the rover still has a lot of hardware. you may need to rerun those images with the mask inference enabled\"): the silhouette missed the rover's edges, so the panorama runs the mask model on every frame the block made without it (colmap/masks_ibr, rpp.ibr.rover_masks); the block's own masks and alignment are unchanged. 0.98.30 (Christian, 16 Nov 2026: \"should include NRF_0693_0728460570_487RAD_N0321208NCAM08111_0A1095J01 for context\", \"include the ncam eod images and nearby images for context to fill in missing places if they are taken within 2 or 3 hr LMST of the zcam 360\" and \"should include the z34 rover deck pan from sol 692. Use ncam images to fill in any holes\"): the panorama from ZCAM08692 (sol 690) and the rover-deck pan ZCAM05086 (sol 692, 60 pairs); context (fill only, never the rover, and in the dense step): the Navcam sets within 20 m taken within 2.5 h of the 360's LMST (13.3 h) - the station's own Navcam and front Hazcam frames of sols 686 and 688 (32, LMST +1.4 to +2.5 h); NCAM00387 sol 413 S022D0634 (19 m, LMST +0.7 h); NCAM02413 sol 413 S022D0788 (14 m, LMST +2.2 h); NCAM03413 sol 413 S022D0788 (14 m, LMST +2.1 h); NCAM00387 sol 414 S022D0822 (19 m, LMST -0.8 h); NCAM00388 sol 433 S024D3076 (4 m, LMST +0.2 h); NCAM02433 sol 433 S024D3170 (18 m, LMST +1.9 h); NCAM03433 sol 433 S024D3170 (18 m, LMST +1.2 h); NCAM12681 sol 681 S032D1038 (20 m, LMST +2.1 h); NCAM08111 sol 684 S032D1062 (17 m, LMST +0.1 h); NCAM02684 sol 684 S032D1174 (0 m, LMST +2.1 h); NCAM03684 sol 684 S032D1174 (0 m, LMST +2.0 h); NCAM13684 sol 684 S032D1174 (0 m, LMST +2.2 h); NCAM08111 sol 693 S032D1208 (3 m, LMST -1.0 h)",
    "context": [
     "FLF_0686_0727849263_537RAD_N0321184FHAZ02218_0A1185J01.png",
@@ -355,7 +345,7 @@
   "Sol1635_S079D0732": {
    "site": "taylorfjellet_large",
    "station": "79_732",
-   "note": "Taylorfjellet, sol 1635: the ten Navcam pairs NCAM03635 x3 (full resolution), NCAM02635 x2, NCAM15635 x5, 35 minutes (Christian, 13 Nov 2026). The arm-workspace station of sols 1635-1640; the rover model has the arm stowed.",
+   "note": "Taylorfjellet, sol 1635: the ten Navcam pairs NCAM03635 x3 (full resolution), NCAM02635 x2, NCAM15635 x5, 35 minutes (Christian, 13 Nov 2026). The arm-workspace station of sols 1635-1640; the rover model has the arm stowed. 0.99.13 (Christian, 17 Nov 2026: \"for the taylorfjellet ods, add some context images taken at similar times of day. Add the mid drive pair from sol 1606 plus the north-west looking eod stereos from 1606, 1608, 1615 stations\"): context - the mid-drive pair NCAM00301 of sol 1606 (S078D4826, 13:01 LMST) and the end-of-drive pairs that look north-west, toward this station 9-11 m away: NCAM02606 (S079D0000, az 325, 13:45), NCAM03608 (S079D0102, az 359, 13:45), NCAM02608 (az 287, 14:06), NCAM03615 (S079D0198, az 321, 12:26), NCAM14615 (sol 1616, az 321, 11:10); this station's own frames are 12:07-12:42.  NCAM14608 (az 307) left out: sol 1609 at 09:31, the morning light.", "context": ["NLF_1606_0809514256_159RAD_N0784826NCAM00301_0A0295J01.png", "NLF_1606_0809516909_191RAD_N0790000NCAM02606_0A0195J01.png", "NLF_1608_0809694470_755RAD_N0790102NCAM03608_0A0195J02.png", "NLF_1608_0809695780_270RAD_N0790102NCAM02608_0A0195J03.png", "NLF_1615_0810311038_175RAD_N0790198NCAM03615_0A0195J01.png", "NLF_1616_0810395099_300RAD_N0790198NCAM14615_0A0195J01.png", "NRF_1606_0809514256_159RAD_N0784826NCAM00301_0A0295J01.png", "NRF_1606_0809516909_191RAD_N0790000NCAM02606_0A0195J01.png", "NRF_1608_0809694470_755RAD_N0790102NCAM03608_0A0195J02.png", "NRF_1608_0809695780_270RAD_N0790102NCAM02608_0A1195J03.png", "NRF_1615_0810311038_175RAD_N0790198NCAM03615_0A0195J01.png", "NRF_1616_0810395099_300RAD_N0790198NCAM14615_0A0195J01.png"],
    "frames": {
     "images": [
      "NLF_1635_0812085385_491RAD_N0790732NCAM03635_0A0095J01.png",

@@ -3,22 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>Rover Photogrammetry Viewer (RPV)</title>
+<title>Mars rover panorama viewer (RPV)</title>
 <script>
 // 0.98.29 (Christian, 16 Nov 2026: "change https://ctate7163.github.io/RPP/ods/ to https://ctate7163.github.io/RPV/"):
 // the viewer lives in its own repository, ctate7163/RPV.  This page, still in the pipeline's docs at /RPP/ods/ (and
 // /MPPP/ods/ before the repository was renamed), sends the visitor there with the station link and any ?index=.
-if (location.hostname === 'ctate7163.github.io' && /^\/(RPP|MPPP)\/ods(\/|$)/i.test(location.pathname))
-  location.replace('https://ctate7163.github.io/RPV/' + location.search + location.hash);
+// 0.99.13 (Christian, 17 Nov 2026: "let's make the website https://ctate7163.github.io/rpv have a lower case rpv instead of
+// RPV. Redirected https://ctate7163.github.io/RPV/ to https://ctate7163.github.io/rpv/"): the repository is ctate7163/rpv;
+// a copy of this page still served under /RPV/ sends the visitor on too.
+if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.test(location.pathname)
+                                                   || /^\/RPV(\/|$)/.test(location.pathname)))
+  location.replace('https://ctate7163.github.io/rpv/' + location.search + location.hash);
 </script>
 <!--
   RPP stereo 360 viewer (prototype, 0.97.3; 0.97.18: the eye shown on a screen can be chosen).  One static page: three.js (vendor/, r170, MIT) and panos.json.
   Images: <name>_360_3DTD.jpg from `rpp ods` - square, the left eye on top of the right, each an equirectangular
   panorama whose left edge looks north with azimuth growing eastward.
-  Hosted at https://ctate7163.github.io/RPV/ (the repository ctate7163/RPV; 0.98.29) - a copy of this file that
+  Hosted at https://ctate7163.github.io/rpv/ (the repository ctate7163/rpv; 0.98.29, lower case since 0.99.13) - a copy of this file that
   rpp single-sites --upload installs there; this file in the pipeline's docs/ods sends visitors there.
-  Link to one view:   https://ctate7163.github.io/RPV/#<station>/<variant>/<view>      e.g.  #Sol0052_S003D2046/rover/enhanced
-  Another image list: .../RPV/?index=https://<same origin or CORS-enabled host>/panos.json
+  Link to one view:   https://ctate7163.github.io/rpv/#<station>/<variant>/<view>      e.g.  #Sol0052_S003D2046/rover/enhanced
+  Another image list: .../rpv/?index=https://<same origin or CORS-enabled host>/panos.json
   Keys: left / right arrows = station, V = variant, E = view, I = info, L = the other eye (on a screen), drag = look, wheel = zoom;
   0.98.19: W A S D held = look up / left / down / right, Shift+N / E / S / W = face that way, N = north, O = the front of the
   rover, level (0.98.28: its +x; 45 degrees down before); also the N E S W O cross at the upper right of the screen.
@@ -52,6 +56,13 @@ if (location.hostname === 'ctate7163.github.io' && /^\/(RPP|MPPP)\/ods(\/|$)/i.t
              grid-template-columns: repeat(3, 40px); grid-template-rows: repeat(3, 40px); gap: 4px; }
   #compass button { background: #222c; color: #eee; border: 1px solid #555; border-radius: 6px; font: inherit; font-weight: 700; }
   #compass button:hover { background: #444; }
+  /* 0.99.13 (Christian, 17 Nov 2026: "left arrow and right arrow buttons on the lower right to take the scene to the previous
+     and next station. In between those two arrows, put a little rover icon to toggle the rover deck view on and off") */
+  #nav { position: fixed; right: 12px; bottom: 12px; z-index: 2; display: flex; gap: 6px; }
+  #nav button { width: 44px; height: 40px; background: #222c; color: #eee; border: 1px solid #555; border-radius: 6px;
+                display: inline-flex; align-items: center; justify-content: center; padding: 0; cursor: pointer; }
+  #nav button:hover { background: #444; }
+  #nav button#roverBtn.on { border-color: #f90; color: #fc6; }
   #msg { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 1;
          font-size: 16px; text-shadow: 0 0 6px #000; }
 </style>
@@ -60,7 +71,7 @@ if (location.hostname === 'ctate7163.github.io' && /^\/(RPP|MPPP)\/ods(\/|$)/i.t
 <body>
 <div id="bar">
   <button id="home" title="welcome view, facing west (H; headset: Y)" aria-label="home"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 9.5V20h5v-6h3v6h5V9.5"/></svg></button>
-  <span id="title">Rover Photogrammetry Viewer (RPV)</span>
+  <span id="title">Mars rover panorama viewer (RPV)</span>
   <select id="station" title="station"></select>
   <select id="variant" title="variant"></select>
   <select id="view" title="view"></select>
@@ -72,6 +83,11 @@ if (location.hostname === 'ctate7163.github.io' && /^\/(RPP|MPPP)\/ods(\/|$)/i.t
   <span></span><button id="faceN" title="look north (N)">N</button><span></span>
   <button id="faceW" title="look west (Shift+W)">W</button><button id="faceO" title="straight ahead of the rover: its +x, level (O)">O</button><button id="faceE" title="look east (Shift+E)">E</button>
   <span></span><button id="faceS" title="look south (Shift+S)">S</button><span></span>
+</div>
+<div id="nav">
+  <button id="prevSt" title="previous station (left arrow)" aria-label="previous station"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5 8 12l7 7"/></svg></button>
+  <button id="roverBtn" title="the rover on / off (terrain only, or with the rover)" aria-label="rover on or off"><svg width="34" height="26" viewBox="0 0 34 26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><!-- a Curiosity-class rover from the side: the deck, the RTG at the back, the mast and its camera head, the arm, six wheels on the rocker-bogie (three seen) --><rect x="9" y="11" width="15" height="4" rx="0.6"/><path d="M9 12.2 5.2 9.6M9 14 4.6 12.4M5.2 9.6 4.6 12.4"/><path d="M20.5 11V4.2"/><rect x="18.2" y="1.6" width="6.4" height="2.6" rx="0.6"/><path d="M24 12.6 28.6 10.4 30.2 13.6"/><path d="M7 21.5 11 15.6 15 18.2 17 21.5M15 18.2 13 21.5M27 21.5 22.6 15.6"/><circle cx="7" cy="21.5" r="2.3"/><circle cx="17" cy="21.5" r="2.3"/><circle cx="27" cy="21.5" r="2.3"/></svg></button>
+  <button id="nextSt" title="next station (right arrow)" aria-label="next station"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg></button>
 </div>
 <div id="msg">loading the list ...</div>
 <div id="note"></div>
@@ -367,7 +383,9 @@ const WELCOME_AZ_DEG = 270;                     // 0.98.19: the welcome view ope
 // 0.98.27 (Christian, 16 Nov 2026: 'the ods welcome page should read Rover Photogrammetry Viewer (RPV) followed by a line
 // about it being created by Christian Tate at MSSS for research purposes with the code available at the github link').
 // CODE_URL: the pipeline's repository (GitHub forwards the old name, MPPP).
-const VIEWER_NAME = 'Rover Photogrammetry Viewer (RPV)';
+// 0.99.13 (Christian, 17 Nov 2026: 'The title on the rpv website should be "Mars rover panorama viewer (RPV)" instead of
+// "MPPP stereo panoramas"'): the page's title, the tab's and the welcome view's
+const VIEWER_NAME = 'Mars rover panorama viewer (RPV)';
 const CREDIT = 'Created by Christian Tate at MSSS for research purposes';
 const CODE_URL = 'https://github.com/ctate7163/RPP';   // 0.98.29: the repository renamed MPPP -> RPP
 {                                                 // on a screen the welcome view also gets the credit with a link to click
@@ -556,6 +574,7 @@ async function show() {
   const names = views(p, cur.v);
   cur.w = Math.min(cur.w, Math.max(names.length - 1, 0));
   fill();
+  updateNav();
   const vr = variants(p)[cur.v], file = vr && vr.views[names[cur.w]];
   if (!file) { msg('no image for this choice'); return; }
   history.replaceState(null, '', `#${p.id}/${vr.key}/${viewLabel(names[cur.w])}`);
@@ -655,6 +674,39 @@ function terrainOnly() {
   show();
 }
 $('home').onclick = goHome;
+
+// 0.99.13: the rover button - terrain only <-> with the rover (the rover variant shown last at this visit, else the
+// 3D rover model, else the projected rover); the color view is kept where the other variant has it
+let lastRoverKey = null;
+const isRoverVariant = q => !!q && q.key !== 'masked';
+function roverToggle() {
+  const p = panos[cur.s] || {}, vs = variants(p);
+  if (!vs.length) return;
+  const now = vs[cur.v], wname = views(p, cur.v)[cur.w];
+  let j;
+  if (isRoverVariant(now)) {
+    lastRoverKey = now.key;
+    j = vs.findIndex(q => q.key === 'masked');
+  } else {
+    for (const k of [lastRoverKey, 'rover3d', 'rover']) { j = vs.findIndex(q => q.key === k); if (j >= 0) break; }
+    if (j < 0) j = vs.findIndex(isRoverVariant);
+  }
+  if (j < 0 || j === cur.v) return;
+  cur.v = j;
+  const names = views(p, j), k = names.indexOf(wname);
+  cur.w = k >= 0 ? k : Math.max(names.indexOf('standard'), 0);
+  show();
+}
+function updateNav() {
+  const p = panos[cur.s] || {}, vs = variants(p);
+  const b = $('roverBtn');
+  b.classList.toggle('on', isRoverVariant(vs[cur.v]));
+  b.disabled = !vs.some(isRoverVariant) || !vs.some(q => q.key === 'masked');
+  b.style.opacity = b.disabled ? 0.4 : 1;
+}
+$('prevSt').onclick = () => step('s', -1);
+$('nextSt').onclick = () => step('s', 1);
+$('roverBtn').onclick = roverToggle;
 
 function fromHash() {
   const [sid, vkey, wkey] = decodeURIComponent(location.hash.slice(1)).split('/');
@@ -847,7 +899,8 @@ diagnostics();
     if (traverse && traverse.dtm && traverse.dtm.file)           // 0.98.19: the blank panel D (DTM, traverse, 2 km bar)
       fetch(new URL(traverse.dtm.file, base).href).then(r => r.blob()).then(createImageBitmap)
         .then(b => { dtmImage = b; if (infoPanel.visible) drawInfo(); }).catch(e => console.warn('DTM map', e));
-    if (j.title) { $('title').textContent = j.title; document.title = j.title; }
+    // 0.99.13: a list's own title, except the old "MPPP / RPP stereo panoramas" of lists published before
+    if (j.title && !/stereo panoramas|photogrammetry viewer/i.test(j.title)) { $('title').textContent = j.title; document.title = j.title; }
   } catch (e) { msg(`no image list at ${index.href} (${e.message || e})`); return; }
   if (!panos.length) { msg('the image list is empty'); return; }
   fromHash();
