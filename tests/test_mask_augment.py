@@ -273,3 +273,13 @@ def test_mild_photometric_keeps_the_bright_deck_a_cue():
     assert c_mild < 0.02 and f_mild < 0.10, (c_mild, f_mild)
     assert c_strong > 3 * max(c_mild, 0.01) or f_strong > 2 * max(f_mild, 0.02), (c_strong, f_strong)
     assert A.PHOTOMETRIC_PRESETS["strong"] is A.PHOTOMETRIC_STRONG and A.AugmentConfig().photometric_prob == 0.5
+
+
+def test_msl_names_in_the_training_set():
+    """0.99.19 (Christian, 17 Nov 2026: "msl ncam images to the training set of masks"): Curiosity's product names give
+    their camera family and angular pixel size; Mars 2020 names are read as before."""
+    from rpp_studies.mask_training import augment as A
+    msl, m20 = "NLB_423776954RAD_F0060116NCAM00237M1", "NLF_0460_0707782756_433RAD_N0260470NCAM03460_0A0195J01"
+    assert A.family_of(msl) == "N" and A.is_msl(msl) and not A.is_msl(m20) and A.family_of("FLA_411871369RAD_F0051986FHAZ00320M1") == "F"
+    assert abs(A.native_mrad_per_px(msl, 1024) - 0.817) < 0.002 and abs(A.native_mrad_per_px(m20, 5120) - 0.3383) < 0.0005
+    assert A.lmst_hours_from_stem(msl) is None and A.family_of("not a product") == ""

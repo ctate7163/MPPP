@@ -74,7 +74,10 @@ def _parser() -> argparse.ArgumentParser:
     ap.add_argument("--workers", type=int, default=8, help="--regen processes (default 8; 1 if spawn gives trouble)")
     ap.add_argument("--epochs", type=int, default=10, help="10 = the rpp_mask_v3 recipe (TrainConfig default 6)")
     ap.add_argument("--quad-split-above", type=int, default=None, help="e.g. 4000: 5120 px frames as quadrants")
-    ap.add_argument("--init-from", default=None, help="start from a ConvNeXtSeg checkpoint (fine-tune)")
+    ap.add_argument("--init-from", default=None, help="start from a ConvNeXtSeg checkpoint (fine-tune); 0.99.19: a "
+                    "released model's name too (rpp_mask_v3: fetched into the cache when it is not there)")
+    ap.add_argument("--lr", type=float, default=None, help="0.99.19: the learning rate (default 5e-5; a fine-tune from "
+                    "a trained model: about 1e-5)")
     ap.add_argument("--tag", default="", help="checkpoint name suffix, e.g. v8")
     ap.add_argument("--zoom-max", type=float, default=2.0, help="0.95.2: large Navcam/Hazcam frames zoomed in by up "
                     "to this factor (a random crop, then downsampled; default 2; 1 = off)")
@@ -235,6 +238,12 @@ def _main(ap: argparse.ArgumentParser, a) -> int:
             if cm is None:
                 print("color matrix: no color_matrix.json in the data root - color transfer off (fit one from "
                       "co-registered Navcam / Mastcam-Z terrain: rpp_studies.mask_training.augment.ColorMatrix)")
+        if a.init_from and not Path(a.init_from).is_file():      # 0.99.19: a released model by its name
+            from rpp.mask import hub
+            if a.init_from in hub.load_registry()["models"]:
+                a.init_from = str(hub.model_path(a.init_from) if hub.model_path(a.init_from).is_file() else hub.fetch_model(a.init_from))
+            else:
+                ap.error(f"--init-from: no file and no released model named {a.init_from}")
         cfg = TrainConfig(epochs=a.epochs, quad_split_above=a.quad_split_above, init_from=a.init_from,
                           hflip=not a.no_hflip, zoom_max=a.zoom_max, zoom_prob=0.0 if a.zoom_pairs else a.zoom_prob,
                           tone_prob=a.tone_prob, zoom_pairs=bool(a.zoom_pairs), seed=a.seed,
@@ -246,6 +255,8 @@ def _main(ap: argparse.ArgumentParser, a) -> int:
                           angular_scale=a.angular_scale, angular_range=tuple(a.angular_range), defocus=a.defocus,
                           copy_paste=a.copy_paste, color_matrix=cm, family_batches=a.family_batches,
                           train_families=a.train_families, test_list=a.test_list)
+        if a.lr:
+            cfg.lr = float(a.lr)
         if a.angular_scale:
             cfg.zoom_prob = 0.0                             # the angular scale replaces the pixel zooms
             cfg.zoom_pairs = False

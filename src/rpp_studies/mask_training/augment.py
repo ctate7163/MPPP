@@ -50,6 +50,8 @@ SOL_SECONDS = 88775.244147                  # one Mars sol in SI seconds (the SC
 SCLK_SOL0_MIDNIGHT = 666893526.0
 _STEM_RE = re.compile(r"^([A-Z])([A-Z0-9])([A-Z0-9])_(\d{4})_(\d{10})_(\d{3})")
 _ZOOM_RE = re.compile(r"ZCAM\d{5}_(\d{3})")
+# 0.99.19: MSL (Curiosity) engineering-camera names in the training set - NLB_423776954RAD_F0060116NCAM00237M1
+_MSL_STEM_RE = re.compile(r"^([NFR])[LR][AB]_\d{9}[A-Z0-9]{3}_")
 
 
 def lmst_hours_from_stem(stem: str) -> Optional[float]:
@@ -82,6 +84,8 @@ def lmst_weights(stems: Sequence[str], early_h: float = 9.0, late_h: float = 16.
 # 1000 / f mrad at the frame's native width, scaled by (native width / frame width) for downsampled products
 NATIVE_FOCAL_PX: Dict[str, Tuple[float, int]] = {
     "N": (2956.0, 5120),                    # Navcam NL / NR, 5120 x 3840 full frame
+    "MSL_N": (1224.0, 1024),                # 0.99.19: Curiosity's Navcam (0.82 mrad a pixel) and Hazcams (fisheye, the
+    "MSL_F": (474.0, 1024), "MSL_R": (474.0, 1024),   # center value: 124 degrees over 1024 px)
     "F": (2142.0, 5120), "R": (2142.0, 5120),   # front / rear Hazcams (fisheye: the center value)
     "Z34": (4720.0, 1648), "Z48": (6700.0, 1648), "Z63": (8615.0, 1648), "Z79": (10763.0, 1648),
     "Z100": (14758.0, 1648), "Z110": (14758.0, 1648),
@@ -90,8 +94,14 @@ NATIVE_FOCAL_PX: Dict[str, Tuple[float, int]] = {
 
 def family_of(stem: str) -> str:
     """``"N"``, ``"F"``, ``"R"``, ``"Z"`` ... (the first letter of a Mars 2020 product name) or ``""``."""
-    m = _STEM_RE.match(Path(str(stem)).name.upper())
+    name = Path(str(stem)).name.upper()
+    m = _STEM_RE.match(name) or _MSL_STEM_RE.match(name)
     return m.group(1) if m else ""
+
+
+def is_msl(stem: str) -> bool:
+    name = Path(str(stem)).name.upper()
+    return bool(_MSL_STEM_RE.match(name)) and not _STEM_RE.match(name)
 
 
 def native_mrad_per_px(stem: str, width: int) -> Optional[float]:
@@ -104,6 +114,8 @@ def native_mrad_per_px(stem: str, width: int) -> Optional[float]:
         if not m:
             return None
         key = f"Z{int(m.group(1))}"
+    if is_msl(stem):
+        key = "MSL_" + fam
     if key not in NATIVE_FOCAL_PX:
         return None
     f, nat_w = NATIVE_FOCAL_PX[key]

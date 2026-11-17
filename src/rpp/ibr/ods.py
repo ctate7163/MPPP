@@ -764,6 +764,41 @@ FAR_PIN_FROM_DEG = -0.5          # the sky sphere's radius up to this elevation 
 FAR_PIN_DEG = 2.5                # ... and the field's own value from this much above it
 
 
+FAR_RIM_PIN_DEG = 0.75           # 0.99.20: from the mesh rim's range to the field's own over this much elevation
+FAR_RIM_GROUND = (0.6, 0.9)      # the rim is the mesh's outer edge (ground going on) from this share of the mesh radius;
+#                                  nearer, it is a skyline (a rock in front of the sky) and the depth steps there
+
+
+def far_rim_blend(inv: np.ndarray, el_deg: np.ndarray, far: np.ndarray, t: np.ndarray, mesh_radius_m: float) -> Tuple[np.ndarray, Dict[str, Any]]:
+    """The far field joined to the mesh's rim (0.99.20: no flat plane beyond the mesh).  ``inv`` (rows, columns): the
+    field's 1 / radius; ``el_deg`` the rows' elevations (falling); ``far`` where the rays miss the mesh; ``t`` the
+    range of the rays that hit it.  Per column the rim is the lowest far row; where the mesh under it ends near
+    ``mesh_radius_m`` (the ground goes on: ``FAR_RIM_GROUND``) the field starts at the rim's range and takes its own
+    value ``FAR_RIM_PIN_DEG`` above it - no step in depth where the measured ground ends.  Where the mesh under the
+    rim is near (a skyline), the field keeps its own value: the depth steps there, as it does in the scene."""
+    import cv2
+    h, w = far.shape
+    rows = np.arange(h)[:, None]
+    low = np.where(far, rows, -1).max(axis=0)                     # the lowest far row per column (-1: none)
+    has = (low >= 0) & (low < h - 1)
+    below = np.clip(low + 1, 0, h - 1)
+    t_rim = t[below, np.arange(w)]
+    ok = has & np.isfinite(t_rim) & (t_rim > 0)
+    el_rim = np.where(low >= 0, np.asarray(el_deg, float)[np.clip(low, 0, h - 1)], float(el_deg[-1]))
+    ground = _smoothstep((np.where(ok, t_rim, 0.0) / float(mesh_radius_m) - FAR_RIM_GROUND[0]) / (FAR_RIM_GROUND[1] - FAR_RIM_GROUND[0]))
+    inv_rim = np.where(ok, 1.0 / np.maximum(t_rim, 1e-3), 0.0)
+    k = max(3, int(round(2.0 / 360.0 * w)) | 1)                   # smoothed around the panorama (2 degrees)
+    sm = lambda x: cv2.blur(np.concatenate([x[-k:], x, x[:k]]).astype(np.float32)[None], (k, 1))[0, k:-k]   # noqa: E731
+    wgt = sm(ground)
+    inv_rim = sm(inv_rim * ground) / np.maximum(wgt, 1e-6)
+    el_rim = sm(el_rim)
+    pin = _smoothstep((np.asarray(el_deg, float)[:, None] - el_rim[None, :]) / FAR_RIM_PIN_DEG)
+    out = inv + (1.0 - pin) * wgt[None, :] * (inv_rim[None, :] - inv)
+    return out.astype(np.float32), {"rim_ground_share": float((wgt > 0.5).mean()),
+                                    "rim_elevation_deg": [float(np.percentile(el_rim, q)) for q in (5, 50, 95)],
+                                    "rim_range_m_median": float(np.median(t_rim[ok])) if ok.any() else None}
+
+
 def estimate_far_field(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[float], width: int,
                        up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0), rows_per_chunk: int = 128,
                        radii: Optional[Sequence[Optional[float]]] = None) -> Optional[Dict[str, Any]]:
@@ -786,6 +821,7 @@ def estimate_far_field(scene: Scene, sources: Sequence[SourceImage], pivot: Sequ
     cost = np.zeros((len(radii), h, w), np.float32)
     val = np.zeros((len(radii), h, w), np.float32)
     far = np.zeros((h, w), bool)
+    t_hit = np.full((h, w), np.nan, np.float32)                  # 0.99.20: the range of the rays that hit the mesh
     keep_r, keep_f = scene.sky_radius_m, getattr(scene, "far_field", None)
     try:
         scene.far_field = None
@@ -794,9 +830,11 @@ def estimate_far_field(scene: Scene, sources: Sequence[SourceImage], pivot: Sequ
             for r0 in range(r_top, r_bot, rows_per_chunk):
                 r1 = min(r_bot, r0 + rows_per_chunk)
                 o, d = ods_rays(w, hf, (r0, r1), pivot, 0.0, "centre", up, north, east)
-                sub = np.flatnonzero(scene.cast(o, d)["label"] == LABEL_FAR)
+                hit = scene.cast(o, d)
+                sub = np.flatnonzero(hit["label"] == LABEL_FAR)
                 if i == 0:
                     far[r0 - r_top:r1 - r_top].reshape(-1)[sub] = True
+                    t_hit[r0 - r_top:r1 - r_top] = np.where(hit["label"] == LABEL_FAR, np.nan, hit["t"]).reshape(r1 - r0, w)
                 if not len(sub):
                     continue
                 c = candidates(scene, sources, o[sub], d[sub], surface_check=False)
@@ -849,8 +887,12 @@ def estimate_far_field(scene: Scene, sources: Sequence[SourceImage], pivot: Sequ
     inv = conf * est + (1.0 - conf) * (cw * spread + (1.0 - cw) * prior)
     inv = gauss(inv, max(0.5, FAR_SMOOTH_DEG / 360.0 * w))
     el = 90.0 - (np.arange(r_top, r_bot) + 0.5) / hf * 180.0
-    pin = _smoothstep((el - FAR_PIN_FROM_DEG) / FAR_PIN_DEG)[:, None]
-    inv = (prior + pin * (inv - prior)).astype(np.float32)
+    rim_rep = None
+    if not scene.plane.get("mesh_rim"):                              # a scene with the flat plane beyond the mesh
+        pin = _smoothstep((el - FAR_PIN_FROM_DEG) / FAR_PIN_DEG)[:, None]
+        inv = (prior + pin * (inv - prior)).astype(np.float32)
+    else:                                                            # 0.99.20: the far field starts at the mesh's rim
+        inv, rim_rep = far_rim_blend(inv, el, far, t_hit, float(scene.plane["radius_m"]))
     scene.far_field = {"inv": inv, "el_top_deg": 90.0 - r_top / hf * 180.0, "el_bottom_deg": 90.0 - r_bot / hf * 180.0,
                        "east": np.asarray(east, float), "north": np.asarray(north, float), "up": np.asarray(up, float),
                        "confidence": conf.astype(np.float32), "estimate": est.astype(np.float32)}
@@ -864,7 +906,7 @@ def estimate_far_field(scene: Scene, sources: Sequence[SourceImage], pivot: Sequ
            "share_nearest": {name(R): float(((best == i) & dec).sum() / max(1, dec.sum())) for i, R in enumerate(radii)},
            "median_radius_m_where_decided": (float(1.0 / max(np.median(inv[dec]), 1e-6)) if dec.any() else None),
            "mean_cost": {name(R): float(agg[i][dec].mean()) if dec.any() else None for i, R in enumerate(radii)},
-           "seconds": round(time.time() - t0, 1),
+           "seconds": round(time.time() - t0, 1), "mesh_rim": rim_rep,
            "rule": "per far direction the radius whose frames agree best in their detail band (soft minimum over the "
                    "radii; the sky sphere's radius where they do not tell: one frame, or no texture); one smooth field "
                    "of 1 / radius, the sky sphere's at the ground plane's rim"}

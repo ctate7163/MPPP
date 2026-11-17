@@ -45,6 +45,8 @@ def block_terrain(st: Dict[str, Any], cfg: Dict[str, Any]):
     ``terrain_sets`` (Christian, 16 Nov 2026: the Rockytop panoramas "rendered from one large 3d model that includes
     all the medium res eod images and the lowres mid drive imaging frames")."""
     t = st.get("terrain", cfg.get("terrain"))
+    if t in ("own", "station"):                                 # 0.99.20: the block terrain is the config's default
+        return None
     if not t or not str(t).startswith("block"):
         return None
     name = str(t).split(":", 1)[1].strip() if ":" in str(t) else ""

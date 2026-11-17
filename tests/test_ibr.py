@@ -2667,19 +2667,21 @@ def test_context_frames_are_masked_fill_only_and_stay_off_the_rover(tmp_path):
     dense = run["commands"][0]["argv"]
     ods = [c_["argv"] for c_ in run["commands"] if c_["step"] == "ods"]
     cx = cfg["stations"]["Sol1454_S071D0056"]["context"]
-    assert len(cx) == 8 and all(n in dense for n in cx) and len(cfg["stations"]["Sol1454_S071D0056"]["frames"]["images"]) == 16
+    assert len(cx) == 8 and "--whole-block" in dense and len(cfg["stations"]["Sol1454_S071D0056"]["frames"]["images"]) == 16   # 0.99.20: the block's terrain (the context frames are in it)
     for a in ods:                                                             # both variants
         i = a.index("--context-images")
         assert a[i + 1:i + 9] == cx
     s87 = cfg["stations"]["Sol1792_S087D0000"]
     assert len(s87["frames"]["images"]) == 18 and len(s87["context"]) == 2 and all("N0860700" in n for n in s87["context"])
+    cfg1 = json.loads(json.dumps(cfg)); cfg1["stations"]["Sol1454_S071D0056"]["terrain"] = "own"   # 0.99.20: the station's own
+    dense = SS.plan(cfg1, root, labels=["Sol1454_S071D0056"])[0]["commands"][0]["argv"]            # frames when asked for
     i = dense.index("--add-images")                                           # 0.97.19: the dense step's own option
     assert dense[i + 1:i + 9] == cx and dense.index("--images") < i
     rt = SS.plan(cfg, root, labels=["Sol0461_S026D0630"])[0]                  # a station chosen by --scale has them too
     d2 = rt["commands"][0]["argv"]
     assert "--scale" in d2 and "--images" not in d2 and len(cfg["stations"]["Sol0461_S026D0630"]["context"]) == 69   # 0.98.19: by distance and local time
     assert "--whole-block" in d2 and "--add-images" not in d2          # 0.98.14: Rockytop's terrain is the whole block's (they are in it)
-    cfg2 = json.loads(json.dumps(cfg)); cfg2["stations"]["Sol0461_S026D0630"].pop("terrain")
+    cfg2 = json.loads(json.dumps(cfg)); cfg2["stations"]["Sol0461_S026D0630"]["terrain"] = "own"
     d2 = SS.plan(cfg2, root, labels=["Sol0461_S026D0630"])[0]["commands"][0]["argv"]
     assert d2[d2.index("--add-images") + 1:d2.index("--add-images") + 1 + len(cfg["stations"]["Sol0461_S026D0630"]["context"])] == cfg["stations"]["Sol0461_S026D0630"]["context"]
     assert cfg["stations"]["Sol0052_S003D2046"]["context"][:2] == ["NLF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png",
@@ -3028,8 +3030,14 @@ def test_block_terrain_station_plan():
             assert p.parts[-3:] == ("colmap", SS.block_workspace("rockytop"), "fused.ply") and "--keep-under-rover" in c["argv"]
         if c["step"] == "ods":
             assert "--context-images" in c["argv"] and "--points" not in c["argv"]
+    # 0.99.20 (Christian, 17 Nov 2026: "The 3d model should come from the whole block of eod and mid drive images" -
+    # "Whole-block terrain to 75 m"): the block terrain is the default of every station; "terrain": "own" asks for the
+    # station's own frames
+    assert cfg["terrain"] == "block"
     other = SS.plan(cfg, "R", labels=["Sol0052_S003D2046"])[0]["commands"]
-    assert not any("--whole-block" in c["argv"] or "--points" in c["argv"] for c in other)
+    assert any("--whole-block" in c["argv"] for c in other) and any("--points" in c["argv"] for c in other)
+    own = SS.plan(dict(cfg, stations={"X": dict(cfg["stations"]["Sol0052_S003D2046"], terrain="own")}), "R", labels=["X"])[0]["commands"]
+    assert not any("--whole-block" in c["argv"] or "--points" in c["argv"] for c in own)
     # a plain "block" is every Navcam frame of the block, as in 0.98.14
     cfg2 = dict(cfg, stations={"X": dict(cfg["stations"]["Sol0474_S026D0850"], terrain="block")})
     d2 = next(c["argv"] for c in SS.plan(cfg2, "R", labels=["X"])[0]["commands"] if c["step"] == "dense")
@@ -3353,3 +3361,101 @@ def test_viewer_keeps_north_across_stations_and_its_name_in_the_bar():
     assert "<title>Rover Photogrammetry Viewer (RPV)</title>" in page
     assert '<span id="title">Rover Photogrammetry Viewer (RPV)</span>' in page
     assert "!/stereo panoramas|panorama viewer|photogrammetry viewer/i.test(j.title)" in page
+
+
+def test_support_rule_keeps_a_tall_rock_and_drops_a_floater():
+    """0.99.20 (Christian, 17 Nov 2026: "the rockytop 3d model did not capture the tall rocks to the north very well and the
+    sky had many floating artifacts behind it" - "Replace the height rule with a connectivity rule"): a rock 6 m tall
+    standing on the ground 20 m away stays whole (the height rule cut it at the cameras' height less 1 m); a cluster
+    hanging 4 m up with nothing under it goes, as does one low over the far ground but apart from it."""
+    from rpp.ibr import mesh as M
+    rng = np.random.default_rng(3)
+    pivot, up = np.array([0.0, 0.0, 1.9]), (0, 0, 1)
+    g = rng.uniform(-60, 60, (60000, 2))
+    ground = np.c_[g, rng.normal(0, 0.02, len(g))]
+    rock = np.c_[rng.uniform(-1.5, 1.5, 6000), 20 + rng.uniform(-1.5, 1.5, 6000), rng.uniform(0, 6, 6000)]     # a pillar
+    floater = np.c_[rng.normal(15, 0.4, 500), rng.normal(-25, 0.4, 500), rng.normal(4.0, 0.3, 500)]
+    low = np.c_[rng.normal(-40, 0.3, 300), rng.normal(30, 0.3, 300), rng.normal(2.6, 0.1, 300)]              # 2.6 m up, apart
+    X = np.vstack([ground, rock, floater, low])
+    plane = M.fit_ground_plane(ground, pivot, up, radius_m=200.0)
+    lg = M.local_ground(X, pivot, up, plane)
+    grid = M.support_grid(X, pivot, up, plane, lg, 75.0)
+    bad = M.unsupported(X, pivot, up, plane, grid)
+    n0, n1, n2 = len(ground), len(ground) + len(rock), len(ground) + len(rock) + len(floater)
+    assert bad[:n0].mean() < 0.001 and not bad[n0:n1].any()                 # the ground and the whole rock
+    assert bad[n1:n2].all() and bad[n2:].all()                               # both floaters
+    old = M.floating(X, pivot, up, plane, ground=lg, supported=False)
+    assert old[n0:n1].mean() > 0.5 and grid["ground_components"] == 1        # the height rule took most of the rock
+    near = np.array([[0.5, 0.5, 2.5], [0.5, 0.5, 0.0]])                      # above the cameras beside the mast: never
+    assert M.unsupported(near, pivot, up, plane, grid).tolist() == [True, False]
+
+
+def test_sky_mask_follows_the_skyline_and_spares_smooth_ground(tmp_path):
+    """0.99.20 ("Keep sky out of the dense cloud"): a bright smooth sky above a textured skyline is masked up to the
+    skyline; a smooth dark sand slope below the horizon and a frame that looks at the ground are not; black padding
+    (an undistorted full-view frame) is never sky; the fusion masks are the rover masks without the sky."""
+    import cv2
+    from rpp.sfm import dense as D
+    rng = np.random.default_rng(1)
+    h, w = 480, 640
+    yy, xx = np.mgrid[0:h, 0:w]
+    sky_line = 170 + 25 * np.sin(xx / 60.0)                                  # the skyline's row per column
+    img = np.where(yy < sky_line, 235.0, 110.0 + 40 * rng.random((h, w)))    # sky; textured terrain
+    img[(yy > 300) & (xx < 250)] = 120.0                                     # a smooth sand patch low in the frame
+    img = cv2.GaussianBlur(img.astype(np.float32), (0, 0), 0.7)
+    img[:, :12] = 0
+    img[:8] = 0                                                              # padding
+    img = np.clip(img, 0, 255).astype(np.uint8)
+    el = (240 - yy) * 0.1                                                    # 0.1 deg a pixel, the horizon in the middle
+    sky = D.sky_mask(img, elevation_deg=cv2.resize(el.astype(np.float32), (640, 480)))
+    truth = (yy < sky_line - 4) & (img > 0)
+    assert sky[truth].mean() > 0.95 and sky[(yy > sky_line + 6)].mean() < 0.005 and not sky[img == 0].any()
+    assert not sky[(yy > 310) & (xx > 20) & (xx < 240)].any()                # the sand patch
+    down = D.sky_mask(img, elevation_deg=np.full((480, 640), -30.0))         # the same picture, looking down: no sky
+    assert not down.any()
+    assert D.pixel_elevation_deg((4, 6), (100.0, 100.0, 3.0, 2.0), np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])).shape == (4, 6)
+    e = D.pixel_elevation_deg((4, 6), (100.0, 100.0, 3.0, 2.0), np.array([[1.0, 0, 0], [0, 0, -1.0], [0, 1.0, 0]]))
+    assert e[0, 3] > e[3, 3]                                                 # image rows run downward: the top looks higher
+
+
+def test_fill_is_smooth_fine_and_ends_at_the_mesh():
+    """0.99.20 ("remove the flat extension out to 75 m" - "smoother hole filling on a finer grid"): the fill's grid is
+    1 degree by 3 % rings; a hole in sloping ground is closed on the slope (not on a flat step); nothing is built past
+    the mesh radius; the plane the rays use ends there too, so the far field starts at the rim."""
+    from rpp.ibr import mesh as M, ods as O
+    assert M.FILL_AZ_STEP_DEG == 1.0 and M.FILL_RING_RATIO == 1.03 and M.FLAT_EXTENSION is False
+    n = 220
+    xs = np.linspace(-30, 30, n)
+    gx, gy = np.meshgrid(xs, xs)
+    gz = 0.05 * gx + 0.02 * gy                                                # a tilted ground
+    V = np.c_[gx.ravel(), gy.ravel(), gz.ravel()]
+    idx = np.arange(n * n).reshape(n, n)
+    F = np.vstack([np.c_[idx[:-1, :-1].ravel(), idx[:-1, 1:].ravel(), idx[1:, 1:].ravel()],
+                   np.c_[idx[:-1, :-1].ravel(), idx[1:, 1:].ravel(), idx[1:, :-1].ravel()]])
+    cen = V[F].mean(axis=1)
+    F = F[~((np.abs(cen[:, 0] - 12) < 3) & (np.abs(cen[:, 1] - 5) < 3))]      # a 6 m hole
+    pivot = np.array([0.0, 0.0, 1.9])
+    plane = {"normal": [0.0, 0.0, 1.0], "offset": 0.0, "centre": [0.0, 0.0, 0.0], "up": [0, 0, 1], "radius_m": 200.0}
+    V2, F2, rep = M.fill_terrain(V, F, pivot, (0, 0, 1), plane, 25.0, underlay=True)
+    new = V2[len(V):]
+    assert rep["grid"]["az_step_deg"] == 1.0 and rep["underlay"]["apron_to_m"] == 25.0
+    assert np.hypot(new[:, 0], new[:, 1]).max() <= 25.0 + 1e-6               # no apron past the mesh
+    inh = (np.abs(new[:, 0] - 12) < 2) & (np.abs(new[:, 1] - 5) < 2)
+    want = 0.05 * new[inh, 0] + 0.02 * new[inh, 1]
+    assert inh.sum() > 20 and np.abs(new[inh, 2] - want).max() < 0.30        # on the slope (two sheets: 0.05 and 0.2 m below)
+    # the far field's start: at the mesh's outer edge its range is the edge's, 0.75 deg above it its own; at a skyline
+    # (the mesh under the rim is near) the depth steps
+    el = np.linspace(10.0, -6.0, 161)                                        # 0.1 deg rows
+    w = 360
+    far = np.zeros((161, w), bool)
+    t = np.full((161, w), np.nan, np.float32)
+    for c in range(w):
+        rim_el = -1.5 if c < 180 else 3.0                                    # columns 0-179: flat ground to 75 m; then a rock
+        far[el > rim_el, c] = True
+        t[el <= rim_el, c] = 74.0 if c < 180 else 12.0
+    inv0 = np.full((161, w), 1.0 / 300.0, np.float32)
+    inv, rep2 = O.far_rim_blend(inv0, el, far, t, 75.0)
+    r_edge = int(np.flatnonzero(el > -1.5)[-1])                              # the lowest far row of the flat half
+    assert abs(1.0 / inv[r_edge, 90] - 74.0) < 3.0 and abs(1.0 / inv[int(np.argmin(np.abs(el + 0.5))), 90] - 300.0) < 5.0
+    r_rock = int(np.flatnonzero(el > 3.0)[-1])
+    assert abs(1.0 / inv[r_rock, 270] - 300.0) < 1.0 and 0.4 < rep2["rim_ground_share"] < 0.6   # the skyline: a step
