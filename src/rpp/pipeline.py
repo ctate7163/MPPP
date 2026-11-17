@@ -1208,7 +1208,8 @@ def reconstruct_project(proj, settings: Settings) -> Tuple[Any, Dict[str, Any]]:
                                 if any(x.get("boresight_elevation_deg") is not None for x in v) else "")
             for sq, v in sorted(by_seq.items(), key=lambda kv: -len(kv[1]))))
     summary = export_for_error(proj, rec, level="light" if light else "full")
-    log.info("export: %s", json.dumps({k: summary[k] for k in ("tracks", "residual_rms_native_px", "registered_images",
+    log.info("export: %s", json.dumps({k: summary.get(k) for k in ("tracks", "residual_rms_fullres_px", "residual_rms_native_px",
+                                                                "registered_images",
                                                                 "project_images", "prior_offset_median_m",
                                                                 "station_components")}, default=str))
     if rs.get("navcam_stage") and not light:
@@ -1216,7 +1217,7 @@ def reconstruct_project(proj, settings: Settings) -> Tuple[Any, Dict[str, Any]]:
         rec_nav = pycolmap.Reconstruction(str(proj.root / rs["navcam_stage"]["path"]))
         nav = export_for_error(proj, rec_nav, out_dir=proj.root / "error_input_navcam")
         log.info("Navcam-only stage exported to error_input_navcam/: %s",
-                 {k: nav[k] for k in ("tracks", "residual_rms_native_px", "registered_images")})
+                 {k: nav.get(k) for k in ("tracks", "residual_rms_fullres_px", "residual_rms_native_px", "registered_images")})
     conv = convergence_statistics(rec, proj)
     proj.settings["reconstruction"]["convergence"] = conv
     proj.save()
@@ -1300,6 +1301,7 @@ def finish(proj, report: Dict[str, Any], summary: Dict[str, Any], settings: Sett
             "source": settings.source, "finished": _now(), "verdict": report.get("verdict"),
             "images": len(proj.images), "registered_images": summary.get("registered_images"),
             "residual_rms_native_px": summary.get("residual_rms_native_px"),
+            "residual_rms_fullres_px": summary.get("residual_rms_fullres_px"),
             "camera_models": {"fingerprint": models_fingerprint(), "form_ok": (form or {}).get("ok", True),
                               "dir": str(settings.navcam_cameras or (proj.settings.get("navcam_cameras") or {}).get("dir"))},
             "zcam_new_low_backlash": len((proj.settings.get("zcam_backlash") or {}).get("new_regular_groups") or [])}

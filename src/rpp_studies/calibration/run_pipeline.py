@@ -389,15 +389,19 @@ class Pipeline:
             e = self.state.get(s) or {}
             lines.append(f"| {s} | {e.get('status', '-')} | {e.get('note', '')} | {e.get('started', '')} | {e.get('ended', '')} |")
         lines += ["", "## Camera models in use", ""] + [f"    {ln}" for ln in describe()]
-        lines += ["", "## Blocks", "", "| block | rpp | verdict | registered | rms px | camera models |",
+        lines += ["", "## Blocks", "",
+                  "Residual rms in full-resolution pixels (5120 x 3840 for the Navcams and Hazcams); blocks made "
+                  "before 0.99.8 give their native-pixel rms, marked n.", "",
+                  "| block | rpp | verdict | registered | rms px | camera models |",
                   "|---|---|---|---|---|---|"]
         for w in sorted(p for p in self.root.glob("mars2020_sol_*") if p.is_dir()):
             rd = w / "colmap" / "run_done.json"
             if rd.is_file():
                 d = json.loads(rd.read_text(encoding="utf-8"))
                 lines.append(f"| {w.name} | {d.get('mppp')} | {d.get('verdict')} | {d.get('registered_images')}/{d.get('images')} | "
-                             f"{(d.get('residual_rms_native_px') or float('nan')):.3f} | "
-                             f"{(d.get('camera_models') or {}).get('fingerprint', '-')} |")
+                             + (f"{d['residual_rms_fullres_px']:.3f} | " if d.get("residual_rms_fullres_px") is not None
+                                else f"{(d.get('residual_rms_native_px') or float('nan')):.3f} n | ")
+                             + f"{(d.get('camera_models') or {}).get('fingerprint', '-')} |")
         ca = self.root / "camera_analysis"
         today = f"{datetime.date.today():%Y%m%d}"
         for pat, title in (("navcal_tied_*", "Navcam joint"), ("hazcam_fit_ecam_*", "Hazcam fit (ecam blocks)"),

@@ -3,6 +3,32 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.8 — 2026-11-16 (branch `rpp`)
+
+Christian (16 Nov, evening): "look at the camera models holistically ... Take the obvious improvements that have
+proven and implement them" and "report all ecam projection errors in high-res pixels". The review is
+`claude/camera-review-2026-11-16-freeze3-held-terms-pointing-hazcam-anchoring.md` in the project.
+
+- **Residuals in full-resolution pixels.**
+  - `native_residuals` returns `residual_fullres_px` too: the keypoints' and the models' frame, 5120 x 3840 for the
+    Navcams and Hazcams. The native residual is that times the product's downsample scale.
+  - Every block's `summary.json` and `run_done.json` gain `residual_rms_fullres_px` and `residual_median_fullres_px`.
+  - The freeze log ("... px full-res") and the run report's block table show them. Blocks made before this version
+    show their native rms, marked "n".
+  - The health table's reprojection line adds the full-resolution median and rms (its gates stay in native pixels).
+  - Native pixels mixed 1x, 2x and 4x products: most Navcam block frames are 2x, and about a third of the Hazcam
+    frames are 4x.
+- **Hazcam rig drift only where the blocks show it** (`hazfit.RIG_RATE_MIN_Z` = 3, as for the early-mission
+  offsets).
+  - A rate with |z| < 3 is held at 0, and that angle sits at its blocks' mean. The fitted rates, their errors and the
+    held ones are in the rig file's `drift` and in the report.
+  - The 3 Nov fit carried rates of |z| <= 1.8 (front pitch -4.3 +- 2.3, yaw +3.8 +- 5.4; rear yaw -12.7 +- 5.7,
+    pitch +10.8 +- 18.2 mdeg/1000 sol). They moved the rigs by up to 25 mdeg by sol 2000: 0.95 px of rear Hazcam
+    convergence.
+- **Deck-joint package (outside git):** the knee step's scale tests also run `ALL_fxfy_haz` (front Hazcam fx, fy
+  free per station camera). It tests the Hazcam law's +1,100 to +1,400 ppm aspect against the deck-anchored Navcam.
+  The report prints the per-station fx, fy and aspect of each fx/fy-free joint.
+
 ## 0.99.7 — 2026-11-16 (branch `rpp`)
 
 - **Deck stations at extreme temperatures in the freeze's knee step** (Christian, 16 Nov: "for the next rover deck

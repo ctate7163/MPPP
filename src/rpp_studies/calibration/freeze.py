@@ -277,7 +277,8 @@ class Run:
                     except (KeyError, TypeError, ValueError):
                         took = ""
                     extra = (f": {r.get('verdict')}, {r.get('registered_images')} of {r.get('images')} images, "
-                             f"{float(r.get('residual_rms_native_px') or 0):.2f} px") if r else \
+                             + (f"{float(r['residual_rms_fullres_px']):.2f} px full-res" if r.get("residual_rms_fullres_px") is not None
+                                else f"{float(r.get('residual_rms_native_px') or 0):.2f} px native")) if r else \
                             (f": {str(d.get('last_error'))[:120]}" if d.get("last_error") else "")
                     self.log(f"{step}: {site} {state}{took}{extra}")
             last = self.__dict__.get("_blocks_line", 0.0)

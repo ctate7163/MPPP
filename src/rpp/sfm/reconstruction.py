@@ -1461,7 +1461,11 @@ def register_stations(rec, project: SfmProject, min_inliers: int = 40, max_error
 
 
 def native_residuals(rec, project: SfmProject) -> Dict[str, np.ndarray]:
-    """Per observation: residual in native pixels, image id, point id, 2-D index (vectorized per image)."""
+    """Per observation: residual in native pixels, image id, point id, 2-D index (vectorized per image).
+    0.99.8 (Christian, 16 Nov: "report all ecam projection errors in high-res pixels"): ``residual_fullres_px`` too,
+    in the pixels of the full detector frame (5120 x 3840 for a Navcam or Hazcam: the keypoints' and the models'
+    frame), whatever the product's downsampling; ``residual_native_px`` is that times the image's downsample
+    scale (a medium-resolution Navcam frame: half)."""
     scale = _scales(rec, project)
     iid_l, pid_l, idx_l = [], [], []
     for pid, pt in rec.points3D.items():
@@ -1469,8 +1473,10 @@ def native_residuals(rec, project: SfmProject) -> Dict[str, np.ndarray]:
             iid_l.append(el.image_id); pid_l.append(pid); idx_l.append(el.point2D_idx)
     iid_a, pid_a, idx_a = np.array(iid_l, np.int64), np.array(pid_l, np.int64), np.array(idx_l, np.int64)
     res = np.full(len(iid_a), np.inf)
+    full = np.full(len(iid_a), np.inf)
     if len(iid_a) == 0:
-        return {"residual_native_px": res, "image_id": iid_a, "point3D_id": pid_a, "point2D_idx": idx_a}
+        return {"residual_native_px": res, "residual_fullres_px": full, "image_id": iid_a, "point3D_id": pid_a,
+                "point2D_idx": idx_a}
     xyz = {pid: rec.points3D[pid].xyz for pid in np.unique(pid_a)}
     order = np.argsort(iid_a, kind="stable")
     bounds = np.flatnonzero(np.diff(iid_a[order])) + 1
@@ -1486,10 +1492,12 @@ def native_residuals(rec, project: SfmProject) -> Dict[str, np.ndarray]:
         uv = np.full((len(sel), 2), np.nan)
         if front.any():
             uv[front] = cam.img_from_cam(X[front])
-        r = np.linalg.norm(uv - kp, axis=1) * scale[iid]
-        r[~np.isfinite(r)] = np.inf
-        res[sel] = r
-    return {"residual_native_px": res, "image_id": iid_a, "point3D_id": pid_a, "point2D_idx": idx_a}
+        rf = np.linalg.norm(uv - kp, axis=1)
+        rf[~np.isfinite(rf)] = np.inf
+        full[sel] = rf
+        res[sel] = rf * scale[iid]
+    return {"residual_native_px": res, "residual_fullres_px": full, "image_id": iid_a, "point3D_id": pid_a,
+            "point2D_idx": idx_a}
 
 
 def filter_observations(rec, project: SfmProject, max_residual_native_px: float = 2.0) -> int:

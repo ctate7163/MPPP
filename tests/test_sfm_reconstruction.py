@@ -138,8 +138,13 @@ def test_weighted_ba_recovers_intrinsics_and_poses(tmp_path):
     proj, truth, P, cams_d, rigT, noise, rng = _synthetic(tmp_path)
     rec, true_params = _build_rec(proj, truth, P, cams_d, rigT, noise, rng)
     out = bundle_adjust(rec, proj, sigma_px=noise, loss_scale=10.0, refine_rig="rotation", max_iterations=200)
-    res = native_residuals(rec, proj)["residual_native_px"]
+    nr = native_residuals(rec, proj)
+    res = nr["residual_native_px"]
     assert np.sqrt(np.mean(res ** 2)) < 1.6 * noise * np.sqrt(2) and out["observations"] > 5000
+    # 0.99.8: the full-resolution residual is the native one over the image's downsample scale
+    sc = {r["name"]: float(r["downsample_scale"]) for r in proj.images}
+    s_obs = np.array([sc[rec.images[int(i)].name] for i in nr["image_id"]])
+    assert np.allclose(nr["residual_fullres_px"] * s_obs, res)
     for cid in (1, 2):
         p, t = np.asarray(rec.cameras[cid].params), true_params[cid]
         assert abs(p[0] - t[0]) < 1.0 and abs(p[2] - t[2]) < 1.0 and abs(p[4] - t[4]) < 1e-3

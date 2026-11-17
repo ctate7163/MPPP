@@ -654,9 +654,11 @@ def assess_alignment(project: SfmProject, rec, thresholds: Optional[Dict[str, tu
     res = native_residuals(rec, project)
     r = res["residual_native_px"]
     ok = np.isfinite(r)
+    rfull = np.asarray(res.get("residual_fullres_px", r), float)[ok]     # 0.99.8: full-resolution pixels as well
     r, iid_o, idx_o = r[ok], res["image_id"][ok], res["point2D_idx"][ok]
-    check("reprojection", "residual_median_px", _q(r, 50), f"RMS {np.sqrt(np.mean(r ** 2)):.3f}" if r.size else "",
-          "native px")
+    check("reprojection", "residual_median_px", _q(r, 50),
+          (f"RMS {np.sqrt(np.mean(r ** 2)):.3f}; full-res median {np.median(rfull):.3f}, RMS {np.sqrt(np.mean(rfull ** 2)):.3f}"
+           if r.size else ""), "native px")
     check("reprojection", "residual_p95_px", _q(r, 95), f"max {r.max():.2f}" if r.size else "", "native px")
     groups: Dict[str, List[float]] = {}
     eye_med: Dict[str, float] = {}

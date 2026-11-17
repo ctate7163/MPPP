@@ -592,9 +592,13 @@ def export_for_error(project: SfmProject, rec, out_dir: Optional[PathLike] = Non
             by_station.setdefault(r["station"], []).append(r["dC_m"])
     rn = np.asarray(res["residual_native_px"], float)
     fin = rn[np.isfinite(rn)]              # 0.93.3: a point behind a camera or outside a lens model's domain is not
-    summary = {"native_model": native, "tracks": track_statistics(rec, project),     # an RMS of Infinity
+    rf = np.asarray(res.get("residual_fullres_px", rn), float)                      # an RMS of Infinity
+    ffin = rf[np.isfinite(rf)]             # 0.99.8: in full-resolution pixels (5120 x 3840 for the ecams)
+    summary = {"native_model": native, "tracks": track_statistics(rec, project),
                "residual_rms_native_px": float(np.sqrt(np.mean(fin ** 2))) if fin.size else None,
                "residual_median_native_px": float(np.median(fin)) if fin.size else None,
+               "residual_rms_fullres_px": float(np.sqrt(np.mean(ffin ** 2))) if ffin.size else None,
+               "residual_median_fullres_px": float(np.median(ffin)) if ffin.size else None,
                "residual_nonfinite": int(rn.size - fin.size),
                "registered_images": len(rows), "project_images": len(project.images),
                "prior_offset_median_m": float(np.median(dC)) if dC.size else None,

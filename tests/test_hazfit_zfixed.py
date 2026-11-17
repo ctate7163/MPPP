@@ -115,6 +115,30 @@ def test_hazcam_fit_rig_drift_and_median():
     assert few["drift"] is None and "no drift" in few["note"]
 
 
+def test_hazcam_rig_rates_without_support_are_held_at_zero():
+    """0.99.8: a rig drift rate is applied only from |z| >= 3; the angle of a held rate sits at its blocks' mean (the
+    3 Nov fit carried rates of z -1.8 ... +0.7, up to 25 mdeg by sol 2000)."""
+    from scipy.spatial.transform import Rotation
+    from rpp_studies.calibration import hazfit
+    rng = np.random.default_rng(4)
+    R0 = Rotation.from_euler("xyz", [0.5, -1.0, 0.2], degrees=True)
+    rows = []
+    for i, sol in enumerate(np.linspace(60, 2000, 20)):
+        v = np.array([10.0 * sol / 1000 + rng.normal(0, 1.0), 5.0 + rng.normal(0, 14.0), rng.normal(0, 2.7)])   # mdeg
+        off = Rotation.from_rotvec(np.radians(1e-3 * v))
+        rows.append({"block": f"b{i}", "R": (off * R0).as_matrix().tolist(), "R_start": R0.as_matrix().tolist(),
+                     "t": [-0.249, 0.0, 0.0], "sol": float(sol), "refined": True})
+    r = hazfit.fit_rig(rows, "F")
+    d = r["drift"]
+    assert d["pitch_mdeg_per_sol"] == pytest.approx(0.010, abs=0.002) and "pitch" not in d["held_at_zero"]
+    assert d["yaw_mdeg_per_sol"] == 0.0 and d["roll_mdeg_per_sol"] == 0.0 and set(d["held_at_zero"]) == {"yaw", "roll"}
+    assert abs(d["fitted_mdeg_per_1000sol"]["yaw"]) < 3 * d["se_mdeg_per_1000sol"]["yaw"]
+    yaw_mean = np.mean([(Rotation.from_matrix(np.asarray(x["R"])) * R0.inv()).as_rotvec()[1] for x in rows]) * 180e3 / np.pi
+    yaw0 = (Rotation.from_matrix(np.asarray(r["R"])) * R0.inv()).as_rotvec()[1] * 180e3 / np.pi
+    assert yaw0 == pytest.approx(yaw_mean, abs=0.05)
+    assert any("held at 0 (|z| < 3): yaw, roll" in ln for ln in hazfit.describe({"eyes": {}, "rigs": {"F": r}}))
+
+
 def test_hazcam_write_check_and_camera_at(tmp_path):
     from rpp import calib
     from rpp_studies.calibration import hazfit

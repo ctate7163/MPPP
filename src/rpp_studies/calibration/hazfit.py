@@ -37,6 +37,7 @@ MIN_BLOCKS = 3                     # blocks per eye for a law (refined, not held
 MIN_T_SPAN_DEGC = 5.0              # temperature span for a slope (else 0)
 MIN_EARLY_BLOCKS = 2               # blocks on each side of the early-mission sol for an offset (else 0)
 MIN_RIG_BLOCKS = 3                 # blocks with a refined rig for a drift (else the median rotation, no drift)
+RIG_RATE_MIN_Z = 3.0               # 0.99.8: a rig drift rate is applied only from |z| >= 3 (else 0, the angle its blocks' mean)
 HAZCAM_LIMITS = {"max_ppm_per_degC": 100.0, "max_f0_change_pct": 1.0, "max_aspect_dev": 0.02,
                  "max_scatter_ppm": 600.0, "max_rig_change_deg": 0.5, "min_blocks": MIN_BLOCKS,
                  # 0.94.4 (24 Oct): an eye over many blocks passes on how well its law is known - the block scatter
@@ -253,12 +254,31 @@ def fit_rig(rows: List[Dict[str, Any]], fam: str) -> Dict[str, Any]:
     sols = np.array([r["sol"] for r in refined], float)
     X = np.c_[np.ones(len(sols)), sols]
     coef = np.linalg.lstsq(X, off, rcond=None)[0]            # (2, 3): intercept, rate per sol (mdeg)
+    # 0.99.8 (Christian, 16 Nov: "take the obvious improvements"): a rate is applied only where the blocks show it
+    # (|z| >= RIG_RATE_MIN_Z, as for the early-mission offsets); otherwise 0, the angle at its blocks' mean.  The
+    # 3 Nov fit had none (front pitch -4.3 +- 2.3, yaw +3.8 +- 5.4, roll 0.0 +- 1.0; rear yaw -12.7 +- 5.7
+    # mdeg/1000 sol), yet carried them: up to 25 mdeg (0.95 full-resolution px) by sol 2000.
+    r0 = off - X @ coef
+    dof = max(1, len(sols) - 2)
+    var_rate = np.linalg.inv(X.T @ X)[1, 1]
+    rates_fitted = coef[1].copy()
+    se_rate = np.sqrt(np.maximum(var_rate * (r0 ** 2).sum(0) / dof, 0.0))
+    z_rate = np.array([(c / e) if e > 0 else (np.inf if abs(c) > 1e-12 else 0.0) for c, e in zip(rates_fitted, se_rate)])
+    held = [k for k in range(3) if not abs(z_rate[k]) >= RIG_RATE_MIN_Z]
+    for k in held:
+        coef[1, k] = 0.0
+        coef[0, k] = float(off[:, k].mean())
     res = off - X @ coef
     R_sol0 = Rotation.from_rotvec(np.radians(1e-3 * coef[0])) * R0
+    names = ("pitch", "yaw", "roll")
     out.update({"R": R_sol0.as_matrix().tolist(), "change_from_cahv_mdeg": float(np.linalg.norm(coef[0])),
                 "drift": {"model": "linear", "sol0": 0.0, "pitch_mdeg_per_sol": float(coef[1, 0]),
                           "yaw_mdeg_per_sol": float(coef[1, 1]), "roll_mdeg_per_sol": float(coef[1, 2]),
-                          "blocks": len(refined)},
+                          "blocks": len(refined),
+                          "fitted_mdeg_per_1000sol": {n: float(1e3 * rates_fitted[k]) for k, n in enumerate(names)},
+                          "se_mdeg_per_1000sol": {n: float(1e3 * se_rate[k]) for k, n in enumerate(names)},
+                          "held_at_zero": [names[k] for k in held],
+                          "rule": f"a rate is applied from |z| >= {RIG_RATE_MIN_Z:g} (else 0)"},
                 "scatter_mdeg": [float(x) for x in np.sqrt(np.mean(res ** 2, axis=0))],
                 # 0.94.5 (the rig trends figure): each block's rotation relative to the fitted rig at sol 0 (mdeg)
                 "per_block": [dict(block=r["block"], sol=float(r["sol"]), pitch_mdeg=float(v[0]), yaw_mdeg=float(v[1]),
@@ -512,7 +532,10 @@ def describe(res: Dict[str, Any]) -> List[str]:
             d = r["drift"]
             out.append(f"{fam} rig: baseline {r['baseline_m']:.4f} m; drift pitch {1e3 * d['pitch_mdeg_per_sol']:+.2f}, yaw "
                        f"{1e3 * d['yaw_mdeg_per_sol']:+.2f}, roll {1e3 * d['roll_mdeg_per_sol']:+.2f} mdeg/1000 sol over "
-                       f"{d['blocks']} blocks; scatter {', '.join(f'{x:.1f}' for x in r['scatter_mdeg'])} mdeg")
+                       f"{d['blocks']} blocks; scatter {', '.join(f'{x:.1f}' for x in r['scatter_mdeg'])} mdeg"
+                       + (f"; fitted {', '.join(f'{n} {v:+.2f} +- {d['se_mdeg_per_1000sol'][n]:.2f}' for n, v in d['fitted_mdeg_per_1000sol'].items())}"
+                          f" mdeg/1000 sol, held at 0 (|z| < {RIG_RATE_MIN_Z:g}): {', '.join(d['held_at_zero']) or 'none'}"
+                          if d.get("fitted_mdeg_per_1000sol") else ""))
         else:
             out.append(f"{fam} rig: baseline {r['baseline_m']:.4f} m; {r.get('note')}")
     return out
