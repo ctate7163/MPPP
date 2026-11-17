@@ -3,6 +3,23 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.10 — 2026-11-17 (branch `rpp`)
+
+- **The viewer's panoramas out of the repository.** `docs/ods/panos.json` and `docs/ods/panos/orientation_test_360_3DTD.jpg`
+  are removed, as the PC's main removed them in the viewer's last publish commits ("panoramas live in ctate7163/RPV").
+  `rename_mppp_to_rpp.bat` then merges rpp into main without a conflict. `docs/ods` keeps the page and `vendor/`,
+  which the tests read. `docs/station-products.md` names the viewer's checkout (`D:\code\RPV`) as the place to publish.
+- Outside the repository (the deck-joint packages in `Claude outputs`, which the freeze's `knee` step runs), from
+  Christian's requests of 16 Nov ("add the rear Hazcams the same way trace to the fiducal in the same way as the fhaz.
+  add Mastcam-Z frames and its deck pans to the deck joint, as a second, finer link. Use three forks north with the sol
+  692 deck pan to test z34 pointing and baseline from the fiducials and vfs"):
+  - every deck joint has one body-fixed rear Hazcam mount and rig (`joint_ba.py --rhaz-shared`), and the stations get
+    their rear Hazcam pairs (`rhaz_frames.py` for the stations made before);
+  - the Mastcam-Z deck pans become joint stations (`Z<ST>`), and `joint_ba.py --zlink` puts their Z frames on the mast
+    chain with a Z mount and a ZL -> ZR rig per zoom;
+  - `--hold` tests one deck pan on the solved joint (`run_eod_late.bat --only ztest`: Three Forks north, sol 692);
+  - `ALL_cxrig` tests whether the law's stereo cx(T) is a rig yaw.
+
 ## 0.99.9 — 2026-11-16 (branch `rpp`)
 
 Christian (16 Nov, evening), for the next mask run: "Remove the dilation morphology. Use connected component to

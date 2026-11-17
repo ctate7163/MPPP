@@ -221,8 +221,10 @@ the device can show (maximum texture size, compressed-texture formats).
 
 - On the documentation site: [https://ctate7163.github.io/RPV/](https://ctate7163.github.io/RPV/){target="_blank" rel="noopener"}
   (opens in a new tab from these pages; GitHub's own rendering of the README does not allow that).
-- To add stations: `rpp single-sites Sol0052_S003D2046 --publish docs/ods --publish-only` copies the stereo JPEGs (the standard view; reduced
-  to 8192) into `docs/ods/panos/` and lists them in `docs/ods/panos.json`; commit and push `docs/ods`.
+- To add stations: `rpp single-sites Sol0052_S003D2046 --publish D:\code\RPV --upload --publish-only` puts the stereo JPEGs
+  (reduced to 8192) on Hugging Face (`--host hf`, the default) and lists them in the viewer checkout's `panos.json`, then
+  commits and pushes that checkout (`--host github`: the pictures into its `panos/`, as before 0.99.3). Since 0.99.10 the
+  repository's own `docs/ods` holds the page and `vendor/` only: the panoramas and their list live in `ctate7163/RPV`.
 - Another image list: `.../ods/?index=URL` (same origin, or a host that allows cross-origin requests).
 
 Status: a prototype. It has been checked in a desktop browser with a labeled test pair; the stereo in a headset,
