@@ -48,11 +48,14 @@ Steps
      COLMAP rig: one right-from-left pose per side, solved with the cameras, principal points held.  These are the
      block's cameras;
   3. *check* - on a copy, the principal points freed too: how far they move and what that gains.
+  4. *temperature* (0.99.17) - cameras and rigs in 10 degC bins: fx, fy per camera bin, a right-from-left pose per
+     rig bin; lines through the bins give the focal length (ppm/degC) and the rig rotation (mdeg/degC) about -20 degC.
   The model is then scaled so that the Navcam rigs' baselines are the labels' (``--scale labels`` keeps the label
   positions' scale): the baseline is hardware, the label station separations of a small block are not good to 5 %.
   ``report.txt``: frames registered per camera, each stage's reprojection error, each camera's parameters against
   its start, its residuals by radius, each rig against the labels' pair, the scale, the label-center residuals per
   site, and the Navcam verdict (:func:`verdict`).  ``cmods_candidate\\MSL_*.json`` are the model files.
+* **significance** (0.99.17) - are p1, p2, k3 needed?  See :func:`significance`.
 * **finish** - the stages again from the mapper's model (``sparse\\0``), without matching.
 * **promote** - the Navcam model files into the camera models in use (``RPP_CMODS``), as the Mars 2020 models go
   (:func:`rpp.calib.models.promote`: checked, copied, a line in ``CHANGES.md``), when the verdict is ok
@@ -100,6 +103,11 @@ HELD_ZERO = {"FULL_OPENCV": (9, 10, 11), "THIN_PRISM_FISHEYE": (10, 11)}       #
 PRINCIPAL_POINT = (2, 3)
 ALPHA_MASKED = 128                     # the mask in the image's alpha channel, as the Mars 2020 blocks (0.5)
 MODEL_FORM = "msl-brown-v1"
+# 0.99.17 (Christian, 17 Nov 2026: "the msl navcams do have a strong temperature dependence. So model the focal length
+# and rig rotation as a function of temperature"): the thermal stage's bins and the laws' reference temperature
+T_BIN_DEGC = 10.0
+T0_DEGC = -20.0
+MIN_BIN_FRAMES = 8
 RADIAL_BINS = ((0.0, 0.3), (0.3, 0.6), (0.6, 0.8), (0.8, 1.01))
 PRESETS: Dict[str, Dict[str, Any]] = {
     "yellowknife": {"sols": (124, 302), "side": "AB", "families": "NF", "sites": None, "block": "yellowknife_bay",
@@ -550,20 +558,24 @@ def prepare(work: Path, data: Path, preset: Dict[str, Any], camera: str = "openc
 
 # ------------------------------------------------------------------------------------------------- align
 def refine_cameras(rec, man: Dict[str, Any], rounds: int = 2, max_error_px: float = 4.0, hold_pp: bool = False,
-                   rigs: bool = False) -> List[Dict[str, Any]]:
+                   rigs: bool = False, only: Optional[Sequence[int]] = None,
+                   extra_const: Optional[Dict[int, Sequence[int]]] = None, skip_images: Sequence[int] = ()) -> List[Dict[str, Any]]:
     """Bundle adjustment with every camera's focal lengths and distortion free and the terms of ``HELD_ZERO`` held (a
     subset manifold on the camera block); ``hold_pp``: the principal points held too (0.99.16).  ``rigs``: the stereo
     rigs' sensor-from-rig poses free (one per rig, :func:`add_rigs`).  Two frames' poses are held for the gauge.
-    Between rounds the observations above ``max_error_px`` are dropped."""
+    Between rounds the observations above ``max_error_px`` are dropped.  0.99.17: ``only`` - the parameter indices left
+    free in every camera (the thermal stage: fx, fy); ``extra_const`` {camera id: indices} held besides (the
+    significance study); ``skip_images`` are left out of the problem (its jackknife)."""
     import pycolmap
     import pyceres
     out = []
+    skip = set(int(i) for i in skip_images)
     for k in range(int(rounds)):
         opts = pycolmap.BundleAdjustmentOptions()
         opts.refine_focal_length = opts.refine_principal_point = opts.refine_extra_params = True
         opts.refine_sensor_from_rig = bool(rigs)
         cfg = pycolmap.BundleAdjustmentConfig()
-        ids = sorted(rec.reg_image_ids())
+        ids = [i for i in sorted(rec.reg_image_ids()) if i not in skip]
         for i in ids:
             cfg.add_image(i)
         far = max(ids[1:], key=lambda j: np.linalg.norm(rec.image(j).projection_center() - rec.image(ids[0]).projection_center()))
@@ -574,14 +586,19 @@ def refine_cameras(rec, man: Dict[str, Any], rounds: int = 2, max_error_px: floa
         for cid in list(rec.cameras):
             cam = rec.camera(cid)                      # the camera in the reconstruction (its params are the block)
             const = list(HELD_ZERO.get(cam.model_name, ())) + (list(PRINCIPAL_POINT) if hold_pp else [])
+            const += list((extra_const or {}).get(int(cid), ()))
             pa = cam.params
+            if only is not None:
+                const = [i for i in range(len(pa)) if i not in set(only)]
+            const = sorted(set(const))
             if const and ba.problem.has_parameter_block(pa):
-                m = pyceres.SubsetManifold(len(pa), sorted(const))
+                m = pyceres.SubsetManifold(len(pa), const)
                 ba.problem.set_manifold(pa, m)
                 held.append((pa, m))               # the problem does not own the manifold: kept alive to the solve
         summ = ba.solve()
         del held
-        n_drop = 0
+        rec.update_point_3d_errors()                           # 0.99.17: the stored errors are the mapper's until refreshed -
+        n_drop = 0                                             # compute_mean_reprojection_error() reads them
         if k < rounds - 1:
             n_drop = int(pycolmap.ObservationManager(rec).filter_all_points3D(float(max_error_px), 1.5))
         out.append({"round": k + 1, "reprojection_px": float(rec.compute_mean_reprojection_error()), "dropped": n_drop,
@@ -744,6 +761,188 @@ def scale_to_baseline(rec, rigs: Dict[str, Dict[str, Any]], family: str = "N") -
     return {"factor": k, "family": family, "ratio_before_by_rig": by}
 
 
+# ------------------------------------------------------------------------------------------------- temperature (0.99.17)
+def temperature_bins(man: Dict[str, Any], names: Sequence[str], width: float = T_BIN_DEGC,
+                     min_frames: int = MIN_BIN_FRAMES) -> Tuple[Dict[str, int], Dict[str, float]]:
+    """({image: bin}, {image: temperature}) for the registered images ``names``.  A pair takes one temperature (the mean
+    of its two CCDs) so that both eyes fall into one bin; the bin is floor(T / width); within a family and side, a bin
+    with fewer than ``min_frames`` frames joins the nearest one that has them."""
+    names = set(names)
+    by_pair: Dict[str, List[Dict[str, Any]]] = {}
+    for r in man["images"]:
+        if r["image"] in names and r.get("ccd_degC") is not None:
+            by_pair.setdefault(r["pair_key"], []).append(r)
+    T: Dict[str, float] = {}
+    side: Dict[str, str] = {}
+    for v in by_pair.values():
+        t = float(np.mean([r["ccd_degC"] for r in v]))
+        for r in v:
+            T[r["image"]] = t
+            side[r["image"]] = r["family"] + r["side"]
+    bins = {n: int(np.floor(t / width)) for n, t in T.items()}
+    for sd in set(side.values()):
+        mine = [n for n in bins if side[n] == sd]
+        count: Dict[int, int] = {}
+        for n in mine:
+            count[bins[n]] = count.get(bins[n], 0) + 1
+        good = sorted(b for b, c in count.items() if c >= min_frames) or sorted(count)[:1]
+        for n in mine:
+            if bins[n] not in good:
+                bins[n] = min(good, key=lambda b: (abs(b - bins[n]), b))
+    return bins, T
+
+
+def _line(x: np.ndarray, y: np.ndarray, w: np.ndarray) -> Dict[str, Any]:
+    """Weighted line y = a + b x: {"a", "b", "sd_b", "rms", "n"} (sd from the scatter about the line; None under 3 points)."""
+    x, y, w = np.asarray(x, float), np.asarray(y, float), np.asarray(w, float)
+    if len(x) < 2 or np.ptp(x) < 1e-9:
+        return {"a": float(np.average(y, weights=w)) if len(x) else None, "b": None, "sd_b": None, "rms": None, "n": int(len(x))}
+    A = np.c_[np.ones(len(x)), x] * np.sqrt(w)[:, None]
+    c, *_ = np.linalg.lstsq(A, y * np.sqrt(w), rcond=None)
+    r = y - (c[0] + c[1] * x)
+    out = {"a": float(c[0]), "b": float(c[1]), "sd_b": None, "rms": float(np.sqrt(np.average(r ** 2, weights=w))), "n": int(len(x))}
+    if len(x) >= 3:
+        s2 = float(np.sum(w * r ** 2) / (len(x) - 2))
+        out["sd_b"] = float(np.sqrt(s2 * np.linalg.inv(A.T @ A)[1, 1]))
+    return out
+
+
+def thermal_stage(rec, man: Dict[str, Any], rounds: int = 1, out_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """Focal length and rig rotation against temperature, from the rig model ``rec`` (not changed; the binned model is
+    written to ``out_dir``).
+
+    Every camera is split into temperature bins (:func:`temperature_bins`): a bin's camera keeps the block's
+    distortion and principal point and solves its own fx, fy; each side's rig is split the same way, a bin's rig
+    solving its own right-from-left pose.  (COLMAP has no parameter that depends on temperature; a camera and a rig
+    per bin is how the Mars 2020 thermal stage does it.)  Lines through the bins, weighted by their frames, give
+    * per camera: f(T) = f0 (1 + ppm 1e-6 (T - T0)), from the mean of fx and fy;
+    * per rig: pitch, yaw, roll (mdeg) of the bin's rotation from the block's, a + rate (T - T0).
+    Returns {"reprojection_px", "T0_degC", "bin_degC", "cameras": {group: {"f_ppm_per_degC", "sd", "f0_scale", "bins"}},
+    "rigs": {"NA": {"rate_mdeg_per_degC", "sd", "offset_mdeg", "rms_mdeg", "bins"}}}."""
+    import copy
+    import tempfile
+    import pycolmap
+    groups = _camera_groups(rec, man)
+    base = {g: np.array(rec.cameras[cid].params, float) for cid, g in groups.items()}
+    base_R = {}
+    for rig in rec.rigs.values():
+        nr = list(rig.non_ref_sensors)
+        if nr:
+            g = groups.get(int(rig.ref_sensor_id.id), "")
+            base_R[g[0] + g[2]] = rig.sensor_from_rig(nr[0]).rotation.matrix()
+    names = {im.image_id: im.name for im in rec.images.values()}
+    bins, T = temperature_bins(man, list(names.values()))
+    # a new reconstruction with a camera per (camera, bin): the images' cameras cannot be changed in place (their frames
+    # and rigs name the old ones), so cameras, images (with their observations) and points (with their ids and tracks)
+    # are copied over with trivial rigs, and the rigs are then configured per bin
+    src = rec
+    rec = pycolmap.Reconstruction()
+    new_cam: Dict[Tuple[str, int], int] = {}
+    cam_of: Dict[int, int] = {}
+    nxt = 1
+    for iid, name in sorted(names.items()):
+        g = groups[int(src.image(iid).camera_id)]
+        key = (g, bins.get(name, 0))
+        if key not in new_cam:
+            c = copy.deepcopy(src.cameras[src.image(iid).camera_id])
+            c.camera_id = nxt
+            rec.add_camera_with_trivial_rig(c)
+            new_cam[key] = nxt
+            nxt += 1
+        cam_of[iid] = new_cam[key]
+    for pid, pt in src.points3D.items():                       # the tracks follow once the images are in
+        q = copy.deepcopy(pt)
+        q.track = pycolmap.Track()
+        rec.add_point3D_with_id(pid, q)
+    for iid, name in sorted(names.items()):
+        old = src.image(iid)
+        g, b = groups[int(old.camera_id)], bins.get(name, 0)
+        im = pycolmap.Image(image_id=iid, camera_id=cam_of[iid],          # the pair's two names differ by the eye alone:
+                            name=f"{g}@{b:+04d}_" + (name[len(g) + 1:] if name.startswith(g + "_") else name))   # the prefix replaces it
+        im.points2D = old.points2D
+        rec.add_image_with_trivial_frame(im, old.cam_from_world())
+    for pid, pt in src.points3D.items():
+        rec.point3D(pid).track = copy.deepcopy(pt.track)
+    sides = sorted({(g[0], g[2], b) for g, b in new_cam if (g[0] + "L" + g[2], b) in new_cam and (g[0] + "R" + g[2], b) in new_cam})
+    cfg = [pycolmap.RigConfig(cameras=[pycolmap.RigConfigCamera(ref_sensor=True, image_prefix=f"{f}L{sd}@{b:+04d}_"),
+                                        pycolmap.RigConfigCamera(ref_sensor=False, image_prefix=f"{f}R{sd}@{b:+04d}_")])
+           for f, sd, b in sides]
+    db = pycolmap.Database.open(str(Path(tempfile.mkdtemp(prefix="rpp_msl_thermal_")) / "thermal.db"))
+    try:
+        for c in rec.cameras.values():
+            db.write_camera(c, use_camera_id=True)
+        for r in rec.rigs.values():
+            db.write_rig(r, use_rig_id=True)
+        for iid, im in rec.images.items():
+            db.write_image(pycolmap.Image(name=im.name, camera_id=im.camera_id, image_id=iid), use_image_id=True)
+        for fid, fr in rec.frames.items():
+            nf = pycolmap.Frame(frame_id=fid, rig_id=fr.rig_id)
+            for d in fr.data_ids:
+                nf.add_data_id(d)
+            db.write_frame(nf, use_frame_id=True)
+        if cfg:
+            pycolmap.apply_rig_config(cfg, db, rec)
+    finally:
+        db.close()
+    for iid, name in names.items():
+        rec.image(iid).name = name
+    runs = refine_cameras(rec, man, rounds=rounds, rigs=True, only=(0, 1))
+    if out_dir is not None:
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        rec.write(str(out_dir))
+    Tm: Dict[Tuple[str, int], List[float]] = {}
+    grp = {r["image"]: r["group"] for r in man["images"]}
+    for iid, name in names.items():
+        if name in bins:
+            Tm.setdefault((grp[name], bins[name]), []).append(T[name])
+    out: Dict[str, Any] = {"reprojection_px": float(rec.compute_mean_reprojection_error()), "rounds": runs,
+                           "T0_degC": T0_DEGC, "bin_degC": T_BIN_DEGC, "cameras": {}, "rigs": {}}
+    for g in sorted({k[0] for k in new_cam}):
+        rows = []
+        for (gg, b), cid in sorted(new_cam.items()):
+            if gg != g:
+                continue
+            pp = np.array(rec.cameras[cid].params, float)
+            rows.append({"bin": b, "T_degC": round(float(np.mean(Tm[(g, b)])), 2), "frames": len(Tm[(g, b)]),
+                         "fx": float(pp[0]), "fy": float(pp[1]),
+                         "f_ppm": float(1e6 * (0.5 * (pp[0] / base[g][0] + pp[1] / base[g][1]) - 1.0))})
+        ln = _line([r["T_degC"] - T0_DEGC for r in rows], [r["f_ppm"] for r in rows], [r["frames"] for r in rows])
+        out["cameras"][g] = {"f_ppm_per_degC": ln["b"], "sd": ln["sd_b"], "f0_ppm": ln["a"], "rms_ppm": ln["rms"], "bins": rows,
+                             "T_range_degC": [min(r["T_degC"] for r in rows), max(r["T_degC"] for r in rows)]}
+    cam_bin = {cid: k for k, cid in new_cam.items()}
+    for rid, rig in rec.rigs.items():
+        nr = list(rig.non_ref_sensors)
+        k = cam_bin.get(int(rig.ref_sensor_id.id))
+        if not nr or k is None:
+            continue
+        g, b = k
+        sd = g[0] + g[2]
+        Tr = rig.sensor_from_rig(nr[0])
+        n_pairs = sum(1 for f in rec.frames.values() if f.rig_id == rid and f.has_pose() and f.num_data_ids() == 2)
+        ang = _angles_mdeg(Tr.rotation.matrix() @ base_R[sd].T) if sd in base_R else [float("nan")] * 3
+        out["rigs"].setdefault(sd, {"bins": []})["bins"].append(
+            {"bin": b, "T_degC": round(float(np.mean(Tm[(g, b)])), 2), "pairs": n_pairs, "pitch_yaw_roll_mdeg": [round(x, 2) for x in ang],
+             "baseline_m": float(np.linalg.norm(Tr.translation))})
+    for sd, v in out["rigs"].items():
+        rows = sorted((r for r in v["bins"] if r["pairs"] >= 2), key=lambda r: r["bin"])
+        v["bins"] = rows
+        x, w = [r["T_degC"] - T0_DEGC for r in rows], [r["pairs"] for r in rows]
+        ls = [_line(x, [r["pitch_yaw_roll_mdeg"][i] for r in rows], w) for i in range(3)]
+        v.update(rate_mdeg_per_degC=[ln["b"] for ln in ls], sd=[ln["sd_b"] for ln in ls], offset_mdeg=[ln["a"] for ln in ls],
+                 rms_mdeg=[ln["rms"] for ln in ls],
+                 T_range_degC=[min(r["T_degC"] for r in rows), max(r["T_degC"] for r in rows)] if rows else None)
+        bl = _line(x, [1e6 * (r["baseline_m"] / np.average([q["baseline_m"] for q in rows], weights=w) - 1) for r in rows], w) if rows else {}
+        v["baseline_ppm_per_degC"], v["baseline_sd"] = bl.get("b"), bl.get("sd_b")
+    return out
+
+
+def _rot(pitch_yaw_roll_mdeg: Sequence[float]) -> np.ndarray:
+    """The rotation of small angles (pitch about x, yaw about y, roll about z; mdeg) - the inverse of ``_angles_mdeg``."""
+    import cv2
+    R, _ = cv2.Rodrigues(np.radians(np.asarray(pitch_yaw_roll_mdeg, float) / 1e3))
+    return R
+
+
 # ------------------------------------------------------------------------------------------------- residuals, verdict
 def camera_residuals(rec, man: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     """Per camera: observations, reprojection rms and median (px), and the rms by radius (``RADIAL_BINS``, radius over
@@ -781,7 +980,7 @@ def camera_residuals(rec, man: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
 
 
 LIMITS = {"registered_share": 0.75, "registered_frames": 100, "median_px": 0.6, "radial_spread": 0.15, "rig_pairs": 50,
-          "rig_cost_rise": 0.10, "pp_gain": 0.03, "baseline_agreement": 0.005}
+          "rig_cost_rise": 0.10, "pp_gain": 0.03, "baseline_agreement": 0.005, "thermal_bins": 3}
 
 
 def verdict(rep: Dict[str, Any], man: Dict[str, Any], family: str = "N") -> Dict[str, Any]:
@@ -792,40 +991,201 @@ def verdict(rep: Dict[str, Any], man: Dict[str, Any], family: str = "N") -> Dict
     gains at most 3 %; the rigs' baseline ratios agree within 0.5 %."""
     checks: List[Dict[str, Any]] = []
 
-    def add(what, value, limit, ok):
-        checks.append({"what": what, "value": value, "limit": limit, "ok": bool(ok)})
+    def add(what, value, limit, ok, side=None):
+        checks.append({"what": what, "value": value, "limit": limit, "ok": bool(ok), "side": side})
     frames = {g: c["frames"] for g, c in man["cameras"].items()}
     cams = {g: c for g, c in (rep.get("cameras") or {}).items() if g[0] == family}
     if not cams:
         add(f"{family} cameras in the model", 0, ">= 1", False)
     for g, c in sorted(cams.items()):
         sh = c["registered"] / max(frames.get(g, 1), 1)
-        add(f"{g} registered share", round(sh, 3), f">= {LIMITS['registered_share']}", sh >= LIMITS["registered_share"])
-        add(f"{g} registered frames", c["registered"], f">= {LIMITS['registered_frames']}", c["registered"] >= LIMITS["registered_frames"])
+        add(f"{g} registered share", round(sh, 3), f">= {LIMITS['registered_share']}", sh >= LIMITS["registered_share"], g[2])
+        add(f"{g} registered frames", c["registered"], f">= {LIMITS['registered_frames']}", c["registered"] >= LIMITS["registered_frames"], g[2])
+        tc = ((rep.get("thermal") or {}).get("cameras") or {}).get(g)
+        if rep.get("thermal"):                                 # 0.99.17: a temperature law needs three bins for its error
+            nb = len((tc or {}).get("bins") or [])
+            add(f"{g} temperature bins", nb, f">= {LIMITS['thermal_bins']}", nb >= LIMITS["thermal_bins"], g[2])
         r = (rep.get("residuals") or {}).get(g) or {}
         add(f"{g} median residual px", r.get("median_px"), f"<= {LIMITS['median_px']}",
-            r.get("median_px") is not None and r["median_px"] <= LIMITS["median_px"])
+            r.get("median_px") is not None and r["median_px"] <= LIMITS["median_px"], g[2])
         add(f"{g} residual spread with radius", r.get("radial_spread"), f"<= {LIMITS['radial_spread']}",
-            r.get("radial_spread") is not None and r["radial_spread"] <= LIMITS["radial_spread"])
+            r.get("radial_spread") is not None and r["radial_spread"] <= LIMITS["radial_spread"], g[2])
     rigs = {k: v for k, v in (rep.get("rigs") or {}).items() if k[0] == family}
     sides = {g[2] for g in cams}
     for sd in sorted(sides):
         v = rigs.get(family + sd)
-        add(f"{family}{sd} rig pairs", v["pairs"] if v else 0, f">= {LIMITS['rig_pairs']}", bool(v) and v["pairs"] >= LIMITS["rig_pairs"])
+        add(f"{family}{sd} rig pairs", v["pairs"] if v else 0, f">= {LIMITS['rig_pairs']}", bool(v) and v["pairs"] >= LIMITS["rig_pairs"], sd)
     st = rep.get("stages") or {}
     if st.get("free") and st.get("rigs"):
-        rise = st["rigs"]["reprojection_px"] / st["free"]["reprojection_px"] - 1.0
-        add("reprojection rise with the rigs", round(rise, 3), f"<= {LIMITS['rig_cost_rise']}", rise <= LIMITS["rig_cost_rise"])
+        last = "thermal" if st.get("thermal") else "rigs"      # 0.99.17: the rigs with their temperature bins, when solved
+        rise = st[last]["reprojection_px"] / st["free"]["reprojection_px"] - 1.0
+        add("reprojection rise with the rigs" + (" and temperature bins" if last == "thermal" else ""), round(rise, 3),
+            f"<= {LIMITS['rig_cost_rise']}", rise <= LIMITS["rig_cost_rise"])
     else:
         add("rig stage", None, "run", False)
-    if st.get("pp_check") and st.get("rigs"):
+    if st.get("pp_check") and st.get("rigs") and not st["pp_check"].get("diverged"):
         gain = 1.0 - st["pp_check"]["reprojection_px"] / st["rigs"]["reprojection_px"]
         add("reprojection gain from free principal points", round(gain, 3), f"<= {LIMITS['pp_gain']}", gain <= LIMITS["pp_gain"])
     ratios = [v["baseline_ratio"] for v in rigs.values() if v.get("baseline_ratio")]
     if len(ratios) >= 2:
         d = max(ratios) / min(ratios) - 1.0
         add("rig baseline ratios agree", round(d, 4), f"<= {LIMITS['baseline_agreement']}", d <= LIMITS["baseline_agreement"])
-    return {"ok": all(c["ok"] for c in checks), "family": family, "checks": checks}
+    by_side = {sd: all(c["ok"] for c in checks if c["side"] in (None, sd)) for sd in sorted(sides)}
+    return {"ok": all(c["ok"] for c in checks), "family": family, "sides": by_side, "checks": checks}
+
+
+# ------------------------------------------------------------------------------------------------- significance (0.99.17)
+# Christian, 17 Nov 2026: "could the ncam p1, p2, or k3 be held or set to zero? do a significance study after the next
+# alignment."  (name, parameter indices, where their held values come from)
+SIG_VARIANTS = (("p1 = p2 = 0", (6, 7), "zero"), ("k3 = 0", (8,), "zero"), ("p1 = p2 = k3 = 0", (6, 7, 8), "zero"),
+                ("p1, p2 at the label's", (6, 7), "label"), ("k3 at the label's", (8,), "label"),
+                ("p1, p2, k3 at the label's", (6, 7, 8), "label"))
+SIG_LIMITS = {"image_px": 0.15, "rms_rise": 0.01}
+
+
+def _opencv_px(params: Sequence[float], xy: np.ndarray) -> np.ndarray:
+    fx, fy, cx, cy, k1, k2, p1, p2, k3 = [float(x) for x in params[:9]]
+    x, y = xy[:, 0], xy[:, 1]
+    r2 = x * x + y * y
+    rad = 1 + k1 * r2 + k2 * r2 ** 2 + k3 * r2 ** 3
+    return np.c_[fx * (x * rad + 2 * p1 * x * y + p2 * (r2 + 2 * x * x)) + cx, fy * (y * rad + p1 * (r2 + 2 * y * y) + 2 * p2 * x * y) + cy]
+
+
+def camera_difference(pa: Sequence[float], pb: Sequence[float], width: int, height: int, n: int = 33) -> Dict[str, float]:
+    """How far two FULL_OPENCV cameras image the same rays apart over the frame (px): as they are, and after the best
+    common scale and shift (what a focal length and a pointing change take up - the part a block can tell apart)."""
+    g = np.stack(np.meshgrid(np.linspace(0, width - 1, n), np.linspace(0, height - 1, n)), -1).reshape(-1, 2)
+    xy = np.c_[(g[:, 0] - pa[2]) / pa[0], (g[:, 1] - pa[3]) / pa[1]]
+    for _ in range(30):                                          # the rays of camera a's pixels
+        d = _opencv_px(pa, xy) - g
+        xy = xy - np.c_[d[:, 0] / pa[0], d[:, 1] / pa[1]]
+    q = _opencv_px(pb, xy)
+    raw = np.linalg.norm(q - g, axis=1)
+    res = []
+    for k, c in ((0, 0.5 * width), (1, 0.5 * height)):
+        A = np.c_[g[:, k] - c, np.ones(len(g))]
+        sol, *_ = np.linalg.lstsq(A, q[:, k], rcond=None)
+        res.append(q[:, k] - A @ sol)
+    fit = np.hypot(*res)
+    return {"raw_rms": float(np.sqrt(np.mean(raw ** 2))), "raw_max": float(raw.max()),
+            "rms": float(np.sqrt(np.mean(fit ** 2))), "max": float(fit.max())}
+
+
+def remove_focal_temperature(rec, man: Dict[str, Any], slopes: Dict[str, Optional[float]]) -> int:
+    """The observations of ``rec`` moved to the reference temperature: each image point scaled about its camera's
+    principal point by 1 / (1 + ppm 1e-6 (T - T0)), with the camera's focal slope ``slopes[group]`` (ppm/degC).  With
+    this a single camera per group fits images of every temperature.  Returns the number of images changed."""
+    groups = _camera_groups(rec, man)
+    T = {r["image"]: r.get("ccd_degC") for r in man["images"]}
+    n = 0
+    for im in rec.images.values():
+        a, t = slopes.get(groups.get(int(im.camera_id), "")), T.get(im.name)
+        if not a or t is None:
+            continue
+        k = 1.0 / (1.0 + 1e-6 * a * (float(t) - T0_DEGC))
+        cam = rec.cameras[im.camera_id]
+        c = np.array([cam.params[2], cam.params[3]], float)
+        for p2 in im.points2D:                                 # the list's elements are the image's own points
+            p2.xy = c + k * (np.asarray(p2.xy, float) - c)
+        n += 1
+    return n
+
+
+def significance(work: Path, folds: int = 4, family: str = "N") -> Dict[str, Any]:
+    """Are p1, p2 and k3 of the ``family`` cameras needed?  From the block's free-image model (``sparse\\free``: one
+    camera per group, every image on its own, principal points held), with the focal lengths' temperature slopes of
+    the last alignment taken out of the observations:
+    * "full" - focal lengths, k1, k2, p1, p2, k3 refined;
+    * each of ``SIG_VARIANTS`` - the named terms held at zero or at the label's values, the rest refined;
+    * a jackknife of "full" over ``folds`` groups of sols (each left out in turn): the terms' standard deviations.
+    Per camera and term: value, jackknife sd and z; per camera and variant: the reprojection rms against "full" and how
+    far the variant's camera images the same rays from the full one (px, after a common scale and shift).  A variant
+    "can be used" when that is at most ``SIG_LIMITS["image_px"]`` at the worst point of the frame and the rms rises by
+    at most ``SIG_LIMITS["rms_rise"]``.  Writes ``significance.json`` / ``significance.txt``."""
+    import copy
+    import pycolmap
+    work = Path(work)
+    man = json.loads((work / "manifest.json").read_text(encoding="utf-8"))
+    rep = json.loads((work / "report.json").read_text(encoding="utf-8")) if (work / "report.json").is_file() else {}
+    src = work / "sparse" / "free"
+    if not (src / "images.bin").is_file():
+        raise FileNotFoundError(f"no {src} - run the align (or finish) step of 0.99.17 first")
+    base = pycolmap.Reconstruction(str(src))
+    slopes = {g: c.get("f_ppm_per_degC") for g, c in ((rep.get("thermal") or {}).get("cameras") or {}).items()}
+    n_T = remove_focal_temperature(base, man, slopes)
+    groups = _camera_groups(base, man)
+    nav = {cid: g for cid, g in groups.items() if g[0] == family and base.cameras[cid].model_name == "FULL_OPENCV"}
+    t0 = time.time()
+
+    def solve(r, const=None, skip=()):
+        runs = refine_cameras(r, man, rounds=1, hold_pp=True, extra_const=const, skip_images=skip)
+        return {"reprojection_px": float(r.compute_mean_reprojection_error()), "cost": runs[-1]["cost"],
+                "cameras": {g: [float(x) for x in r.cameras[cid].params] for cid, g in nav.items()}}
+    full_rec = copy.deepcopy(base)
+    out: Dict[str, Any] = {"block": work.name, "family": family, "focal_slopes_removed_ppm_per_degC": slopes, "images_moved_to_T0": n_T,
+                           "limits": SIG_LIMITS, "full": solve(full_rec), "variants": {}, "terms": {}}
+    out["full"]["residuals"] = {g: v for g, v in camera_residuals(full_rec, man).items() if g[0] == family}
+    log.info("significance: full %.3f px (%.1f min)", out["full"]["reprojection_px"], (time.time() - t0) / 60)
+    for name, idx, source in SIG_VARIANTS:
+        r = copy.deepcopy(base)
+        for cid, g in nav.items():
+            lab = man["cameras"][g].get("label_params", man["cameras"][g]["params"])
+            pa = np.array(r.cameras[cid].params, float)
+            for i in idx:
+                pa[i] = 0.0 if source == "zero" else float(lab[i])
+            r.camera(cid).params = pa
+        v = solve(r, {cid: idx for cid in nav})
+        res = camera_residuals(r, man)
+        v["by_camera"] = {}
+        for cid, g in nav.items():
+            d = camera_difference(out["full"]["cameras"][g], v["cameras"][g], base.cameras[cid].width, base.cameras[cid].height)
+            rise = res[g]["rms_px"] / out["full"]["residuals"][g]["rms_px"] - 1.0
+            v["by_camera"][g] = {"rms_px": res[g]["rms_px"], "rms_rise": round(rise, 4), "image_rms_px": round(d["rms"], 3),
+                                 "image_max_px": round(d["max"], 3),
+                                 "ok": bool(d["max"] <= SIG_LIMITS["image_px"] and rise <= SIG_LIMITS["rms_rise"])}
+        v["ok"] = all(c["ok"] for c in v["by_camera"].values())
+        out["variants"][name] = v
+        del r
+        log.info("significance: %s %.3f px, %s (%.1f min)", name, v["reprojection_px"], "ok" if v["ok"] else "not ok", (time.time() - t0) / 60)
+    sols = sorted({int(r["sol"]) for r in man["images"]})
+    sol_of = {r["image"]: int(r["sol"]) for r in man["images"]}
+    K = max(2, min(int(folds), len(sols)))
+    jk = []
+    for k in range(K):
+        drop = set(sols[k::K])
+        r = copy.deepcopy(full_rec)
+        jk.append(solve(r, skip=[iid for iid, im in r.images.items() if sol_of.get(im.name) in drop])["cameras"])
+        del r
+    for g in sorted(nav.values()):
+        P = np.array([j[g] for j in jk])
+        sd = np.sqrt((K - 1) / K * np.sum((P - P.mean(axis=0)) ** 2, axis=0))
+        full = np.array(out["full"]["cameras"][g])
+        lab = np.array(man["cameras"][g].get("label_params", man["cameras"][g]["params"]), float)
+        out["terms"][g] = {n: {"value": float(full[i]), "sd": float(sd[i]), "z": float(full[i] / sd[i]) if sd[i] > 0 else None,
+                               "label": float(lab[i]), "z_from_label": float((full[i] - lab[i]) / sd[i]) if sd[i] > 0 else None}
+                           for n, i in (("k1", 4), ("k2", 5), ("p1", 6), ("p2", 7), ("k3", 8))}
+    out["jackknife_folds"] = K
+    out["minutes"] = round((time.time() - t0) / 60, 1)
+    (work / "significance.json").write_text(json.dumps(out, indent=1, default=float), encoding="utf-8")
+    (work / "significance.txt").write_text(significance_text(out), encoding="utf-8")
+    return out
+
+
+def significance_text(out: Dict[str, Any]) -> str:
+    L = [f"Significance of p1, p2, k3 - {out['block']}, {out['family']} cameras ({out['minutes']} min)",
+         f"free-image model, principal points held, focal slopes removed (ppm/degC): {out['focal_slopes_removed_ppm_per_degC']}",
+         f"full model: reprojection {out['full']['reprojection_px']:.3f} px", "",
+         f"terms (value +- jackknife sd over {out['jackknife_folds']} groups of sols; z = value / sd; label value; z of the change from the label):"]
+    for g, t in out["terms"].items():
+        L.append(f"  {g}: " + "; ".join(f"{n} {v['value']:+.3g} +- {v['sd']:.2g} (z {v['z']:+.1f}; label {v['label']:+.3g}, z {v['z_from_label']:+.1f})"
+                                       if v["z"] is not None else f"{n} {v['value']:+.3g}" for n, v in t.items()))
+    L += ["", f"variants (per camera: rms rise over full; image change against the full camera after a common scale and shift, rms / max px;"
+              f" usable when max <= {out['limits']['image_px']} px and rise <= {100 * out['limits']['rms_rise']:g} %):"]
+    for name, v in out["variants"].items():
+        L.append(f"  {name}: {v['reprojection_px']:.3f} px - {'USABLE' if v['ok'] else 'not usable'}")
+        for g, c in v["by_camera"].items():
+            L.append(f"      {g}: rise {100 * c['rms_rise']:+.2f} %, image {c['image_rms_px']:.3f} / {c['image_max_px']:.3f} px{'' if c['ok'] else '  <-'}")
+    return "\n".join(L) + "\n"
 
 
 # ------------------------------------------------------------------------------------------------- model files, promotion
@@ -852,6 +1212,9 @@ def model_files(work: Path, rep: Dict[str, Any], man: Dict[str, Any], family: st
             continue
         cam = man["cameras"][g]
         nm = names.get(cam["model"], [])
+        tc = ((rep.get("thermal") or {}).get("cameras") or {}).get(g) or {}
+        if tc.get("f0_ppm") is not None:                       # the parameters at T0: the block's focal lengths moved there
+            c = dict(c, refined=[c["refined"][0] * (1 + 1e-6 * tc["f0_ppm"]), c["refined"][1] * (1 + 1e-6 * tc["f0_ppm"])] + list(c["refined"][2:]))
         held = [nm[i] for i in sorted(set(HELD_ZERO.get(cam["model"], ())) | set(PRINCIPAL_POINT))] if nm else []
         t = temps.get(g) or []
         d = {"mission": "MSL", "model": cam["model"], "width": cam["width"], "height": cam["height"],
@@ -862,6 +1225,7 @@ def model_files(work: Path, rep: Dict[str, Any], man: Dict[str, Any], family: st
              "family": g[0], "eye": g[1], "side": g[2],
              "temperature": {"ccd_degC_min": round(min(t), 1), "ccd_degC_median": round(float(np.median(t)), 1),
                              "ccd_degC_max": round(max(t), 1), "note": "no temperature terms yet: one model over the block's range"} if t else None,
+             "thermal": _camera_thermal(rep, g),
              "label_params": [float(x) for x in cam.get("label_params", cam["params"])],
              "start_params": [float(x) for x in c["start"]],
              "source": f"RPP {__version__} MSL block {man['preset'].get('name')} ({stamp}), sols {min(sols[g])}-{max(sols[g])}: "
@@ -875,7 +1239,16 @@ def model_files(work: Path, rep: Dict[str, Any], man: Dict[str, Any], family: st
             continue
         t = np.asarray(v["t_sensor_from_ref_m"], float)
         t = t / np.linalg.norm(t) * float(v["label_baseline_m"])
-        d = {"mission": "MSL", "ref": f"{k[0]}L{k[1]}", "sensor": f"{k[0]}R{k[1]}", "R_sensor_from_ref": v["R_sensor_from_ref"],
+        tr = ((rep.get("thermal") or {}).get("rigs") or {}).get(k) or {}
+        R0 = np.asarray(v["R_sensor_from_ref"], float)
+        th_rig = None
+        if tr.get("rate_mdeg_per_degC") and all(x is not None for x in tr["rate_mdeg_per_degC"]):
+            R0 = _rot(tr["offset_mdeg"]) @ R0                  # the rotation at T0
+            th_rig = {"T0_degC": T0_DEGC, "pitch_mdeg_per_degC": tr["rate_mdeg_per_degC"][0], "yaw_mdeg_per_degC": tr["rate_mdeg_per_degC"][1],
+                      "roll_mdeg_per_degC": tr["rate_mdeg_per_degC"][2], "sd_mdeg_per_degC": tr["sd"], "rms_mdeg": tr["rms_mdeg"],
+                      "T_range_degC": tr["T_range_degC"], "bins": len(tr["bins"]),
+                      "note": "R(T) = rot(rate (T - T0)) R_sensor_from_ref; pitch about x, yaw about y, roll about z of the right camera"}
+        d = {"mission": "MSL", "ref": f"{k[0]}L{k[1]}", "sensor": f"{k[0]}R{k[1]}", "R_sensor_from_ref": R0.tolist(), "thermal": th_rig,
              "t_sensor_from_ref_m": [float(x) for x in t], "baseline_m": float(v["label_baseline_m"]),
              "translation": "the block's direction, the label CAHVOR pair's length", "family": k[0], "side": k[1],
              "form": MODEL_FORM, "convention": f"{k[0]}L{k[1]} reference",
@@ -886,6 +1259,15 @@ def model_files(work: Path, rep: Dict[str, Any], man: Dict[str, Any], family: st
         out[f"MSL_{k}_rig.json"] = out_dir / f"MSL_{k}_rig.json"
         out[f"MSL_{k}_rig.json"].write_text(json.dumps(d, indent=1, default=float), encoding="utf-8")
     return out
+
+
+def _camera_thermal(rep: Dict[str, Any], g: str) -> Optional[Dict[str, Any]]:
+    tc = ((rep.get("thermal") or {}).get("cameras") or {}).get(g)
+    if not tc or tc.get("f_ppm_per_degC") is None:
+        return None
+    return {"T0_degC": T0_DEGC, "f_ppm_per_degC": tc["f_ppm_per_degC"], "sd_ppm_per_degC": tc["sd"], "rms_ppm": tc["rms_ppm"],
+            "T_range_degC": tc["T_range_degC"], "bins": len(tc["bins"]),
+            "note": "fx(T) = fx (1 + f_ppm_per_degC 1e-6 (T - T0)), fy alike; params are at T0; distortion and principal point without temperature terms"}
 
 
 def promote(work: Path, force: bool = False, dry_run: bool = False) -> Dict[str, Any]:
@@ -900,17 +1282,23 @@ def promote(work: Path, force: bool = False, dry_run: bool = False) -> Dict[str,
     files = sorted(cand.glob("MSL_*.json")) if cand.is_dir() else []
     if not files:
         return {"promoted": False, "reason": f"no model files in {cand} (run the align step)"}
-    if not v.get("ok") and not force:
-        bad = [f"{c['what']} {c['value']} (limit {c['limit']})" for c in v.get("checks", []) if not c["ok"]]
+    bad = [f"{c['what']} {c['value']} (limit {c['limit']})" for c in v.get("checks", []) if not c["ok"]]
+    good = [sd for sd, ok in (v.get("sides") or {}).items() if ok]
+    if force or v.get("ok"):
+        use, how = files, ("verdict ok" if v.get("ok") else "FORCED past the verdict")
+    elif good:                                                 # 0.99.17: a side that passes goes in without the other
+        use = [f for f in files if f.stem.split("_")[1][-1] in good]
+        how = f"side {', '.join(good)} only (not passed: {'; '.join(bad)})"
+    else:
         return {"promoted": False, "reason": "the cameras do not pass: " + "; ".join(bad)}
-    note = (f"MSL block {work.name}: " + ("verdict ok" if v.get("ok") else "FORCED past the verdict")
-            + f", reprojection {rep.get('reprojection_px', float('nan')):.3f} px")
-    res = M.promote([cand], note=note, dry_run=dry_run)
-    return {"promoted": not dry_run, "dry_run": dry_run, **res}
+    note = f"MSL block {work.name}: {how}, reprojection {rep.get('reprojection_px', float('nan')):.3f} px"
+    res = M.promote(use, note=note[:400], dry_run=dry_run)
+    return {"promoted": not dry_run, "dry_run": dry_run, "sides": good if not (force or v.get("ok")) else sorted(v.get("sides") or {}), **res}
 
 
 def align(work: Path, max_features: int = 8192, threads: int = -1, max_error_m: float = 2.0, refine: bool = True,
-          rounds: int = 2, rigs: bool = True, pp_check: bool = True, scale: str = "baseline") -> Dict[str, Any]:
+          rounds: int = 2, rigs: bool = True, pp_check: bool = True, scale: str = "baseline",
+          thermal: bool = True) -> Dict[str, Any]:
     import pycolmap
     work = Path(work)
     man = json.loads((work / "manifest.json").read_text(encoding="utf-8"))
@@ -944,12 +1332,12 @@ def align(work: Path, max_features: int = 8192, threads: int = -1, max_error_m: 
         return rep
     rec = max(recs.values(), key=lambda r: r.num_reg_images())
     others = sorted((int(r.num_reg_images()) for r in recs.values()), reverse=True)[1:6]
-    return finish(rec, man, work, len(recs), others, max_error_m, refine, rounds, t0, rigs, pp_check, scale)
+    return finish(rec, man, work, len(recs), others, max_error_m, refine, rounds, t0, rigs, pp_check, scale, thermal)
 
 
 def finish(rec, man: Dict[str, Any], work: Path, models: int = 1, others: Sequence[int] = (), max_error_m: float = 2.0,
            refine: bool = True, rounds: int = 2, t0: Optional[float] = None, rigs: bool = True, pp_check: bool = True,
-           scale: str = "baseline") -> Dict[str, Any]:
+           scale: str = "baseline", thermal: bool = True) -> Dict[str, Any]:
     """The mapped model into the block frame, the cameras refined, the report and exports (``align``'s second half).
 
     0.99.16, in stages: (1) "free" - every image on its own, focal lengths and distortion free, the principal points
@@ -979,19 +1367,26 @@ def finish(rec, man: Dict[str, Any], work: Path, models: int = 1, others: Sequen
     if refine:
         runs = refine_cameras(rec, man, rounds=rounds, hold_pp=True)
         snap("free", rec, runs)
+        (out / "free").mkdir(exist_ok=True)
+        rec.write(out / "free")                                # 0.99.17: the significance study starts here
         rep["pair_scatter"] = pair_scatter(rec, man)
         if rigs and rig_sides(man):
             rig_info = add_rigs(rec, man, work / "database.db")
             runs = refine_cameras(rec, man, rounds=rounds, hold_pp=True, rigs=True)
             snap("rigs", rec, runs)
             if pp_check:
-                chk = copy.deepcopy(rec)
-                runs = refine_cameras(chk, man, rounds=1, hold_pp=False, rigs=True)
+                chk = copy.deepcopy(rec)                       # 0.99.17: the rig poses held here - with them free too the
+                runs = refine_cameras(chk, man, rounds=1, hold_pp=False, rigs=False)   # problem has no minimum (it ran away)
                 snap("pp_check", chk, runs)
+                e = stages["pp_check"]["reprojection_px"]
+                stages["pp_check"]["diverged"] = bool(not np.isfinite(e) or e > 10 * stages["rigs"]["reprojection_px"])
                 stages["pp_check"]["principal_point_moved_px"] = {
                     g: [round(v[2] - stages["rigs"]["cameras"][g][2], 2), round(v[3] - stages["rigs"]["cameras"][g][3], 2)]
                     for g, v in stages["pp_check"]["cameras"].items()}
                 del chk
+            if thermal:                                        # 0.99.17: f(T) per camera, rig rotation (T) per side
+                rep["thermal"] = thermal_stage(rec, man, out_dir=out / "thermal")
+                stages["thermal"] = {"reprojection_px": rep["thermal"]["reprojection_px"], "rounds": rep["thermal"].pop("rounds")}
         rep["refine"] = [dict(r, stage=k) for k in ("free", "rigs") if k in stages for r in stages[k]["rounds"]]
         _to_block(rec, lab, max_error_m, rep, "similarity_after_refine")
     rep["stages"] = stages
@@ -1086,9 +1481,13 @@ def report_text(man: Dict[str, Any], rep: Dict[str, Any]) -> str:
     if st:
         lines.append("stages (principal points held in 1 and 2): " + "; ".join(
             f"{n} {st[k]['reprojection_px']:.3f} px" for k, n in (("free", "1 free images"), ("rigs", "2 stereo rigs"),
-                                                                  ("pp_check", "check, principal points free")) if k in st))
+                                                                  ("pp_check", "check, principal points free"),
+                                                                  ("thermal", "3 temperature bins"))
+            if k in st and not st[k].get("diverged")))
         mv = (st.get("pp_check") or {}).get("principal_point_moved_px")
-        if mv:
+        if (st.get("pp_check") or {}).get("diverged"):
+            lines.append("  check: with free principal points the solve ran away (no minimum)")
+        elif mv:
             lines.append("  check: freed principal points move by (cx, cy px) " + ", ".join(f"{g} {v[0]:+.1f} {v[1]:+.1f}" for g, v in sorted(mv.items())))
     for g, c in sorted((rep.get("cameras") or {}).items()):
         names = (["fx", "fy", "cx", "cy", "k1", "k2", "p1", "p2", "k3"] if c.get("model", "FULL_OPENCV") == "FULL_OPENCV"
@@ -1105,6 +1504,19 @@ def report_text(man: Dict[str, Any], rep: Dict[str, Any]) -> str:
                      f"{1000 * v['baseline_m']:.1f} mm (label {1000 * v.get('label_baseline_m', float('nan')):.1f}, ratio "
                      f"{v.get('baseline_ratio', float('nan')):.4f}); rotation from the label's (pitch, yaw, roll) "
                      f"{v.get('rotation_vs_label_mdeg')} mdeg; free pairs scattered {ps.get('sd_mdeg')} mdeg")
+    th = rep.get("thermal")
+    if th:
+        def pm(v, sd, f="{:+.2f}"):
+            return "n/a" if v is None else f.format(v) + (" +- " + f.format(sd).lstrip("+") if sd is not None else "")
+        lines.append(f"temperature (bins of {th['bin_degC']:g} degC, laws about T0 = {th['T0_degC']:g} degC):")
+        for g, c in sorted(th["cameras"].items()):
+            lines.append(f"  {g}: focal length {pm(c['f_ppm_per_degC'], c['sd'], '{:+.1f}')} ppm/degC over {c['T_range_degC'][0]:.0f} to "
+                         f"{c['T_range_degC'][1]:.0f} degC ({len(c['bins'])} bins: " + ", ".join(f"{r['T_degC']:.0f}: {r['f_ppm']:+.0f}" for r in c["bins"]) + " ppm)")
+        for k, v in sorted(th["rigs"].items()):
+            if v.get("rate_mdeg_per_degC"):
+                lines.append(f"  rig {k}: pitch {pm(v['rate_mdeg_per_degC'][0], v['sd'][0])}, yaw {pm(v['rate_mdeg_per_degC'][1], v['sd'][1])}, "
+                             f"roll {pm(v['rate_mdeg_per_degC'][2], v['sd'][2])} mdeg/degC ({len(v['bins'])} bins, scatter about the lines "
+                             + ", ".join("n/a" if x is None else f"{x:.1f}" for x in v["rms_mdeg"]) + " mdeg)")
     sc = rep.get("scale")
     if sc:
         lc = sc.get("label_centers_m") or {}
@@ -1113,7 +1525,8 @@ def report_text(man: Dict[str, Any], rep: Dict[str, Any]) -> str:
                      f"max {lc.get('max', float('nan')):.3f} m")
     v = rep.get("verdict")
     if v:
-        lines.append(f"Navcam verdict: {'OK to promote' if v['ok'] else 'NOT promoted'}")
+        some = [sd for sd, ok in (v.get("sides") or {}).items() if ok]
+        lines.append("Navcam verdict: " + ("OK to promote" if v["ok"] else f"side {', '.join(some)} OK to promote, the rest not" if some else "NOT promoted"))
         for c in v["checks"]:
             if not c["ok"]:
                 lines.append(f"  fails: {c['what']} = {c['value']} (limit {c['limit']})")
@@ -1131,7 +1544,8 @@ def report_text(man: Dict[str, Any], rep: Dict[str, Any]) -> str:
 # ------------------------------------------------------------------------------------------------- command line
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("step", choices=("waypoints", "fetch", "prepare", "align", "all", "where", "gui", "finish", "promote"),
+    ap.add_argument("step", choices=("waypoints", "fetch", "prepare", "align", "all", "where", "gui", "finish", "promote",
+                                     "significance"),
                     help="where: print the block's folder and stop; gui: write open_in_colmap.bat into it and stop; "
                          "finish (0.99.16): the stages after the mapper again, from sparse\\0 (no matching); promote: "
                          "the block's Navcam models into the camera models in use, when its verdict is ok")
@@ -1151,6 +1565,8 @@ def main(argv=None) -> int:
                     "promoted MSL models are in the camera models in use")
     ap.add_argument("--no-rigs", action="store_true", help="align: every image on its own (no stereo rigs)")
     ap.add_argument("--no-pp-check", action="store_true", help="align: skip the check with free principal points")
+    ap.add_argument("--no-thermal", action="store_true", help="align: skip the temperature stage (f(T), rig rotation (T))")
+    ap.add_argument("--folds", type=int, default=4, help="significance: jackknife folds (by sol)")
     ap.add_argument("--scale", default="baseline", choices=("baseline", "labels"),
                     help="align: the model's scale from the Navcam rigs' label baseline (default) or the label positions")
     ap.add_argument("--promote-if-ok", action="store_true", help="align / finish: promote the Navcam models when the verdict is ok")
@@ -1225,16 +1641,21 @@ def main(argv=None) -> int:
         print(f"prepare: {len(man['images'])} frames, {man['pairs']} pairs in {work}")
     if a.step in ("align", "all"):
         rep = align(work, a.max_features, max_error_m=a.max_error_m, refine=not a.no_refine, rigs=not a.no_rigs,
-                    pp_check=not a.no_pp_check, scale=a.scale)
+                    pp_check=not a.no_pp_check, scale=a.scale, thermal=not a.no_thermal)
         rc = 0 if rep.get("ok") else 1
         print((work / "report.txt").read_text(encoding="utf-8") if (work / "report.txt").is_file() else rep)
     if a.step == "finish":
         import pycolmap
         man = json.loads((work / "manifest.json").read_text(encoding="utf-8"))
         rep = finish(pycolmap.Reconstruction(str(work / "sparse" / "0")), man, work, refine=not a.no_refine,
-                     max_error_m=a.max_error_m, rigs=not a.no_rigs, pp_check=not a.no_pp_check, scale=a.scale)
+                     max_error_m=a.max_error_m, rigs=not a.no_rigs, pp_check=not a.no_pp_check, scale=a.scale,
+                     thermal=not a.no_thermal)
         rc = 0 if rep.get("ok") else 1
         print((work / "report.txt").read_text(encoding="utf-8"))
+    if a.step == "significance":                           # 0.99.17: are p1, p2, k3 needed?
+        significance(work, folds=a.folds)
+        print((work / "significance.txt").read_text(encoding="utf-8"))
+        return 0
     if a.step == "promote" or (a.promote_if_ok and a.step in ("align", "all", "finish") and rc == 0):
         res = promote(work, force=a.force, dry_run=a.dry_run)
         if res.get("promoted") or res.get("dry_run"):
