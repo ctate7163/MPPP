@@ -171,6 +171,10 @@ def site_origins(infos: List[Dict[str, Any]], anchor: Optional[int] = None,
         lk = r.get("site_link")
         if lk and int(lk["site"]) == int(r["site"]):
             q = lk.get("quaternion") or [1, 0, 0, 0]
+            if not np.any(np.abs(np.asarray(q, float)) > 1e-12):         # 0.99.18: an all-zero quaternion is "not given"
+                if not np.any(np.abs(np.asarray(lk["offset_ned_m"], float)) > 1e-9):   # (early products, sols 124-161):
+                    continue                                             # with a zero offset there is no link in the label
+                q = [1, 0, 0, 0]
             if abs(abs(float(q[0])) - 1.0) > 1e-6:
                 log.warning("site %d: its frame is rotated against site %d (q %s) - not handled", lk["site"], lk["parent"], q)
             links.setdefault(int(lk["site"]), []).append((int(lk["parent"]), _enu(lk["offset_ned_m"])))
@@ -416,11 +420,25 @@ def _rover_enu(img: Path) -> Optional[List[float]]:
         return None
 
 
+def write_image(path: Path, img8: np.ndarray, rover: Optional[np.ndarray] = None) -> None:
+    """The block's image: gray, or - with a mask - four channels (the gray value three times and the mask as alpha:
+    255 terrain, ``ALPHA_MASKED`` where masked).  0.99.18: OpenCV writes no two-channel (gray + alpha) PNG - 0.99.16's
+    attempt stopped the prepare step at its first image."""
+    import cv2
+    if rover is None:
+        ok = cv2.imwrite(str(path), img8)
+    else:
+        a = np.where(rover, ALPHA_MASKED, 255).astype(np.uint8)
+        ok = cv2.imwrite(str(path), np.dstack([img8, img8, img8, a]))
+    if not ok:
+        raise OSError(f"could not write {path}")
+
+
 def write_masks(work: Path, frames: List[Dict[str, Any]], mxy: Dict[str, Path], mask_mode: str = "cnn",
                 model: Optional[str] = "rpp_mask_v3", candidates: bool = True) -> Dict[str, Any]:
     """Images, COLMAP masks and the training candidates (see the module's text).  0.99.16 (Christian, 17 Nov 2026: "for
     msl images, use the current mask cnn model and save them as the alpha channel. no need to download the official
-    hardware masks"): the default is the CNN alone, and each image is a gray + alpha PNG whose alpha is the mask
+    hardware masks"): the default is the CNN alone, and each image is a PNG whose alpha channel is the mask
     (255 terrain, ``ALPHA_MASKED`` where masked, as the Mars 2020 blocks); ``masks\\`` stays for COLMAP."""
     import cv2
     from rpp.labels import read_pds
@@ -477,9 +495,7 @@ def write_masks(work: Path, frames: List[Dict[str, Any]], mxy: Dict[str, Path], 
                     cv2.drawContours(ov, cs, -1, (0, 255, 0), 1)
                 cv2.imwrite(str(cand / "overlays" / (r["stem"] + ".jpg")), ov, [cv2.IMWRITE_JPEG_QUALITY, 85])
         cv2.imwrite(str(work / "masks" / (name + ".png")), np.where(rover, 0, 255).astype(np.uint8))
-        masked = infer is not None or mx is not None
-        cv2.imwrite(str(work / "images" / name),                   # gray + alpha (LA): the mask travels with the image
-                    np.dstack([img8, np.where(rover, ALPHA_MASKED, 255).astype(np.uint8)]) if masked else img8)
+        write_image(work / "images" / name, img8, rover if (infer is not None or mx is not None) else None)
         r["mask_rover_pct"] = round(100 * float(rover.mean()), 2)
         r["mask"] = mask_mode if (infer is not None or mx is not None) else None
         rows.append(row)

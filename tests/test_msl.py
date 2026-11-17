@@ -231,7 +231,7 @@ def test_msl_front_hazcams_join_the_block_and_masks_go_into_alpha():
     assert len(F.wanted(names, None, "AB", None, "F")) == 2 and F.parse_name(names[0])["group"] == "FLB"
     assert B.rig_sides({"cameras": {"NLA": 1, "NRA": 1, "NLB": 1, "FLB": 1, "FRB": 1}}) == [("F", "B"), ("N", "A")]
     src = Path(B.__file__).read_text(encoding="utf-8")
-    assert 'mask_mode: str = "cnn"' in src and "ALPHA_MASKED, 255" in src and 'mxy=a.mask != "cnn"' in src
+    assert 'mask_mode: str = "cnn"' in src and 'mxy=a.mask != "cnn"' in src
     assert B.group_camera.__doc__ and 'infos[0].get("family", "N") != "N"' in src
 
 
@@ -360,3 +360,31 @@ def test_msl_temperature_stage_and_significance(tmp_path):
     a = B.camera_difference(true, true, 1024, 1024)
     b = B.camera_difference(true, list(true[:6]) + [0, 0] + list(true[8:]), 1024, 1024)
     assert a["max"] < 1e-6 and b["raw_max"] > b["max"] > 0.01           # the tangential terms of the test camera: visible
+
+
+def test_msl_image_with_the_mask_in_alpha_is_written_and_read(tmp_path):
+    """0.99.18: the prepare step of 0.99.16 / 0.99.17 stopped at its first image (OpenCV writes no gray + alpha PNG; seen
+    on the PC, 17 Nov 2026 14:39).  The image is four channels now; COLMAP's reader takes its gray value."""
+    import cv2
+    from rpp_studies.msl import block as B
+    img = (np.arange(64 * 48) % 251).astype(np.uint8).reshape(48, 64)
+    rover = np.zeros(img.shape, bool)
+    rover[:10] = True
+    B.write_image(tmp_path / "a.png", img, rover)
+    B.write_image(tmp_path / "b.png", img, None)
+    a = cv2.imread(str(tmp_path / "a.png"), cv2.IMREAD_UNCHANGED)
+    assert a.shape == (48, 64, 4) and np.array_equal(a[..., 0], img) and np.array_equal(a[..., 2], img)
+    assert set(np.unique(a[..., 3])) == {B.ALPHA_MASKED, 255} and np.all(a[:10, :, 3] == B.ALPHA_MASKED)
+    assert np.array_equal(cv2.imread(str(tmp_path / "a.png"), cv2.IMREAD_GRAYSCALE), img)
+    assert cv2.imread(str(tmp_path / "b.png"), cv2.IMREAD_UNCHANGED).shape == (48, 64)
+
+
+def test_msl_site_links_without_a_quaternion():
+    """0.99.18: the early products' labels (sols 124-161) give the site link's quaternion as zeros: "not given", not a
+    rotated site frame (the log filled with warnings); with a zero offset too, there is no link."""
+    from rpp_studies.msl.block import site_origins
+    infos = [{"site": 5, "site_link": None}] * 3 + [
+        {"site": 6, "site_link": {"site": 6, "parent": 5, "offset_ned_m": [10.0, 2.0, 0.5], "quaternion": [0, 0, 0, 0]}},
+        {"site": 6, "site_link": {"site": 6, "parent": 5, "offset_ned_m": [0.0, 0.0, 0.0], "quaternion": [0, 0, 0, 0]}}]
+    origin, rep = site_origins(infos)
+    assert rep["anchor"] == 5 and np.allclose(origin[6], [2.0, 10.0, -0.5])
