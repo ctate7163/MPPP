@@ -48,6 +48,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
+from ..mask_levels import tight_mask_file
 from .project import SfmProject
 from .. import env as rpp_env
 
@@ -347,10 +348,12 @@ def write_metashape_job(project: SfmProject, out_dir: Optional[PathLike] = None,
         T = np.eye(4)
         T[:3, :3] = np.asarray(wc.rotation.matrix(), float)
         T[:3, 3] = np.asarray(wc.translation, float)
-        mpath = project.masks_dir / (im.name + ".png")
+        # 0.99.9: the tight mask where the block has one (the cameras come aligned: Metashape's masks serve the depth
+        # maps and the mesh), else masks/
+        mpath = tight_mask_file(project.root, im.name, project.masks_dir)
         images.append({"name": im.name, "path": str(project.images_dir / im.name), "sensor_id": int(im.camera_id),
                        "world_from_camera": T.tolist(),
-                       "mask": str(mpath) if (masks.get(im.name, True) and mpath.is_file()) else None,
+                       "mask": str(mpath) if (masks.get(im.name, True) and mpath is not None) else None,
                        "reference": camera_reference(rows.get(im.name) or {}, offset, sigma,
                                                      np.asarray(im.cam_from_world().rotation.matrix(), float))})
     bund = out / f"{name}.bundler.out"

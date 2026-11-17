@@ -3,6 +3,39 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.9 — 2026-11-16 (branch `rpp`)
+
+Christian (16 Nov, evening), for the next mask run: "Remove the dilation morphology. Use connected component to
+remove small islands of pixels. Ignore a +-2 px band at label edges in the loss, or add a Lovasz term ... Write out
+the probability map as well as the binary mask ... each step can apply its own threshold without rerunning the
+network."
+
+- **No dilation; small islands removed** (`rpp.mask_levels`, torch-free).
+  - `remove_small_islands`: 8-connected components; terrain specks in the rover and rover specks in the terrain
+    under `min_island_frac` of the frame flip.
+  - The card's `dilate_kernel` stays: `rpp_mask_v3` (3) gives the masks it gave. The next run's card: 0.
+- **The label edge out of the loss** (`rpp_studies.mask_training.train`).
+  - `edge_band`: the pixels within 2 canvas px of a label edge (a max/min pool of the label). `mask_loss` leaves
+    them out of the BCE and the Tversky sums: a prediction 2 px off the label's edge costs what an exact one does.
+  - `lovasz_hinge` (Berman et al. 2018): the IoU surrogate, `--lovasz W` adds W times it (off by default).
+  - Validation IoU, which picks the checkpoint, is unchanged (the whole frame).
+  - `train_mask`: `--edge-ignore-px` (2), `--lovasz` (0), `--dilate-kernel` (0), `--min-island-frac` (1e-4),
+    `--sfm-threshold` (0.9), `--tight-threshold` (0.5). The card records them (`step_thresholds`,
+    `min_island_frac`, `loss`).
+- **The probability on disk; each step its own threshold.**
+  - Processing writes `masks_prob/<stem>.png` (P(terrain) x 255, padded, static-masked and undistorted like the
+    mask) beside `masks/`; `export.write_mask_probability` (on). This holds for `rpp_mask_v3` too.
+  - A block made from it gets `masks/` at the card's "sfm" threshold (a margin for the features) and
+    `masks_tight/` at its "tight" threshold. `masks_prob/` is linked in. With a card without step thresholds (v3),
+    `masks/` is the processed mask as before.
+  - The tight mask is what dense fusion, the mesh and the panoramas (`rover_masks.mask_file`: masks_ibr, then
+    masks_tight, then masks), Metashape's depth maps and the Nerfstudio frames take.
+  - `rpp mask levels PROJECT --sfm T --tight T` remakes either from `masks_prob/`, with no network. A new `masks/`
+    takes effect when the features are extracted again.
+- Run keys unchanged (checked on all 144 site and Mastcam-Z blocks): freeze-3 with v3 runs as before, and its
+  blocks carry probability maps.
+- Roadmap: "Next: beyond the stereo 360" (a station in six degrees of freedom: textured mesh, then splats).
+
 ## 0.99.8 — 2026-11-16 (branch `rpp`)
 
 Christian (16 Nov, evening): "look at the camera models holistically ... Take the obvious improvements that have

@@ -226,6 +226,26 @@ def camera_from_colmap_json(path: PathLike, zero_terms: Sequence[str] = ()) -> D
 
 
 # -------------------------------------------------------------------- project
+def place_masks(processed: Path, m: Dict[str, Any], root: Path, name: str, link: bool = True) -> Dict[str, Any]:
+    """0.99.9: an image's masks in the project.  Without a probability map, or with a mask model that sets no step
+    thresholds (rpp_mask_v3 and earlier), ``masks/<name>.png`` is the processed binary mask, as before.  With both
+    (``mask.steps`` in the image's record), ``masks/`` is the probability at the "sfm" threshold (feature extraction
+    and matching: a generous margin) and ``masks_tight/`` at the "tight" one (dense fusion, mesh, panorama); the
+    probability is linked into ``masks_prob/`` (:mod:`rpp.mask_levels`)."""
+    from ..mask_levels import PROB_DIR, write_step_masks
+    outs = m.get("outputs") or {}
+    steps = (m.get("mask") or {}).get("steps") or {}
+    thr = steps.get("thresholds") or {}
+    if "mask_prob" in outs and (Path(processed) / outs["mask_prob"]).is_file():
+        (Path(root) / PROB_DIR).mkdir(parents=True, exist_ok=True)
+        _link_or_copy(Path(processed) / outs["mask_prob"], Path(root) / PROB_DIR / (name + ".png"), link)
+        if thr:
+            return write_step_masks(root, [name], thr, float(steps.get("min_island_frac") or 0.0), record=False)
+    (Path(root) / "masks").mkdir(parents=True, exist_ok=True)
+    _link_or_copy(Path(processed) / outs["mask"], Path(root) / "masks" / (name + ".png"), link)
+    return {"written": {}, "missing": []}
+
+
 @dataclass
 class SfmProject:
     root: Path
@@ -296,7 +316,7 @@ class SfmProject:
                 continue
             _link_or_copy(processed / m["outputs"][fmt], self.images_dir / name, link)
             if "mask" in m["outputs"]:
-                _link_or_copy(processed / m["outputs"]["mask"], self.masks_dir / (name + ".png"), link)
+                place_masks(processed, m, self.root, name, link)
             n += 1
         return n
 
@@ -439,7 +459,7 @@ class SfmProject:
             name = stem + ".png"
             _link_or_copy(src, root / "images" / name, link)
             if "mask" in m["outputs"]:
-                _link_or_copy(processed_dir / m["outputs"]["mask"], root / "masks" / (name + ".png"), link)
+                place_masks(processed_dir, m, root, name, link)
             key = camera_key(fn)
             instruments[key] = fam
             label_f, label_c = None, None

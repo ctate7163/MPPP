@@ -108,10 +108,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true", help="promote: check and show, copy nothing")
 
     p = sub.add_parser("mask", help="the terrain mask model")
-    p.add_argument("what", nargs="?", default="list", choices=("list", "fetch", "install"))
-    p.add_argument("arg", nargs="?", default=None, help="fetch: the model name; install: a .pt/.safetensors file")
+    p.add_argument("what", nargs="?", default="list", choices=("list", "fetch", "install", "levels"))
+    p.add_argument("arg", nargs="?", default=None, help="fetch: the model name; install: a .pt/.safetensors file; "
+                   "levels (0.99.9): a COLMAP project folder (with masks_prob/)")
     p.add_argument("--name", default=None, help="install: the registry name")
     p.add_argument("--force", action="store_true", help="fetch: download again")
+    p.add_argument("--sfm", type=float, default=None, metavar="T",
+                   help="levels: masks/ (the feature extraction) at P(terrain) >= T (a margin; the next model's card: 0.9)")
+    p.add_argument("--tight", type=float, default=None, metavar="T",
+                   help="levels: masks_tight/ (dense fusion, mesh, panoramas) at P(terrain) >= T (the card: 0.5)")
+    p.add_argument("--min-island-frac", type=float, default=None,
+                   help="levels: islands under this share of the frame removed (default: the project's record, else 0)")
 
     p = sub.add_parser("example", help="the Mars 2020 example data (Rockytop, sols 461-464): fetch or build")
     p.add_argument("what", choices=("fetch", "build"), help="fetch: download it (from the PDS; the release zip if "
@@ -569,11 +576,42 @@ def cmd_mask(a: argparse.Namespace) -> int:
             return 2
         print(hub.install_model(a.arg, a.name))
         return 0
+    if a.what == "levels":
+        return _mask_levels(a)
     reg = hub.load_registry()
     for n, ent in reg["models"].items():
         p = hub.model_path(n)
         print(f"{n}{' (default)' if n == reg['default'] else ''}: {ent['file']}  sha256 {str(ent.get('sha256', '?'))[:16]}  "
               f"{'cached' if p.is_file() else 'not cached'} ({p})")
+    return 0
+
+
+def _mask_levels(a: argparse.Namespace) -> int:
+    """0.99.9: a step's threshold changed from the stored probability (masks_prob/), without the network."""
+    from .mask_levels import PROB_DIR, write_step_masks
+    root = Path(a.arg or ".")
+    pd = root / PROB_DIR
+    if not pd.is_dir():
+        print(f"ERROR: no {PROB_DIR}/ in {root}: the block was processed without probability maps (a mask model "
+              f"before 0.99.9, or export.write_mask_probability off)", file=sys.stderr)
+        return 2
+    thr = {k: v for k, v in (("sfm", a.sfm), ("tight", a.tight)) if v is not None}
+    if not thr:
+        print("ERROR: rpp mask levels PROJECT --sfm T and/or --tight T", file=sys.stderr)
+        return 2
+    rec = pd / "step_masks.json"
+    old = json.loads(rec.read_text(encoding="utf-8")) if rec.is_file() else {}
+    isl = a.min_island_frac if a.min_island_frac is not None else float(old.get("min_island_frac") or 0.0)
+    names = sorted(f.name[:-4] for f in pd.glob("*.png"))
+    rep = write_step_masks(root, names, thr, isl, which=tuple(thr))
+    if old.get("thresholds"):                                  # keep the step that was not asked about
+        merged = dict(old["thresholds"], **thr)
+        rec.write_text(json.dumps({"thresholds": merged, "min_island_frac": isl, "written": rep["written"]}, indent=1),
+                       encoding="utf-8")
+    print(f"{len(names)} probability maps: written {rep['written']}, unchanged {rep['kept']}"
+          + (f", missing {len(rep['missing'])}" if rep["missing"] else ""))
+    if rep["written"].get("sfm"):
+        print("masks/ changed: it takes effect when the block's features are extracted again (rpp align)")
     return 0
 
 

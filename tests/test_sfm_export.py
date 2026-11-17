@@ -245,6 +245,20 @@ def test_dense_workspace_preloaded_from_the_native_model(tmp_path, monkeypatch):
     assert not (ws / "_masks_in").exists() and not (ws / "_masks_out").exists()
     assert json.loads((ws / "mppp_dense.json").read_text())["images"] == res["images"]
     assert prepare_dense(proj, max_image_size=400)["seconds"] == res["seconds"]       # there already: not redone
+    # 0.99.9: a tight mask (masks_tight/, the probability at the card's "tight" threshold) is what the fusion takes
+    from rpp.mask_levels import TIGHT_DIR
+    r0 = next(r for r in proj.images if r["name"] == masked[0])
+    w, h = r0["native_size"]
+    tm = np.full((h, w), 255, np.uint8)
+    tm[h // 4:, :] = 0                                                   # the tight mask leaves out more
+    (proj.root / TIGHT_DIR).mkdir(exist_ok=True)
+    cv2.imwrite(str(proj.root / TIGHT_DIR / (masked[0] + ".png")), tm)
+    res_t = prepare_dense(proj, max_image_size=400, overwrite=True)
+    assert res_t["masks"]["images"] == 4 and res_t["masks"]["tight"] == 1
+    mt = cv2.imread(str(ws / "masks" / (masked[0] + ".png")), cv2.IMREAD_GRAYSCALE)
+    assert (mt > 0).mean() < (m > 0).mean() - 0.15
+    m1 = cv2.imread(str(ws / "masks" / (masked[1] + ".png")), cv2.IMREAD_GRAYSCALE)
+    assert (m1 > 0).mean() == pytest.approx((m > 0).mean(), abs=0.02)   # the others: masks/, as before
     bat = write_dense_bat(proj)
     b = bat.read_bytes()
     assert bat.name == "dense_reconstruct.bat" and b.count(b"\n") == b.count(b"\r\n")

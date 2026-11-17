@@ -26,6 +26,35 @@ viewer. Open:
   (see [Rover model](rover-model.md));
 - rendering the two variants in parallel.
 
+## Next: beyond the stereo 360 - a station in six degrees of freedom
+
+The goal is one rover station that a viewer can move around in. The terrain within about 5 m is a textured mesh under
+the 3D rover, and the terrain from 5 to 75 m is a coarse mesh. The stereo 360 carries only the sky and the far field.
+RPV runs it on a Quest 3 at 72 frames per second.
+
+Why the mesh goes out to 75 m: a mesh that fades into the 360 at 5 m is out of step with it by about 40 display pixels
+when the head moves 15 cm. At 75 m the step is about 3 pixels. The 5-75 m ring costs few triangles, because the
+tolerated depth error grows with the square of the range.
+
+1. **RPV groundwork.**
+   - three.js r180 or later (Spark needs it), and the KTX2 loader.
+   - A performance readout in the headset: frame rate, triangles, draw calls, texture memory.
+   - KTX2 textures for the panoramas.
+2. **The mesh, textured from the pivot panorama.**
+   - The station mesh, cropped and simplified by screen-space error: about 0.3-0.5 M triangles within 5 m and about
+     50 k from 5 to 75 m.
+   - Textured in the shader from the pivot's 16K panorama and its range, as the 3D rover is.
+   - A fourth viewing mode.
+3. **A texture atlas baked from the frames.**
+   - A UV atlas (xatlas). Each texel is colored by the panorama's blending, with provenance and no-data kept.
+   - An 8K KTX2 atlas: about 85 MB on the GPU.
+   - Mastcam-Z tiles where they cover the near field, for leaning in.
+4. **Gaussian splats, as an experiment.**
+   - Nerfstudio splatfacto from the block's export, with the tight masks and the ray-cast depth maps as supervision.
+   - Cropped to 10 m, at most 0.5-1 M splats, stored as SPZ, and drawn with Spark in RPV.
+   - Checked in the headset in the same way as the mesh.
+5. **Whole blocks:** tiles and streaming (the browser viewer below).
+
 ## Later
 
 - A browser viewer for whole blocks: meshes, splats and station panoramas; layers for instrument, time of day and

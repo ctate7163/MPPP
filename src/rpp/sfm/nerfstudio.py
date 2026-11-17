@@ -40,6 +40,7 @@ from typing import Any, Dict, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
+from ..mask_levels import tight_mask_file
 from .project import SfmProject
 
 log = logging.getLogger("rpp.sfm")
@@ -168,8 +169,8 @@ def write_nerfstudio(project: SfmProject, out_dir: Optional[PathLike] = None, mo
                 return iid, f"unreadable {im.name}"
             img = cv2.remap(src, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
             m = ok.copy()
-            mf = project.masks_dir / (im.name + ".png")
-            if mf.is_file():
+            mf = tight_mask_file(project.root, im.name, project.masks_dir)      # 0.99.9: the tight one where there is one
+            if mf is not None:
                 ms = cv2.imread(str(mf), cv2.IMREAD_GRAYSCALE)
                 if ms is not None:
                     m &= cv2.remap(ms, mx, my, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0) > 0

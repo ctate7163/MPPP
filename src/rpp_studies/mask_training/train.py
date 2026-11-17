@@ -410,19 +410,73 @@ def make_collate(card: Dict) -> Collate:
 
 
 # ---------------------------------------------------------------- losses
+def edge_band(gt: torch.Tensor, px: int) -> Optional[torch.Tensor]:
+    """0.99.9: the pixels within ``px`` of a label edge (B x H x W bool): where a (2 px + 1) square holds both labels.
+    None for ``px`` <= 0."""
+    if not px or px <= 0:
+        return None
+    g = gt.float().unsqueeze(1)
+    k = 2 * int(px) + 1
+    hi = F.max_pool2d(g, k, stride=1, padding=int(px))
+    lo = -F.max_pool2d(-g, k, stride=1, padding=int(px))
+    return (hi - lo).squeeze(1) > 0.5
+
+
 def bce_tversky_loss(logits: torch.Tensor, gt: torch.Tensor, alpha: float = 0.3, beta: float = 0.7,
-                     eps: float = 1e-6):
-    """Unchanged from the notebook, but always evaluated in fp32."""
+                     eps: float = 1e-6, ignore: Optional[torch.Tensor] = None):
+    """Unchanged from the notebook, but always evaluated in fp32.  0.99.9: ``ignore`` (B x H x W bool, e.g.
+    :func:`edge_band`) leaves those pixels out of both terms (a label's edge is only good to a pixel or two)."""
     logits = logits.float().squeeze(1)
     B = logits.shape[0]
-    pw = (((1 - gt).flatten(1).sum(1) + eps) / (gt.flatten(1).sum(1) + eps)).clamp(1.0, 10.0).view(B, 1, 1)
-    bce = F.binary_cross_entropy_with_logits(logits, gt, pos_weight=pw)
+    w = torch.ones_like(gt) if ignore is None else (~ignore).float()
+    pw = ((((1 - gt) * w).flatten(1).sum(1) + eps) / ((gt * w).flatten(1).sum(1) + eps)).clamp(1.0, 10.0).view(B, 1, 1)
+    bce_px = F.binary_cross_entropy_with_logits(logits, gt, pos_weight=pw, reduction="none")
+    bce = (bce_px * w).sum() / w.sum().clamp_min(1.0)
     p = torch.sigmoid(logits)
-    tp = (p * gt).flatten(1).sum(1)
-    fp = (p * (1 - gt)).flatten(1).sum(1)
-    fn = ((1 - p) * gt).flatten(1).sum(1)
+    tp = (p * gt * w).flatten(1).sum(1)
+    fp = (p * (1 - gt) * w).flatten(1).sum(1)
+    fn = ((1 - p) * gt * w).flatten(1).sum(1)
     tv = 1 - ((tp + eps) / (tp + alpha * fp + beta * fn + eps)).mean()
     return bce + tv, float(bce.detach()), float(tv.detach())
+
+
+def lovasz_hinge(logits: torch.Tensor, gt: torch.Tensor, ignore: Optional[torch.Tensor] = None) -> torch.Tensor:
+    """0.99.9: the Lovasz hinge (Berman, Rannen Triki & Blaschko 2018), the convex surrogate of 1 - IoU of the
+    terrain class, per image and averaged; ``ignore`` pixels left out.  fp32."""
+    logits = logits.float().squeeze(1)
+    out = []
+    for b in range(logits.shape[0]):
+        lg, g = logits[b].flatten(), gt[b].flatten().float()
+        if ignore is not None:
+            keep = ~ignore[b].flatten()
+            lg, g = lg[keep], g[keep]
+        if g.numel() == 0:
+            out.append(logits.sum() * 0.0)
+            continue
+        signs = 2.0 * g - 1.0
+        errors = 1.0 - lg * signs
+        errors_sorted, perm = torch.sort(errors, descending=True)
+        gs = g[perm]
+        inter = gs.sum() - gs.cumsum(0)
+        union = gs.sum() + (1.0 - gs).cumsum(0)
+        jac = 1.0 - inter / union.clamp_min(1e-12)
+        if jac.numel() > 1:
+            jac = torch.cat([jac[:1], jac[1:] - jac[:-1]])
+        out.append(torch.dot(F.relu(errors_sorted), jac))
+    return torch.stack(out).mean()
+
+
+def mask_loss(logits: torch.Tensor, gt: torch.Tensor, edge_ignore_px: int = 0, lovasz_weight: float = 0.0):
+    """0.99.9: the training loss: BCE + Tversky with the label-edge band left out, plus ``lovasz_weight`` x the
+    Lovasz hinge.  Returns (loss, bce, tversky, lovasz)."""
+    band = edge_band(gt, edge_ignore_px)
+    loss, bce, tv = bce_tversky_loss(logits, gt, ignore=band)
+    lv = 0.0
+    if lovasz_weight and lovasz_weight > 0:
+        lz = lovasz_hinge(logits, gt, band)
+        loss = loss + float(lovasz_weight) * lz
+        lv = float(lz.detach())
+    return loss, bce, tv, lv
 
 
 @torch.no_grad()
@@ -485,7 +539,16 @@ class TrainConfig:
     grad_clip: float = 1.0
     precision: str = "auto"
     threshold: float = 0.5                # inference threshold, also used for IoU
-    dilate_kernel: int = 3
+    # 0.99.9 (Christian, 16 Nov 2026, for the next mask run): "Remove the dilation morphology. Use connected component
+    # to remove small islands of pixels"; "Ignore a +-2 px band at label edges in the loss, or add a Lovasz term, so
+    # the model stops being penalized for label imprecision"; "Write out the probability map ... each step can apply
+    # its own threshold"
+    dilate_kernel: int = 0                # was 3 (v3 and earlier): the card's dilation of the include region
+    min_island_frac: float = 1e-4         # islands under 0.01 % of the frame removed at inference (card)
+    sfm_threshold: Optional[float] = 0.9  # the card's step thresholds on P(terrain): feature extraction (a margin) ...
+    tight_threshold: Optional[float] = 0.5   # ... and dense fusion, mesh, panorama (the edge); None: not in the card
+    edge_ignore_px: int = 2               # the loss leaves out pixels within this many canvas px of a label edge
+    lovasz_weight: float = 0.0            # + this x the Lovasz hinge (the IoU surrogate; 0 = off)
     val_ratio: float = 0.1
     seed: int = 42
     hflip: bool = True                    # random left-right flip of training frames
@@ -765,9 +828,13 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
     torch.manual_seed(cfg.seed)
     random.seed(cfg.seed)
 
+    steps = {k: float(v) for k, v in (("sfm", cfg.sfm_threshold), ("tight", cfg.tight_threshold)) if v is not None}
     card = dict(DEFAULT_CARD, backbone=cfg.backbone, fpn_width=cfg.fpn_width, input_size=cfg.input_size,
                 threshold=cfg.threshold, dilate_kernel=cfg.dilate_kernel, stride4=bool(cfg.stride4),
-                quad_split_above=cfg.quad_split_above or None, quad_overlap=int(cfg.quad_overlap))
+                quad_split_above=cfg.quad_split_above or None, quad_overlap=int(cfg.quad_overlap),
+                min_island_frac=float(cfg.min_island_frac or 0.0), step_thresholds=steps or None,
+                loss={"bce_tversky": True, "edge_ignore_px": int(cfg.edge_ignore_px or 0),
+                      "lovasz_weight": float(cfg.lovasz_weight or 0.0)})
     if cfg.canvas:
         cw, ch = (int(v) for v in cfg.canvas)
         if cw % 32 or ch % 32:
@@ -890,7 +957,7 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
         for it, (x, gt, idx) in enumerate(tl, start=1):
             x, gt = x.to(device, non_blocking=True), gt.to(device, non_blocking=True)
             logits = forward(model, x, precision, dev_type)
-            loss, bce, tv = bce_tversky_loss(logits, gt)
+            loss, bce, tv, lz = mask_loss(logits, gt, cfg.edge_ignore_px, cfg.lovasz_weight)
             if not torch.isfinite(loss):
                 names = [tl.dataset.items[i].label for i in idx]
                 raise NonFiniteLoss(
@@ -913,7 +980,7 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
             if it % cfg.print_every == 0 or it == len(tl):
                 rec = {"epoch": ep + 1, "iter": it, "n_iter": len(tl), "loss": s_loss / it, "iou": s_iou / it,
                        "loss_interval": i_loss / i_n, "iou_interval": i_iou / i_n,
-                       "bce": bce, "tversky": tv, "grad_norm": gnorm, "lr": opt.param_groups[0]["lr"],
+                       "bce": bce, "tversky": tv, "lovasz": lz, "grad_norm": gnorm, "lr": opt.param_groups[0]["lr"],
                        "aspp_pre_bn_peak": peak["aspp_pre_bn"], "fp16_headroom": FP16_MAX / max(peak["aspp_pre_bn"], 1e-9),
                        "elapsed_s": time.time() - t0}
                 log.info(f"  ep {ep + 1} it {it}/{len(tl)}  loss {rec['loss']:.4f}  IoU {rec['iou']:.4f}  "
@@ -938,7 +1005,7 @@ def train(items: Sequence[Item], out_checkpoint: PathLike, cfg: Optional[TrainCo
             for x, gt, idx in vl:
                 x, gt = x.to(device), gt.to(device)
                 logits = forward(model, x, precision, dev_type)
-                l, _, _ = bce_tversky_loss(logits, gt)
+                l, _, _, _ = mask_loss(logits, gt, cfg.edge_ignore_px, cfg.lovasz_weight)
                 v_loss += float(l)
                 v_iou += batch_iou(logits, gt, cfg.threshold)
                 for j, k in enumerate(idx):

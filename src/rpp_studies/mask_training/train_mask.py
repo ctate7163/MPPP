@@ -100,6 +100,19 @@ def _parser() -> argparse.ArgumentParser:
                     help="10 Nov: mild (default: exposure x0.7-1.15 on half the samples, gamma 0.85-1.2) or strong "
                          "(v4.4: exposure x0.4-2.5, gamma 0.6-1.8)")
     ap.add_argument("--photometric-prob", type=float, default=0.5, help="share of the samples (v4.4: 0.9)")
+    # 0.99.9 (Christian, 16 Nov 2026, for the next mask run)
+    ap.add_argument("--edge-ignore-px", type=int, default=2, metavar="PX",
+                    help="0.99.9: the loss leaves out pixels within PX canvas px of a label edge (label imprecision; 0 = off)")
+    ap.add_argument("--lovasz", type=float, default=0.0, metavar="W",
+                    help="0.99.9: + W x the Lovasz hinge (an IoU surrogate) in the loss (0 = off)")
+    ap.add_argument("--dilate-kernel", type=int, default=0,
+                    help="0.99.9: the card's dilation of the include region (0 = none; v3 and earlier: 3)")
+    ap.add_argument("--min-island-frac", type=float, default=1e-4,
+                    help="0.99.9: islands smaller than this share of the frame are removed at inference (card)")
+    ap.add_argument("--sfm-threshold", type=float, default=0.9,
+                    help="0.99.9: the card's threshold on P(terrain) for the feature extraction's mask (a margin)")
+    ap.add_argument("--tight-threshold", type=float, default=0.5,
+                    help="0.99.9: the card's threshold for dense fusion, the mesh and the panoramas (the edge)")
     ap.add_argument("--gray-prob", type=float, default=None, metavar="P",
                     help="0.99.6: share of the photometric samples made gray (default: the preset's 0.25)")
     ap.add_argument("--gray-red", type=float, default=0.0, metavar="SHARE",
@@ -227,6 +240,8 @@ def _main(ap: argparse.ArgumentParser, a) -> int:
                           tone_prob=a.tone_prob, zoom_pairs=bool(a.zoom_pairs), seed=a.seed,
                           photometric=a.photometric, photometric_prob=a.photometric_prob,
                           photometric_strength=a.photometric_strength, gray_prob=a.gray_prob, gray_red_share=a.gray_red,
+                          edge_ignore_px=a.edge_ignore_px, lovasz_weight=a.lovasz, dilate_kernel=a.dilate_kernel,
+                          min_island_frac=a.min_island_frac, sfm_threshold=a.sfm_threshold, tight_threshold=a.tight_threshold,
                           lmst_sampler=a.lmst_sampler, lmst_upweight=a.lmst_upweight,
                           angular_scale=a.angular_scale, angular_range=tuple(a.angular_range), defocus=a.defocus,
                           copy_paste=a.copy_paste, color_matrix=cm, family_batches=a.family_batches,

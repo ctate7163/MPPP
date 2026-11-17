@@ -15,7 +15,7 @@ RPP -> Agisoft Metashape: build the project of a block from ``metashape_job.json
    from camera; Metashape's camera axes are COLMAP's: x right, y down, z forward); the camera references (the PDS
    label priors: position with its sigma, yaw/pitch/roll); the tie points triangulated again with these cameras
    from COLMAP's observations (the Bundler import triangulates with pinhole cameras and renumbers its tracks);
-4. the masks from the COLMAP project's ``masks/`` (black = masked in both);
+4. the masks from the COLMAP project's ``masks_tight/`` where it has one (0.99.9), else ``masks/`` (black = masked in both);
 5. the region (the tie points' 2-98 % box);
 6. the check: sampled COLMAP observations reprojected by Metashape (pose + calibration + pixel convention) and the
    imported tie points' own reprojection errors (the Bundler conversion) -> ``metashape_check.json``;

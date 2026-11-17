@@ -11,6 +11,7 @@ import torch
 import torch.nn.functional as F
 
 from .model import canvas_of, fit_to_canvas, load_model, needs_quad_split, quad_boxes
+from ..mask_levels import island_px, probability_to_mask, remove_small_islands  # noqa: F401 (0.99.9: torch-free)
 
 PathLike = Union[str, Path]
 
@@ -82,21 +83,16 @@ def _predict_frame(model, card: Dict[str, Any], image_0_255: np.ndarray) -> np.n
     return p.float().cpu().numpy()
 
 
-def probability_to_mask(prob: np.ndarray, threshold: float, dilate_kernel: int = 0) -> np.ndarray:
-    """uint8 mask, 255 = include, 0 = exclude; the include region is dilated."""
-    m = (prob > threshold).astype(np.uint8)
-    if dilate_kernel and dilate_kernel > 1:
-        m = cv2.dilate(m, cv2.getStructuringElement(cv2.MORPH_RECT, (dilate_kernel,) * 2))
-    return m * np.uint8(255)
-
-
 def infer_mask(image_0_255: np.ndarray, checkpoint: PathLike, device: str = "auto",
                threshold: Optional[float] = None, dilate_kernel: Optional[int] = None,
-               quad_split_above: Any = _CARD) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
+               quad_split_above: Any = _CARD, min_island_frac: Optional[float] = None
+               ) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
     """-> (mask uint8 0/255, probability float32, model card).  ``quad_split_above``:
-    see :func:`predict_probability` (default from the card; None disables)."""
+    see :func:`predict_probability` (default from the card; None disables).  ``threshold``, ``dilate_kernel``,
+    ``min_island_frac``: None = the card's (cards before 0.99.9 have no islands: 0)."""
     model, card = get_model(checkpoint, device)
     prob = predict_probability(model, card, image_0_255, quad_split_above)
     thr = card["threshold"] if threshold is None else threshold
     dk = card["dilate_kernel"] if dilate_kernel is None else dilate_kernel
-    return probability_to_mask(prob, float(thr), int(dk)), prob, card
+    mi = card.get("min_island_frac", 0.0) if min_island_frac is None else min_island_frac
+    return probability_to_mask(prob, float(thr), int(dk), float(mi or 0.0)), prob, card

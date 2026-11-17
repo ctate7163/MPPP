@@ -117,6 +117,7 @@ class RPPImage:
         rad = np.where(valid[..., None], np.maximum(rad, eps), 0.0)
 
         self.mask = self.mask_valid.copy()
+        self.mask_prob8: Optional[np.ndarray] = None          # 0.99.9: P(terrain) x 255 beside the binary mask
         self.mask_card: Optional[Dict[str, Any]] = None
         self.mask_inference_skipped = False
         if cfg["masking"]["infer_mask"]:
@@ -355,10 +356,16 @@ class RPPImage:
         c, m = self.config["color"], self.config["masking"]
         img8 = rad * float(c["scale_rad_to_int16"]) / float(c["scale_int8_to_int16"]) + float(c["offset_int8_to_int16"])
         mask, self.mask_probability, self.mask_card = infer_mask(
-            img8, m["checkpoint"], m["device"], m["threshold"], m["dilate_kernel"])
+            img8, m["checkpoint"], m["device"], m["threshold"], m["dilate_kernel"], min_island_frac=m.get("min_island_frac"))
         mask[self.mask_valid == 0] = 0
         self.mask = mask
+        from .mask_levels import prob_to_uint8
+        self.mask_prob8 = prob_to_uint8(self.mask_probability, self.mask_valid)
         self._say(f"mask inferred: {100.0 * (mask > 0).mean():.1f}% included")
+
+    def _mask_steps(self) -> Optional[Dict[str, Any]]:
+        from .mask_levels import step_record
+        return step_record(self.mask_card, self.config["masking"])
 
     def _pad_to_full_frame(self, rad: np.ndarray) -> np.ndarray:
         self.padding = {"left": 0, "right": 0, "top": 0, "bottom": 0}
@@ -381,6 +388,8 @@ class RPPImage:
             rad = _pad(rad, left, right, top, bottom)
             self.mask_valid = _pad(self.mask_valid, left, right, top, bottom)
             self.mask = _pad(self.mask, left, right, top, bottom)
+            if self.mask_prob8 is not None:
+                self.mask_prob8 = _pad(self.mask_prob8, left, right, top, bottom)
             self._say(f"padded {w}x{h} -> {W}x{H} (left {left}, right {right}, top {top}, bottom {bottom})")
         self.intrinsics = self.intrinsics.shifted(left, top, W, H)
         return rad
@@ -452,6 +461,8 @@ class RPPImage:
         rad = _pad(rad, px, px, py, py)
         self.mask_valid = _pad(self.mask_valid, px, px, py, py)
         self.mask = _pad(self.mask, px, px, py, py)
+        if self.mask_prob8 is not None:
+            self.mask_prob8 = _pad(self.mask_prob8, px, px, py, py)
         self.intrinsics = self.intrinsics.shifted(px, py, w + 2 * px, h + 2 * py)
         self.padding_extra = {"x": px, "y": py}
         return rad
@@ -467,6 +478,8 @@ class RPPImage:
         if sm is None or sm.shape != self.mask.shape:
             raise ValueError(f"Static mask {f} must be a {self.mask.shape[1]}x{self.mask.shape[0]} grayscale PNG")
         self.mask[sm == 0] = 0
+        if self.mask_prob8 is not None:
+            self.mask_prob8[sm == 0] = 0
         self._say(f"static mask {f.name} applied")
 
     def _undistort(self, rad: np.ndarray) -> np.ndarray:
@@ -484,6 +497,8 @@ class RPPImage:
         # a pixel is valid / included only if all its sources were
         self.mask_valid = np.where(remap(self.mask_valid, cv2.INTER_LINEAR) == 255, 255, 0).astype(np.uint8)
         self.mask = np.where(remap(self.mask, cv2.INTER_LINEAR) == 255, 255, 0).astype(np.uint8)
+        if self.mask_prob8 is not None:
+            self.mask_prob8 = remap(self.mask_prob8, cv2.INTER_LINEAR).astype(np.uint8)
         rad[self.mask_valid == 0] = 0.0
         self.intrinsics = Intrinsics(w, h, K_new, source=intr.source + " -> undistorted")
         return rad
@@ -576,7 +591,10 @@ class RPPImage:
                      "valid_fraction": float((self.mask_valid > 0).mean()),
                      "model": None if self.mask_card is None else
                      {k: self.mask_card.get(k) for k in ("release_name", "name", "backbone", "stride4", "threshold",
-                                                          "dilate_kernel", "val_iou")}},
+                                                          "dilate_kernel", "val_iou", "min_island_frac", "step_thresholds")},
+                     # 0.99.9: the probability map is on disk (masks_prob/) and what the steps take from it
+                     "probability": self.mask_prob8 is not None,
+                     "steps": None if self.mask_card is None else self._mask_steps()},
             "log": list(self.log),
         }
 

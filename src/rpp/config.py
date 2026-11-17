@@ -69,6 +69,11 @@ _DEFAULTS: Dict[str, Any] = {
         # null -> values from the checkpoint's model card
         "threshold": None,
         "dilate_kernel": None,
+        # 0.99.9: islands smaller than this share of the frame are removed from the mask (connected components; null:
+        # the card's - 0 for rpp_mask_v3 and earlier); the steps' thresholds on the stored probability
+        # ({"sfm": 0.9, "tight": 0.5}; null: the card's - none for rpp_mask_v3, whose blocks keep the binary mask)
+        "min_island_frac": None,
+        "step_thresholds": None,
         "static_masks_dir": None,
         # rover stations (site, drive) where the mask model is NOT run, so the rover stays in the
         # images; invalid (black) pixels are still masked.  Items: [site, drive], "S032D1184", "32/1184",
@@ -110,6 +115,7 @@ _DEFAULTS: Dict[str, Any] = {
         "embed_gps": True,
         "store_mask_in_alpha": True,
         "write_mask_files": False,
+        "write_mask_probability": True,   # 0.99.9: with write_mask_files, masks_prob/<stem>.png (P(terrain) x 255) too
         "write_references": True,
         "write_manifest": True,
         "write_colmap": True,

@@ -65,6 +65,47 @@ def test_loss_is_fp32_even_for_half_logits():
     assert loss.dtype == torch.float32 and torch.isfinite(loss)
 
 
+def test_label_edge_band_is_left_out_of_the_loss():
+    """0.99.9: a +-2 px band at label edges is out of the loss, so a model whose edge is 2 px off is not penalised."""
+    from rpp_studies.mask_training.train import edge_band, mask_loss
+    gt = torch.zeros(1, 32, 32)
+    gt[:, 16:, :] = 1.0                                               # horizon at row 16
+    band = edge_band(gt, 2)
+    assert band[0, 14:18].all() and not band[0, :14].any() and not band[0, 18:].any()
+    assert edge_band(gt, 0) is None
+    off = torch.full((1, 1, 32, 32), -8.0)
+    off[..., 18:, :] = 8.0                                            # the edge 2 px low
+    exact = torch.full((1, 1, 32, 32), -8.0)
+    exact[..., 16:, :] = 8.0
+    l_off0, l_ex0 = mask_loss(off, gt, 0)[0], mask_loss(exact, gt, 0)[0]
+    l_off2, l_ex2 = mask_loss(off, gt, 2)[0], mask_loss(exact, gt, 2)[0]
+    assert float(l_off0) > float(l_ex0) + 0.1                         # without the band: penalised
+    assert float(l_off2) == pytest.approx(float(l_ex2), abs=1e-3)     # with it: not
+
+
+def test_lovasz_hinge_is_the_iou_surrogate():
+    from rpp_studies.mask_training.train import lovasz_hinge, mask_loss
+    gt = torch.zeros(2, 16, 16)
+    gt[:, 8:, :] = 1.0
+    good = (gt * 2 - 1).unsqueeze(1) * 5.0                            # right, with margin
+    bad = -good
+    assert float(lovasz_hinge(good, gt)) == pytest.approx(0.0, abs=1e-6)
+    assert float(lovasz_hinge(bad, gt)) > 1.0
+    lg = torch.randn(2, 1, 16, 16, requires_grad=True)
+    loss, _, _, lz = mask_loss(lg, gt, 2, 0.5)
+    loss.backward()
+    assert lz > 0 and lg.grad is not None and torch.isfinite(lg.grad).all()
+    assert mask_loss(lg, gt, 2, 0.0)[3] == 0.0
+
+
+def test_the_next_mask_run_card(tmp_path):
+    """0.99.9 defaults: no dilation, islands removed, step thresholds in the card."""
+    from rpp_studies.mask_training.train import TrainConfig
+    c = TrainConfig()
+    assert c.dilate_kernel == 0 and c.min_island_frac > 0 and c.edge_ignore_px == 2
+    assert (c.sfm_threshold, c.tight_threshold) == (0.9, 0.5)
+
+
 def test_training_process_never_imports_matplotlib(tmp_path):
     """v0p3 kernel crash: plotting runs in a child process; the trainer stays matplotlib-free."""
     import subprocess, sys, textwrap
@@ -101,6 +142,9 @@ def test_smoke_train_writes_checkpoint_and_card_and_reloads(tmp_path):
     card = json.loads(out.with_suffix(".json").read_text())
     assert card["training"]["split"] == "grouped by mask file" and card["training"]["n_val"] == 4
     assert card["input_size"] == 64 and card["training"]["precision_resolved"] == "fp32"
+    # 0.99.9: the card carries the step thresholds, the island size and the loss
+    assert card["dilate_kernel"] == 0 and card["step_thresholds"] == {"sfm": 0.9, "tight": 0.5}
+    assert card["min_island_frac"] == 1e-4 and card["loss"]["edge_ignore_px"] == 2
     assert np.isfinite(card["val_iou"]) and card["history"][0]["aspp_pre_bn_peak"] > 0
     model, c2 = load_model(out, "cpu")
     assert c2["val_iou"] == card["val_iou"]

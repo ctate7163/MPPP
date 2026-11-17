@@ -62,6 +62,9 @@ def write_image_products(im: RPPImage, out_dir: PathLike) -> Dict[str, str]:
             written[fmt] = str(writers.save_png(arr, target, meta, embed_gps=exp["embed_gps"]))
     if exp["write_mask_files"]:
         written["mask"] = str(writers.save_mask(im.mask, out_dir / "masks" / im.fn.stem))
+        # 0.99.9: the probability beside it, so that each step can take its own threshold (rpp.mask_levels)
+        if exp.get("write_mask_probability", True) and getattr(im, "mask_prob8", None) is not None:
+            written["mask_prob"] = str(writers.save_gray8(im.mask_prob8, out_dir / "masks_prob" / im.fn.stem))
     return written
 
 

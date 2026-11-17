@@ -242,8 +242,13 @@ def prepare_dense(project: SfmProject, out_dir: Optional[PathLike] = None,
                 if d.exists():
                     shutil.rmtree(d)
             tmp_in.mkdir()
+            from ..mask_levels import TIGHT_DIR, tight_mask_file
+            tight = 0
             for n in names:
-                src = project.masks_dir / (n + ".png")
+                # 0.99.9: the tight mask (the probability at the card's "tight" threshold) where the block has one;
+                # masks/ is the feature extraction's, with its generous margin
+                src = tight_mask_file(project.root, n, project.masks_dir)
+                tight += int(src.parent.name == TIGHT_DIR)
                 dst = tmp_in / n
                 try:
                     os.link(src, dst)
@@ -269,7 +274,7 @@ def prepare_dense(project: SfmProject, out_dir: Optional[PathLike] = None,
                 n_ok += 1
             shutil.rmtree(tmp_in, ignore_errors=True)
             shutil.rmtree(tmp_out, ignore_errors=True)
-            res["masks"] = {"dir": str(mdir), "images": n_ok}
+            res["masks"] = {"dir": str(mdir), "images": n_ok, "tight": tight}
     res["seconds"] = round(time.time() - t0, 1)
     rec_file.write_text(json.dumps(res, indent=1), encoding="utf-8")
     log.info("dense: workspace %s - %d images undistorted at <= %d px%s in %.0f s", out, res["images"], max_image_size,

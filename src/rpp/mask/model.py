@@ -44,7 +44,9 @@ DEFAULT_CARD: Dict[str, Any] = {
     "input_range": "0-255 linear 8-bit-equivalent RGB (RPP color pipeline)",
     "output": "logit; sigmoid > threshold = include in reconstruction (terrain)",
     "threshold": 0.4,
-    "dilate_kernel": 3,
+    "dilate_kernel": 3,              # cards before 0.99.9 dilate the include region; new cards set 0
+    "min_island_frac": 0.0,          # 0.99.9: islands under this share of the frame removed (connected components)
+    "step_thresholds": None,         # 0.99.9: {"sfm": t, "tight": t} on the stored probability (rpp.mask_levels)
     "state_dict_key": "model",
     "stride4": False,                # stride-4 skip in the decoder (absent in older cards)
     # frames whose long side exceeds this are processed as four overlapping quadrants

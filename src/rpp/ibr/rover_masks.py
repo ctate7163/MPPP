@@ -25,7 +25,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Union
+from typing import Any, Callable, Dict, Iterable, Optional, Set, Union
 
 import numpy as np
 
@@ -38,9 +38,15 @@ RECORD = "masks_ibr.json"
 
 def mask_file(root: PathLike, name: str) -> Path:
     """The rover mask the IBR uses for ``name``: ``masks_ibr/<name>.png`` where the panorama made one, else the
-    block's ``masks/<name>.png`` (either may be missing)."""
-    m = Path(root) / DIR / (name + ".png")
-    return m if m.is_file() else Path(root) / "masks" / (name + ".png")
+    block's tight mask ``masks_tight/<name>.png`` (0.99.9: the probability at the mask model's "tight" threshold;
+    the mesh and the panoramas want the edge where it is), else the block's ``masks/<name>.png`` (any may be
+    missing)."""
+    from ..mask_levels import TIGHT_DIR
+    for d in (DIR, TIGHT_DIR):
+        m = Path(root) / d / (name + ".png")
+        if m.is_file():
+            return m
+    return Path(root) / "masks" / (name + ".png")
 
 
 def _processed_dir(project) -> Optional[Path]:
@@ -78,9 +84,15 @@ def model_input(img8_rgb: np.ndarray, color: Dict[str, Any]) -> np.ndarray:
 
 def _infer_default(img: np.ndarray, masking: Dict[str, Any]) -> np.ndarray:
     from ..mask import infer_mask                               # lazy: torch / timm
-    mask, _, card = infer_mask(img, masking.get("checkpoint"), masking.get("device", "auto"),
-                               masking.get("threshold"), masking.get("dilate_kernel"))
+    from ..mask_levels import mask_from_probability, prob_to_uint8, step_thresholds
+    mask, prob, card = infer_mask(img, masking.get("checkpoint"), masking.get("device", "auto"),
+                                  masking.get("threshold"), masking.get("dilate_kernel"),
+                                  min_island_frac=masking.get("min_island_frac"))
     _infer_default.card = card                                  # type: ignore[attr-defined]
+    thr = step_thresholds(card, masking.get("step_thresholds"))
+    if thr and thr.get("tight") is not None:                    # 0.99.9: the panorama's edge is the tight one
+        mi = masking.get("min_island_frac")
+        mask = mask_from_probability(prob_to_uint8(prob), thr["tight"], card.get("min_island_frac", 0.0) if mi is None else mi)
     return mask
 
 

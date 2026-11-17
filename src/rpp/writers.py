@@ -198,6 +198,15 @@ def save_mask(mask: np.ndarray, path: PathLike) -> Path:
     return path
 
 
+def save_gray8(arr: np.ndarray, path: PathLike) -> Path:
+    """An 8-bit single-channel PNG as it is (0.99.9: the mask probability map)."""
+    path = Path(path).with_suffix(".png")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not cv2.imwrite(str(path), np.asarray(arr, np.uint8)):
+        raise IOError(path)
+    return path
+
+
 def reference_offset(refs: List[list]) -> np.ndarray:
     """floor(mean/10)*10 — keeps coordinates small for single-precision software."""
     xyz = np.array([r[1:4] for r in refs], dtype=np.float64)
