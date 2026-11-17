@@ -3,6 +3,31 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.20 — 2026-11-17 (branch `rpp`)
+
+The station terrain of the panoramas (Christian, 14:16 / 14:39 / 14:41: "the rockytop 3d model did not capture the tall
+rocks to the north very well and the sky had many floating artifacts behind it" - "Replace the height rule with a
+connectivity rule. Keep sky out of the dense cloud. Whole-block terrain to 75 m. smoother hole filling on a finer grid").
+
+- **The support rule** (`rpp.ibr.mesh.support_grid`, `supported`, `unsupported`) replaces the height rule in the mesh
+  step: the cloud in 0.4 m voxels, grown by one voxel; a connected set that holds ground is terrain whatever its
+  height, the rest floats and goes; triangles the mesher drew outside the terrain's voxels go too.  On the whole-block
+  Rockytop cloud (11 million points within 80 m of S026D0850) the height rule kept nothing more than about 2 m above
+  the local ground within 30 m and dropped 0.86 % of the points, 70 % of them to the north within 20 m; the support
+  rule keeps rock to 20 m of height and drops 0.11 %.
+- **The sky mask** (`rpp.sfm.dense.sky_mask`, `write_sky_masks`): the fusion's mask of a frame is its rover mask without
+  its sky (`masks_fusion\`).  Sky: smooth, above -3 degrees by the frame's pose, as bright as the smooth pixels above
+  4 degrees, and joined to them.  The stereo maps are reused; the fusion runs again.  `RPP_SKY_MASK=0` turns it off.
+- **Whole-block terrain** is the default of every station (`"terrain": "block"` at the top of `single_sites.json`;
+  `"terrain": "own"` for a station's own frames).  18 stations change; their first run makes the block's cloud.
+- **No flat extension**: no apron past the mesh radius (75 m) and no ground plane for the rays (`FLAT_EXTENSION`).
+  The far field (100 m, 300 m, infinity by sharpness) starts at the mesh: where the mesh ends at its outer edge the
+  field begins at the edge's range and takes its own value 0.75 degrees above it; at a skyline (the mesh under the rim
+  is near) the depth steps (`rpp.ibr.ods.far_rim_blend`).
+- **The fill**: a 1 degree by 3 % grid (was 2 degrees by 6 %); a smooth surface through the covered cells (piecewise
+  cubic with continuous slopes, was piecewise linear); beyond the covered cells the plane through the 24 nearest ones
+  carries the local slope on (was the nearest cell's height).
+
 ## 0.99.19 — 2026-11-17 (branch `rpp`)
 
 Mask training, for the v5 run (Christian, 14:47: "I have add some z110 deck images and msl ncam images to the training

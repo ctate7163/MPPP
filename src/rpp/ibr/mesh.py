@@ -678,9 +678,14 @@ def unsupported(X: np.ndarray, pivot: Sequence[float], up: Sequence[float], plan
 
 ROVER_FOOTPRINT_X_M = (-1.75, 1.60)   # RMECH x of the ground the rover stands over (rear of the RTG to the stowed turret)
 ROVER_FOOTPRINT_Y_M = (-1.50, 1.50)   # RMECH y: outside the wheels (track about 2.7 m)
-FILL_AZ_STEP_DEG = 2.0                # the fill's polar grid about the mast axis: azimuth step ...
+FILL_AZ_STEP_DEG = 1.0                # the fill's polar grid about the mast axis: azimuth step (0.99.20: 1 deg, was 2) ...
 FILL_RING0_M = 0.4                    # ... and rings from here, each FILL_RING_RATIO x the last, to the mesh radius
-FILL_RING_RATIO = 1.06
+FILL_RING_RATIO = 1.03                # 0.99.20 (Christian, 17 Nov 2026: "smoother hole filling on a finer grid"): was 1.06
+FILL_EXTRAPOLATE_NEIGHBORS = 24       # beyond the covered cells' hull: the plane through this many nearest covered cells
+# 0.99.20 ("remove the flat extension ... render the multi station full block mesh out to 75 instead"): the mesh ends
+# at its radius - no apron falling to the regional ground plane, and the plane's reach for the rays is the mesh radius
+# too (it only catches a ray that slips through the mesh).  Beyond the mesh the far field takes over (rpp.ibr.ods).
+FLAT_EXTENSION = False
 # 0.97.0 (Christian, 12 Nov 2026, Van Zyl: "the mesh preview still has some holes near the horizon ... so that they
 # don't appear as holes in the stereo view"): far from the mast the Poisson mesh is ragged - gaps smaller than a grid
 # cell, which the hole rule below does not see.  From FILL_UNDERLAY_FROM_M on every cell of the grid gets its two
@@ -689,7 +694,7 @@ FILL_RING_RATIO = 1.06
 # mesh and plane meet without a step.
 FILL_UNDERLAY_FROM_M = 20.0
 FILL_UNDERLAY_DROP_M = 0.05
-FILL_APRON_TO_M = 200.0
+FILL_APRON_TO_M = 200.0               # with FLAT_EXTENSION only
 # 0.97.13: nearer than FILL_UNDERLAY_FROM_M every cell gets a second sheet of the interpolated surface,
 # FILL_NEAR_DROP_M below the cell heights (deep enough not to cover a hollow beside a rock; a ray through a gap of the
 # mesh ends on it, not on the regional ground plane, which no longer reaches within raycast.PLANE_FROM_M of the axis).
@@ -723,7 +728,8 @@ def fill_terrain(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], up: Seque
     not covered, and its neighbors, get two triangles.  Returns (V, F, {"cells", "covered", "filled", "triangles",
     "under_rover_triangles_removed", "filled_by_ring"}).
     """
-    from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
+    from scipy.interpolate import CloughTocher2DInterpolator
+    from scipy.spatial import cKDTree
     P = np.asarray(pivot, float)
     u = np.asarray(up, float) / np.linalg.norm(up)
     e = np.cross([0.0, 1.0, 0.0], u); e = e / np.linalg.norm(e)
@@ -752,7 +758,8 @@ def fill_terrain(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], up: Seque
     edges = [0.0, FILL_RING0_M]
     while edges[-1] < radius_m:
         edges.append(min(edges[-1] * FILL_RING_RATIO, float(radius_m)))
-    apron_m = max(float(radius_m), float(apron_to_m if apron_to_m is not None else FILL_APRON_TO_M)) if underlay else float(radius_m)
+    apron_m = (max(float(radius_m), float(apron_to_m if apron_to_m is not None else FILL_APRON_TO_M))
+               if underlay and (FLAT_EXTENSION or apron_to_m is not None) else float(radius_m))
     while edges[-1] < apron_m:                                  # the apron: past the mesh, down to the plane
         edges.append(min(edges[-1] * FILL_RING_RATIO, apron_m))
     edges = np.array(edges)
@@ -792,12 +799,32 @@ def fill_terrain(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], up: Seque
     an = np.radians(np.arange(na) * FILL_AZ_STEP_DEG)
     nx, ny = edges[:, None] * np.cos(an)[None, :], edges[:, None] * np.sin(an)[None, :]      # nodes (nr + 1, na)
     if covered.sum() >= 3:
+        # 0.99.20: a smooth surface over the holes - a piecewise cubic with continuous slopes through the covered cells
+        # (it was piecewise linear: flat facets between a hole's edges); beyond their hull (a station at the block's
+        # edge) the plane through the nearest covered cells carries the ground's local slope on, where the nearest
+        # cell's height alone made a step
         pts = np.c_[cx[covered], cy[covered]]
-        lin = LinearNDInterpolator(pts, med[covered])
-        hn = lin(nx, ny)
+        vals = med[covered]
+        try:
+            hn = CloughTocher2DInterpolator(pts, vals)(nx, ny)
+        except Exception:                                        # noqa: BLE001 - degenerate cells (all on a line)
+            hn = np.full(nx.shape, np.nan)
+        lo_, hi_ = float(vals.min()), float(vals.max())
+        hn = np.clip(hn, lo_ - 0.5, hi_ + 0.5)                   # a cubic may overshoot beside a cliff
         miss = ~np.isfinite(hn)
         if miss.any():
-            hn[miss] = NearestNDInterpolator(pts, med[covered])(nx[miss], ny[miss])
+            k = int(min(FILL_EXTRAPOLATE_NEIGHBORS, len(pts)))
+            q = np.c_[nx[miss], ny[miss]]
+            dist, idx = cKDTree(pts).query(q, k=k)
+            dist, idx = dist.reshape(len(q), k), idx.reshape(len(q), k)
+            w = 1.0 / np.maximum(dist, 1e-3) ** 2
+            A = np.stack([np.ones_like(dist), pts[idx, 0] - q[:, None, 0], pts[idx, 1] - q[:, None, 1]], -1)   # plane about q
+            AtA = np.einsum("nki,nk,nkj->nij", A, w, A) + 1e-6 * np.eye(3)[None]
+            Atb = np.einsum("nki,nk,nk->ni", A, w, vals[idx])
+            est = np.linalg.solve(AtA, Atb[..., None])[:, 0, 0]
+            near_h = vals[idx[:, 0]]
+            est = np.clip(est, near_h - 0.35 * dist[:, 0], near_h + 0.35 * dist[:, 0])   # at most a 19 degree slope on
+            hn[miss] = est
     else:
         hn = np.zeros_like(nx)                                   # no terrain at all: the plane
     hn[0, :] = np.mean(hn[0, :])                                 # the axis is one point
@@ -929,11 +956,17 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
     near = h <= radius_m + 5.0
     float_rep = None
     ground = None
+    grid = None
     if remove_floating:                                         # 10 Nov: nothing floating above the terrain
         ground = local_ground(base[horizontal_distance(base, pivot, up) <= radius_m + 5.0], pivot, up, plane)   # 0.97.0
-        fl = floating(points, pivot, up, plane, ground=ground)
-        float_rep = {"above_camera_m": 0.0, "clearance_below_camera_m": FLOAT_CLEARANCE_M, "beyond_m": FLOAT_BEYOND_M,
-                     "heights_from": f"the local ground ({FLOAT_GROUND_CELL_M:g} m grid)", "range_fraction": FLOAT_RANGE_FRACTION,
+        # 0.99.20: the support rule (what stands on the ground stays, whatever its height) in place of the height rule
+        grid = support_grid(points[near], pivot, up, plane, ground, radius_m + 5.0)
+        fl = unsupported(points, pivot, up, plane, grid)
+        float_rep = {"rule": "support (0.99.20): voxels connected to the ground stay", "voxel_m": SUPPORT_VOXEL_M,
+                     "bridge_voxels": SUPPORT_BRIDGE, "ground_band_m": SUPPORT_GROUND_BAND_M, "beyond_m": FLOAT_BEYOND_M,
+                     "components": grid["components"], "ground_components": grid["ground_components"],
+                     "voxels": grid["voxels"], "voxels_kept": grid["voxels_kept"],
+                     "heights_from": f"the local ground ({FLOAT_GROUND_CELL_M:g} m grid)",
                      "camera_height_above_plane_m": float(height_above_plane(np.asarray(pivot, float)[None], plane, up)[0]),
                      "points_dropped": int((fl & near).sum())}
         near &= ~fl
@@ -953,19 +986,19 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
         V, F, how, clean = zoned_poisson(points, normals, pivot, up, radius_m, zones=zones)
     V, F, dec = decimate_and_smooth(V, F, target_triangles=target_triangles)
     if remove_floating and len(F):
-        bad = floating(V, pivot, up, plane, ground=ground)
-        dropf = bad[np.asarray(F)].any(axis=1)
+        bad = unsupported(V, pivot, up, plane, grid)            # a surface the mesher drew away from the kept points
+        dropf = bad[np.asarray(F)].all(axis=1)                   # (a triangle with a vertex in the terrain's voxels stays)
         F = np.asarray(F)[~dropf]
         float_rep["triangles_dropped"] = int(dropf.sum())
-        log.info("mesh: floating surface - %d points and %d triangles removed (above the cameras, or less than %g m below "
-                 "them beyond %g m; heights from the ground plane)", float_rep["points_dropped"], int(dropf.sum()),
-                 FLOAT_CLEARANCE_M, FLOAT_BEYOND_M)
+        log.info("mesh: floating surface - %d points and %d triangles removed (not connected to the ground: %d of %d sets "
+                 "of voxels are terrain)", float_rep["points_dropped"], int(dropf.sum()), grid["ground_components"],
+                 grid["components"])
     rover_tris = None
     fill_rep = None
     terrain_tris = [0, int(len(F))]                             # 0.98.30: the surface from the cloud (not fill, floor, model)
     if fill:                                                    # 0.97.0: no holes, flattish ground under the rover
         V, F, fill_rep = fill_terrain(V, F, pivot, up, plane, radius_m, rover=rover_pose if rover_pose is not None else deck,
-                                      rover_keep_m=rover_keep_m, apron_to_m=plane_radius_m)
+                                      rover_keep_m=rover_keep_m, apron_to_m=plane_radius_m if FLAT_EXTENSION else None)
         log.info("mesh: terrain fill - %d of %d cells had no surface (%d triangles); %d triangles under the rover replaced",
                  fill_rep["filled"], fill_rep["cells"], fill_rep["triangles"], fill_rep["under_rover_triangles_removed"])
         terrain_tris = [0, int(fill_rep.get("measured_triangles", len(F)))]
@@ -1008,6 +1041,12 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
         log.info("mesh: the rover deck floor - %d points below it dropped, %d vertices lifted onto it, %d floor triangles",
                  deck_rep["points_below_dropped"], moved, len(Fd))
     write_mesh(out / "mesh.ply", V, F)
+    if not FLAT_EXTENSION:                                      # 0.99.20: the plane reaches no farther than the mesh
+        plane["fit_radius_m"] = plane.get("radius_m")
+        plane["radius_m"] = float(radius_m)
+        plane["inner_m"] = float(radius_m)                      # ... and catches no ray: the fill leaves no cell open, and
+        #                                                         a whole-block cloud's plane can be steep (Rockytop: 14
+        #                                                         degrees, 11 m rms) - a wall in front of the sky
     (out / "ground_plane.json").write_text(json.dumps(plane, indent=1, default=float), encoding="utf-8")
     files = {"mesh": str(out / "mesh.ply"), "ground_plane": str(out / "ground_plane.json")}
     sphere = None
@@ -1030,7 +1069,7 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
     (out / "mesh_report.json").write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")
     log.info("mesh: %d -> %d triangles (%s) within %g m of the axis; ground plane %s (tilt %.1f deg, %.2f m rms over %d "
              "bins) to %g m; then %s -> %s", clean["triangles_in"], len(F), how["method"], radius_m, plane["method"],
-             plane["tilt_deg"], plane.get("rms_m", float("nan")), plane["bins"], plane_radius_m,
+             plane["tilt_deg"], plane.get("rms_m", float("nan")), plane["bins"], plane["radius_m"],
              rep["scene"]["beyond"], out)
     return rep
 

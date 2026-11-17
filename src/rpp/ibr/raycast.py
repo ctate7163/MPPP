@@ -66,7 +66,8 @@ class Scene:
             n = np.asarray(plane["normal"], float)
             self.plane = {"normal": n / np.linalg.norm(n), "offset": float(plane["offset"]),
                           "centre": np.asarray(plane["centre"], float), "up": np.asarray(plane.get("up", (0, 0, 1)), float),
-                          "radius_m": float(plane["radius_m"]), "inner_m": float(plane.get("inner_m", PLANE_FROM_M))}
+                          "radius_m": float(plane["radius_m"]), "inner_m": float(plane.get("inner_m", PLANE_FROM_M)),
+                          "mesh_rim": plane.get("fit_radius_m") is not None}   # 0.99.20: the plane ends with the mesh
         self.sky = bool(sky)
         self.o3d = o3d
         self.scene = o3d.t.geometry.RaycastingScene()

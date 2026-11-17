@@ -358,6 +358,118 @@ def stereo_cached(ws: PathLike, stereo_options: Optional[Dict[str, Any]] = None,
     return True
 
 
+# 0.99.20 (Christian, 17 Nov 2026, Rockytop: "the sky had many floating artifacts behind it" - "Keep sky out of the dense
+# cloud"): THE SKY MASK.  The patch-match stereo gives the sky depths too (a smooth sky matches anywhere), and the fusion
+# keeps those that agree by chance: points floating behind the skyline.  The sky of an undistorted frame is found from
+# the picture and the camera's pose: smooth (the gradient's size, averaged, under SKY_TEXTURE), above SKY_MIN_EL_DEG
+# (the frame's pose gives each pixel's elevation), as bright as the sky seen higher up (the smooth pixels above
+# SKY_SEED_EL_DEG set the sky's brightness; within SKY_BRIGHT_TOL of it - a smooth sand slope under the horizon is
+# darker), and joined to those higher pixels.  The fusion's mask of a frame is its rover mask without its sky.
+SKY_MASK = True
+SKY_WORK_PX = 640                 # the picture's long side for the test
+SKY_TEXTURE = 0.9                 # 8-bit levels per pixel (the sky of the Rockytop frames: under 0.3; terrain: 2-5)
+SKY_MIN_EL_DEG = -3.0
+SKY_SEED_EL_DEG = 4.0
+SKY_BRIGHT_TOL = 30.0             # 8-bit levels around the seeds' median (or 4 x their spread, when that is more)
+SKY_GROW_PX = 2                   # the sky grown by this many pixels of the frame (the silhouette's mixed pixels)
+SKY_MIN_SHARE = 0.002             # less sky than this share of the frame: none
+SKY_MASK_DIR = "masks_fusion"
+
+
+def pixel_elevation_deg(shape: Tuple[int, int], pinhole: Sequence[float], R_cam_from_world: np.ndarray, scale: float = 1.0,
+                        up: Sequence[float] = (0.0, 0.0, 1.0)) -> np.ndarray:
+    """The elevation (deg above the horizon of ``up``) of every pixel's ray of an undistorted (PINHOLE fx fy cx cy)
+    frame reduced by ``scale``."""
+    h, w = shape
+    fx, fy, cx, cy = [float(v) for v in pinhole[:4]]
+    yy, xx = np.mgrid[0:h, 0:w]
+    d = np.stack([((xx + 0.5) / scale - cx) / fx, ((yy + 0.5) / scale - cy) / fy, np.ones((h, w))], -1)
+    d /= np.linalg.norm(d, axis=-1, keepdims=True)
+    return np.degrees(np.arcsin(np.clip((d @ np.asarray(R_cam_from_world, float)) @ np.asarray(up, float), -1.0, 1.0)))
+
+
+def sky_mask(image: np.ndarray, elevation_deg: Optional[np.ndarray] = None, pinhole: Optional[Sequence[float]] = None,
+             R_cam_from_world: Optional[np.ndarray] = None) -> np.ndarray:
+    """True where ``image`` (gray or BGR, 8 bit; black = no picture) shows the sky - see THE SKY MASK.  The pixels'
+    elevations come from ``elevation_deg`` (at the reduced size) or from the frame's ``pinhole`` and rotation."""
+    import cv2
+    from scipy import ndimage
+    g = image if image.ndim == 2 else image[..., :3].max(axis=2)
+    H, W = g.shape
+    sc = min(1.0, SKY_WORK_PX / float(max(H, W)))
+    q = cv2.resize(g, (max(1, int(round(W * sc))), max(1, int(round(H * sc)))), interpolation=cv2.INTER_AREA).astype(np.float32)
+    valid = ndimage.binary_erosion(q > 0, iterations=2)
+    b = cv2.GaussianBlur(q, (0, 0), 1.0)
+    tex = cv2.GaussianBlur(np.hypot(cv2.Sobel(b, cv2.CV_32F, 1, 0, ksize=3), cv2.Sobel(b, cv2.CV_32F, 0, 1, ksize=3)) / 8.0, (0, 0), 2.0)
+    if elevation_deg is None:
+        elevation_deg = pixel_elevation_deg(q.shape, pinhole, R_cam_from_world, scale=sc)
+    el = np.asarray(elevation_deg, float)
+    smooth = valid & (tex < SKY_TEXTURE)
+    seed = smooth & (el > SKY_SEED_EL_DEG)
+    none = np.zeros((H, W), bool)
+    if seed.sum() < max(20, SKY_MIN_SHARE * q.size):
+        return none
+    med = float(np.median(b[seed]))
+    tol = max(SKY_BRIGHT_TOL, 4.0 * 1.4826 * float(np.median(np.abs(b[seed] - med))))
+    cand = smooth & (el > SKY_MIN_EL_DEG) & (np.abs(b - med) <= tol)
+    lab, _ = ndimage.label(cand, structure=np.ones((3, 3), bool))
+    ids = np.unique(lab[seed & cand])
+    sky = np.isin(lab, ids[ids > 0])
+    sky = ndimage.binary_fill_holes(sky) & valid                   # a speck in the sky is sky
+    rim = (q > 0) & ~valid                                         # the picture's rim, left out of the test above:
+    sky |= rim & ndimage.binary_dilation(sky, iterations=4)        # sky where the sky reaches it
+    if sky.sum() < SKY_MIN_SHARE * q.size:
+        return none
+    full = cv2.resize(sky.astype(np.uint8), (W, H), interpolation=cv2.INTER_NEAREST) > 0
+    if SKY_GROW_PX:
+        full = cv2.dilate(full.astype(np.uint8), np.ones((2 * SKY_GROW_PX + 1,) * 2, np.uint8)) > 0
+    return full & (g > 0)
+
+
+def write_sky_masks(ws: PathLike, force: bool = False) -> Dict[str, Any]:
+    """``<ws>/masks_fusion/<image>.png`` for every frame of a dense workspace: the frame's rover mask (``masks/``, when
+    it has one) with its sky taken out (0 = not fused).  Made once per workspace (``sky_masks.json``); ``force``
+    again.  Returns {"dir", "images", "with_sky", "sky_share_median", "seconds"}."""
+    import cv2
+    import pycolmap
+    ws = Path(ws)
+    out = ws / SKY_MASK_DIR
+    marker = ws / "sky_masks.json"
+    key = {"texture": SKY_TEXTURE, "min_el_deg": SKY_MIN_EL_DEG, "seed_el_deg": SKY_SEED_EL_DEG, "bright_tol": SKY_BRIGHT_TOL,
+           "grow_px": SKY_GROW_PX}
+    if marker.is_file() and out.is_dir() and not force:
+        old = json.loads(marker.read_text(encoding="utf-8"))
+        if old.get("settings") == key and old.get("images") == len(list((ws / "images").glob("*"))):
+            return dict(old, cached=True)
+    t0 = time.time()
+    out.mkdir(parents=True, exist_ok=True)
+    rec = pycolmap.Reconstruction(str(ws / "sparse"))
+    shares, n = [], 0
+    for im in rec.images.values():
+        f = ws / "images" / im.name
+        img = cv2.imread(str(f), cv2.IMREAD_UNCHANGED) if f.is_file() else None
+        if img is None:
+            continue
+        cam = rec.cameras[im.camera_id]
+        sky = sky_mask(img, pinhole=cam.params, R_cam_from_world=im.cam_from_world().rotation.matrix())
+        rm = ws / "masks" / (im.name + ".png")
+        m = cv2.imread(str(rm), cv2.IMREAD_GRAYSCALE) if rm.is_file() else None
+        if m is None or m.shape != sky.shape:
+            m = np.full(sky.shape, 255, np.uint8)
+        m = np.where(sky, 0, m).astype(np.uint8)
+        (out / (im.name + ".png")).parent.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(out / (im.name + ".png")), m)
+        shares.append(float(sky.mean()))
+        n += 1
+    rep = {"dir": str(out), "images": n, "with_sky": int(sum(1 for x in shares if x > 0)),
+           "sky_share_median": float(np.median([x for x in shares if x > 0])) if any(x > 0 for x in shares) else 0.0,
+           "settings": key, "seconds": round(time.time() - t0, 1)}
+    marker.write_text(json.dumps(rep, indent=1), encoding="utf-8")
+    log.info("dense: sky masks - %d of %d frames show sky (median %.0f %% of the frame) -> %s", rep["with_sky"], n,
+             100 * rep["sky_share_median"], out)
+    return rep
+
+
 def set_options(opts: Any, values: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Set the fields ``values`` on a pycolmap options object; returns the fields as set (a typo raises)."""
     done: Dict[str, Any] = {}
@@ -374,8 +486,10 @@ def run_dense(project: SfmProject, workspace: Optional[PathLike] = None, steps=(
               gpu_index: str = "-1", images: Optional[Sequence[str]] = None,
               stereo_options: Optional[Dict[str, Any]] = None,
               fusion_options: Optional[Dict[str, Any]] = None, keep_rover: bool = False,
-              restereo: bool = False, full_fov: bool = False) -> Dict[str, Any]:
-    """The dense steps from Python: ``prepare`` (:func:`prepare_dense`), ``stereo`` (patch-match stereo; needs a CUDA
+              restereo: bool = False, full_fov: bool = False, sky: Optional[bool] = None) -> Dict[str, Any]:
+    """0.99.20: ``sky`` (default :data:`SKY_MASK`) - the fusion leaves the frames' sky out (:func:`write_sky_masks`).
+
+    The dense steps from Python: ``prepare`` (:func:`prepare_dense`), ``stereo`` (patch-match stereo; needs a CUDA
     pycolmap), ``fusion`` (``dense/fused.ply``, the masks applied), ``mesh`` (``dense/meshed-poisson.ply``).
     ``stereo_options`` / ``fusion_options``: ``PatchMatchOptions`` / ``StereoFusionOptions`` fields to set (e.g.
     :data:`STATION_STEREO_OPTIONS`); COLMAP's defaults otherwise.  ``keep_rover``: the fusion without the rover masks,
@@ -405,6 +519,14 @@ def run_dense(project: SfmProject, workspace: Optional[PathLike] = None, steps=(
         used_masks = (ws / "masks").is_dir() and not keep_rover
         if used_masks:
             fo.mask_path = str(ws / "masks")
+        sky_rep = None
+        if sky is None:                                          # RPP_SKY_MASK=0 turns it off
+            from .. import env as rpp_env
+            sky = SKY_MASK and str(rpp_env.get("RPP_SKY_MASK") or "1").strip().lower() not in ("0", "false", "no")
+        if sky and not keep_rover:                               # 0.99.20: the rover masks without the sky
+            sky_rep = write_sky_masks(ws)
+            fo.mask_path = sky_rep["dir"]
+            used_masks = True
         ply = ws / (FUSED_ROVER_PLY if keep_rover else "fused.ply")
         fo.max_image_size = int(max_image_size)
         fset = set_options(fo, fusion_options)
@@ -413,7 +535,7 @@ def run_dense(project: SfmProject, workspace: Optional[PathLike] = None, steps=(
         fused = pycolmap.stereo_fusion(str(ply), str(ws), "COLMAP", input_type="geometric" if geom_consistency else "photometric",
                                        options=fo, output_type="ply")
         out["steps"]["fusion"] = {"seconds": round(time.time() - t0, 1), "points": fused.num_points3D(),
-                                  "ply": str(ply), "masks": str(ws / "masks") if used_masks else None, "options": fset, "rover_kept": bool(keep_rover)}
+                                  "ply": str(ply), "masks": str(fo.mask_path) if used_masks else None, "sky": sky_rep, "options": fset, "rover_kept": bool(keep_rover)}
     if "mesh" in steps:
         t0 = time.time()
         pycolmap.poisson_meshing(str(ws / "fused.ply"), str(ws / "meshed-poisson.ply"))
