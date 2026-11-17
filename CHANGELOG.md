@@ -3,6 +3,19 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.19 — 2026-11-17 (branch `rpp`)
+
+Mask training, for the v5 run (Christian, 14:47: "I have add some z110 deck images and msl ncam images to the training
+set of masks. Please give me the code to run a v5 mask model on the images in D:\masks\masks_training_set_v8").
+
+- `train_mask.py --lr` (a fine-tune from a trained model wants about 1e-5; the default stays 5e-5).
+- `--init-from` takes a released model's name (`rpp_mask_v3`), fetched into the cache when it is not there.
+- The augmentations know Curiosity's names (`NLB_423776954RAD_F0060116NCAM00237M1`): camera family and angular pixel
+  size (Navcam 0.82 mrad a pixel; Hazcam 124 degrees over 1024 px).  Their images are not regenerated from the Mars
+  2020 archive: the copies already in `images\` are used.
+- `rpp.ibr.mesh`: the support rule's functions (`support_grid`, `supported`, `unsupported`) are in, not yet used by the
+  mesh step (0.99.20).
+
 ## 0.99.18 — 2026-11-17 (branch `rpp`)
 
 - Fixed: the MSL prepare step stopped at its first image (seen on the PC at 14:39, sols 124-306): OpenCV writes no

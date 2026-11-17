@@ -598,6 +598,84 @@ def floating(X: np.ndarray, pivot: Sequence[float], up: Sequence[float], plane: 
     return fl
 
 
+# 0.99.19 (Christian, 17 Nov 2026: "the rockytop 3d model did not capture the tall rocks to the north very well and the
+# sky had many floating artifacts behind it" - "Replace the height rule with a connectivity rule"): THE SUPPORT RULE.
+# The height rule above keeps what is low and drops what is high: on the whole-block Rockytop cloud it kept nothing more
+# than about 2 m above the local ground within 30 m (70 % of what it dropped within 20 m lay to the north, the tall
+# rocks) while a floater low over a far horizon passed.  What tells a rock from a floater is not its height but
+# whether it stands on the ground: the cloud goes into voxels of SUPPORT_VOXEL_M, occupied voxels grow by
+# SUPPORT_BRIDGE voxels (stereo leaves gaps on a rock's face), and the connected sets of voxels are found.  A set
+# that holds SUPPORT_MIN_GROUND voxels of ground (points within SUPPORT_GROUND_BAND_M of the local ground) is terrain,
+# whatever its height; the rest floats and goes.  Above the cameras within FLOAT_BEYOND_M of the mast nothing stays
+# (the rover's own parts), as before.
+SUPPORT_VOXEL_M = 0.4
+SUPPORT_BRIDGE = 1
+SUPPORT_GROUND_BAND_M = 0.5
+SUPPORT_MIN_GROUND = 40
+SUPPORT_HEIGHT_M = (-30.0, 60.0)      # the voxel grid's reach above the plane; outside it nothing is terrain
+
+
+def support_grid(points: np.ndarray, pivot: Sequence[float], up: Sequence[float], plane: Dict[str, Any],
+                 ground: Dict[str, Any], radius_m: float) -> Dict[str, Any]:
+    """The voxels of ``points`` that stand on the ground (see THE SUPPORT RULE): {"keep" (nx, ny, nz) bool - grown
+    by the bridge, so that a surface between kept points is inside -, "origin", "voxel_m", "axes", "components",
+    "ground_components", "voxels", "voxels_kept"}.  :func:`supported` asks it about points."""
+    from scipy import ndimage
+    P = np.asarray(pivot, float)
+    e, n, u = _horizontal_axes(up)
+    X = np.asarray(points, float)
+    d = X - P
+    x, y = d @ e, d @ n
+    h = height_above_plane(X, plane, up)
+    R = float(radius_m) + 2.0
+    v = SUPPORT_VOXEL_M
+    lo = np.array([-R, -R, SUPPORT_HEIGHT_M[0]])
+    shape = (int(np.ceil(2 * R / v)), int(np.ceil(2 * R / v)), int(np.ceil((SUPPORT_HEIGHT_M[1] - SUPPORT_HEIGHT_M[0]) / v)))
+    ijk = np.floor((np.c_[x, y, h] - lo) / v).astype(np.int64)
+    ok = np.all((ijk >= 0) & (ijk < np.array(shape)), axis=1)
+    occ = np.zeros(shape, bool)
+    occ[ijk[ok, 0], ijk[ok, 1], ijk[ok, 2]] = True
+    hl = h - ground_height(X, pivot, ground)
+    g = ok & (np.abs(hl) <= SUPPORT_GROUND_BAND_M)
+    seed = np.zeros(shape, bool)
+    seed[ijk[g, 0], ijk[g, 1], ijk[g, 2]] = True
+    grown = ndimage.binary_dilation(occ, structure=np.ones((3, 3, 3), bool), iterations=SUPPORT_BRIDGE) if SUPPORT_BRIDGE else occ
+    lab, ncomp = ndimage.label(grown, structure=np.ones((3, 3, 3), bool))
+    counts = np.bincount(lab[seed], minlength=ncomp + 1)
+    counts[0] = 0
+    good = counts >= SUPPORT_MIN_GROUND
+    if not good.any() and ncomp:                                 # a tiny cloud: its largest set
+        good[int(np.argmax(np.bincount(lab[occ], minlength=ncomp + 1)[1:])) + 1] = True
+    keep = good[lab]
+    return {"keep": keep, "origin": lo, "voxel_m": v, "axes": (u, e, n), "pivot": P, "plane": plane, "up": up,
+            "components": int(ncomp), "ground_components": int(good.sum()), "voxels": int(occ.sum()),
+            "voxels_kept": int((keep & occ).sum())}
+
+
+def supported(X: np.ndarray, grid: Dict[str, Any]) -> np.ndarray:
+    """True for the points of ``X`` inside the kept voxels of a :func:`support_grid`."""
+    X = np.asarray(X, float)
+    u, e, n = grid["axes"]
+    d = X - grid["pivot"]
+    c = np.c_[d @ e, d @ n, height_above_plane(X, grid["plane"], grid["up"])]
+    ijk = np.floor((c - grid["origin"]) / grid["voxel_m"]).astype(np.int64)
+    shape = np.array(grid["keep"].shape)
+    ok = np.all((ijk >= 0) & (ijk < shape), axis=1)
+    out = np.zeros(len(X), bool)
+    out[ok] = grid["keep"][ijk[ok, 0], ijk[ok, 1], ijk[ok, 2]]
+    return out
+
+
+def unsupported(X: np.ndarray, pivot: Sequence[float], up: Sequence[float], plane: Dict[str, Any], grid: Dict[str, Any],
+                beyond_m: float = FLOAT_BEYOND_M) -> np.ndarray:
+    """What the support rule removes from ``X``: points outside the terrain's voxels, and - within ``beyond_m`` of the
+    mast axis - anything above the cameras."""
+    X = np.asarray(X, float)
+    hc = float(height_above_plane(np.asarray(pivot, float)[None], plane, up)[0])
+    near_high = (horizontal_distance(X, pivot, up) <= beyond_m) & (height_above_plane(X, plane, up) > hc)
+    return near_high | ~supported(X, grid)
+
+
 ROVER_FOOTPRINT_X_M = (-1.75, 1.60)   # RMECH x of the ground the rover stands over (rear of the RTG to the stowed turret)
 ROVER_FOOTPRINT_Y_M = (-1.50, 1.50)   # RMECH y: outside the wheels (track about 2.7 m)
 FILL_AZ_STEP_DEG = 2.0                # the fill's polar grid about the mast axis: azimuth step ...
