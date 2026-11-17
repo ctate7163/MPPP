@@ -3,6 +3,7 @@ block choice (rpp_studies.msl.first_block); the products themselves are tested o
 from __future__ import annotations
 
 import numpy as np
+from pathlib import Path
 
 from rpp_studies.msl import first_block as F
 
@@ -223,3 +224,26 @@ def test_msl_blocks_sit_with_the_mars2020_blocks(monkeypatch, capsys):
     assert B.main(["where", "--preset", "site87"]) == 0
     assert capsys.readouterr().out.strip().replace("\\", "/") == "/blocks/msl_sol_3047_mont_mercou"
     assert parse_work_folder("/blocks/msl_sol_0162_yellowknife_bay") == (None, False)
+
+
+def test_msl_blocks_get_open_in_colmap(tmp_path, monkeypatch, capsys):
+    """0.99.15 (Christian, 17 Nov 2026: "Make sure there is always an open_in_colmap present for these alignments"): the
+    batch file opens the block-frame model (else the site frame, else the mapper's), path-free (%~dp0), CRLF; the gui
+    step writes it into a block made before."""
+    from rpp_studies.msl import block as B, first_block as F
+    (tmp_path / "masks").mkdir()
+    bat = F.write_open_in_colmap(tmp_path)
+    raw = bat.read_bytes()
+    assert b"\r\n" in raw and raw.count(b"\n") == raw.count(b"\r\n")
+    t = raw.decode()
+    assert t.index("sparse\\block_frame") < t.index("sparse\\site_frame") < t.index("sparse\\0\\")
+    assert '--database_path "%~dp0database.db" --image_path "%~dp0images" --import_path "%MODEL%"' in t
+    assert "mask_path=" in (tmp_path / "colmap_gui.ini").read_text()
+    bat.unlink()
+    monkeypatch.setenv("RPP_SCAPES", str(tmp_path))
+    assert B.main(["gui", "--sols", "162", "296"]) == 1                    # no such block: nothing made
+    (tmp_path / "msl_sol_0162_yellowknife_bay").mkdir()
+    assert B.main(["gui", "--sols", "162", "296"]) == 0
+    assert (tmp_path / "msl_sol_0162_yellowknife_bay" / "open_in_colmap.bat").is_file()
+    src = (Path(B.__file__)).read_text(encoding="utf-8")
+    assert src.count("    F.write_open_in_colmap(work)  ") == 2               # at prepare and at align

@@ -3325,12 +3325,27 @@ def test_viewer_station_arrows_rover_button_and_title():
     assert "Curiosity-class rover" in nav and nav.count("<circle") == 3
     assert "$('prevSt').onclick = () => step('s', -1);" in page and "$('nextSt').onclick = () => step('s', 1);" in page
     assert "function roverToggle()" in page and "updateNav();" in page
-    assert "<title>Mars rover panorama viewer (RPV)</title>" in page and '<span id="title">Mars rover panorama viewer (RPV)</span>' in page
-    assert "/stereo panoramas|photogrammetry viewer/i.test(j.title)" in page
+    assert "<title>Rover Photogrammetry Viewer (RPV)</title>" in page and '<span id="title">Rover Photogrammetry Viewer (RPV)</span>' in page
+    assert "/stereo panoramas|panorama viewer|photogrammetry viewer/i.test(j.title)" in page
     import inspect
-    assert inspect.signature(web.publish).parameters["title"].default == "Mars rover panorama viewer (RPV)"
+    assert inspect.signature(web.publish).parameters["title"].default == "Rover Photogrammetry Viewer (RPV)"
     assert SS.mark_name({"name": "Three Forks North (Z34)"}) == "Three Forks North"
     assert SS.mark_name({"name": "Three Forks North", "mark_name": "TFN"}) == "TFN"
     cfg = SS.load_config()
     z = cfg["stations"]["Sol0690_S032D1184_Z34"]
     assert "--no-gains" in z["ods_args"] and SS.mark_name(z) == cfg["stations"]["Sol0686_S032D1184"]["name"]
+
+
+def test_viewer_keeps_north_across_stations_and_its_name_in_the_bar():
+    """0.99.15 (Christian, 17 Nov 2026: "the north direction should be preserved when moving from site to site" and "its
+    the top banner that still says Mars rover panorama viewer (RPV)"): the start heading is set once (the first panorama),
+    a station change leaves the world's rotation alone; the bar and tab carry the viewer's name, which a list title of the
+    viewer's own names does not replace."""
+    page = (Path(__file__).resolve().parents[1] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    show = page[page.index("async function show()"):page.index("const color = k =>")]
+    assert "if (!headingSet) {" in show and "headingSet = true;" in show
+    assert show.count("world.rotation.y = yaw0 + turn;") == 1                       # inside the once-only block
+    assert show.index("if (!headingSet) {") < show.index("world.rotation.y = yaw0 + turn;")
+    assert "<title>Rover Photogrammetry Viewer (RPV)</title>" in page
+    assert '<span id="title">Rover Photogrammetry Viewer (RPV)</span>' in page
+    assert "!/stereo panoramas|panorama viewer|photogrammetry viewer/i.test(j.title)" in page

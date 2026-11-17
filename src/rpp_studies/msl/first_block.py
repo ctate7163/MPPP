@@ -400,6 +400,7 @@ def prepare(work: Path, data: Path, site: int, side: Optional[str] = "B", min_pa
            "images": [{k: r.get(k) for k in keep} for r in frames]}
     (work / "cameras.json").write_text(json.dumps(cameras, indent=1), encoding="utf-8")
     (work / "manifest.json").write_text(json.dumps(man, indent=1, default=float), encoding="utf-8")
+    write_open_in_colmap(work)                                   # 0.99.15: there from the start
     log.info("prepare: %d frames of %d stations (anchor %s), %d without a rover mask; cameras %s", len(frames),
              sum(s["in_block"] for s in rep["stations"]), rep["anchor"], len(unmasked),
              ", ".join(f"{g} ({c['frames']}, fit {c['fit_rms_px_max']:.3f} px)" for g, c in cameras.items()))
@@ -485,11 +486,48 @@ def align(work: Path, max_features: int = 8192, threads: int = -1, refine_intrin
         rep["message"] = "the model could not be put into the site frame (too few frames with label positions agreeing)"
     (out / "site_frame").mkdir(exist_ok=True)
     rec.write(out / "site_frame")
+    write_open_in_colmap(work)
     rec.export_PLY(str(work / "points_site_frame.ply"))
     (work / "report.json").write_text(json.dumps(rep, indent=1), encoding="utf-8")
     (work / "report.txt").write_text(report_text(man, rep), encoding="utf-8")
     log.info("\n%s", report_text(man, rep))
     return rep
+
+
+def write_open_in_colmap(work: "str | Path", models: Sequence[str] = ("block_frame", "site_frame", "0")) -> Path:
+    """``open_in_colmap.bat`` (and ``colmap_gui.ini``) in an MSL block's folder (0.99.15; Christian, 17 Nov 2026: "Make
+    sure there is always an open_in_colmap present for these alignments"): double-click opens the COLMAP GUI with the
+    block's database, images and model - the first of ``sparse\\<models>`` that exists when it is started (the block
+    frame, else the mapper's model), so the file can be written before the alignment and still open its result.  COLMAP.bat
+    is looked for as in the Mars 2020 blocks (``rpp.sfm.database.COLMAP_BAT_CANDIDATES``, ``COLMAP_BAT``, the PATH)."""
+    from rpp import __version__
+    from rpp.sfm.database import COLMAP_BAT_CANDIDATES
+    work = Path(work)
+    lines = ["@echo off", "setlocal",
+             f"rem RPP {__version__}: open this MSL block in the COLMAP GUI (4.x).  Double-click.",
+             "rem COLMAP.bat is looked for at the paths below, then in COLMAP_BAT, then on the PATH.",
+             'set "MODEL="']
+    for m in models:
+        lines.append(f'if not defined MODEL if exist "%~dp0sparse\\{m}\\cameras.bin" set "MODEL=%~dp0sparse\\{m}"')
+    lines += ['if not defined MODEL (echo No model in %~dp0sparse yet: run the align step first. & pause & exit /b 1)',
+              'set "CB="']
+    for c in COLMAP_BAT_CANDIDATES:
+        lines.append(f'if not defined CB if exist "{c}" set "CB={c}"')
+    lines += ['if not defined CB if defined COLMAP_BAT if exist "%COLMAP_BAT%" set "CB=%COLMAP_BAT%"',
+              'if not defined CB for %%I in (COLMAP.bat) do if not "%%~$PATH:I"=="" set "CB=%%~$PATH:I"',
+              'if not defined CB (echo COLMAP.bat not found: setx COLMAP_BAT ^<path^>\\COLMAP.bat & pause & exit /b 1)',
+              'echo Starting %CB% with %MODEL%',
+              'call "%CB%" gui --database_path "%~dp0database.db" --image_path "%~dp0images" --import_path "%MODEL%"',
+              "if errorlevel 1 (echo COLMAP returned an error. & pause)"]
+    bat = work / "open_in_colmap.bat"
+    bat.write_bytes(("\r\n".join(lines) + "\r\n").encode("utf-8"))
+    ini = [f"# RPP {__version__}: COLMAP GUI project. File > Open project (this file), then File > Import model > "
+           f"{work / 'sparse' / models[0]}", f"database_path={(work / 'database.db').resolve()}",
+           f"image_path={(work / 'images').resolve()}"]
+    if (work / "masks").is_dir():
+        ini += ["", "[ImageReader]", f"mask_path={(work / 'masks').resolve()}"]
+    (work / "colmap_gui.ini").write_text("\n".join(ini) + "\n", encoding="utf-8")
+    return bat
 
 
 def report_text(man: Dict[str, Any], rep: Dict[str, Any]) -> str:

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-<title>Mars rover panorama viewer (RPV)</title>
+<title>Rover Photogrammetry Viewer (RPV)</title>
 <script>
 // 0.98.29 (Christian, 16 Nov 2026: "change https://ctate7163.github.io/rpp/ods/ to https://ctate7163.github.io/RPV/"):
 // the viewer lives in its own repository, ctate7163/RPV.  This page, still in the pipeline's docs at /RPP/ods/ (and
@@ -71,7 +71,7 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
 <body>
 <div id="bar">
   <button id="home" title="welcome view, facing west (H; headset: Y)" aria-label="home"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 9.5V20h5v-6h3v6h5V9.5"/></svg></button>
-  <span id="title">Mars rover panorama viewer (RPV)</span>
+  <span id="title">Rover Photogrammetry Viewer (RPV)</span>
   <select id="station" title="station"></select>
   <select id="variant" title="variant"></select>
   <select id="view" title="view"></select>
@@ -389,8 +389,8 @@ const WELCOME_AZ_DEG = 270;                     // 0.98.19: the welcome view ope
 // about it being created by Christian Tate at MSSS for research purposes with the code available at the github link').
 // CODE_URL: the pipeline's repository (GitHub forwards the old name, MPPP).
 // 0.99.13 (Christian, 17 Nov 2026: 'The title on the rpv website should be "Mars rover panorama viewer (RPV)" instead of
-// the old list title'): the page's title and the tab's.  11:10: "rename welcome page name to rover photogrammetry
-// viewer (RPV)" - the welcome view keeps the viewer's full name
+// the old list title'); 11:10 / 11:38: "rename welcome page name to rover photogrammetry viewer (RPV)" - the bar, the
+// tab and the welcome view all say Rover Photogrammetry Viewer (RPV)
 const VIEWER_NAME = 'Rover Photogrammetry Viewer (RPV)';
 const CREDIT = 'Created by Christian Tate at MSSS';   // 0.99.14 (Christian, 17 Nov 2026: 'remove the "for research purposes" phrase')
 const CODE_URL = 'https://github.com/ctate7163/rpp';   // 0.98.29: the repository renamed MPPP -> RPP
@@ -553,7 +553,8 @@ function toggleInfo() {
 }
 
 // ---------------------------------------------------------------- the list and the choice
-let panos = [], base = '', cur = { s: 0, v: 0, w: 0 }, texture = null, loadId = 0, yaw0 = 0, turn = 0;
+let panos = [], base = '', cur = { s: 0, v: 0, w: 0 }, texture = null, loadId = 0, yaw0 = 0, turn = 0, headingSet = false;
+const startAz = p => p.yaw_deg != null ? p.yaw_deg : (p.welcome ? WELCOME_AZ_DEG : 0);   // 0.98.19: west for the welcome view
 const maxTex = renderer.capabilities.maxTextureSize;
 
 function variants(p) { return p.variants || []; }
@@ -610,10 +611,18 @@ async function show() {
     material.map = t; material.color.set(0xffffff); material.needsUpdate = true;
     showMark(/^(standard|enhanced)/.test(names[cur.w]) ? vr.ground_mark : null);   // not over the range and normal views
     showRover(/^(standard|enhanced)/.test(names[cur.w]) ? vr.rover_surface : null);
-    yaw0 = THREE.MathUtils.degToRad(p.yaw_deg != null ? p.yaw_deg : (p.welcome ? WELCOME_AZ_DEG : 0));   // the azimuth (deg east of north)
-    //                                                              straight ahead at the start (0.98.19: west for the welcome view)
+    // 0.99.15 (Christian, 17 Nov 2026: "the north direction should be preserved when moving from site to site. I noticed
+    // this looks rotated for the welcome screen compared to the van zyl site"): until now every panorama set its own start
+    // heading (west for the welcome view, yaw_deg or north for a station), so a change of station turned the world under
+    // the viewer by the difference (270 degrees from the welcome view to Van Zyl).  The start heading is now set once,
+    // by the first panorama the page opens; after that a station change keeps the world as it is, so the viewer goes on
+    // looking the same way (the same azimuth east of north).  Home (H / Y) still turns to face west.
+    if (!headingSet) {
+      yaw0 = THREE.MathUtils.degToRad(startAz(p));               // the azimuth (deg east of north) straight ahead at the start
+      headingSet = true;
+      world.rotation.y = yaw0 + turn;                             // ... and what the viewer has turned since (thumbstick)
+    }
     roverFrontAz = roverForward(p);
-    world.rotation.y = yaw0 + turn;                               // ... and what the viewer has turned since (thumbstick)
     showWelcome(!!p.welcome);
     if (faceAfterLoad) { faceAz(faceAfterLoad); faceAfterLoad = null; }
     if (infoPanel.visible) drawInfo();
@@ -788,7 +797,7 @@ function roverForward(p) {
 const FACE_AZ = { N: 0, E: 90, S: 180, W: 270 };
 function face(k) {
   if (renderer.xr.isPresenting) return;
-  const azDeg = k === 'O' ? (roverFrontAz != null ? roverFrontAz : THREE.MathUtils.radToDeg(yaw0)) : FACE_AZ[k];
+  const azDeg = k === 'O' ? (roverFrontAz != null ? roverFrontAz : startAz(panos[cur.s] || {})) : FACE_AZ[k];
   yaw = THREE.MathUtils.degToRad(azDeg) - world.rotation.y;
   pitch = 0;
   look();
@@ -905,8 +914,9 @@ diagnostics();
     if (traverse && traverse.dtm && traverse.dtm.file)           // 0.98.19: the blank panel D (DTM, traverse, 2 km bar)
       fetch(new URL(traverse.dtm.file, base).href).then(r => r.blob()).then(createImageBitmap)
         .then(b => { dtmImage = b; if (infoPanel.visible) drawInfo(); }).catch(e => console.warn('DTM map', e));
-    // 0.99.13: a list's own title, except the old "... stereo panoramas" of lists published before
-    if (j.title && !/stereo panoramas|photogrammetry viewer/i.test(j.title)) { $('title').textContent = j.title; document.title = j.title; }
+    // 0.99.13: a list's own title, except the old "... stereo panoramas" of lists published before (0.99.15: and the
+    // viewer's own names, old and new - the page's name wins)
+    if (j.title && !/stereo panoramas|panorama viewer|photogrammetry viewer/i.test(j.title)) { $('title').textContent = j.title; document.title = j.title; }
   } catch (e) { msg(`no image list at ${index.href} (${e.message || e})`); return; }
   if (!panos.length) { msg('the image list is empty'); return; }
   fromHash();

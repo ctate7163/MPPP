@@ -3,6 +3,23 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.15 — 2026-11-17 (branch `rpp`)
+
+- The viewer keeps north when the station changes (Christian, 11:40: "the north direction should be preserved when moving
+  from site to site. I noticed this looks rotated for the welcome screen compared to the van zyl site").  Each panorama
+  used to set its own start heading (west for the welcome view, `yaw_deg` or north for a station), so a change of station
+  turned the world under the viewer: 270 degrees from the welcome view to Van Zyl.  The start heading is now set once, by
+  the first panorama the page opens; after that the viewer goes on looking at the same azimuth.  Home (H / Y) still faces
+  west.  Checked headless: welcome 270, Van Zyl 270, a station with `yaw_deg` 120 still 270 (0.99.14: 270, 0, 120).
+- The page's bar and tab read "Rover Photogrammetry Viewer (RPV)" too (11:38 / 11:42: "its the top banner that still says
+  Mars rover panorama viewer (RPV)"); a list whose title is one of the viewer's names (old or new) no longer replaces it.
+  The Hugging Face card says the same.
+- MSL blocks always have `open_in_colmap.bat` and `colmap_gui.ini` (11:37: "Make sure there is always an open_in_colmap
+  present for these alignments"): written at `prepare` and again at `align`, by both `rpp_studies.msl.block` and
+  `first_block`.  The batch opens `sparse\block_frame` (or `site_frame`, or the mapper's `sparse\0`), whichever exists when
+  it is started, so a block prepared before its alignment opens the result.  `python -m rpp_studies.msl.block gui` writes
+  it into a block made before 0.99.15.
+
 ## 0.99.14 — 2026-11-17 (branch `rpp`)
 
 - The welcome view's title is "Rover Photogrammetry Viewer (RPV)" again (Christian, 11:10: "rename welcome page name to

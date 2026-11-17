@@ -489,6 +489,7 @@ def prepare(work: Path, data: Path, preset: Dict[str, Any], camera: str = "openc
            "images": [{k: r.get(k) for k in keep} for r in frames]}
     (work / "cameras.json").write_text(json.dumps(cameras, indent=1), encoding="utf-8")
     (work / "manifest.json").write_text(json.dumps(man, indent=1, default=float), encoding="utf-8")
+    F.write_open_in_colmap(work)                               # 0.99.15: there from the start (it opens the model once made)
     log.info("prepare: %d frames (%s), %d stations, sites %s (anchor %s), %d pairs; cameras %s", len(frames),
              sel.get("by_camera"), sel.get("stations"), site_rep.get("chained"), site_rep.get("anchor"), len(pairs),
              ", ".join(f"{g} ({c['frames']} frames, fit {c['fit_rms_px_max']:.3f} px)" for g, c in cameras.items()))
@@ -615,6 +616,7 @@ def finish(rec, man: Dict[str, Any], work: Path, models: int = 1, others: Sequen
                                                 "max": round(float(np.max(v)), 3)} for s, v in sorted(per_site.items())}
     (out / "block_frame").mkdir(exist_ok=True)
     rec.write(out / "block_frame")
+    F.write_open_in_colmap(work)                               # 0.99.15: always there
     rec.export_PLY(str(work / "points_block_frame.ply"))
     (work / "cameras_refined.json").write_text(json.dumps(rep["cameras"], indent=1), encoding="utf-8")
     (work / "report.json").write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")
@@ -683,8 +685,8 @@ def report_text(man: Dict[str, Any], rep: Dict[str, Any]) -> str:
 # ------------------------------------------------------------------------------------------------- command line
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("step", choices=("waypoints", "fetch", "prepare", "align", "all", "where"),
-                    help="where: print the block's folder and stop")
+    ap.add_argument("step", choices=("waypoints", "fetch", "prepare", "align", "all", "where", "gui"),
+                    help="where: print the block's folder and stop; gui: write open_in_colmap.bat into it and stop")
     ap.add_argument("--preset", default="yellowknife", choices=sorted(PRESETS))
     ap.add_argument("--data", default=DEFAULT_DATA, help=f"the MSL archive on disk (default {DEFAULT_DATA})")
     ap.add_argument("--work", default=None, help=f"the block's folder (default {DEFAULT_ROOT}\\msl_sol_<first sol>_<block>)")
@@ -714,6 +716,12 @@ def main(argv=None) -> int:
     work = Path(a.work or blocks_root() / preset["name"])
     if a.step == "where":                                  # 0.99.12: the batch file asks for the folder
         print(work)
+        return 0
+    if a.step == "gui":                                    # 0.99.15: the COLMAP launcher for a block made before
+        if not Path(work).is_dir():
+            print(f"ERROR: no block folder {work}", file=sys.stderr)
+            return 1
+        print(f"written: {F.write_open_in_colmap(work)}")
         return 0
     work.mkdir(parents=True, exist_ok=True)
     print(f"block folder: {work}")

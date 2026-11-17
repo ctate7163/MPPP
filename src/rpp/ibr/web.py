@@ -482,7 +482,7 @@ def _copy(src: Path, dst: Path, width: int, quality: int) -> Dict[str, Any]:
 
 def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[str]] = None,
             views: Sequence[str] = DEFAULT_VIEWS, width: int = DEFAULT_WIDTH, quality: int = 88,
-            titles: Optional[Dict[str, Dict[str, Any]]] = None, title: str = "Mars rover panorama viewer (RPV)",
+            titles: Optional[Dict[str, Dict[str, Any]]] = None, title: str = "Rover Photogrammetry Viewer (RPV)",
             ortho_root: Optional[PathLike] = None, render_map: bool = False,
             files_dir: Optional[PathLike] = None) -> Dict[str, Any]:
     """Every station folder of ``out_root`` (the output of ``rpp single-sites``) that has a stereo JPEG, into
