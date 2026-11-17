@@ -3,6 +3,14 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.18 — 2026-11-17 (branch `rpp`)
+
+- Fixed: the MSL prepare step stopped at its first image (seen on the PC at 14:39, sols 124-306): OpenCV writes no
+  two-channel (gray + alpha) PNG.  The image is four channels now - the gray value three times and the mask as alpha
+  (`write_image`).
+- MSL site links whose quaternion is all zeros (the early products, sols 124-161) count as "not given" instead of a
+  rotated site frame (a warning per frame filled the log); with a zero offset as well there is no link.
+
 ## 0.99.17 — 2026-11-17 (branch `rpp`)
 
 MSL blocks (Christian, 13:39: "the msl navcams do have a strong temperature dependence. So model the focal length and rig
