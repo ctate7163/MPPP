@@ -547,3 +547,35 @@ def test_freeze_runs_on_this_version_and_keeps_its_checkout_on_its_line(tmp_path
     assert "git clone -q -b !FREEZE_BRANCH!" in bat
     assert r'if exist "%RPP_MAIN%\src\rpp\__init__.py" set "FREEZE_DEFAULT_CODE=D:\code\RPP_freeze"' in bat   # 0.99.5
     assert "knee" in F.STEPS and F.STEPS.index("knee") == F.STEPS.index("deck") + 1
+
+
+def test_knee_step_adds_extreme_temperature_stations_and_the_scale_tests(tmp_path):
+    """0.99.7 (Christian, 16 Nov: "for the next rover deck joint, add 20 stations at extreme temperatures"; and the
+    elevation-scale question): the knee step passes --extreme-temps 20 to the drive package when its fill knows the
+    option, and sets EOD_JOINT_OPTS=--scale-tests for that call only."""
+    root = _root(tmp_path)
+    (root / "cmods_from").mkdir()
+    (root / "cmods_from" / "M2020_N_rig.json").write_text(json.dumps({"source": "3 Nov"}), encoding="utf-8")
+    pkgs = tmp_path / "outputs"
+    pkg = pkgs / "deck_joint_drive_2026-11-14"
+    pkg.mkdir(parents=True)
+    (pkg / "run_eod_drive.bat").write_text("@echo off\n", encoding="ascii")
+    (pkg / "fill_from_drive.py").write_text('ap.add_argument("--extreme-temps", type=int)\n', encoding="utf-8")
+    assert _run(root, "--eod-packages", str(pkgs)) == 0
+    log = (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
+    line = next(ln for ln in log.splitlines() if "knee_deck (dry run)" in ln)
+    assert "--first 250 --last 400 --bins 30" in line and line.rstrip().endswith("--extreme-temps 20")
+    note = _status(root)["steps"]["knee"]["note"]
+    assert "20 at extreme temperatures, scale tests" in note
+    # an older package without the option: the stations of 250-400 only, and a note
+    (pkg / "fill_from_drive.py").write_text("old\n", encoding="utf-8")
+    root2 = _root(tmp_path / "two")
+    (root2 / "cmods_from").mkdir()
+    (root2 / "cmods_from" / "M2020_N_rig.json").write_text("{}", encoding="utf-8")
+    assert _run(root2, "--eod-packages", str(pkgs), "--no-knee-scale-tests") == 0
+    log2 = (root2 / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
+    assert "--extreme-temps" not in next(ln for ln in log2.splitlines() if "knee_deck (dry run)" in ln)
+    note2 = _status(root2)["steps"]["knee"]["note"]
+    assert "has no --extreme-temps" in note2 and "scale tests" not in note2
+    r = fz.Run(fz.parser().parse_args(["--root", str(root), "--dry-run"]))
+    assert "EOD_JOINT_OPTS" not in r.env or r.env["EOD_JOINT_OPTS"] != "--scale-tests"

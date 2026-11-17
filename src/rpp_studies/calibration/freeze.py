@@ -572,7 +572,13 @@ class Run:
         (``run_eod_drive.bat``: the stations, the joint data, the joints and their jackknifes, the report, in
         ``--eod-work``), then the knee profile (:mod:`.knee`) of that deck joint and of this run's Navcam joint
         (whose blocks now include Artuby Ridge, Issole / Seitah South and La Orotava Crater, sols 286-385).  Nothing
-        is promoted."""
+        is promoted.
+
+        0.99.7 (Christian, 16 Nov: "for the next rover deck joint, add 20 stations at extreme temperatures in order to
+        better resolve its temperature trend"): ``--knee-extreme-temps`` (20) more stations, the 10 coldest and 10
+        warmest 360s of the drive spread over the sols; and (his question of the same evening, whether the deck joint's
+        +311 ppm mast elevation scale is real or the Navcam fy) the joints ``ALL_fxfy`` and ``ALL_nochainscale``
+        (``--no-knee-scale-tests`` leaves them out)."""
         notes = []
         if self.a.knee_stations:
             drive = Path(self.a.eod_packages) / "deck_joint_drive_2026-11-14" / "run_eod_drive.bat"
@@ -580,11 +586,30 @@ class Run:
                 notes.append(f"deck stations: {drive} not found - skipped")
             else:
                 s0, s1 = self.a.knee_sols
-                rc = self.run("knee_deck", ["cmd", "/c", drive, "--first", s0, "--last", s1, "--bins", self.a.knee_bins,
-                                            "--per-500", "0", "--panoramas",
-                                            self.code / "src" / "rpp" / "data" / "single_sites.json"],
-                              timeout_h=24, cwd=drive.parent)
-                notes.append(f"deck stations sols {s0}-{s1}: exit {rc}")
+                fill = drive.parent / "fill_from_drive.py"
+                ext = []
+                if self.a.knee_extreme_temps > 0:
+                    if fill.is_file() and "--extreme-temps" in fill.read_text(encoding="utf-8", errors="replace"):
+                        ext = ["--extreme-temps", self.a.knee_extreme_temps]
+                    else:
+                        notes.append(f"extreme-temperature stations: {fill} has no --extreme-temps (the 16 Nov package "
+                                     "is not on the PC) - left out")
+                env_before = self.env.get("EOD_JOINT_OPTS")
+                if self.a.knee_scale_tests:
+                    self.env["EOD_JOINT_OPTS"] = "--scale-tests"
+                try:
+                    rc = self.run("knee_deck", ["cmd", "/c", drive, "--first", s0, "--last", s1, "--bins", self.a.knee_bins,
+                                                "--per-500", "0", "--panoramas",
+                                                self.code / "src" / "rpp" / "data" / "single_sites.json", *ext],
+                                  timeout_h=24, cwd=drive.parent)
+                finally:
+                    if env_before is None:
+                        self.env.pop("EOD_JOINT_OPTS", None)
+                    else:
+                        self.env["EOD_JOINT_OPTS"] = env_before
+                notes.append(f"deck stations sols {s0}-{s1}" + (f" and {self.a.knee_extreme_temps} at extreme temperatures"
+                                                                 if ext else "")
+                             + (", scale tests" if self.a.knee_scale_tests else "") + f": exit {rc}")
         since = str(self.status.get("started") or "")
         joints = sorted((p for p in (self.root / "camera_analysis").glob("navcal_tied_*/navcam_joint/rig_residuals.json")),
                         key=lambda p: p.stat().st_mtime)
@@ -1025,6 +1050,11 @@ def parser() -> argparse.ArgumentParser:
                     help="0.99.5: the knee step without new deck stations (the profile only)")
     ap.add_argument("--knee-sols", type=int, nargs=2, default=list(KNEE_SOLS), metavar=("FIRST", "LAST"))
     ap.add_argument("--knee-bins", type=int, default=30, help="knee: deck-station bins over --knee-sols (default 30: 5 sols)")
+    ap.add_argument("--knee-extreme-temps", type=int, default=20,
+                    help="0.99.7: knee: this many more deck stations, half the coldest and half the warmest 360s of the "
+                         "drive (0 = none)")
+    ap.add_argument("--no-knee-scale-tests", dest="knee_scale_tests", action="store_false",
+                    help="0.99.7: knee: without the deck joints ALL_fxfy and ALL_nochainscale (the elevation-scale test)")
     ap.add_argument("--eod-work", default=r"D:\rover_frame_eod_early", help="knee: the deck joint's work folder")
     ap.add_argument("--eod-packages", default=None,
                     help="knee: the folder holding deck_joint_drive_2026-11-14 (default: <the main tree>\\Claude outputs)")

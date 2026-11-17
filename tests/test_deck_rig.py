@@ -82,4 +82,5 @@ def test_knee_profile_finds_the_knee_of_synthetic_rigs(tmp_path):
     assert abs(res["pitch"]["deck"]["best"] - 350) <= 30 and res["pitch"]["deck"]["law_knee_chi2"] > 4
     assert abs(res["pitch"]["blocks"]["best"] - 200) <= 40 and abs(res["pitch"]["deck"]["rate_after"] - 6) < 0.5
     assert res["roll"]["deck"]["dbic_vs_line"] > 0                        # flat-then-linear not preferred over a line
+    assert res["roll_late"]["deck"]["dbic_vs_line"] + np.log(160) > 0 and "late knee" in K.text(res)   # 0.99.7: no late knee
     assert K.text(res).count("knee 250 worse by") == 6

@@ -3,6 +3,26 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.7 — 2026-11-16 (branch `rpp`)
+
+- **Deck stations at extreme temperatures in the freeze's knee step** (Christian, 16 Nov: "for the next rover deck
+  joint, add 20 stations at extreme temperatures in order to better resolve its temperature trend").
+  - `--knee-extreme-temps 20` (default): the 10 coldest and the 10 warmest 360s of the drive that pass the deck test.
+    Each kind is spread over the sols, at least span / 20 sols apart, so temperature does not line up with sol.
+  - The deck-joint package's `fill_from_drive.py --extreme-temps N` reads each candidate's camera temperature from
+    its labels (cached in `drive_temperatures.json`). A rerun adds none.
+  - The new package files are delivered with this version (outside git). An older package gets the 250-400 stations
+    only, with a note.
+- **The elevation-scale test** (Christian: is the deck joint's mast elevation scale of +311 +- 103 ppm real, and could
+  the Navcam models absorb it?). The knee step's deck joint also runs `ALL_fxfy` (Navcam fx, fy free per station
+  camera) and `ALL_nochainscale` (the scale held at 0), through `EOD_JOINT_OPTS=--scale-tests`;
+  `--no-knee-scale-tests` leaves them out. The package report lists both under "variant".
+- **A late roll knee in `rpp_studies.calibration.knee`** (Christian: "Does the roll data prefer a knee at sol
+  1200-1500?"): a hinge with a temperature term over sols 600-1900.
+  - On 16 Nov: deck 1450 (68 % 1360-1550, BIC +2.1, not preferred); blocks 1180 (1130-1620, BIC -11.0); both 1410
+    (1340-1570).
+  - Roll falls about 8-10 mdeg/1000 sol before the knee and is flat or rising after it.
+
 ## 0.99.6 — 2026-11-16 (branch `rpp`)
 
 - **A red-weighted gray in the mask training** (Christian, 16 Nov: "add the red-weighted gray option"). A Curiosity

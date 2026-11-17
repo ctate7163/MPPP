@@ -33,6 +33,7 @@ import numpy as np
 
 KNEES = np.arange(60, 1001, 5)
 ROLL_KNEES = np.arange(0, 1501, 10)
+LATE_KNEES = np.arange(600, 1901, 10)       # 0.99.7: where roll stops falling (16 Nov: deck 1450, blocks 1180)
 LAW_KNEE = 250
 
 
@@ -133,6 +134,15 @@ def analyze(deck: Optional[Dict[str, Any]], blocks: Optional[Dict[str, Any]]) ->
                                 "law_knee_chi2": float(tot[list(k).index(LAW_KNEE)]), "profile": [float(x) for x in tot]}
     for name, ss in sets.items():
         res["roll"][name] = profile(*ss["roll"], True, ROLL_KNEES, kind="flat")
+    # 0.99.7 (Christian, 16 Nov: "Does the roll data prefer a knee at sol 1200-1500?"): a late hinge in roll, with T
+    res["roll_late"] = {name: profile(*ss["roll"], True, LATE_KNEES) for name, ss in sets.items()}
+    if len(sets) == 2:
+        tot = np.array(res["roll_late"]["deck"]["profile"]) + np.array(res["roll_late"]["blocks"]["profile"])
+        i = int(np.argmin(tot))
+        tot = tot - tot[i]
+        k = LATE_KNEES
+        res["roll_late"]["both"] = {"best": int(k[i]), "r68": [int(k[tot <= 1].min()), int(k[tot <= 1].max())],
+                                    "r95": [int(k[tot <= 4].min()), int(k[tot <= 4].max())], "profile": [float(x) for x in tot]}
     return res
 
 
@@ -151,6 +161,11 @@ def text(res: Dict[str, Any]) -> str:
         lines.append(f"roll  {name:6s}: flat then linear - knee {r['best']} (68 % {r['r68'][0]}-{r['r68'][1]}), rate after "
                      f"{r['rate_after']:+.2f} +- {r['se_after']:.2f}; a line ({r['line_rate']:+.2f}) is worse by only "
                      f"{r['line_minus_best_chi2']:+.1f} (BIC {r['dbic_vs_line']:+.1f} for the knee); T {r.get('per_degC', 0):+.3f} mdeg/degC")
+    for name, r in (res.get("roll_late") or {}).items():
+        extra = (f"; rates {r['rate_before']:+.1f} +- {r['se_before']:.1f} / {r['rate_after']:+.1f} +- {r['se_after']:.1f} mdeg/1000 sol, "
+                 f"a line worse by {r['line_minus_best_chi2']:+.1f} (BIC {r['dbic_vs_line'] + np.log(max(2, r['n'])):+.1f} for the knee "
+                 f"and its sol), {r['n'] - r['before_n']} points after the knee") if "rate_before" in r else ""
+        lines.append(f"roll  {name:6s}: late knee {r['best']} (68 % {r['r68'][0]}-{r['r68'][1]}, 95 % {r['r95'][0]}-{r['r95'][1]}){extra}")
     return "\n".join(lines) + "\n"
 
 
