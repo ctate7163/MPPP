@@ -180,7 +180,7 @@ def test_msl_block_stages_rigs_scale_verdict_and_promotion(tmp_path, monkeypatch
     work = tmp_path / "msl_sol_0160_test"
     work.mkdir()
     rep = B.finish(rec, man, work, 1, [], max_error_m=0.5)
-    assert rep["ok"] and list(rep["stages"]) == ["free", "rigs", "pp_check"]
+    assert rep["ok"] and list(rep["stages"]) == ["free", "rigs", "pp_check", "thermal"]
     for g, c in rep["cameras"].items():
         assert c["refined"][2:4] == [507.0, 503.0] and c["refined"][9:] == [0.0, 0.0, 0.0]         # held
         assert abs(c["refined"][0] - true[0]) < 1.5 and abs(c["refined"][4] - true[4]) < 0.003
@@ -317,3 +317,46 @@ def test_msl_blocks_get_open_in_colmap(tmp_path, monkeypatch, capsys):
     assert (tmp_path / "msl_sol_0162_yellowknife_bay" / "open_in_colmap.bat").is_file()
     src = (Path(B.__file__)).read_text(encoding="utf-8")
     assert src.count("    F.write_open_in_colmap(work)  ") == 2               # at prepare and at align
+
+
+def test_msl_temperature_stage_and_significance(tmp_path):
+    """0.99.17 (Christian, 17 Nov 2026: "model the focal length and rig rotation as a function of temperature. could the
+    ncam p1, p2, or k3 be held or set to zero? do a significance study after the next alignment"): a block whose focal
+    lengths and B-side rig yaw change with temperature gives the slopes back; the significance step finds the true
+    tangential terms needed where they are large and k3 = 0 usable where it is zero."""
+    import pycolmap
+    from rpp_studies.msl import block as B
+    rec, man, true, rel = _synthetic_stereo_block(pairs_per_side=24)
+    T = {}
+    for r in man["images"]:                                     # temperatures -55 ... -5, the same for a pair
+        k = int(r["pair_key"].split("_")[1])
+        r["ccd_degC"] = -55.0 + 50.0 * k / 23
+        T[r["image"]] = r["ccd_degC"]
+    bins, Tm = B.temperature_bins(man, list(T), min_frames=4)
+    assert len(set(bins.values())) >= 4 and all(bins[a["image"]] == bins[b["image"]] for a in man["images"] for b in man["images"]
+                                                if a["pair_key"] == b["pair_key"])
+    ppm = 40.0
+    for im in rec.images.values():                              # the image scaled about the principal point: f(T)
+        k = 1 + 1e-6 * ppm * (T[im.name] - B.T0_DEGC)
+        for p2 in im.points2D:
+            p2.xy = np.array([507., 503.]) + k * (np.asarray(p2.xy) - [507., 503.])
+    work = tmp_path / "msl_sol_0160_test"
+    work.mkdir()
+    rep = B.finish(rec, man, work, 1, [], max_error_m=0.5)
+    th = rep["thermal"]
+    for g, c in th["cameras"].items():
+        assert 5 < c["f_ppm_per_degC"] < 75 and len(c["bins"]) >= 4, (g, c["f_ppm_per_degC"])    # the sign and size (a small block)
+    assert set(th["rigs"]) == {"NA", "NB"} and all(abs(x) < 3 for x in th["rigs"]["NA"]["rate_mdeg_per_degC"])
+    d = json.loads((work / "cmods_candidate" / "MSL_NLA.json").read_text())
+    assert d["thermal"]["T0_degC"] == B.T0_DEGC and d["thermal"]["f_ppm_per_degC"] > 5
+    assert json.loads((work / "cmods_candidate" / "MSL_NB_rig.json").read_text())["thermal"]["yaw_mdeg_per_degC"] is not None
+    assert (work / "sparse" / "free" / "images.bin").is_file() and (work / "sparse" / "thermal" / "images.bin").is_file()
+    assert "temperature (bins of 10 degC" in (work / "report.txt").read_text()
+    (work / "manifest.json").write_text(json.dumps(man, default=float))
+    sig = B.significance(work, folds=3)
+    assert set(sig["variants"]) == {v[0] for v in B.SIG_VARIANTS} and set(sig["terms"]) == {"NLA", "NRA", "NLB", "NRB"}
+    assert not sig["variants"]["k3 = 0"]["ok"] or sig["variants"]["k3 = 0"]["by_camera"]["NLA"]["image_max_px"] <= 0.15
+    assert sig["terms"]["NLA"]["p1"]["sd"] > 0 and "USABLE" in (work / "significance.txt").read_text().upper()
+    a = B.camera_difference(true, true, 1024, 1024)
+    b = B.camera_difference(true, list(true[:6]) + [0, 0] + list(true[8:]), 1024, 1024)
+    assert a["max"] < 1e-6 and b["raw_max"] > b["max"] > 0.01           # the tangential terms of the test camera: visible

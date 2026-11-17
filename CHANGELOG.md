@@ -3,6 +3,27 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.17 — 2026-11-17 (branch `rpp`)
+
+MSL blocks (Christian, 13:39: "the msl navcams do have a strong temperature dependence. So model the focal length and rig
+rotation as a function of temperature. could the ncam p1, p2, or k3 be held or set to zero? do a significance study
+after the next alignment.").
+
+- Stage 3, temperature (`thermal_stage`): every camera and every side's rig split into 10 degC bins of the CCD
+  temperature (a pair takes one temperature; bins under 8 frames join a neighbor).  A bin's camera keeps the block's
+  distortion and principal point and solves fx, fy; a bin's rig solves its own right-from-left pose.  Lines through
+  the bins, weighted by frames: focal length in ppm/degC per camera, rig pitch / yaw / roll in mdeg/degC per side,
+  about T0 = -20 degC.  The model files carry them (`thermal`), with the parameters and the rig rotation at T0.  The
+  binned model is `sparse\thermal`; `block_frame` stays the stage-2 model (it matches the database).
+- New step `significance`: from the free-image model (`sparse\free`) with the focal slopes taken out of the
+  observations - the full model; p1 = p2 = 0, k3 = 0, all three zero, and the same held at the label's values; a
+  jackknife over groups of sols for each term's standard deviation.  `significance.txt` gives value, sd and z per term
+  and, per variant and camera, the rms rise and how far the camera moves the image (usable: at most 0.15 px anywhere
+  and 1 % in rms).
+- Fixed: the stage reprojection errors of 0.99.16 were read before COLMAP's stored point errors were refreshed
+  (`update_point_3d_errors`), so the rig stage and the principal-point check showed the previous stage's number.
+- `Sol0670_S032D0672_Z34`: (no change) renders at 16K, the default width since 0.98.30.
+
 ## 0.99.16 — 2026-11-17 (branch `rpp`)
 
 MSL blocks (`rpp_studies.msl.block`), after the first Yellowknife Bay alignment (Christian, 12:24: "hold the principal
