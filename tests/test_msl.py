@@ -46,6 +46,10 @@ def test_the_block_is_the_richest_station_and_its_neighbors():
     a = np.linspace(100, 6000, 1000).reshape(10, 100)
     s = F.stretch8(a)
     assert s.dtype == np.uint8 and s.min() == 0 and s.max() == 255
+    # 0.99.22: 8 % brighter than the plain stretch, clipped at 255
+    plain = F.stretch8(a, brightness=1.0)
+    mid = (plain > 20) & (plain < 200)
+    assert F.BRIGHTNESS == 1.08 and abs(np.median(s[mid] / plain[mid]) - 1.08) < 0.02 and (s >= plain).all()
     pairs = F.stereo_baselines([{"pair_key": "p", "eye": "L", "image": "l.png", "C_enu_m": [0, 0, 0]},
                                 {"pair_key": "p", "eye": "R", "image": "r.png", "C_enu_m": [0.424, 0, 0]}],
                                {"l.png": np.zeros(3), "r.png": np.array([0.4, 0.0, 0.0])})
@@ -388,3 +392,29 @@ def test_msl_site_links_without_a_quaternion():
         {"site": 6, "site_link": {"site": 6, "parent": 5, "offset_ned_m": [0.0, 0.0, 0.0], "quaternion": [0, 0, 0, 0]}}]
     origin, rep = site_origins(infos)
     assert rep["anchor"] == 5 and np.allclose(origin[6], [2.0, 10.0, -0.5])
+
+
+def test_one_wild_point_does_not_decide_the_reprojection_error():
+    """0.99.23 (Christian, 18 Nov 2026: "are these ultra large numbers ... a bug?"): the sols 124-306 block reported
+    1.1e149 px for its rig stage and failed its verdict on it - one point almost in a camera's plane, where the Brown
+    polynomial explodes, in a plain mean.  Such a point is taken out after every adjustment."""
+    from rpp_studies.msl import block as B
+    rec, man, true, rel = _synthetic_stereo_block(pairs_per_side=4)
+    for cid in rec.cameras:
+        rec.camera(cid).params = true.copy()
+    rec.update_point_3d_errors()
+    clean = float(rec.compute_mean_reprojection_error())
+    assert clean < 0.5 and B.drop_wild_points(rec) == 0
+    pid = sorted(rec.points3D)[0]
+    im = rec.image(1)
+    C = im.projection_center()
+    R = im.cam_from_world().rotation.matrix()
+    rec.point3D(pid).xyz = C + R.T @ np.array([3.0, 2.0, 1e-12])           # almost in the first camera's plane
+    rec.update_point_3d_errors()
+    wild = float(rec.compute_mean_reprojection_error())
+    assert not np.isfinite(wild) or wild > 1e6                             # what the report showed
+    n0 = rec.num_points3D()
+    runs = B.refine_cameras(rec, man, rounds=1, hold_pp=True)
+    assert runs[-1]["wild_points_dropped"] >= 1 and rec.num_points3D() <= n0 - 1 and pid not in rec.points3D
+    assert np.isfinite(runs[-1]["reprojection_px"]) and runs[-1]["reprojection_px"] < 1.0
+    assert B.WILD_ERROR_PX == 40.0

@@ -193,7 +193,9 @@ def test_processing_config_and_project_settings(tmp_path, clean_env):
     cfg = processing_config(Settings())
     assert cfg["export"]["formats"] == ["PNG8"] and cfg["export"]["store_mask_in_alpha"] == 0.5
     assert cfg["masking"]["skip_inference_at"] == [] and cfg["masking"]["infer_mask"] is True
-    assert cfg["selection"]["lmst_window_h"] == [6.0, 18.0] and cfg["color"]["brightness_by_family"] == {"N": 0.9}
+    assert cfg["selection"]["lmst_window_h"] == [6.0, 18.0] and cfg["color"]["brightness_by_family"] == {"N": 1.069, "F": 1.191, "R": 1.191, "Z": 1.0}
+    # 0.99.22: a Navcam factor of the settings replaces the Navcam's alone
+    assert processing_config(Settings(navcam_brightness=0.9))["color"]["brightness_by_family"] == {"N": 0.9, "F": 1.191, "R": 1.191, "Z": 1.0}
     assert processing_config(Settings(infer_mask=False, mask_checkpoint="x.pt"))["masking"]["checkpoint"] == "x.pt"
     s = Settings()
     assert _zero_terms(s) == (("b1", "b2"), None) and _refine_tangential(s) is True   # zcam-v2: p1, p2 refined like the Navcam

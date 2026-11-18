@@ -30,6 +30,14 @@ def test_the_navcam_factor_makes_the_navcams_look_like_mastcam_z():
     assert np.allclose(np.asarray(s["white_balance_hazcam_matching_zcam"]) / np.asarray(col["white_balance_hazcam"]),
                        s["navcam_factor"], rtol=1e-3)
     assert set(s["by_sol_pair"]) == {"N684-Z684", "N688-Z688", "N693-Z693"}
+    # 0.99.22: with the processed ratio in the samples (columns 9-11) it is reported beside the radiance ratio - the
+    # one that carries the sun-angle scale (17 Nov: 19 % in radiance at Three Forks South was 9 % in the images)
+    assert "processed_ratio_Z_over_N" not in s
+    for b in blocks:
+        b["samples"] = [r + [1.09, 1.08, 1.10] for r in b["samples"]]
+    s2 = C.summarize(blocks)
+    assert s2["processed_ratio_Z_over_N"] == [1.09, 1.08, 1.1] and s2["radiance_ratio_Z_over_N"] == s["radiance_ratio_Z_over_N"]
+    assert any("processed images" in ln for ln in C.lines(s2))
     assert any("white_balance_ecam" in ln for ln in C.lines(s))
 
 

@@ -39,7 +39,20 @@ _DEFAULTS: Dict[str, Any] = {
     },
     "color": {
         "enhance": True,
-        "white_balance_ecam": [1.1, 1.4, 1.8],
+        # 0.99.22 (Christian, 17-18 Nov 2026: "bring the ecams in alignment with the zcam 34 color. The red channel
+        # should be 1 while any total brightness difference goes into the scale parameters applied to all three
+        # channels"; 18 Nov: Mastcam-Z unchanged, the ecams 8 % brighter, the color from the panorama's surface match).
+        # Every balance has red = 1; the level is brightness_by_family.  Measured at Three Forks South (sol 670,
+        # S032D0672: the Navcam 360 20-40 min after the Z34 360, the sun 8 deg apart) in the processed images, which
+        # carry the sun-angle correction:
+        #   Navcam / Z34 on the panorama's surface (rpp ods fill_colour_match, the station's 14 frames, 321,000 px):
+        #     Z34 = Navcam x (1.065, 1.025, 1.021) -> color (1, 0.962, 0.959)
+        #   on the 125,000 points both cameras see (rpp.ibr.nzcolor, the zenith scale included): x (1.099, 1.089, 1.096)
+        #   brightness: the mean of the two red factors, 1.08
+        #   front Hazcams / Z34 on the surface (2 frames, 28,700 px): x (1.079, 1.030, 0.989) -> (1, 0.955, 0.916)
+        # Before (to 0.99.21): Navcam [1.1, 1.4, 1.8] x 0.9 = red 1 form [1, 1.273, 1.636] x 0.990; Hazcam
+        # [1.104, 1.4, 2.004] = [1, 1.268, 1.815] x 1.104.
+        "white_balance_ecam": [1.0, 1.224, 1.569],
         # 0.97.15 (Christian, 13 Nov 2026: "I believe the Hazcam white balance. multiply those values by the white
         # balance used in the pipeline processing and update as default"): the Hazcams (families F and R) - the
         # Navcam balance x (1.004, 1, 1.113), what makes the front Hazcam pair's terrain the color of the Navcam
@@ -47,12 +60,14 @@ _DEFAULTS: Dict[str, Any] = {
         # 1.113) over 45,000 and 50,000 shared terrain points; rpp ods, fill_colour_match).  Measured on the front
         # pair only; the rear pair has the same cameras and takes the same values.  None: the Navcam balance (as
         # before 0.97.15).
-        "white_balance_hazcam": [1.104, 1.4, 2.004],
+        # 0.99.22: red = 1 and matched to Z34 as above (the rear pair takes the front pair's values).
+        "white_balance_hazcam": [1.0, 1.211, 1.663],
         "white_balance_zcam": [1.0, 1.3, 2.0],
         "white_balance_vce": [1.1, 1.0, 0.9],
         # a brightness factor per camera family applied with the white balance (N = Navcam, F/R = Hazcam,
-        # Z = Mastcam-Z); Navcam 0.9 keeps nominally exposed frames off the top of the 8-bit range
-        "brightness_by_family": {"N": 0.9},
+        # Z = Mastcam-Z).  0.99.22: the ecams 8 % brighter than before, at Mastcam-Z's level (N 0.990 x 1.08,
+        # F/R 1.104 x 1.079); to 0.99.21 it was {"N": 0.9} with the level in the balances
+        "brightness_by_family": {"N": 1.069, "F": 1.191, "R": 1.191, "Z": 1.0},
         "scale_rad_to_int16": 2e5,
         "scale_int8_to_int16": 64,
         "offset_int8_to_int16": 0.0,

@@ -3,6 +3,61 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.23 — 2026-11-18 (branch `rpp`)
+
+- **MSL block: one wild point no longer decides the reprojection error** (Christian, 08:35: "are these ultra large
+  numbers for p1, p2 at the label in msl a bug?"). Yes. A point that ends almost in a camera's plane gets about
+  1e150 px from the Brown polynomial (k3 r^6), and the reported error is a plain mean over the points. In the sols
+  124-306 block it gave "refine rigs round 2: 1.1e149 px", failed the verdict ("reprojection rise with the rigs and
+  temperature bins = 4.5e149") - so nothing was promoted - and showed as 5e147 px in two lines of the significance
+  study. The per-camera residuals were 0.65-0.93 px throughout. `refine_cameras` now takes points with a mean error
+  above `WILD_ERROR_PX` (40 px) or not finite out of the model after every adjustment, the last round too, and
+  reports how many (`wild_points_dropped`, in the report's round lines).
+- The block's cameras, rigs and the significance study's per-camera results were not affected; the verdict was.
+  `msl_yellowknife_0p99p18.bat finish --sols 124 306` makes the stages and the verdict again from the aligned model.
+
+## 0.99.22 — 2026-11-18 (branch `rpp`)
+
+For freeze-3 (Christian, 18 Nov 07:01: "keep k1 temp on ncam ... Promote 26 and hazcam. Fix the bug and look for other
+roadblocks for freeze3"; 17 Nov: "bring the ecams in alignment with the zcam 34 color. The red channel should be 1
+while any total brightness differences goes into the scale parameters applied to all three channels").
+
+- **Colors: every white balance with red = 1, the level in `color.brightness_by_family`.**
+  - Navcam `[1.0, 1.224, 1.569]` x 1.069 (was `[1.1, 1.4, 1.8]` x 0.9 = `[1, 1.273, 1.636]` x 0.990); Hazcams
+    `[1.0, 1.211, 1.663]` x 1.191 (was `[1.104, 1.4, 2.004]` = `[1, 1.268, 1.815]` x 1.104); Mastcam-Z
+    `[1.0, 1.3, 2.0]` x 1.0, unchanged.
+  - From Three Forks South (sol 670, S032D0672; the Navcam 360 20-40 min after the Z34 360), in the processed images:
+    the panorama's surface match gives Z34 = Navcam x (1.065, 1.025, 1.021) over the station's 14 frames and 321,000
+    pixels, and Z34 = front Hazcam x (1.079, 1.030, 0.989); the points both cameras see give x (1.099, 1.089, 1.096).
+    Christian, 18 Nov: Mastcam-Z unchanged, the engineering cameras 8 % brighter, the color from the surface match.
+  - **A correction:** the 19 % Navcam-to-Z34 difference reported on 17 Nov was a radiance ratio with the sun 8 deg
+    higher for the Z34 frames. The processed images carry the sun-angle scale: there the difference is 7-10 %.
+    `rpp.ibr.nzcolor` now also reports `processed_ratio_Z_over_N` (the 16-bit values' ratio).
+  - `Settings.navcam_brightness` is None by default (the configuration's factor); given, it replaces the Navcam's
+    factor alone - `processing_config` replaced the whole map with it, which would have dropped the Hazcam and
+    Mastcam-Z factors.
+  - `linear16.block_config`: a block processed before 0.99.22 keeps its own brightness map (the new defaults' Hazcam
+    factor merged into it would have made its 16-bit Hazcam frames 19 % brighter than its 8-bit ones).
+  - Curiosity: the 8-bit stretch x 1.08 (`rpp_studies.msl.first_block.BRIGHTNESS`).
+  - A sample Navcam frame (the test product): 6.5 % of its pixels clip in 8 bit, 3.9 % before.
+  - Every block run after this version processes its images again (the configuration changed).
+- **The exact-tie step with an under-tied unit** (`rpp.calib.tiecov.eliminate_unit`): a rig unit with one angle tied
+  has one tie row over the three columns of its rotation. The step stopped on it ("LinAlgError: Last 2 dimensions of
+  the array must be square", the rig_T Navcam joint's diagnostic pass of 18 Nov) and the exact covariance refused it
+  ("a unit's tie Jacobian is rank-deficient"). Such a unit is now solved in the least-norm sense and keeps its untied
+  directions free; a fully tied unit is solved as before.
+- **Navcam joint check "early-mission fit":** failed for every joint since 0.95.4, when the early-mission offsets
+  were all held at 0 - the check read "nothing held" and found eight fitted terms without an sd. The joint now records
+  them as held (`early_test.all_held_at_zero`), and the check passes as "held".
+- **Freeze-3 in a new root:**
+  - `freeze --seed-from ROOT`: the Mastcam-Z backlash lists (`zcam_low_backlash_found.csv`,
+    `zcam_focus_from_below.csv`) copied into a root that has none - they live beside the block folders and no freeze
+    step makes them; without them no sequence would count as a low backlash state. A root without the list is said
+    in the log.
+  - `freeze --zcam-one-block` (default 26; `run_pipeline --zcam-one-block`): the 26 mm joint promotes from its one
+    block (`calib zcam --min-blocks 1`).
+- Not run on the PC: the freeze in a new root, the joints with the fixes, images in the new colors.
+
 ## 0.99.21 — 2026-11-17 (branch `rpp`)
 
 A validation set for the rover-mask model from frames no model has trained on (Christian, 20:19: "prepare 100 images

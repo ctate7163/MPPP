@@ -579,3 +579,38 @@ def test_knee_step_adds_extreme_temperature_stations_and_the_scale_tests(tmp_pat
     assert "has no --extreme-temps" in note2 and "scale tests" not in note2
     r = fz.Run(fz.parser().parse_args(["--root", str(root), "--dry-run"]))
     assert "EOD_JOINT_OPTS" not in r.env or r.env["EOD_JOINT_OPTS"] != "--scale-tests"
+
+
+def test_new_root_is_seeded_with_the_backlash_lists_and_z26_promotes_from_one_block(tmp_path):
+    """0.99.22 (freeze-3 in a new, empty root; Christian, 18 Nov: "Promote 26 ... look for other roadblocks")."""
+    old = tmp_path / "old_root"
+    old.mkdir()
+    (old / "zcam_low_backlash_found.csv").write_text("sequence,sol\nZCAM08114,201\n", encoding="utf-8")
+    (old / "zcam_focus_from_below.csv").write_text("sequence\n", encoding="utf-8")
+    root = _root(tmp_path)
+    (root / "cmods").mkdir()
+    (root / "cmods" / "M2020_N_rig.json").write_text("{}", encoding="utf-8")
+    # a dry run copies nothing and says what it would
+    assert _run(root, "--seed-from", str(old)) == 0
+    assert not (root / "zcam_low_backlash_found.csv").exists()
+    log = (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
+    assert "zcam_low_backlash_found.csv from" in log and "dry run: not copied" in log
+    assert "--zcam-one-block 26" in log and fz.ONE_BLOCK == (26,)
+    # the real copy; a second call leaves the files alone
+    a = fz.parser().parse_args(["--root", str(root), "--cmods", str(root / "cmods"), "--seed-from", str(old),
+                                "--no-logon-task"])
+    r = fz.Run(a)
+    first = r.seed_root()
+    assert "zcam_low_backlash_found.csv" in first and "zcam_focus_from_below.csv" in first
+    assert (root / "zcam_low_backlash_found.csv").read_text(encoding="utf-8").startswith("sequence,sol")
+    assert (root / "zcam_focus_from_below.csv").is_file() and r.seed_root() == ""
+    # a root without the list and nowhere to take it from: said in the log
+    bare = tmp_path / "bare" / "rover_blocks"
+    (bare / "mppp_pipeline").mkdir(parents=True)
+    rb = fz.Run(fz.parser().parse_args(["--root", str(bare), "--cmods", str(bare / "cmods"), "--no-logon-task"]))
+    assert "no zcam_low_backlash_found.csv" in rb.seed_root()
+    assert "WARNING - no zcam_low_backlash_found.csv" in (bare / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
+    # the zooms of a single block reach the joints
+    from rpp_studies.calibration import run_pipeline as rp
+    src = Path(rp.__file__).read_text(encoding="utf-8")
+    assert '"--min-blocks", "1"' in src and "--zcam-one-block" in src

@@ -113,7 +113,7 @@ class Settings:
     min_included_fraction: Optional[float] = None  # images whose mask keeps less than this share of the image are left out of the alignment; None: keep all
     max_exposure_ms: Optional[float] = 40.0       # Navcam frames with a longer exposure are not processed (the long member of the exposure brackets)
     max_centre_tint: Optional[float] = 1.2        # nor frames whose center is bluer than the edge by more than this (B/R ratio)
-    navcam_brightness: float = 0.9                # brightness factor for Navcam
+    navcam_brightness: Optional[float] = None     # brightness factor for Navcam; None (0.99.22): color.brightness_by_family's
     no_mask_inference_at: List[str] = field(default_factory=list)   # stations (S032D1184) or sequences (NCAM00699; 0.93.8) where the mask model is off (the rover stays in the images); per site in sites.json
     store_mask_in_alpha: Any = 0.5                # the mask in the PNG alpha channel: 1 = masked pixels transparent, 0.5 = half, 0 = no alpha
     infer_mask: bool = True                       # run the mask model (False: no terrain masks)
@@ -729,7 +729,10 @@ def processing_config(settings: Settings) -> Dict[str, Any]:
                             lmst_window_h=list(settings.lmst_window_h) if settings.lmst_window_h else None,
                             max_saturated_fraction=settings.max_saturated_fraction,
                             max_exposure_ms=settings.max_exposure_ms, max_centre_tint=settings.max_centre_tint)
-    cfg["color"]["brightness_by_family"] = {"N": settings.navcam_brightness}
+    # 0.99.22: the other families' factors stay (this line replaced the whole map with the Navcam's alone)
+    if settings.navcam_brightness is not None:
+        cfg["color"]["brightness_by_family"] = dict(cfg["color"].get("brightness_by_family") or {},
+                                                    N=float(settings.navcam_brightness))
     return cfg
 
 
