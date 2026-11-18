@@ -3,6 +3,24 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.25 — 2026-11-18 (branch `rpp`)
+
+- **The panorama render on several cores, the memory shared** (Christian, 11:17: "rewrite the ibr ods pipeline to
+  use multiple cores. Share memory between the workers"). New `rpp.ibr.parallel`: a panorama eye is rendered in bands
+  of rows (`rpp.ibr.ods.render_rows`, the old loop's body), and `RenderPool` gives the bands to worker processes.
+  The sources' pixels (image, low band, edge distance, saturation, rover mask) are computed once, on threads, into
+  one block of shared memory that every worker maps - no worker holds a copy of an image - and the pool lives for
+  all the eyes of a render, so the sources are read and blurred once, not once per eye. The surface's arrays are
+  shared too; each worker builds its own ray-casting structure from them (one thread each). The bands come back
+  through shared memory. The picture is the same bit for bit (tested against one process and against 0.99.24, 8- and
+  16-bit). A pool that fails leaves the render to the parent process, with a line in the log.
+  Workers: `--workers N` of `rpp ods` (`render_station(workers=)`), else `RPP_IBR_WORKERS`, else half the logical
+  processors, at most 8; 1 is the old path. `ods.json` records `render_processes`; the log gives, per eye, the bands'
+  time against the wall time.
+- `SourceImage.sample` no longer makes a float copy of the whole image for every band and source (the 8-bit image is
+  interpolated straight into float32: the same numbers).
+- `Scene.state` / `Scene.from_state`, `Scene.nthreads`.
+
 ## 0.99.24 — 2026-11-18 (branch `rpp`)
 
 - **MSL block: misplaced frames are taken out before the cameras are refined** (Christian, 08:49: "it seems like two

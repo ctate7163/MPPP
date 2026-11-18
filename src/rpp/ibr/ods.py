@@ -219,6 +219,8 @@ class SourceImage:
         self.fill_only = False                            # 0.97.7: colors only what no regular source sees (a Hazcam frame)
         self.context = False                              # 0.97.15: a frame from another place or sol (see station_sources)
         self._rover: Optional[np.ndarray] = None
+        self._adopted = False                             # 0.99.25: the pixel arrays are views of shared memory (adopt)
+        self._rover_fixed: Optional[np.ndarray] = None    # ... and the rover mask as sample_rover uses it (or None)
         self.model_rover: Optional[np.ndarray] = None     # 0.98.22: the rover model's silhouette, where the mask has no rover
         self.linear_file: Optional[Path] = None           # 0.96.1: the 16-bit linear image (rpp.ibr.linear16)
         self.sat_file: Optional[Path] = None              # ... and its saturation mask
@@ -278,14 +280,13 @@ class SourceImage:
             self._mask = None if m is None else (m > 0)
         return self._mask
 
-    def sample_rover(self, uv: np.ndarray) -> Optional[np.ndarray]:
-        """True where the pixel at ``uv`` is inside the frame's rover mask (rover hardware, and whatever else the mask
-        covers: its shadow); None without ``rover_mask_file``."""
+    def rover_array(self) -> Optional[np.ndarray]:
+        """(H, W) bool, True = inside the frame's rover mask (rover hardware, and whatever else the mask covers: its
+        shadow); None without ``rover_mask_file`` and without the model's silhouette."""
+        if self._adopted:
+            return self._rover_fixed
         if self.model_rover is not None and (self.rover_mask_file is None or not Path(self.rover_mask_file).is_file()):
-            uv = np.asarray(uv, float)
-            i = np.clip(np.rint(uv[:, 0]).astype(int), 0, self.W - 1)
-            j = np.clip(np.rint(uv[:, 1]).astype(int), 0, self.H - 1)
-            return self.model_rover[j, i]
+            return self.model_rover
         if self.rover_mask_file is None or not Path(self.rover_mask_file).is_file():
             return None
         if self._rover is None:
@@ -299,10 +300,72 @@ class SourceImage:
             self._rover = ~(m > 0)                            # the mask file: > 0 is terrain
             if self.model_rover is not None:                  # 0.98.22: a mask that left the rover in
                 self._rover = self._rover | self.model_rover
+        return self._rover
+
+    def sample_rover(self, uv: np.ndarray) -> Optional[np.ndarray]:
+        """True where the pixel at ``uv`` is inside the frame's rover mask (:meth:`rover_array`); None without one."""
+        rv = self.rover_array()
+        if rv is None:
+            return None
         uv = np.asarray(uv, float)
         i = np.clip(np.rint(uv[:, 0]).astype(int), 0, self.W - 1)
         j = np.clip(np.rint(uv[:, 1]).astype(int), 0, self.H - 1)
-        return self._rover[j, i]
+        return rv[j, i]
+
+    # ---- 0.99.25: the pixel arrays in memory shared by the render's worker processes (rpp.ibr.parallel) ----
+    def shared_layout(self) -> Dict[str, Tuple[Tuple[int, ...], str]]:
+        """{field: (shape, dtype)} of the arrays a render samples: the image, its low band, the edge distance and -
+        where the source can have them - the saturation and the rover mask."""
+        lay = {"rgb": ((self.H, self.W, 3), "float32" if self.linear_file is not None else "uint8"),
+               "low": ((self.H, self.W, 3), "float32"), "dist": ((self.H, self.W), "float32")}
+        if self.linear_file is not None and self.sat_file:
+            lay["sat"] = ((self.H, self.W), "float32")
+        if self.model_rover is not None or self.rover_mask_file is not None:
+            lay["rover"] = ((self.H, self.W), "bool")
+        return lay
+
+    def fill_shared(self, views: Dict[str, np.ndarray]) -> Dict[str, bool]:
+        """Compute the arrays of :meth:`shared_layout` into ``views`` (and drop the own copies).  Returns which of the
+        optional ones the source has ({"sat", "rover"})."""
+        views["rgb"][...] = self.rgb()
+        views["low"][...] = self.low()
+        views["dist"][...] = self.edge_distance()
+        has = {"sat": False, "rover": False}
+        if "sat" in views and self._sat is not None:
+            views["sat"][...] = self._sat
+            has["sat"] = True
+        if "rover" in views:
+            rv = self.rover_array()
+            if rv is None and self.model_rover is not None:      # an unreadable mask file: the silhouette from then on
+                rv = self.rover_array()
+            if rv is not None:
+                views["rover"][...] = rv
+                has["rover"] = True
+        self.release()
+        self._mask = None
+        self._rover = None
+        return has
+
+    def adopt(self, views: Dict[str, np.ndarray], has: Dict[str, bool]) -> None:
+        """Use the shared arrays (:meth:`fill_shared` filled them) for everything a render samples."""
+        self._rgb, self._low, self._dist = views["rgb"], views["low"], views["dist"]
+        self._sat = views["sat"] if has.get("sat") else None
+        self._rover_fixed = views["rover"] if has.get("rover") else None
+        self._adopted = True
+
+    def light_state(self) -> Dict[str, Any]:
+        """The source without its pixel arrays and masks, for a worker process that adopts the shared ones."""
+        st = dict(self.__dict__)
+        for k in ("_rgb", "_low", "_dist", "_sat", "_mask", "_rover", "_rover_fixed", "extra_mask", "model_rover"):
+            st[k] = None
+        st["_adopted"] = False
+        return st
+
+    @classmethod
+    def from_light_state(cls, state: Dict[str, Any]) -> "SourceImage":
+        self = cls.__new__(cls)
+        self.__dict__.update(state)
+        return self
 
     def sample_saturation(self, uv: np.ndarray) -> Optional[np.ndarray]:
         """The saturated share (0-1) at ``uv``; None for a frame without saturation (or an 8-bit source)."""
@@ -314,6 +377,8 @@ class SourceImage:
         self._sat = None
         self._low = None
         self._dist = None
+        self._adopted = False
+        self._rover_fixed = None
 
     @property
     def short_side(self) -> int:
@@ -372,16 +437,18 @@ class SourceImage:
             self._dist = cv2.distanceTransform(pad, cv2.DIST_L2, 5)[1:-1, 1:-1].astype(np.float32)
         return self._dist
 
-    def _bilinear(self, img: np.ndarray, uv: np.ndarray) -> np.ndarray:
+    def _bilinear(self, img: np.ndarray, uv: np.ndarray, output=None) -> np.ndarray:
         from scipy.ndimage import map_coordinates
         coords = [uv[:, 1] - 0.5, uv[:, 0] - 0.5]
         if img.ndim == 2:
-            return map_coordinates(img, coords, order=1, mode="nearest")
-        return np.stack([map_coordinates(img[..., c], coords, order=1, mode="nearest") for c in range(img.shape[2])], axis=1)
+            return map_coordinates(img, coords, order=1, mode="nearest", output=output)
+        return np.stack([map_coordinates(img[..., c], coords, order=1, mode="nearest", output=output) for c in range(img.shape[2])], axis=1)
 
     def sample(self, uv: np.ndarray) -> np.ndarray:
         """Bilinear color (n, 3) float at the scaled pixel coordinates ``uv``."""
-        return self._bilinear(self.rgb().astype(np.float32), uv)
+        # 0.99.25: not a float copy of the whole image per call - the 8-bit image interpolated (in double, as ever)
+        # into float32: the same numbers as from its float32 copy
+        return self._bilinear(self.rgb(), uv, output=np.float32)
 
     def sample_bands(self, uv: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """(low band, full image) colors (n, 3) at ``uv``."""
@@ -1102,15 +1169,124 @@ def estimate_fill_color(scene: Scene, sources: Sequence[SourceImage], pivot: Seq
     return out
 
 
+BAND_FIELDS = ("rgb", "source", "label", "range", "hidden", "ground", "rover", "rej_map", "prov")
+
+
+def render_rows(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[float], eye: str, width: int, height: int,
+                ipd_m: float, r0: int, r1: int, up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0), azimuth0_deg: float = 0.0,
+                linear: bool = False, pole_merge_deg="default", range_merge_m="default", near_merge_m="default") -> Dict[str, Any]:
+    """The rows [r0, r1) of one eye's equirect, before the fills (0.99.25: the band a worker process renders - a band
+    needs nothing of another).  {"rgb" (r1 - r0, W, 3), "source", "label", "range", "hidden", "ground" (terrain at the
+    ground plane's level: the ground fill's donors), "rover" (the rover model under the pixel), "rej_map" (a source
+    sample turned away by the surface check), "prov" (the provenance colors), "rejected" [n, n], "neff" (the detail
+    band's frames' worth on a sample of the terrain pixels, or None)}."""
+    P = np.asarray(pivot, float)
+    top = 4.0 * LINEAR_TOP if linear else 255.0             # float: not clipped here; the 16-bit file has its own scale
+    u_ = np.asarray(up, float) / np.linalg.norm(up)
+    pl = getattr(scene, "plane", None)
+    out: Dict[str, Any] = {"neff": None, "ground": np.zeros((r1 - r0, width), bool)}
+    rshare = None
+    if isinstance(near_merge_m, str):
+        near_merge_m = NEAR_MERGE_M
+    if isinstance(range_merge_m, str):
+        range_merge_m = (RANGE_MERGE_FROM_M, RANGE_MERGE_TO_M) if RANGE_MERGE else None
+    if (range_merge_m or near_merge_m) and eye in ("left", "right"):     # the range from the pivot's own ray
+        oc, dc = ods_rays(width, height, (r0, r1), P, 0.0, "centre", up, north, east, azimuth0_deg)
+        tc = scene.cast(oc, dc)["t"]
+        rshare = np.ones(len(tc))
+        if range_merge_m:
+            rshare = rshare * range_merge(tc, range_merge_m[1], range_merge_m[0])
+        if near_merge_m:
+            rshare = rshare * near_merge(tc, near_merge_m)
+    o, d = ods_rays(width, height, (r0, r1), P, ipd_m, eye, up, north, east, azimuth0_deg, pole_merge_deg=pole_merge_deg,
+                    share=rshare)
+    c = candidates(scene, sources, o, d)
+    out["rejected"] = [int(c["rejected"][0]), int(c["rejected"][1])]
+    out["rover"] = c["on_rover"].reshape(r1 - r0, width)
+    out["rej_map"] = c["rejected_px"].reshape(r1 - r0, width)
+    out["hidden"] = c["hidden_fallback"].reshape(r1 - r0, width)
+    n = len(d)
+    low_acc = np.zeros((n, 3), np.float32)
+    hi_acc = np.zeros((n, 3), np.float32)
+    w_low_sum = np.zeros(n, np.float32)
+    w_hi_sum = np.zeros(n, np.float32)
+    w_hi_sq = np.zeros(n, np.float32)                      # 0.98.0: for the frames' worth of the detail band
+    strongest = np.full(n, -1, np.int32)
+    strongest_w = np.zeros(n, np.float32)
+    prov_lo = np.zeros((n, 3), np.float32)                 # 0.97.13: the frames' colors by their weights
+    prov_hi = np.zeros((n, 3), np.float32)
+    K = c["k"].shape[1]
+    for slot in range(K):
+        ks = c["k"][:, slot]
+        for k in np.unique(ks[ks >= 0]):
+            sel = np.flatnonzero(ks == k)
+            src = sources[k]
+            lo, full = src.sample_bands(c["uv"][sel, slot])
+            dist = c["dist"][sel, slot]
+            aterm = c["ang"][sel, slot]
+            fwt = c["fill_weight"][sel, slot]
+            nr = c["near"][sel]                              # 0.97.13: 0 (terrain) to 1 (near): the powers rise
+            w_lo = _smoothstep(dist / (FEATHER_LOW_FRAC * src.short_side)) * aterm ** (1.0 + nr * (NEAR_LOW_POWER - 1.0)) * fwt
+            w_hi = _smoothstep(dist / (FEATHER_HIGH_FRAC * src.short_side)) * aterm ** (TERRAIN_DETAIL_POWER + nr * (NEAR_PARALLAX_POWER - TERRAIN_DETAIL_POWER)) * fwt
+            sat = src.sample_saturation(c["uv"][sel, slot])
+            if sat is not None:                              # a saturated pixel: another frame, where there is one
+                keep = (1.0 - SAT_DOWNWEIGHT * np.clip(sat, 0.0, 1.0)).astype(np.float32)
+                w_lo, w_hi = w_lo * keep, w_hi * keep
+            g = src.gain
+            low_acc[sel] += (g * lo) * w_lo[:, None]
+            hi_acc[sel] += (g * (full - lo)) * w_hi[:, None]
+            w_low_sum[sel] += w_lo
+            w_hi_sum[sel] += w_hi
+            w_hi_sq[sel] += w_hi * w_hi
+            pc = _source_color(k)
+            prov_lo[sel] += w_lo[:, None] * pc
+            prov_hi[sel] += w_hi[:, None] * pc
+            better = w_lo > strongest_w[sel]
+            strongest[sel[better]] = k
+            strongest_w[sel[better]] = w_lo[better]
+    has = w_low_sum > 1e-6
+    col = np.zeros((n, 3), np.float32)
+    col[has] = low_acc[has] / w_low_sum[has][:, None]
+    hh = has & (w_hi_sum > 1e-6)
+    col[hh] += hi_acc[hh] / w_hi_sum[hh][:, None]
+    out["rgb"] = np.clip(col, 0, top).astype(np.float32 if linear else np.uint8).reshape(r1 - r0, width, 3)
+    if pl is not None:
+        tt = np.where(c["ok"] & np.isfinite(c["t"]), c["t"], 0.0)
+        X = o + tt[:, None] * d
+        hgt = (X @ pl["normal"] - pl["offset"]) / float(pl["normal"] @ u_)
+        # 0.97.13: with the rover model in the mesh the model itself says what is rover - all other mesh is
+        # terrain (so it is in a mesh of the rover-masked cloud), whatever its height above the regional plane (on a slope the ground near the rover is not
+        # within GROUND_BAND_M of it: Taylorfjellet, 0.3 m)
+        level = ((np.abs(hgt) < GROUND_BAND_M) | (getattr(scene, "rover_triangles", None) is not None)
+                 | bool(getattr(scene, "mesh_is_terrain", False)))      # 0.97.15: or the mesh is terrain alone
+        g = has & ~c["on_rover"] & ((c["label"] == LABEL_PLANE) | ((c["label"] == LABEL_MESH) & level))
+        out["ground"] = g.reshape(r1 - r0, width)
+    out["source"] = np.where(has, strongest, -1).astype(np.int16).reshape(r1 - r0, width)
+    ne = np.where(w_hi_sq > 1e-12, w_hi_sum * w_hi_sum / np.maximum(w_hi_sq, 1e-12), 0.0)     # (sum w)^2 / sum w^2
+    terr = hh & (c["label"] == LABEL_MESH) & ~c["on_rover"]
+    if terr.any():
+        out["neff"] = ne[terr][::7].astype(np.float32)
+    pm = 0.5 * prov_lo / np.maximum(w_low_sum, 1e-6)[:, None] + 0.5 * prov_hi / np.maximum(w_hi_sum, 1e-6)[:, None]
+    pm[~hh] = (prov_lo / np.maximum(w_low_sum, 1e-6)[:, None])[~hh]
+    out["prov"] = np.clip(np.rint(pm), 0, 255).astype(np.uint8).reshape(r1 - r0, width, 3)
+    out["label"] = c["label"].reshape(r1 - r0, width)
+    out["range"] = np.where(c["ok"], c["t"], 0).reshape(r1 - r0, width)
+    return out
+
+
 def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[float], eye: str, width: int, height: int,
                ipd_m: float, rows_per_chunk: int = 128, up=(0, 0, 1), north=(0, 1, 0), east=(1, 0, 0),
                feather_px: float = FEATHER_PX, progress=None, sky_fill: bool = True,
                azimuth0_deg: float = 0.0, linear: bool = False, ground_fill: bool = True, pole_merge_deg="default",
-               range_merge_m="default", near_merge_m="default") -> Dict[str, np.ndarray]:
+               range_merge_m="default", near_merge_m="default", pool=None) -> Dict[str, np.ndarray]:
     """One eye's equirect: {"rgb" (H, W, 3) uint8 - or, ``linear``, float32 in 8-bit units up to 1024 (x 64 = the
     16-bit linear value) -, "source" (H, W) int16 (-1 none; the strongest source), "label"
     (H, W) uint8 surface label, "range" (H, W) float32}.  The two-band blend of the module doc, with each source's
-    ``gain`` (:func:`estimate_gains`; 1 when not estimated)."""
+    ``gain`` (:func:`estimate_gains`; 1 when not estimated).
+
+    0.99.25: ``pool`` (:class:`rpp.ibr.parallel.RenderPool`, made for this scene and these sources) renders the row
+    bands in its worker processes; the picture is the same, bit for bit, as without it.  A pool that fails is given
+    up and the eye is rendered here."""
     P = np.asarray(pivot, float)
     rgb = np.zeros((height, width, 3), np.float32 if linear else np.uint8)
     top = 4.0 * LINEAR_TOP if linear else 255.0             # float: not clipped here; the 16-bit file has its own scale
@@ -1124,99 +1300,32 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
     rej_map = np.zeros((height, width), bool)                # a source sample was turned away by the surface check
     neff_vals: List[np.ndarray] = []                         # 0.98.0: the detail band's frames' worth on terrain pixels
     prov = np.zeros((height, width, 3), np.uint8)            # 0.97.13: the provenance picture's colors (BGR), blended
-    u_ = np.asarray(up, float) / np.linalg.norm(up)
-    pl = getattr(scene, "plane", None)
+    arrays = {"rgb": rgb, "source": source, "label": label, "range": rng, "hidden": hidden, "ground": ground,
+              "rover": rover_px, "rej_map": rej_map, "prov": prov}
+    kw = dict(up=up, north=north, east=east, azimuth0_deg=azimuth0_deg, linear=linear, pole_merge_deg=pole_merge_deg,
+              range_merge_m=range_merge_m, near_merge_m=near_merge_m)
+    spans = [(r0, min(height, r0 + rows_per_chunk)) for r0 in range(0, height, rows_per_chunk)]
     t0 = time.time()
-    for r0 in range(0, height, rows_per_chunk):
-        r1 = min(height, r0 + rows_per_chunk)
-        rshare = None
-        if isinstance(near_merge_m, str):
-            near_merge_m = NEAR_MERGE_M
-        if isinstance(range_merge_m, str):
-            range_merge_m = (RANGE_MERGE_FROM_M, RANGE_MERGE_TO_M) if RANGE_MERGE else None
-        if (range_merge_m or near_merge_m) and eye in ("left", "right"):     # the range from the pivot's own ray
-            oc, dc = ods_rays(width, height, (r0, r1), P, 0.0, "centre", up, north, east, azimuth0_deg)
-            tc = scene.cast(oc, dc)["t"]
-            rshare = np.ones(len(tc))
-            if range_merge_m:
-                rshare = rshare * range_merge(tc, range_merge_m[1], range_merge_m[0])
-            if near_merge_m:
-                rshare = rshare * near_merge(tc, near_merge_m)
-        o, d = ods_rays(width, height, (r0, r1), P, ipd_m, eye, up, north, east, azimuth0_deg, pole_merge_deg=pole_merge_deg,
-                        share=rshare)
-        c = candidates(scene, sources, o, d)
-        rej[0] += c["rejected"][0]; rej[1] += c["rejected"][1]
-        rover_px[r0:r1] = c["on_rover"].reshape(r1 - r0, width)
-        rej_map[r0:r1] = c["rejected_px"].reshape(r1 - r0, width)
-        hidden[r0:r1] = c["hidden_fallback"].reshape(r1 - r0, width)
-        n = len(d)
-        low_acc = np.zeros((n, 3), np.float32)
-        hi_acc = np.zeros((n, 3), np.float32)
-        w_low_sum = np.zeros(n, np.float32)
-        w_hi_sum = np.zeros(n, np.float32)
-        w_hi_sq = np.zeros(n, np.float32)                      # 0.98.0: for the frames' worth of the detail band
-        strongest = np.full(n, -1, np.int32)
-        strongest_w = np.zeros(n, np.float32)
-        prov_lo = np.zeros((n, 3), np.float32)                 # 0.97.13: the frames' colors by their weights
-        prov_hi = np.zeros((n, 3), np.float32)
-        K = c["k"].shape[1]
-        for slot in range(K):
-            ks = c["k"][:, slot]
-            for k in np.unique(ks[ks >= 0]):
-                sel = np.flatnonzero(ks == k)
-                src = sources[k]
-                lo, full = src.sample_bands(c["uv"][sel, slot])
-                dist = c["dist"][sel, slot]
-                aterm = c["ang"][sel, slot]
-                fwt = c["fill_weight"][sel, slot]
-                nr = c["near"][sel]                              # 0.97.13: 0 (terrain) to 1 (near): the powers rise
-                w_lo = _smoothstep(dist / (FEATHER_LOW_FRAC * src.short_side)) * aterm ** (1.0 + nr * (NEAR_LOW_POWER - 1.0)) * fwt
-                w_hi = _smoothstep(dist / (FEATHER_HIGH_FRAC * src.short_side)) * aterm ** (TERRAIN_DETAIL_POWER + nr * (NEAR_PARALLAX_POWER - TERRAIN_DETAIL_POWER)) * fwt
-                sat = src.sample_saturation(c["uv"][sel, slot])
-                if sat is not None:                              # a saturated pixel: another frame, where there is one
-                    keep = (1.0 - SAT_DOWNWEIGHT * np.clip(sat, 0.0, 1.0)).astype(np.float32)
-                    w_lo, w_hi = w_lo * keep, w_hi * keep
-                g = src.gain
-                low_acc[sel] += (g * lo) * w_lo[:, None]
-                hi_acc[sel] += (g * (full - lo)) * w_hi[:, None]
-                w_low_sum[sel] += w_lo
-                w_hi_sum[sel] += w_hi
-                w_hi_sq[sel] += w_hi * w_hi
-                pc = _source_color(k)
-                prov_lo[sel] += w_lo[:, None] * pc
-                prov_hi[sel] += w_hi[:, None] * pc
-                better = w_lo > strongest_w[sel]
-                strongest[sel[better]] = k
-                strongest_w[sel[better]] = w_lo[better]
-        has = w_low_sum > 1e-6
-        col = np.zeros((n, 3), np.float32)
-        col[has] = low_acc[has] / w_low_sum[has][:, None]
-        hh = has & (w_hi_sum > 1e-6)
-        col[hh] += hi_acc[hh] / w_hi_sum[hh][:, None]
-        rgb[r0:r1] = np.clip(col, 0, top).astype(rgb.dtype).reshape(r1 - r0, width, 3)
-        if pl is not None:
-            tt = np.where(c["ok"] & np.isfinite(c["t"]), c["t"], 0.0)
-            X = o + tt[:, None] * d
-            hgt = (X @ pl["normal"] - pl["offset"]) / float(pl["normal"] @ u_)
-            # 0.97.13: with the rover model in the mesh the model itself says what is rover - all other mesh is
-            # terrain (so it is in a mesh of the rover-masked cloud), whatever its height above the regional plane (on a slope the ground near the rover is not
-            # within GROUND_BAND_M of it: Taylorfjellet, 0.3 m)
-            level = ((np.abs(hgt) < GROUND_BAND_M) | (getattr(scene, "rover_triangles", None) is not None)
-                     | bool(getattr(scene, "mesh_is_terrain", False)))      # 0.97.15: or the mesh is terrain alone
-            g = has & ~c["on_rover"] & ((c["label"] == LABEL_PLANE) | ((c["label"] == LABEL_MESH) & level))
-            ground[r0:r1] = g.reshape(r1 - r0, width)
-        source[r0:r1] = np.where(has, strongest, -1).astype(np.int16).reshape(r1 - r0, width)
-        ne = np.where(w_hi_sq > 1e-12, w_hi_sum * w_hi_sum / np.maximum(w_hi_sq, 1e-12), 0.0)     # (sum w)^2 / sum w^2
-        terr = hh & (c["label"] == LABEL_MESH) & ~c["on_rover"]
-        if terr.any():
-            neff_vals.append(ne[terr][::7].astype(np.float32))
-        pm = 0.5 * prov_lo / np.maximum(w_low_sum, 1e-6)[:, None] + 0.5 * prov_hi / np.maximum(w_hi_sum, 1e-6)[:, None]
-        pm[~hh] = (prov_lo / np.maximum(w_low_sum, 1e-6)[:, None])[~hh]
-        prov[r0:r1] = np.clip(np.rint(pm), 0, 255).astype(np.uint8).reshape(r1 - r0, width, 3)
-        label[r0:r1] = c["label"].reshape(r1 - r0, width)
-        rng[r0:r1] = np.where(c["ok"], c["t"], 0).reshape(r1 - r0, width)
+    done = 0
+
+    def here(todo):
+        for r0, r1 in todo:
+            yield r0, r1, render_rows(scene, sources, P, eye, width, height, ipd_m, r0, r1, **kw)
+
+    if pool is not None:
+        bands = pool.bands(P, eye, width, height, ipd_m, spans, kw, fallback=here)
+    else:
+        bands = here(spans)
+    for r0, r1, band in bands:
+        for k in BAND_FIELDS:
+            arrays[k][r0:r1] = band[k]
+        rej[0] += band["rejected"][0]; rej[1] += band["rejected"][1]
+        if band["neff"] is not None:
+            neff_vals.append(band["neff"])
+        done += r1 - r0
         if progress:
-            progress(eye, r1, height, time.time() - t0)
+            progress(eye, done if pool is not None else r1, height, time.time() - t0)
+    band = bands = None                                      # (a pool's bands are views of its shared block)
     brown = np.zeros(label.shape, bool)
     checked = getattr(scene, "rover_triangles", None) is not None
 
@@ -1928,8 +2037,11 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                    tone_levels_file: Optional[PathLike] = None, center_depth: bool = True, pole_merge_deg="default", sky_radius_m="default",
                    fill_families: str = "", nadir_mark: bool = True, site_name: Optional[str] = None,
                    nadir_mark_deg: Optional[float] = None, far_field: Optional[bool] = None,
-                   context_images: Sequence[str] = (), geometry: bool = True) -> Dict[str, Any]:
-    """The two eye images of a station -> ``out_dir/<prefix>_ods_left.png``, ``<prefix>_ods_right.png``,
+                   context_images: Sequence[str] = (), geometry: bool = True, workers: Optional[int] = None) -> Dict[str, Any]:
+    """0.99.25: ``workers`` - the render processes (:mod:`rpp.ibr.parallel`; None: ``RPP_IBR_WORKERS``, else half the
+    logical processors, at most 8; 1: one process, as before).
+
+    The two eye images of a station -> ``out_dir/<prefix>_ods_left.png``, ``<prefix>_ods_right.png``,
     ``<prefix>_360_3DTD.png/.jpg``, ``provenance.png`` (left eye's sources), ``ods.json``.  ``prefix`` None:
     :func:`ods_prefix` (``Sol0052_S003D2046`` / ``Sol0052_S003D2046_rover``); '' for the bare names.  Returns the record."""
     import cv2
@@ -2080,102 +2192,116 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
     levels, levels_from, depth_rec = None, None, None
     mark0 = mark
     mark_seen = mark0 if mark0 is not None else {}
-    for eye in eyes:
-        if mark0 is not None and eye in ("left", "right"):       # 0.97.13: the mark as this eye sees it on the ground
-            m0 = max(0, mark0["row0"] - int(np.ceil(_nadir.GROUND_MARGIN_DEG / 180.0 * height)))
-            al = np.zeros((height - m0, width), np.float32)
-            ins = np.zeros((height - m0, width), bool)
-            for q0 in range(m0, height, rows_per_chunk):
-                q1 = min(height, q0 + rows_per_chunk)
-                oe, de = ods_rays(width, height, (q0, q1), station.pivot, ipd_m, eye, station.up, station.north, station.east,
-                                  azimuth0_deg, pole_merge_deg=pole_merge_deg)
-                al[q0 - m0:q1 - m0], ins[q0 - m0:q1 - m0] = _nadir.on_ground(mark0, height, oe, de, (q0, q1), station.pivot, station.up,
-                                                                           station.north, station.east, mark0["depth_m"], azimuth0_deg)
-            mark = dict(mark0, row0=m0, alpha=al, inside=ins)
-            mark_seen = mark
-            del al, ins
-        elif mark0 is not None:                                  # 0.98.4: the panorama from the pivot carries no mark - it is
-            mark = None                                          # the rover surface's texture (rpp.ibr.rover_surface)
-        res = render_eye(scene, sources, station.pivot, eye, width, height, ipd_m, pole_merge_deg=pole_merge_deg, rows_per_chunk=rows_per_chunk,
-                         progress=progress, sky_fill=sky_fill, azimuth0_deg=azimuth0_deg, linear=linear,
-                         ground_fill=ground_fill, **axes)
-        f = ods_file(out, eye, prefix)
-        if linear:                                   # the 16-bit linear panorama, and the 8-bit one for viewing
-            f16 = ods_file(out, eye + "_16", prefix)
-            if isinstance(exposure16, str):          # 0.97.0 "auto": one gain per station, shared by its variants
-                from .linear16 import auto_exposure16, shared_value
-                exposure16, _src = shared_value(tone_levels_file, "exposure16",
-                                                lambda: auto_exposure16(res["rgb"], res["source"] >= 0))
-                exposure16 = float(exposure16)
-                log.info("ods: 16-bit exposure %.3f of the frames' scale (%s)", exposure16, _src)
-            k16 = 64.0 * float(exposure16)
-            v16 = np.rint(res["rgb"][..., ::-1] * k16)
-            clipped16 = float((v16.max(axis=2) > 65535).mean())
-            v16 = np.clip(v16, 0, 65535).astype(np.uint16)
-            if mark is not None:
-                mark["bg16"] = np.clip(np.asarray(_nadir.BACKGROUND_RGB)[::-1] * _nadir.BACKGROUND_LINEAR_FACTOR * k16, 0, 65535)
-                _nadir.apply_mark(v16, mark, mark["bg16"])                  # light blue (BGR here)
-            cv2.imwrite(str(f16), v16)
-            from .linear16 import auto_levels, tone_levels, tone_soft, tone_pipeline
-            lin8 = v16[..., ::-1].astype(np.float32) / k16           # 0.98.0: the 8-bit view is made from the 16-bit image
-            del v16
-            if tone == "pipeline":                   # 0.98.0 default: the scale of the block's own 8-bit frames
-                view = tone_pipeline(lin8)
-            elif tone == "auto":                       # the black and white points from the first eye, for both
-                if levels is None:                   # 0.97.0: or from the file the other variant wrote
-                    from .linear16 import shared_levels
-                    levels, levels_from = shared_levels(tone_levels_file,
-                                                        lambda: auto_levels(res["rgb"], res["source"] >= 0))
-                    log.info("ods: 8-bit view levels %.1f / %.1f (%s%s)", levels[0], levels[1], levels_from,
-                             f": {tone_levels_file}" if tone_levels_file else "")
-                view = tone_levels(lin8, *levels)
+    from .parallel import RenderPool, default_workers
+    n_workers = min(default_workers(workers), max(1, -(-height // max(1, rows_per_chunk))))
+    pool = None
+    if n_workers > 1 and isinstance(scene, Scene) and all(isinstance(s, SourceImage) for s in sources):
+        pool = RenderPool(scene, sources, n_workers)             # the sources are final here (gains, masks, fill colors)
+    rec_out["render_processes"] = n_workers if (pool is not None and pool.failed is None) else 1
+    try:
+        for eye in eyes:
+            if mark0 is not None and eye in ("left", "right"):       # 0.97.13: the mark as this eye sees it on the ground
+                m0 = max(0, mark0["row0"] - int(np.ceil(_nadir.GROUND_MARGIN_DEG / 180.0 * height)))
+                al = np.zeros((height - m0, width), np.float32)
+                ins = np.zeros((height - m0, width), bool)
+                for q0 in range(m0, height, rows_per_chunk):
+                    q1 = min(height, q0 + rows_per_chunk)
+                    oe, de = ods_rays(width, height, (q0, q1), station.pivot, ipd_m, eye, station.up, station.north, station.east,
+                                      azimuth0_deg, pole_merge_deg=pole_merge_deg)
+                    al[q0 - m0:q1 - m0], ins[q0 - m0:q1 - m0] = _nadir.on_ground(mark0, height, oe, de, (q0, q1), station.pivot, station.up,
+                                                                               station.north, station.east, mark0["depth_m"], azimuth0_deg)
+                mark = dict(mark0, row0=m0, alpha=al, inside=ins)
+                mark_seen = mark
+                del al, ins
+            elif mark0 is not None:                                  # 0.98.4: the panorama from the pivot carries no mark - it is
+                mark = None                                          # the rover surface's texture (rpp.ibr.rover_surface)
+            res = render_eye(scene, sources, station.pivot, eye, width, height, ipd_m, pole_merge_deg=pole_merge_deg, rows_per_chunk=rows_per_chunk,
+                             progress=progress, sky_fill=sky_fill, azimuth0_deg=azimuth0_deg, linear=linear,
+                             ground_fill=ground_fill, pool=pool, **axes)
+            f = ods_file(out, eye, prefix)
+            if linear:                                   # the 16-bit linear panorama, and the 8-bit one for viewing
+                f16 = ods_file(out, eye + "_16", prefix)
+                if isinstance(exposure16, str):          # 0.97.0 "auto": one gain per station, shared by its variants
+                    from .linear16 import auto_exposure16, shared_value
+                    exposure16, _src = shared_value(tone_levels_file, "exposure16",
+                                                    lambda: auto_exposure16(res["rgb"], res["source"] >= 0))
+                    exposure16 = float(exposure16)
+                    log.info("ods: 16-bit exposure %.3f of the frames' scale (%s)", exposure16, _src)
+                k16 = 64.0 * float(exposure16)
+                v16 = np.rint(res["rgb"][..., ::-1] * k16)
+                clipped16 = float((v16.max(axis=2) > 65535).mean())
+                v16 = np.clip(v16, 0, 65535).astype(np.uint16)
+                if mark is not None:
+                    mark["bg16"] = np.clip(np.asarray(_nadir.BACKGROUND_RGB)[::-1] * _nadir.BACKGROUND_LINEAR_FACTOR * k16, 0, 65535)
+                    _nadir.apply_mark(v16, mark, mark["bg16"])                  # light blue (BGR here)
+                cv2.imwrite(str(f16), v16)
+                from .linear16 import auto_levels, tone_levels, tone_soft, tone_pipeline
+                lin8 = v16[..., ::-1].astype(np.float32) / k16           # 0.98.0: the 8-bit view is made from the 16-bit image
+                del v16
+                if tone == "pipeline":                   # 0.98.0 default: the scale of the block's own 8-bit frames
+                    view = tone_pipeline(lin8)
+                elif tone == "auto":                       # the black and white points from the first eye, for both
+                    if levels is None:                   # 0.97.0: or from the file the other variant wrote
+                        from .linear16 import shared_levels
+                        levels, levels_from = shared_levels(tone_levels_file,
+                                                            lambda: auto_levels(res["rgb"], res["source"] >= 0))
+                        log.info("ods: 8-bit view levels %.1f / %.1f (%s%s)", levels[0], levels[1], levels_from,
+                                 f": {tone_levels_file}" if tone_levels_file else "")
+                    view = tone_levels(lin8, *levels)
+                else:
+                    view = tone_soft(lin8) if tone == "soft" else np.clip(lin8, 0, 255)
+                del lin8
+                over = float((res["rgb"].max(axis=2) > 255.0).mean())
+                view8 = np.rint(view[..., ::-1]).astype(np.uint8)
+                if mark is not None:
+                    mark["bg8"] = np.asarray(_nadir.BACKGROUND_RGB)[::-1]
+                    _nadir.apply_mark(view8, mark, mark["bg8"])
+                cv2.imwrite(str(f), view8)
+                del view8
             else:
-                view = tone_soft(lin8) if tone == "soft" else np.clip(lin8, 0, 255)
-            del lin8
-            over = float((res["rgb"].max(axis=2) > 255.0).mean())
-            view8 = np.rint(view[..., ::-1]).astype(np.uint8)
-            if mark is not None:
-                mark["bg8"] = np.asarray(_nadir.BACKGROUND_RGB)[::-1]
-                _nadir.apply_mark(view8, mark, mark["bg8"])
-            cv2.imwrite(str(f), view8)
-            del view8
-        else:
-            view8 = np.ascontiguousarray(res["rgb"][..., ::-1])
-            if mark is not None:
-                mark["bg8"] = np.asarray(_nadir.BACKGROUND_RGB)[::-1]
-                _nadir.apply_mark(view8, mark, mark["bg8"])
-            cv2.imwrite(str(f), view8)
-        if eye in ("centre", "center") and center_depth:     # 0.97.0: the panorama from the pivot, with its depth
-            depth_rec = write_center_depth(out, prefix, res["range"], res["label"], rover=res.get("rover"),
-                                           unseen=(res["brown_filled"] & res["rover"]) if res.get("rover") is not None else None)
-        if eye == eyes[0]:
-            provenance_png(res["source"], out / "provenance.png", len(sources), mix=res.get("provenance"))
-            sw = res.get("sky_weight")                   # 0.97.13: where the enhanced views may smooth the sky
-            fsw = out / ((f"{prefix}_" if prefix else "") + SKY_WEIGHT_NAME)
-            if sw is not None:
-                cv2.imwrite(str(fsw), np.clip(np.rint(255.0 * sw), 0, 255).astype(np.uint8))
-            elif fsw.is_file():
-                fsw.unlink()
-        lab = res["label"]
-        n = lab.size
-        rec_out["eyes"][eye] = {"file": str(f), "coverage": {"coloured": float((res["source"] >= 0).sum() / n),
-                                "mesh": float((lab == LABEL_MESH).sum() / n), "plane": float((lab == LABEL_PLANE).sum() / n),
-                                "far": float((lab == LABEL_FAR).sum() / n),
-                                "no_surface": float((lab == 0).sum() / n),
-                                "hidden_view_used": float(res["hidden_fallback"].sum() / n),
-                                "brown_filled": float(res["brown_filled"].sum() / n),
-                                "brown_filled_on_rover": float((res["brown_filled"] & res["rover"]).sum() / n),
-                                "surface_check_rejected_samples": {"rover_pixels_off_terrain": int(res["surface_check_rejected"][0]),
-                                                                   "terrain_pixels_off_rover": int(res["surface_check_rejected"][1])},
-                                "cracks_filled": float(res["filled"].sum() / n),
-                                "sky_filled": float(res["sky_filled"].sum() / n),
-                                "ground_filled": float(res["ground_filled"].sum() / n)},
-                                "sources_used": int(len(np.unique(res["source"][res["source"] >= 0])))}
-        if linear:
-            rec_out["eyes"][eye].update(file_16bit=str(f16), above_8bit_range=over, clipped_in_16bit=clipped16)
-        rec_out["eyes"][eye]["effective_frames"] = res.get("effective_frames")      # 0.98.0
+                view8 = np.ascontiguousarray(res["rgb"][..., ::-1])
+                if mark is not None:
+                    mark["bg8"] = np.asarray(_nadir.BACKGROUND_RGB)[::-1]
+                    _nadir.apply_mark(view8, mark, mark["bg8"])
+                cv2.imwrite(str(f), view8)
+            if eye in ("centre", "center") and center_depth:     # 0.97.0: the panorama from the pivot, with its depth
+                depth_rec = write_center_depth(out, prefix, res["range"], res["label"], rover=res.get("rover"),
+                                               unseen=(res["brown_filled"] & res["rover"]) if res.get("rover") is not None else None)
+            if eye == eyes[0]:
+                provenance_png(res["source"], out / "provenance.png", len(sources), mix=res.get("provenance"))
+                sw = res.get("sky_weight")                   # 0.97.13: where the enhanced views may smooth the sky
+                fsw = out / ((f"{prefix}_" if prefix else "") + SKY_WEIGHT_NAME)
+                if sw is not None:
+                    cv2.imwrite(str(fsw), np.clip(np.rint(255.0 * sw), 0, 255).astype(np.uint8))
+                elif fsw.is_file():
+                    fsw.unlink()
+            lab = res["label"]
+            n = lab.size
+            rec_out["eyes"][eye] = {"file": str(f), "coverage": {"coloured": float((res["source"] >= 0).sum() / n),
+                                    "mesh": float((lab == LABEL_MESH).sum() / n), "plane": float((lab == LABEL_PLANE).sum() / n),
+                                    "far": float((lab == LABEL_FAR).sum() / n),
+                                    "no_surface": float((lab == 0).sum() / n),
+                                    "hidden_view_used": float(res["hidden_fallback"].sum() / n),
+                                    "brown_filled": float(res["brown_filled"].sum() / n),
+                                    "brown_filled_on_rover": float((res["brown_filled"] & res["rover"]).sum() / n),
+                                    "surface_check_rejected_samples": {"rover_pixels_off_terrain": int(res["surface_check_rejected"][0]),
+                                                                       "terrain_pixels_off_rover": int(res["surface_check_rejected"][1])},
+                                    "cracks_filled": float(res["filled"].sum() / n),
+                                    "sky_filled": float(res["sky_filled"].sum() / n),
+                                    "ground_filled": float(res["ground_filled"].sum() / n)},
+                                    "sources_used": int(len(np.unique(res["source"][res["source"] >= 0])))}
+            if linear:
+                rec_out["eyes"][eye].update(file_16bit=str(f16), above_8bit_range=over, clipped_in_16bit=clipped16)
+            rec_out["eyes"][eye]["effective_frames"] = res.get("effective_frames")      # 0.98.0
+            for s in sources:
+                s.release()
+    finally:
         for s in sources:
             s.release()
+        if pool is not None:
+            if pool.failed is not None:
+                rec_out["render_processes"] = 1
+            pool.close()
     if center_depth and depth_rec is None:               # 0.97.11: the depth without the center panorama's colors
         td = time.time()                                 # (Christian, 13 Nov 2026: "skip the center render because it
         rng_c = np.zeros((height, width), np.float32)    # takes 1/3 more time"): rays only, no frame is sampled
