@@ -82,7 +82,14 @@ def pool(frame_rows, models, keep=lambda r: True):
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", required=True, help="the training set whose held-out frames are the test (images/, masks/)")
-    ap.add_argument("--split-ckpt", required=True, help="the checkpoint (or .safetensors) whose card defines the split")
+    ap.add_argument("--split-ckpt", default=None, help="the checkpoint (or .safetensors) whose card defines the split")
+    ap.add_argument("--all-frames", action="store_true",
+                    help="0.99.21: score every frame of --data, not a split's held-out ones - for a validation set "
+                         "kept out of all training (rpp_studies.mask_training.validation_set), or with --frames-like "
+                         "for a look at frames one model trained on and another did not")
+    ap.add_argument("--frames-like", default=None, metavar="REGEX",
+                    help="0.99.21: only the test frames whose file name matches (re.search, case ignored), e.g. "
+                         "\"^[NFR][LR][AB]_\" for Curiosity's frames")
     ap.add_argument("--models", nargs="+", required=True, help="registry names or checkpoint paths to compare")
     ap.add_argument("--seen", default=None, help="an older training set (or masks folder): report frames not in it")
     ap.add_argument("--seen-split", nargs=2, default=None, metavar=("CKPT", "DATA"),
@@ -106,7 +113,8 @@ def main(argv=None) -> int:
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     from rpp_studies.mask_training.audit import recorded_split
-    _, split_card = get_model(a.split_ckpt, a.device)
+    if not a.all_frames and not a.split_ckpt:
+        raise SystemExit("--split-ckpt (the model whose held-out frames are the test) or --all-frames is needed")
     items = scan_dataset(a.data, image_dirs=("images",), mask_dir="masks", missing="skip")
 
     def split_of(ck, card):
@@ -119,8 +127,18 @@ def main(argv=None) -> int:
               f"once the set has changed")
         return split_labels(items_as_trained(items, card), card)
 
-    split = split_of(a.split_ckpt, split_card)
-    val = [it for it in items if split.get(it.mask) == "val"]
+    if a.all_frames:
+        val = list(items)
+    else:
+        _, split_card = get_model(a.split_ckpt, a.device)
+        split = split_of(a.split_ckpt, split_card)
+        val = [it for it in items if split.get(it.mask) == "val"]
+    if a.frames_like:
+        import re
+        pat = re.compile(a.frames_like, re.I)
+        before = len(val)
+        val = [it for it in val if pat.search(Path(it.image).name)]
+        print(f"--frames-like {a.frames_like}: {len(val)} of {before} test frames")
     for ck in a.also_held_out:
         _, card_o = get_model(ck, a.device)
         sp_o = split_of(ck, card_o)
@@ -129,7 +147,7 @@ def main(argv=None) -> int:
         print(f"--also-held-out {Path(ck).name}: {len(val)} of {before} test frames held out by it too")
     val = val[: a.limit]
     if not val:
-        raise SystemExit("no held-out frames: is --split-ckpt a model trained on --data?")
+        raise SystemExit("no test frames: is --split-ckpt a model trained on --data (or --frames-like too narrow)?")
     seen = seen_names(a.seen) if a.seen else set()
     if a.seen_split and seen:
         # the older model's own held-out frames were not in its training either (its split, rebuilt from its card
@@ -162,10 +180,12 @@ def main(argv=None) -> int:
         w = csv.DictWriter(f, fieldnames=list(frame_rows[0]))
         w.writeheader()
         w.writerows(frame_rows)
-    md = [f"# Mask model A/B on {len(val)} held-out frames of {Path(a.split_ckpt).name}", "",
+    what = (f"{len(val)} frames of {Path(a.data).name}" + (f" matching {a.frames_like}" if a.frames_like else "")
+            if a.all_frames else f"{len(val)} held-out frames of {Path(a.split_ckpt).name}")
+    md = [f"# Mask model A/B on {what}", "",
           f"Test set: {a.data}; models: {', '.join(labels)}" + (f"; --seen {a.seen}" if a.seen else ""), ""]
     allrows = pool(frame_rows, labels)
-    md += table(allrows, "All held-out frames")
+    md += table(allrows, "All test frames" if a.all_frames else "All held-out frames")
     if seen:
         unseen = pool(frame_rows, labels, keep=lambda r: not r["in_seen"])
         md += table(unseen, "Held-out frames the older model did not train on (not in --seen, or in its own held-out split with --seen-split): the fair comparison")

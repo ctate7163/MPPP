@@ -27,7 +27,11 @@ LABEL_HEX = "#2a78d6"                               # label boundary (blue)
 
 
 def family(name: str) -> str:
-    return FAMILIES.get(name[:1].upper(), name[:3])
+    """The camera of a product name; Curiosity's engineering cameras (NLB_422633248RAD_...) apart (0.99.21)."""
+    n = name.upper()
+    if len(n) > 13 and n[0] in "NFR" and n[1] in "LR" and n[2] in "AB" and n[3] == "_" and n[4:13].isdigit():
+        return "Curiosity " + FAMILIES[n[0]]
+    return FAMILIES.get(n[:1], name[:3])
 
 
 def sol_of(name: str) -> str:
