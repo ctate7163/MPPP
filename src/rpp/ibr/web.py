@@ -34,7 +34,10 @@ GEOMETRY_PARTS = ("_range_log", "_range_linear", "_normal")
 VARIANTS = (("masked", "", "terrain only"), ("rover", "with_rover", "terrain with rover (projected)"))   # key, sub-folder, label.  0.98.5
 #   (Christian, 14 Nov 2026: "a third mode after the terrain only, terrain with rover, and terrain with 3D rover"): this
 #   order, and a third variant "rover3d" - the terrain-only pictures with the rover's surface - where a surface was made
-ROVER_3D = ("rover3d", "terrain with rover (3D model)")     # 0.98.8 (Christian: "terrain only, terrain with rover proj, terrain with rover model")
+ROVER_3D = ("rover3d", "terrain with rover (3D model)")
+# 0.99.26 (Christian, 18 Nov 2026: "Add this as a fourth mode in rpv as 3D terrain and rover. It should include the 3D
+# rover"): the terrain-only panorama as the backdrop, with the station mesh (rpp.ibr.station_mesh) in front of it
+TERRAIN_3D = ("terrain3d", "3D terrain and rover")     # 0.98.8 (Christian: "terrain only, terrain with rover proj, terrain with rover model")
 DEFAULT_VIEWS = ("standard", "enhanced local", "normal map", "distance map")   # 0.98.30 (Christian, 16 Nov 2026: "Include the
 #   enhlocal image versions in the upload and let it be viewable as one of the skins that button B shows"); 0.98.12 (Christian, 15 Nov 2026: "Uploaded the range map too in log scale"); ("standard", "normal") from 0.98.5 (Christian: "Uploaded the normal maps too"); ("standard",) since 0.97.18 (Christian, 13 Nov 2026: "don't upload the enhanced version to github");
 #                                      ("standard", "enhanced") before; rpp single-sites --publish-views brings it back
@@ -114,6 +117,23 @@ def rover_surface(folder: Path, web: Path, pano_dir: Optional[Path] = None) -> O
     except (OSError, ValueError):
         n = None
     return {"file": "panos/" + glb.name, "triangles": n, "experimental": True}
+
+
+def station_mesh(folder: Path, web: Path, pano_dir: Optional[Path] = None) -> Optional[Dict[str, Any]]:
+    """0.99.26: the station mesh of a terrain-only folder (``*_station_mesh.glb``, :mod:`rpp.ibr.station_mesh`) copied
+    into ``web/panos`` - {"file", "triangles", "move_limit_m"} for the page.  None when the folder has none."""
+    glb = next(iter(sorted(folder.glob("*_" + "station_mesh.glb"))), None) if folder.is_dir() else None
+    if glb is None:
+        return None
+    dst = (Path(pano_dir) if pano_dir else web / "panos") / glb.name
+    if not (dst.is_file() and dst.stat().st_mtime >= glb.stat().st_mtime):
+        shutil.copy2(glb, dst)
+    try:
+        rec = json.loads(glb.with_suffix(".json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        rec = {}
+    lim = ((rec.get("parts") or {}).get("rover") or {}).get("view_radius_m", 1.0)
+    return {"file": "panos/" + glb.name, "triangles": rec.get("triangles"), "move_limit_m": lim, "experimental": True}
 
 
 WELCOME_ID = "welcome"
@@ -527,7 +547,7 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
     for d in sorted(p for p in out_root.iterdir() if p.is_dir() and not p.name.startswith("_")):   # 0.99.3: not _hf_stage
         if stations and d.name not in stations:
             continue
-        third = None
+        third = fourth = None
         entry: Dict[str, Any] = {"id": d.name, "title": d.name, "variants": [], "mppp": __version__,
                                  "published": time.strftime("%Y-%m-%d")}
         entry.update({k: v for k, v in ((titles or {}).get(d.name) or {}).items() if v is not None})
@@ -555,6 +575,9 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
                     rs = rover_surface(d / "with_rover", web, pano_dir)        # 0.98.5: a variant of its own, listed last
                     if rs:
                         third = dict(var, key=ROVER_3D[0], label=ROVER_3D[1], rover_surface=rs)
+                    sm = station_mesh(d / sub if sub else d, web, pano_dir)        # 0.99.26: the fourth mode
+                    if sm:
+                        fourth = dict(var, key=TERRAIN_3D[0], label=TERRAIN_3D[1], station_mesh=sm)
         # 0.98.4 (Christian, 14 Nov 2026: "always at ground level even when the rover is displayed"): with the rover in
         # the picture the mark was put at the deck's depth under the mast; the page's disc lies on the terrain in both
         # variants - the terrain-only variant's depth, the disc as wide there as it looks in the panorama
@@ -571,6 +594,8 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
                 gm.update(depth_m=ground["depth_m"], mark_radius_m=round(r, 4), radius_m=round(MARK_SCALE * r, 4), at="the terrain's level")
         if third is not None:
             entry["variants"].append(third)
+        if fourth is not None:
+            entry["variants"].append(fourth)
         xy = traverse and station_on_map(d.name, wp)
         if xy:
             entry["map"] = xy

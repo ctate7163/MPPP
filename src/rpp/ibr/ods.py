@@ -1181,10 +1181,6 @@ def render_rows(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[fl
     sample turned away by the surface check), "prov" (the provenance colors), "rejected" [n, n], "neff" (the detail
     band's frames' worth on a sample of the terrain pixels, or None)}."""
     P = np.asarray(pivot, float)
-    top = 4.0 * LINEAR_TOP if linear else 255.0             # float: not clipped here; the 16-bit file has its own scale
-    u_ = np.asarray(up, float) / np.linalg.norm(up)
-    pl = getattr(scene, "plane", None)
-    out: Dict[str, Any] = {"neff": None, "ground": np.zeros((r1 - r0, width), bool)}
     rshare = None
     if isinstance(near_merge_m, str):
         near_merge_m = NEAR_MERGE_M
@@ -1200,11 +1196,26 @@ def render_rows(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[fl
             rshare = rshare * near_merge(tc, near_merge_m)
     o, d = ods_rays(width, height, (r0, r1), P, ipd_m, eye, up, north, east, azimuth0_deg, pole_merge_deg=pole_merge_deg,
                     share=rshare)
+    band = shade_rays(scene, sources, o, d, up=up, linear=linear)
+    for k in BAND_FIELDS:
+        band[k] = band[k].reshape((r1 - r0, width) + band[k].shape[1:])
+    return band
+
+
+def shade_rays(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: np.ndarray, up=(0, 0, 1),
+               linear: bool = False) -> Dict[str, Any]:
+    """The two-band blend of the module doc for any rays (``o``, ``d``: (n, 3)) - :func:`render_rows`' panorama rays,
+    or (0.99.26) the texels of a station mesh's texture (:mod:`rpp.ibr.station_mesh`).  The fields of
+    :data:`BAND_FIELDS`, one row per ray, and "rejected", "neff"."""
+    top = 4.0 * LINEAR_TOP if linear else 255.0
+    u_ = np.asarray(up, float) / np.linalg.norm(up)
+    pl = getattr(scene, "plane", None)
+    out: Dict[str, Any] = {"neff": None, "ground": np.zeros(len(d), bool)}
     c = candidates(scene, sources, o, d)
     out["rejected"] = [int(c["rejected"][0]), int(c["rejected"][1])]
-    out["rover"] = c["on_rover"].reshape(r1 - r0, width)
-    out["rej_map"] = c["rejected_px"].reshape(r1 - r0, width)
-    out["hidden"] = c["hidden_fallback"].reshape(r1 - r0, width)
+    out["rover"] = c["on_rover"]
+    out["rej_map"] = c["rejected_px"]
+    out["hidden"] = c["hidden_fallback"]
     n = len(d)
     low_acc = np.zeros((n, 3), np.float32)
     hi_acc = np.zeros((n, 3), np.float32)
@@ -1249,7 +1260,7 @@ def render_rows(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[fl
     col[has] = low_acc[has] / w_low_sum[has][:, None]
     hh = has & (w_hi_sum > 1e-6)
     col[hh] += hi_acc[hh] / w_hi_sum[hh][:, None]
-    out["rgb"] = np.clip(col, 0, top).astype(np.float32 if linear else np.uint8).reshape(r1 - r0, width, 3)
+    out["rgb"] = np.clip(col, 0, top).astype(np.float32 if linear else np.uint8)
     if pl is not None:
         tt = np.where(c["ok"] & np.isfinite(c["t"]), c["t"], 0.0)
         X = o + tt[:, None] * d
@@ -1260,18 +1271,20 @@ def render_rows(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[fl
         level = ((np.abs(hgt) < GROUND_BAND_M) | (getattr(scene, "rover_triangles", None) is not None)
                  | bool(getattr(scene, "mesh_is_terrain", False)))      # 0.97.15: or the mesh is terrain alone
         g = has & ~c["on_rover"] & ((c["label"] == LABEL_PLANE) | ((c["label"] == LABEL_MESH) & level))
-        out["ground"] = g.reshape(r1 - r0, width)
-    out["source"] = np.where(has, strongest, -1).astype(np.int16).reshape(r1 - r0, width)
+        out["ground"] = g
+    out["source"] = np.where(has, strongest, -1).astype(np.int16)
     ne = np.where(w_hi_sq > 1e-12, w_hi_sum * w_hi_sum / np.maximum(w_hi_sq, 1e-12), 0.0)     # (sum w)^2 / sum w^2
     terr = hh & (c["label"] == LABEL_MESH) & ~c["on_rover"]
     if terr.any():
         out["neff"] = ne[terr][::7].astype(np.float32)
     pm = 0.5 * prov_lo / np.maximum(w_low_sum, 1e-6)[:, None] + 0.5 * prov_hi / np.maximum(w_hi_sum, 1e-6)[:, None]
     pm[~hh] = (prov_lo / np.maximum(w_low_sum, 1e-6)[:, None])[~hh]
-    out["prov"] = np.clip(np.rint(pm), 0, 255).astype(np.uint8).reshape(r1 - r0, width, 3)
-    out["label"] = c["label"].reshape(r1 - r0, width)
-    out["range"] = np.where(c["ok"], c["t"], 0).reshape(r1 - r0, width)
+    out["prov"] = np.clip(np.rint(pm), 0, 255).astype(np.uint8)
+    out["label"] = c["label"]
+    out["range"] = np.where(c["ok"], c["t"], 0)
     return out
+
+
 
 
 def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[float], eye: str, width: int, height: int,
@@ -2037,8 +2050,13 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                    tone_levels_file: Optional[PathLike] = None, center_depth: bool = True, pole_merge_deg="default", sky_radius_m="default",
                    fill_families: str = "", nadir_mark: bool = True, site_name: Optional[str] = None,
                    nadir_mark_deg: Optional[float] = None, far_field: Optional[bool] = None,
-                   context_images: Sequence[str] = (), geometry: bool = True, workers: Optional[int] = None) -> Dict[str, Any]:
-    """0.99.25: ``workers`` - the render processes (:mod:`rpp.ibr.parallel`; None: ``RPP_IBR_WORKERS``, else half the
+                   context_images: Sequence[str] = (), geometry: bool = True, workers: Optional[int] = None,
+                   station_mesh: Union[bool, str] = False) -> Dict[str, Any]:
+    """0.99.26: ``station_mesh`` - also the station mesh's part of this run (:mod:`rpp.ibr.station_mesh`: the terrain
+    with the rover masked, the rover with it shown); "only": that part alone, no panorama (the record of the part is
+    returned).
+
+    0.99.25: ``workers`` - the render processes (:mod:`rpp.ibr.parallel`; None: ``RPP_IBR_WORKERS``, else half the
     logical processors, at most 8; 1: one process, as before).
 
     The two eye images of a station -> ``out_dir/<prefix>_ods_left.png``, ``<prefix>_ods_right.png``,
@@ -2199,7 +2217,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         pool = RenderPool(scene, sources, n_workers)             # the sources are final here (gains, masks, fill colors)
     rec_out["render_processes"] = n_workers if (pool is not None and pool.failed is None) else 1
     try:
-        for eye in eyes:
+        for eye in (() if station_mesh == "only" else eyes):
             if mark0 is not None and eye in ("left", "right"):       # 0.97.13: the mark as this eye sees it on the ground
                 m0 = max(0, mark0["row0"] - int(np.ceil(_nadir.GROUND_MARGIN_DEG / 180.0 * height)))
                 al = np.zeros((height - m0, width), np.float32)
@@ -2295,6 +2313,39 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             rec_out["eyes"][eye]["effective_frames"] = res.get("effective_frames")      # 0.98.0
             for s in sources:
                 s.release()
+        if station_mesh:                                 # 0.99.26: the sources and the pool are still there
+            from . import station_mesh as _sm
+            pf = prefix if use_masks else (prefix[:-len("_rover")] if prefix and prefix.endswith("_rover") else prefix)
+
+            def to8(rgb):                                # the panorama's own 8-bit view of the blend
+                if not linear:
+                    return np.clip(np.rint(rgb), 0, 255).astype(np.uint8)
+                from .linear16 import shared_levels, shared_value, auto_exposure16, auto_levels, tone_levels, tone_soft, tone_pipeline
+                ex = exposure16
+                if isinstance(ex, str):
+                    ex, _ = shared_value(tone_levels_file, "exposure16", lambda: auto_exposure16(rgb, rgb.max(axis=-1) > 0))
+                k16 = 64.0 * float(ex)
+                lin8 = np.clip(np.rint(rgb * k16), 0, 65535).astype(np.float32) / k16
+                if tone == "pipeline":
+                    v = tone_pipeline(lin8)
+                elif tone == "auto":
+                    lv = levels or shared_levels(tone_levels_file, lambda: auto_levels(rgb, rgb.max(axis=-1) > 0))[0]
+                    v = tone_levels(lin8, *lv)
+                else:
+                    v = tone_soft(lin8) if tone == "soft" else np.clip(lin8, 0, 255)
+                return np.clip(np.rint(v), 0, 255).astype(np.uint8)
+            try:
+                if use_masks:
+                    part, kind = _sm.terrain_part(scene, sources, station, pool, size=_sm.TEXTURE_PX, target=_sm.TARGET_TRIANGLES, linear=linear,
+                                                     rows_per_chunk=rows_per_chunk), "terrain"
+                else:
+                    part, kind = _sm.rover_part(scene, sources, station, pool, size=_sm.ROVER_TEXTURE_PX, linear=linear,
+                                                   rows_per_chunk=rows_per_chunk), "rover"
+                rec_out["station_mesh"] = _sm.write_part(out, pf, kind, part, station, to8)
+                del part
+            except Exception as e:                       # noqa: BLE001 - the panoramas are not lost for it
+                log.warning("ods: the station mesh's part was not made (%s: %s)", type(e).__name__, e)
+                rec_out["station_mesh"] = {"failed": f"{type(e).__name__}: {e}"}
     finally:
         for s in sources:
             s.release()
@@ -2302,6 +2353,8 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             if pool.failed is not None:
                 rec_out["render_processes"] = 1
             pool.close()
+    if station_mesh == "only":
+        return rec_out.get("station_mesh") or {}
     if center_depth and depth_rec is None:               # 0.97.11: the depth without the center panorama's colors
         td = time.time()                                 # (Christian, 13 Nov 2026: "skip the center render because it
         rng_c = np.zeros((height, width), np.float32)    # takes 1/3 more time"): rays only, no frame is sampled

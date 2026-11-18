@@ -289,6 +289,10 @@ def add_parsers(sub) -> None:
     p.add_argument("--prefix", default=None, help="the panoramas' file-name prefix (default the station, Sol0052_S003D2046_ / "
                    "Sol0052_S003D2046_rover_: Sol0052_S003D2046_ods_left.png ...; '' for the bare ods_left.png)")
     p.add_argument("--rows-per-chunk", type=int, default=128)
+    p.add_argument("--station-mesh", action="store_true",
+                   help="0.99.26: also this run's part of the station mesh (rpp.ibr.station_mesh: the terrain within 10 m "
+                        "with the rover masked, the rover with --rover); rpp.ibr.station_mesh FOLDER puts them together")
+    p.add_argument("--station-mesh-only", action="store_true", help="0.99.26: the station mesh's part alone, no panorama")
     p.add_argument("--workers", type=int, default=None, metavar="N",
                    help="0.99.25: render processes sharing the sources' memory (default: RPP_IBR_WORKERS, else half "
                         "the logical processors, at most 8; 1: one process)")
@@ -540,6 +544,7 @@ def cmd_ods(a: argparse.Namespace) -> int:
                          far_field=not a.no_far_field, geometry=not a.no_geometry, zcam_scale=a.zcam_scale, images=_own_frames(project, st, a),
                          context_images=_png(getattr(a, "context_images", None)), rows_per_chunk=a.rows_per_chunk, eyes=_eyes(a.eyes),
                          workers=getattr(a, "workers", None),
+                         station_mesh=("only" if getattr(a, "station_mesh_only", False) else bool(getattr(a, "station_mesh", False))),
                          use_masks=not a.rover, gains=not a.no_gains, stack_top=a.stack_top,
                          sky_fill=not a.no_sky_fill, mask_head_hardware=not a.keep_head_hardware,
                          azimuth0_deg=-180.0 if a.north_center else a.azimuth0, prefix=a.prefix,
@@ -548,6 +553,9 @@ def cmd_ods(a: argparse.Namespace) -> int:
                          tone_levels_file=a.tone_levels, center_depth=not a.no_depth,
                          fill_families=a.fill_cameras, nadir_mark=not a.no_nadir_mark, site_name=a.site_name,
                          nadir_mark_deg=a.nadir_mark_deg)
+    if getattr(a, "station_mesh_only", False):
+        print(f"station mesh part: {json.dumps(rep, default=str)[:600]}")
+        return 0 if rep and not rep.get("failed") else 1
     for eye, e in rep["eyes"].items():
         c = e["coverage"]
         print(f"{eye}: {e['file']}  colored {100 * c['coloured']:.1f}%, mesh {100 * c['mesh']:.1f}%, "

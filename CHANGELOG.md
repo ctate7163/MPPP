@@ -3,6 +3,35 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.26 — 2026-11-18 (branch `rpp`)
+
+- **The station as a textured 3D surface, and the viewer's fourth mode "3D terrain and rover"** (Christian, 11:54 and
+  11:57: "a simplified medium poly mesh of the 10m radius area to be textured. The texture should be 8kx8k and
+  projected onto the terrain largely from the perspective of the viewer ... the texture projection center might be
+  better a little above the pivot point without the rover. Add this as a fourth mode in rpv as 3D terrain and rover.
+  It should include the 3D rover. The 3D rover surfaces should be textured if they are visible anywhere from 1m of
+  the pivot and viewed by the ncams"). New `rpp.ibr.station_mesh`:
+  - the terrain: the station mesh within 10 m of the mast axis, without the rover model, simplified to about
+    300,000 triangles; an 8192 x 8192 texture in which a texel is a direction from 0.5 m above the pivot (azimuthal
+    equidistant about straight down: equal angles per texel, so the near ground gets the most texels per square meter;
+    no seam). Triangles that point cannot see, or sees edge on, get cells of their own in the corners outside the disc,
+    colored from the frames that see them. Every texel is the panorama's blend (`rpp.ibr.ods.shade_rays`); what no
+    frame colors is filled from around it;
+  - the rover: the Perseverance model's triangles that can be seen from within 1 m of the pivot (the pivot and 64
+    points on spheres of 0.5 and 1 m, those inside the model left out) get cells of a 4096 x 4096 texture colored by
+    the Navcam frames; the rest are the rover gray, shaded by slope;
+  - `rpp ods --station-mesh` makes the run's part (the terrain with the rover masked, the rover with `--rover`) while
+    its sources and render processes are there; `--station-mesh-only` the part alone, without a panorama;
+    `python -m rpp.ibr.station_mesh FOLDER` (and single-sites at its end) puts both into `<station>_station_mesh.glb`
+    (two textured meshes, meters about the pivot, the viewer's frame);
+  - single-sites asks every ods run for its part (`--no-station-mesh`: not); `--station-mesh-only` makes only the
+    station meshes of stations that have their panoramas;
+  - the viewer (`docs/ods/index.html`): the fourth variant shows the mesh in front of the terrain-only panorama, which
+    is its backdrop beyond 10 m; head motion is held within 1 m (`move_limit_m`) of where the mode started - beyond it
+    the surface comes along.
+- `rpp.ibr.ods.shade_rays`: the blend for any rays (`render_rows` is the panorama's rays and it); the render pool
+  runs texture bands too (`RenderPool.run`).
+
 ## 0.99.25 — 2026-11-18 (branch `rpp`)
 
 - **The panorama render on several cores, the memory shared** (Christian, 11:17: "rewrite the ibr ods pipeline to

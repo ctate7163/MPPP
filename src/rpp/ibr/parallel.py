@@ -158,14 +158,21 @@ def _init(payload: Dict[str, Any]) -> None:
 
 def _band(task: Tuple) -> Tuple[int, int, List[int], Optional[np.ndarray], float]:
     from . import ods
-    out_ref, P, eye, width, height, ipd_m, r0, r1, kw = task
+    out_ref, kind, args, r0, r1 = task
     t0 = time.time()
     cur = _W.get("out")
     if cur is None or cur.shm.name != out_ref[0]:
         if cur is not None:
             cur.close()
         cur = _W["out"] = Arena.attach(out_ref)
-    band = ods.render_rows(_W["scene"], _W["sources"], P, eye, width, height, ipd_m, r0, r1, **kw)
+    if kind == "ods":
+        P, eye, width, height, ipd_m, kw = args
+        band = ods.render_rows(_W["scene"], _W["sources"], P, eye, width, height, ipd_m, r0, r1, **kw)
+    elif kind == "texture":                                     # 0.99.26: a station mesh's texture (rpp.ibr.station_mesh)
+        from . import station_mesh
+        band = station_mesh.texture_rows(_W["scene"], _W["sources"], args, r0, r1)
+    else:
+        raise ValueError(f"unknown band kind {kind!r}")
     for f in ods.BAND_FIELDS:
         cur.view(f)[r0:r1] = band[f]
     return r0, r1, band["rejected"], band["neff"], time.time() - t0
@@ -237,12 +244,20 @@ class RenderPool:
 
     def bands(self, P, eye: str, width: int, height: int, ipd_m: float, spans: Sequence[Tuple[int, int]],
               kw: Dict[str, Any], fallback: Callable[[Sequence[Tuple[int, int]]], Iterator]) -> Iterator:
-        """(r0, r1, band) of every span, in row order - from the workers, or (after a failure) from ``fallback``."""
+        """(r0, r1, band) of every span of a panorama eye, in row order - from the workers, or (after a failure) from
+        ``fallback``."""
+        args = (np.asarray(P, float), eye, int(width), int(height), float(ipd_m), kw)
+        yield from self.run("ods", [args] * len(spans), spans, width, height, bool(kw.get("linear")), fallback, eye)
+
+    def run(self, kind: str, args: Sequence[Any], spans: Sequence[Tuple[int, int]], width: int, height: int,
+            linear: bool, fallback: Callable[[Sequence[Tuple[int, int]]], Iterator], what: str = "") -> Iterator:
+        """(r0, r1, band) of every span, in row order: ``kind`` "ods" (:func:`rpp.ibr.ods.render_rows`) or "texture"
+        (:func:`rpp.ibr.station_mesh.texture_rows`), ``args[i]`` the arguments of span i."""
         from . import ods
         if self.pool is None:
             yield from fallback(spans)
             return
-        linear = bool(kw.get("linear"))
+        eye = what
         spec = {"rgb": ((height, width, 3), "float32" if linear else "uint8"), "source": ((height, width), "int16"),
                 "label": ((height, width), "uint8"), "range": ((height, width), "float32"),
                 "hidden": ((height, width), "bool"), "ground": ((height, width), "bool"),
@@ -254,8 +269,7 @@ class RenderPool:
         try:
             out = Arena.create(spec)
             self._outs.append(out)
-            tasks = [(out.ref, np.asarray(P, float), eye, int(width), int(height), float(ipd_m), int(r0), int(r1), kw)
-                     for r0, r1 in spans]
+            tasks = [(out.ref, kind, a, int(r0), int(r1)) for a, (r0, r1) in zip(args, spans)]
             busy = 0.0
             t0 = time.time()
             for r0, r1, rejected, neff, dt in self.pool.imap(_band, tasks, chunksize=1):

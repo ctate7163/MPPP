@@ -202,7 +202,7 @@ def frame_args(frames: Dict[str, Any]) -> List[str]:
 
 def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = None, labels: Optional[Sequence[str]] = None,
          steps: Sequence[str] = STEPS, variants: Optional[Sequence[str]] = None, ods_width: Optional[int] = None,
-         rover_surface: bool = False) -> List[Dict[str, Any]]:
+         rover_surface: bool = False, station_mesh: Union[bool, str] = False) -> List[Dict[str, Any]]:
     """The runs, in order: one entry per station with its block, its output folder and the commands (argv lists of
     ``python -m rpp``), grouped by variant."""
     root = Path(root)
@@ -289,6 +289,8 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                     argv += ["--width", str(int(ods_width))]
                 if step == "ods" and rover_surface and v == "rover":     # 0.98.2 (experimental): the panorama from the
                     argv += ["--eyes", "left", "right", "center"]        # pivot too, for rpp.ibr.rover_surface
+                if step == "ods" and station_mesh:       # 0.99.26: each variant's part of the station mesh
+                    argv += ["--station-mesh-only" if station_mesh == "only" else "--station-mesh"]
                 cmds.append({"variant": v, "step": step, "argv": argv})
         runs.append({"label": lab, "work": str(work), "out": str(base), "note": st.get("note", ""), "variants": vs,
                      "commands": cmds})
@@ -565,6 +567,12 @@ def add_parser(sub) -> None:
     p.add_argument("--rover-surface", action="store_true", default=True,
                    help="0.98.2, experimental: also render the with-rover panorama from the pivot and make the rover a "
                         "textured surface from it (<prefix>_rover_surface.glb; the viewer lays it on the terrain-only view)")
+    p.add_argument("--no-station-mesh", dest="station_mesh", action="store_false", default=True,
+                   help="0.99.26: without the station mesh (the textured terrain within 10 m and the rover: the viewer's "
+                        "fourth mode, 3D terrain and rover; rpp.ibr.station_mesh)")
+    p.add_argument("--station-mesh-only", action="store_true",
+                   help="0.99.26: only the station meshes of stations whose panoramas exist (rpp ods --station-mesh-only "
+                        "for each variant, then the .glb; with --publish / --upload the fourth mode is published)")
     p.add_argument("--list", action="store_true", help="the stations of the config")
     p.add_argument("--dry-run", action="store_true", help="the commands, not run")
     p.add_argument("--install", metavar="DIR", default=None, help=f"write {BAT_NAME} (and make_square.bat) into DIR and stop")
@@ -583,8 +591,11 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
         return 0
     if getattr(a, "all", False) and not a.labels:                # 0.99.3: the experimental stations too
         a.labels = list(cfg["stations"])[::-1]
+    if getattr(a, "station_mesh_only", False):                   # 0.99.26
+        a.steps, a.station_mesh = ["ods"], True
     runs = plan(cfg, root, out_root, a.labels, a.steps, a.variants, ods_width=a.width,
-                rover_surface=getattr(a, "rover_surface", False))
+                rover_surface=getattr(a, "rover_surface", False),
+                station_mesh="only" if getattr(a, "station_mesh_only", False) else getattr(a, "station_mesh", False))
     if a.dry_run:
         for r in runs:
             print(f"{r['label']}: {r['work']} -> {r['out']}")
@@ -610,6 +621,15 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
                         _rs.from_folder(Path(r["out"]) / "with_rover")
                     except Exception as e:               # noqa: BLE001
                         print(f"rover surface of {r['label']}: failed ({e})")
+        if getattr(a, "station_mesh", False) and not a.squares_only:      # 0.99.26: never fails the run
+            from . import station_mesh as _sm
+            logging.basicConfig(level=logging.INFO, format="%(message)s")
+            for r in runs:
+                if r["label"] in labels:
+                    try:
+                        _sm.assemble(Path(r["out"]))
+                    except Exception as e:               # noqa: BLE001
+                        print(f"station mesh of {r['label']}: failed ({e})")
         if not a.publish:
             return "not published"
         from . import web
