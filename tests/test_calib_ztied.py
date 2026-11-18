@@ -589,10 +589,10 @@ def test_ratio_held_with_few_low_state_images():
     itself and the single-state 110 mm are not."""
     from rpp_studies.calibration import ztied as Z
     from rpp_studies.calibration.fit import REGULAR_RATIO_DEFAULT
-    sg = {"eyes": {"ZL048": {}, "ZR048": {}}, "low_images": {"ZL048": 5, "ZR048": 6}}
-    held = Z.set_ratio_holds(sg, 48, verbose=False)
-    assert set(held) == {"ZL048"} and 1.004 <= held["ZL048"] <= 1.016
-    assert sg["eyes"]["ZL048"]["ratio_hold_source"] in ("the 34 mm model (ZL034)", "the default")
+    sg = {"eyes": {"ZL063": {}, "ZR063": {}}, "low_images": {"ZL063": 5, "ZR063": 6}}
+    held = Z.set_ratio_holds(sg, 63, verbose=False)
+    assert set(held) == {"ZL063"} and 1.0015 <= held["ZL063"] <= 1.016
+    assert sg["eyes"]["ZL063"]["ratio_hold_source"] == "the 63 mm prior"
     assert Z.set_ratio_holds({"eyes": {"ZL034": {}}, "low_images": {"ZL034": 3}}, 34, verbose=False) == {}
     h = Z.set_ratio_holds({"eyes": {"ZL063": {}}, "low_images": {"ZL063": 0}}, 63, verbose=False)
     assert set(h) == {"ZL063"}                                    # no low-state image: not measured, held too
@@ -1259,3 +1259,22 @@ def test_weak_sequences_fy_offsets_and_the_gate(tmp_path, monkeypatch):
     out = Z.write_zjoint(res, tmp_path / "cand", model=truth)
     assert "weak-geometry sequences" in (tmp_path / "cand" / "report.md").read_text()
     assert not any("focus" in c["check"] and not c["ok"] for c in out["check"]["checks"])
+
+
+def test_48mm_ratio_held_at_the_34mm_models(tmp_path, monkeypatch):
+    """0.99.30 (Christian, 18 Nov 2026: "Hold z48 ratio to z34 high low ratio"): every 48 mm eye's high / low ratio is
+    the 34 mm model's of its side, however many low-state images it has; other zooms with enough are not held."""
+    import json
+    from rpp_studies.calibration import ztied as Z
+    cm = tmp_path / "cmods"
+    cm.mkdir()
+    (cm / "M2020_ZCAM034_focus_model.json").write_text(json.dumps(
+        {"cameras": {"ZL034": {"regular_ratio": 1.0083}, "ZR034": {"regular_ratio": 1.0087}}}))
+    monkeypatch.setenv("RPP_CMODS", str(cm))
+    sg = {"eyes": {"ZL048": {}, "ZR048": {}}, "low_images": {"ZL048": 200, "ZR048": 210}}
+    held = Z.set_ratio_holds(sg, 48, verbose=False)
+    assert held == {"ZL048": 1.0083, "ZR048": 1.0087}
+    assert sg["eyes"]["ZL048"]["ratio_hold_forced"] and "34 mm model (ZL034)" in sg["eyes"]["ZL048"]["ratio_hold_source"]
+    assert Z.set_ratio_holds({"eyes": {"ZL063": {}}, "low_images": {"ZL063": 200}}, 63, verbose=False) == {}
+    (cm / "M2020_ZCAM034_focus_model.json").write_text(json.dumps({"cameras": {}}))
+    assert Z.set_ratio_holds({"eyes": {"ZL048": {}}, "low_images": {"ZL048": 200}}, 48, verbose=False) == {}

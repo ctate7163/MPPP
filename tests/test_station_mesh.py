@@ -161,3 +161,18 @@ def test_single_sites_skips_stations_whose_block_is_not_aligned(tmp_path, capsys
     a = p.parse_args(["single-sites", "--config", str(cfgf), "--root", str(tmp_path), "--dry-run", "--any-block", "A", "B"])
     SS.cmd_single_sites(a)
     assert "skipped - its block" not in capsys.readouterr().out
+
+
+def test_sol121_seitah_station_in_the_list():
+    """0.99.30 (Christian, 18 Nov 2026: "Add the sol 121 location to the ods list. Use the eod images with the one mid
+    drive imaging for context")."""
+    import json
+    from pathlib import Path
+    from rpp.ibr import single_sites as SS
+    cfg = json.loads((Path(SS.__file__).parents[1] / "data" / "single_sites.json").read_text(encoding="utf-8"))
+    st = cfg["stations"]["Sol0116_S004D1250"]
+    assert st["station"] == "4_1250" and len(st["frames"]["images"]) == 11 and all("N0041250" in n for n in st["frames"]["images"])
+    assert len(st["context"]) == 2 and all("N0041206NCAM00310" in n for n in st["context"])
+    run = SS.plan(cfg, "/tmp/root", labels=["Sol0116_S004D1250"])[0]
+    ods = [c for c in run["commands"] if c["step"] == "ods"]
+    assert ods and all("--context-images" in c["argv"] for c in ods) and run["work"].endswith("seitah_overlook_zcam")

@@ -3,6 +3,21 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.30 — 2026-11-18 (branch `rpp`)
+
+- **48 mm high / low ratio held at the 34 mm model's** (Christian, 14:48: "Hold z48 ratio to z34 high low ratio"):
+  `ztied.RATIO_AT_34MM = (48,)` - each 48 mm eye's ratio is tied to the 34 mm model of its side in the models in use
+  (ZL034 for ZL048), however many low-state images it has; the model is promotable as before, and the report says why
+  the ratio is held. Why: the 48 mm regular-state data are nearly all Overlook Mountain (sol 1155), so the regular
+  focal length and that site's sequence offsets trade. From 15 Nov a 3-frame Seitah Overlook sequence, held at offset
+  0, fixed ZL048's regular state: 1.0106 against ZR048's 1.0074, with Overlook's ZL offsets at +3494 / +3260 ppm
+  (z +106). With those offsets moved into the regular level ZL048 is 1.0072. In the freeze the Z34 joint runs and is
+  promoted before the Z48 joint, which then holds at the new 34 mm ratios (pre-freeze-3 c: 1.0083 / 1.0087).
+- **The sol 121 zoom-ladder site in the panorama list** (Christian, 14:51: "Add the sol 121 location to the ods list.
+  Use the eod images with the one mid drive imaging for context"): `Sol0116_S004D1250` - Seitah Overlook's S004D1250,
+  its end-of-drive Navcam 360 of sol 116 (NCAM03116 x3, NCAM00303, NCAM02116 x2) and, as context, the one mid-drive
+  pair of the drive there (NCAM00310, sol 116, S004D1206). Its block is the Seitah Overlook Mastcam-Z block.
+
 ## 0.99.29 — 2026-11-18 (branch `rpp`)
 
 - **single-sites skips a station whose block has not finished its alignment** (Christian, 13:36: "The next ods should

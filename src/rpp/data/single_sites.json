@@ -1510,6 +1510,31 @@
     "NLF_1883_0834107920_050RAD_N0881694NCAM00301_0A0295J02.png",
     "NRF_1883_0834107920_050RAD_N0881694NCAM00301_0A0295J02.png"
    ]
+  },
+  "Sol0116_S004D1250": {
+   "name": "Seitah Overlook (sol 121 zoom ladder site)",
+   "work": "mars2020_sol_0113_seitah_overlook_zcam",
+   "station": "4_1250",
+   "note": "0.99.30 (Christian, 18 Nov 2026: \"Add the sol 121 location to the ods list. Use the eod images with the one mid drive imaging for context\"): S004D1250, where the sol 121 zoom ladder ZCAM08114 was taken - its end-of-drive Navcam 360 of sol 116 (NCAM03116 x3, NCAM00303, NCAM02116 x2; the left frame of the second NCAM02116 pair is not in the block), and for context the one mid-drive Navcam pair of the drive there, NCAM00310 of sol 116 at S004D1206. The block is the Seitah Overlook Mastcam-Z block (Navcam + Mastcam-Z; there is no Navcam-only Seitah Overlook block).",
+   "frames": {
+    "images": [
+     "NLF_0116_0677245175_862RAD_N0041250NCAM03116_0A0195J02.png",
+     "NRF_0116_0677245175_862RAD_N0041250NCAM03116_0A0195J02.png",
+     "NLF_0116_0677245340_743RAD_N0041250NCAM03116_0A0195J03.png",
+     "NRF_0116_0677245340_743RAD_N0041250NCAM03116_0A0195J03.png",
+     "NLF_0116_0677245541_386RAD_N0041250NCAM03116_0A0195J03.png",
+     "NRF_0116_0677245541_386RAD_N0041250NCAM03116_0A0195J03.png",
+     "NLF_0116_0677245697_652RAD_N0041250NCAM00303_0A0195J01.png",
+     "NRF_0116_0677245697_652RAD_N0041250NCAM00303_0A0195J01.png",
+     "NLF_0116_0677245872_058RAD_N0041250NCAM02116_0A0195J02.png",
+     "NRF_0116_0677245872_058RAD_N0041250NCAM02116_0A0195J02.png",
+     "NRF_0116_0677246094_637RAD_N0041250NCAM02116_0A0195J02.png"
+    ]
+   },
+   "context": [
+    "NLF_0116_0677242158_987RAD_N0041206NCAM00310_0A0195J01.png",
+    "NRF_0116_0677242158_987RAD_N0041206NCAM00310_0A0195J02.png"
+   ]
   }
  },
  "depthmaps_args": [
