@@ -88,6 +88,10 @@ TAG = "freeze_3"              # 0.98.15 (15 Nov): freeze-3 - the deck-joint rig,
 ZOOMS = (26, 34, 48, 63, 79, 100, 110)     # 0.98.15: 26 and 100 mm too (promoted from two blocks)
 LADDER_SITES = ("seitah_overlook",)       # 0.98.21: the states run for the sol 121 zoom ladder (step ladder)
 WAIVE_ASPECT = (63, 79, 110)          # Christian, 8 Nov: "update the z63, z79, z110 models that are good enough"
+ONE_BLOCK = (26,)                     # 0.99.22 (Christian, 18 Nov: "Promote 26"): 26 mm is in one block (Chal Rocks large)
+# 0.99.22: what a new, empty root needs from the old one - the Mastcam-Z backlash lists the blocks' focus states are
+# labeled from (rpp.sfm.backlash; they live next to the block folders and no freeze step makes them)
+ROOT_SEED_FILES = ("zcam_low_backlash_found.csv", "zcam_focus_from_below.csv")
 DECK_BLOCKS = {                       # the Z34 deck pans (sequence, sol, station) and their blocks
     "threeforks_north": ("ZCAM05086", 692, "S032D1184"),
     "airey_hill": ("ZCAM05086", 965, "S047D0000"),
@@ -482,7 +486,31 @@ class Run:
             self.beat()
             time.sleep(600)
 
+    def seed_root(self) -> str:
+        """0.99.22 (freeze-3 in a new, empty root): :data:`ROOT_SEED_FILES` copied from ``--seed-from`` where the root
+        has none.  A root without the found list is said aloud: its Mastcam-Z frames would all count as regular."""
+        notes = []
+        src = Path(self.a.seed_from) if getattr(self.a, "seed_from", None) else None
+        for name in ROOT_SEED_FILES:
+            dst = self.root / name
+            if dst.is_file():
+                continue
+            if src is not None and (src / name).is_file() and src.resolve() != self.root.resolve():
+                if not self.a.dry_run:
+                    shutil.copy2(src / name, dst)
+                notes.append(f"{name} from {src}")
+        if notes:
+            self.log("root: " + "; ".join(notes) + (" (dry run: not copied)" if self.a.dry_run else " copied"))
+        if not (self.root / ROOT_SEED_FILES[0]).is_file() and not self.a.dry_run:
+            self.log(f"root: WARNING - no {ROOT_SEED_FILES[0]} in {self.root}: no Mastcam-Z sequence counts as a "
+                     "low backlash state (--seed-from the root that has the list)")
+            notes.append(f"no {ROOT_SEED_FILES[0]}")
+        return "; ".join(notes)
+
     def s_cmods(self) -> str:
+        seeded = self.seed_root()
+        if seeded:
+            self.status.setdefault("root_seed", seeded)
         src = Path(self.a.cmods_from)
         if not self.cmods.is_dir() or not any(self.cmods.glob("*.json")):
             if self.a.dry_run:
@@ -517,6 +545,8 @@ class Run:
         args = ["--from", "zcam_runs", "--redo", "zcam_runs", "zcam_joints", "--stop-before", "error_analysis", "--no-nz"]
         if self.a.zcam_waive_aspect:
             args += ["--zcam-waive-aspect", *map(str, self.a.zcam_waive_aspect)]
+        if getattr(self.a, "zcam_one_block", None):
+            args += ["--zcam-one-block", *map(str, self.a.zcam_one_block)]
         rc = self.pipeline("zjoints", *args)
         since = str(self.status.get("started") or "")                 # the joints of this run, also after a restart
         lines = "; ".join(self.zjoint_lines(since=since))
@@ -1047,6 +1077,11 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--ab-python", default=rpp_env.get("RPP_TRAIN_PYTHON") or sys.executable,
                     help="auto: a Python with a CUDA torch for the comparison")
     ap.add_argument("--zcam-waive-aspect", type=int, nargs="*", default=list(WAIVE_ASPECT), metavar="ZOOM")
+    ap.add_argument("--zcam-one-block", type=int, nargs="*", default=list(ONE_BLOCK), metavar="ZOOM",
+                    help="0.99.22: the zooms whose joint promotes from a single block (default 26)")
+    ap.add_argument("--seed-from", default=None, metavar="ROOT",
+                    help="0.99.22: a new root - the Mastcam-Z backlash lists (zcam_low_backlash_found.csv, "
+                         "zcam_focus_from_below.csv) copied from this root when --root has none")
     ap.add_argument("--no-knee-stations", dest="knee_stations", action="store_false",
                     help="0.99.5: the knee step without new deck stations (the profile only)")
     ap.add_argument("--knee-sols", type=int, nargs=2, default=list(KNEE_SOLS), metavar=("FIRST", "LAST"))

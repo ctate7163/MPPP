@@ -1144,7 +1144,8 @@ def fit_tied(scapes_cfg: Dict[str, PathLike], start_dir: Optional[PathLike] = No
     rec0, proj0, idx = J.merge_scapes((J.load_scape(n, scapes_cfg[n]) for n in scapes_cfg), cams, (st["R"], st["t"]),
                                       points_per_scape=points, seed=0, exclude=exclude)
     rec, proj, units = tied_reconstruction(rec0, proj0, idx, st, bin_deg=bin_deg, early_sol=early_sol, max_span=max_span)
-    if not (EARLY_OFFSETS if early_offsets is None else early_offsets):
+    no_early = not (EARLY_OFFSETS if early_offsets is None else early_offsets)
+    if no_early:
         # 0.95.4: no early-mission offsets - every E term at 0 and held, no |z| test
         st = copy.deepcopy(st)
         for eye in ("NL", "NR"):
@@ -1175,7 +1176,11 @@ def fit_tied(scapes_cfg: Dict[str, PathLike], start_dir: Optional[PathLike] = No
         ba, g, stats = adjust_tied(rec, proj, idx, st, units, hold=hold, iterations=iterations, covariance=covariance,
                                    passes=passes, verbose=verbose, iso_f=iso_f, tie_f=tie_f)
         res = globals_result(st, g, ba, units)
-    res["early_test"] = {"z_min": early_z_min, "judged": judged, "held": list(early_held), "first_fit": res_first}
+    # 0.99.22: with no early-mission offsets every term is held at 0 and says so - the candidate check read the empty
+    # list as eight fitted terms without an sd and failed every joint since 0.95.4 ("FAIL early-mission fit")
+    res["early_test"] = {"z_min": early_z_min, "judged": judged,
+                         "held": list(EARLY_ALL) if no_early else list(early_held), "first_fit": res_first,
+                         "all_held_at_zero": bool(no_early)}
     res.update({"navcam_form": form, "blocks": list(scapes_cfg), "points_per_block": idx.get("points_per_block") or points, "bin_deg": bin_deg, "max_span_sols": max_span,
                 "start_dir": st["folder"], "final_cost": float(ba["final_cost"]), "iterations": ba["iterations"],
                 "brief": ba["brief"], "seconds": time.time() - t, "residuals": stats,
@@ -1647,6 +1652,8 @@ def consensus_record(res: Dict[str, Any]) -> Dict[str, Any]:
         sd[eye] = {k: float(v) for k, v in (s or {}).items()} if s else {"missing": True}
     em = {"converged": True, "per_eye": True, "rounds": [{"positive_definite": res.get("covariance_error") is None}],
           "offsets_px": {}, "sd_px": {}, "z": {}, "applied_terms": []}
+    if (res.get("early_test") or {}).get("all_held_at_zero"):
+        em["held"] = True                              # check_navcam: nothing fitted, nothing to converge
     for eye in ("NL", "NR"):
         e = res[eye]["early_mission"]
         held_e = set((res.get("early_test") or {}).get("held") or ())

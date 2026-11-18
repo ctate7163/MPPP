@@ -118,6 +118,12 @@ def block_config(project) -> Dict[str, Any]:
                 # Navcam balance, and the 16-bit ones must match them
                 if "white_balance_hazcam" not in (user.get("color") or {}):
                     cfg["color"]["white_balance_hazcam"] = None
+                # 0.99.22: the block's brightness factors as they were, family by family - the defaults now carry
+                # factors for the Hazcams and Mastcam-Z, and merging them into a block processed with {"N": 0.9}
+                # would make its 16-bit Hazcam frames 19 % brighter than its 8-bit ones
+                bf = (user.get("color") or {}).get("brightness_by_family")
+                if isinstance(bf, dict):
+                    cfg["color"]["brightness_by_family"] = dict(bf)
                 return cfg
     raise FileNotFoundError(f"no processed/mppp_config_v*.json for {project.root}")
 

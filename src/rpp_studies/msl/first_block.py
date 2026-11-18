@@ -76,6 +76,9 @@ NAME = re.compile(r"^(?P<cam>(?P<fam>[NFR])(?P<eye>[LR])(?P<side>[AB]))_(?P<sclk
                   r"(?P<samp>[A-Z])(?P<site>\d{3})(?P<drive>\d{4})(?P<seq>[A-Z]{4}\d{5})M(?P<ver>\d)$", re.I)
 MASK_ROVER = 255                  # MXY: 255 where the pixel's XYZ falls on the rover (MSL_rover_filter.xml), else 0
 STRETCH = (0.5, 99.8)
+# 0.99.22 (Christian, 17 Nov 2026: "The msl ncam and hazcams can also be a little brighter"): the 8-bit image after the
+# stretch times this - the 8 % the Mars 2020 engineering cameras got with it (color.brightness_by_family)
+BRIGHTNESS = 1.08
 
 
 # ---------------------------------------------------------------------------------------------------- names, labels
@@ -329,13 +332,13 @@ def choose_block(infos: List[Dict[str, Any]], min_pairs: int = 8, radius_m: floa
     return frames, rep
 
 
-def stretch8(arr: np.ndarray, lo_hi=STRETCH) -> np.ndarray:
+def stretch8(arr: np.ndarray, lo_hi=STRETCH, brightness: float = BRIGHTNESS) -> np.ndarray:
     a = np.asarray(arr, np.float32)
     v = a[np.isfinite(a) & (a > 0)]
     if v.size == 0:
         return np.zeros(a.shape, np.uint8)
     lo, hi = np.percentile(v, lo_hi)
-    return np.clip((a - lo) / max(hi - lo, 1e-6) * 255.0, 0, 255).astype(np.uint8)
+    return np.clip((a - lo) / max(hi - lo, 1e-6) * 255.0 * float(brightness), 0, 255).astype(np.uint8)
 
 
 def group_camera(infos: List[Dict[str, Any]], step: float = 16.0) -> Dict[str, Any]:

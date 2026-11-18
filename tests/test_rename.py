@@ -243,9 +243,13 @@ def test_run_keys_did_not_change_with_the_rename():
     s = P.Settings(scapes_root=Path("/nowhere"), pds_dir=Path("/nowhere"))
     if os.environ.get("RPP_CMODS") or os.environ.get("MPPP_CMODS"):
         pytest.skip("RPP_CMODS points at other camera models: the keys differ by design")
-    assert (P.run_key(s), P.process_key(s)) == ("078faba160de6bc4", "873a5aef563fc306")
-    for ck, want in (("mppp_mask_v4", ("4c2237a02ba22110", "877f048ea106ced4")),
-                     ("rpp_mask_v4", ("4c2237a02ba22110", "877f048ea106ced4"))):
+    # 0.99.22: the colors changed (the Navcam brightness comes from the configuration, navcam_brightness None), so
+    # every block processes and aligns again - by design.  With the old setting the keys are 0.98.29's still.
+    old = P.Settings(scapes_root=Path("/nowhere"), pds_dir=Path("/nowhere"), navcam_brightness=0.9)
+    assert (P.run_key(old), P.process_key(old)) == ("078faba160de6bc4", "873a5aef563fc306")
+    assert (P.run_key(s), P.process_key(s)) == ("bca04ab04c5df34d", "c583d0b67eada6ad")
+    for ck, want in (("mppp_mask_v4", ("24426225031637e2", "c91cfb74c3e594c5")),
+                     ("rpp_mask_v4", ("24426225031637e2", "c91cfb74c3e594c5"))):
         s = P.Settings(scapes_root=Path("/nowhere"), pds_dir=Path("/nowhere"), mask_checkpoint=ck)
         assert (P.run_key(s), P.process_key(s)) == want, ck
 

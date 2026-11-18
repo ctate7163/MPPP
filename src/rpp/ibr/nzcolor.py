@@ -140,8 +140,10 @@ def measure_block(block: PathLike, max_dt_min: float = MAX_DT_MIN, pds: Optional
             continue
         wb.setdefault("N", (frames.get(nn) or {}).get("white_balance"))
         wb.setdefault("Z", (frames.get(zn) or {}).get("white_balance"))
+        # 0.99.22: the ratio in the processed images too (columns 9-11: Z / N of the 16-bit values, which carry each
+        # frame's balance, brightness and sun-angle scale) - what the eye compares in a panorama
         rows.append(list(a / fN) + list(b / fZ) + [images[nn].get("sol"), images[zn].get("sol"),
-                                                   abs(_sclk(images[nn]) - _sclk(images[zn]))])
+                                                   abs(_sclk(images[nn]) - _sclk(images[zn]))] + list(b / a))
     return {"block": str(root), "model": str(model), "pairs": len(prs), "samples": rows, "wb": wb,
             "frames": len(need), "missing": got.get("missing") or {}}
 
@@ -153,7 +155,8 @@ def summarize(blocks: Sequence[Dict[str, Any]], config: Optional[Dict[str, Any]]
     wbN = np.asarray(col["white_balance_ecam"], float) * float((col.get("brightness_by_family") or {}).get("N", 1.0))
     wbZ = np.asarray(col["white_balance_zcam"], float) * float((col.get("brightness_by_family") or {}).get("Z", 1.0))
     wbH = np.asarray(col.get("white_balance_hazcam") or col["white_balance_ecam"], float)
-    S = np.asarray([r for b in blocks for r in b["samples"]], float)
+    ncol = min((len(r) for b in blocks for r in b["samples"]), default=9)
+    S = np.asarray([r[:ncol] for b in blocks for r in b["samples"]], float)
     out: Dict[str, Any] = {"samples": int(len(S)), "blocks": [{"block": b["block"], "samples": len(b["samples"]),
                                                                "pairs": b["pairs"], "frames": b["frames"],
                                                                "missing": len(b["missing"])} for b in blocks]}
@@ -175,11 +178,20 @@ def summarize(blocks: Sequence[Dict[str, Any]], config: Optional[Dict[str, Any]]
     boot = np.asarray(boot)
     disp = med * wbZ / wbN
     f = disp / disp[1]
+    if S.shape[1] >= 12:
+        # 0.99.22: as processed - with the sun-angle (zenith) scale of each frame.  The radiance ratio above assumes
+        # the same sun for both cameras: at Three Forks South the Z34 frames had the sun 8 deg higher, and 9 of the
+        # 19 % by which their radiance exceeded the Navcam's was the sun (17 Nov: reported as a camera difference)
+        proc = np.exp(np.median(np.log(S[:, 9:12]), axis=0))
+        out["processed_ratio_Z_over_N"] = [round(float(x), 4) for x in proc]
+        out["processed_note"] = ("Z / N of the processed 16-bit values (each frame's balance, brightness and sun-angle "
+                                 "scale as it was processed): the difference a panorama shows")
     out.update({
         "radiance_ratio_Z_over_N": [round(float(x), 4) for x in med],
         "radiance_ratio_sd_between_scenes": [round(float(x), 4) for x in boot.std(axis=0)],
         "scatter_sd_log": [round(float(x), 3) for x in sd],
         "chromaticity_Z_over_N": [round(float(x), 4) for x in med / med[1]],
+        # the radiance ratio x the balances now in the configuration: no sun-angle scale in it (see processed_ratio)
         "display_ratio_Z_over_N_now": [round(float(x), 4) for x in disp],
         "navcam_factor": [round(float(x), 4) for x in f],
         "brightness_factor": round(float(disp[1]), 4),
@@ -206,11 +218,14 @@ def lines(s: Dict[str, Any]) -> List[str]:
          f"{len(s['blocks'])} block(s)",
          f"  radiance ratio Z / N (R, G, B): {s['radiance_ratio_Z_over_N']} (sd between scenes "
          f"{s['radiance_ratio_sd_between_scenes']}); chromaticity {s['chromaticity_Z_over_N']}",
-         f"  displayed now (with the balances in use) Z / N: {s['display_ratio_Z_over_N_now']}",
+         f"  radiance ratio x the balances in use (no sun-angle scale) Z / N: {s['display_ratio_Z_over_N_now']}",
          f"  Navcam color factor to look like Mastcam-Z: {s['navcam_factor']} (brightness Z / N {s['brightness_factor']}, "
          "not applied)",
          f"  color.white_balance_ecam:   {s['white_balance_ecam_now']} -> {s['white_balance_ecam_matching_zcam']}",
          f"  color.white_balance_hazcam: {s['white_balance_hazcam_now']} -> {s['white_balance_hazcam_matching_zcam']}"]
+    if s.get("processed_ratio_Z_over_N"):
+        L.insert(3, f"  in the processed images (balance, brightness and sun-angle scale as processed) Z / N: "
+                    f"{s['processed_ratio_Z_over_N']} - the difference a panorama shows")
     for k, v in s["by_sol_pair"].items():
         L.append(f"    {k}: {v['samples']} samples, chromaticity {v['chromaticity']}")
     return L

@@ -334,7 +334,9 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_defaults():
     import rpp
     cfg = rpp.load_config({})
-    assert cfg["color"]["brightness_by_family"] == {"N": 0.9}
+    assert cfg["color"]["brightness_by_family"] == {"N": 1.069, "F": 1.191, "R": 1.191, "Z": 1.0}
+    # 0.99.22: every balance with red = 1, the level in the brightness factors
+    assert all(cfg["color"][k][0] == 1.0 for k in ("white_balance_ecam", "white_balance_hazcam", "white_balance_zcam"))
     # the tests run with the selection rules off (conftest); the shipped defaults are these
     import rpp.config as c
     src = (ROOT / "src" / "rpp" / "config.py").read_text()
@@ -354,7 +356,7 @@ def test_brightness_lmst_and_saturation_rules(tmp_path):
     assert lmst_hours("Sol-01451M13:00:25.313") == pytest.approx(13.007, abs=1e-3) and lmst_hours(None) is None
     base = {"masking": {"infer_mask": False}, "selection": {"max_boresight_elevation_deg": None}}
     im = RPPImage(NLF, config_selection_off(base), wp)
-    assert im.brightness == 0.9 and im.meta["brightness"] == 0.9 and im.meta["saturated_fraction"] < 0.01   # well exposed
+    assert im.brightness == 1.069 and im.meta["brightness"] == 1.069 and im.meta["saturated_fraction"] < 0.01   # well exposed
     assert RPPImage(ZL0, config_selection_off(base), wp).brightness == 1.0
     dark = config_selection_off(dict(base, color={"brightness_by_family": {"N": 0.5}}))
     a = RPPImage(ZL0, config_selection_off(base), wp).image_int8.astype(int)
@@ -494,8 +496,7 @@ def test_hazcam_white_balance_is_its_own_and_only_hazcam_frames_are_made_again(t
     from rpp.process import reusable_images, _hazcam_balance_changed
     cfg = load_config()
     c = cfg["color"]
-    assert c["white_balance_ecam"] == [1.1, 1.4, 1.8] and c["white_balance_hazcam"] == [1.104, 1.4, 2.004]
-    assert abs(c["white_balance_hazcam"][2] / c["white_balance_ecam"][2] - 1.113) < 1e-3
+    assert c["white_balance_ecam"] == [1.0, 1.224, 1.569] and c["white_balance_hazcam"] == [1.0, 1.211, 1.663]
     assert load_config({"color": {"white_balance_hazcam": None}})["color"]["white_balance_hazcam"] is None
     old = json.loads(json.dumps(cfg))
     del old["color"]["white_balance_hazcam"]                                # a block of 0.97.14 and before
@@ -504,11 +505,11 @@ def test_hazcam_white_balance_is_its_own_and_only_hazcam_frames_are_made_again(t
     for stem in ("NLF_0052_0671564132_350RAD_N0032046NCAM00303_0A0195J01", "FLF_0052_0671563995_536RAD_N0032046FHAZ02003_0M0195J01",
                  "RLF_0052_0671563999_536RAD_N0032046RHAZ02003_0M0195J01"):
         (tmp_path / f"{stem}.png").write_bytes(b"x")
-        imgs.append({"source_product": f"{stem}.IMG", "outputs": {"png": f"{stem}.png"}, "white_balance": [1.1, 1.4, 1.8],
+        imgs.append({"source_product": f"{stem}.IMG", "outputs": {"png": f"{stem}.png"}, "white_balance": [1.0, 1.224, 1.569],
                      "mask": {"inferred": bool(cfg["masking"].get("infer_mask"))}, "site": 3, "drive": 2046})
     (tmp_path / f"mppp_manifest_{VERSION_TAG}.json").write_text(json.dumps({"images": imgs}))
     have, rep = reusable_images(tmp_path, cfg)
     assert list(have) == [imgs[0]["source_product"][:-4]] and not rep.get("reason")
     assert sorted(s[:1] for s in rep["white_balance_changed"]) == ["F", "R"]
-    assert not _hazcam_balance_changed(cfg, dict(imgs[1], white_balance=[1.104, 1.4, 2.004]))
+    assert not _hazcam_balance_changed(cfg, dict(imgs[1], white_balance=[1.0, 1.211, 1.663]))
     assert not _hazcam_balance_changed(load_config({"color": {"white_balance_hazcam": None}}), imgs[1])

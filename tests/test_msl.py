@@ -46,6 +46,10 @@ def test_the_block_is_the_richest_station_and_its_neighbors():
     a = np.linspace(100, 6000, 1000).reshape(10, 100)
     s = F.stretch8(a)
     assert s.dtype == np.uint8 and s.min() == 0 and s.max() == 255
+    # 0.99.22: 8 % brighter than the plain stretch, clipped at 255
+    plain = F.stretch8(a, brightness=1.0)
+    mid = (plain > 20) & (plain < 200)
+    assert F.BRIGHTNESS == 1.08 and abs(np.median(s[mid] / plain[mid]) - 1.08) < 0.02 and (s >= plain).all()
     pairs = F.stereo_baselines([{"pair_key": "p", "eye": "L", "image": "l.png", "C_enu_m": [0, 0, 0]},
                                 {"pair_key": "p", "eye": "R", "image": "r.png", "C_enu_m": [0.424, 0, 0]}],
                                {"l.png": np.zeros(3), "r.png": np.array([0.4, 0.0, 0.0])})

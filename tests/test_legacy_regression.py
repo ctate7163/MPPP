@@ -25,8 +25,11 @@ def test_matches_legacy(name, img):
     if not f.is_file():
         pytest.skip(f"{f.name} not present")
     old = np.load(f)
-    # the Navcam brightness factor (0.9) and the selection rules are newer than the legacy code; compare at 1.0
-    cfg = load_config({"masking": {"infer_mask": False}, "color": {"brightness_by_family": {"N": 1.0}},
+    # the brightness factors and the selection rules are newer than the legacy code; compare at 1.0 and with the
+    # balances the legacy code had (0.99.22 moved the engineering cameras' to red = 1)
+    cfg = load_config({"masking": {"infer_mask": False},
+                       "color": {"brightness_by_family": {"N": 1.0, "F": 1.0, "R": 1.0, "Z": 1.0},
+                                 "white_balance_ecam": [1.1, 1.4, 1.8], "white_balance_hazcam": None},
                        "selection": {"max_boresight_elevation_deg": None, "lmst_window_h": None,
                                      "max_saturated_fraction": None}})
     new = RPPImage(img, cfg, synthetic_waypoints())

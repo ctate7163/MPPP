@@ -513,7 +513,7 @@ def write_masks(work: Path, frames: List[Dict[str, Any]], mxy: Dict[str, Path], 
                 w.writerow(x)
         (cand / "README.txt").write_text(
             "Mask candidates for the training set (rpp_studies.msl.block, 0.99.5).\n"
-            f"model: {model}; images: MSL Navcam RAD, percentile stretch {F.STRETCH} to 8 bit, one band in R, G and B "
+            f"model: {model}; images: MSL Navcam RAD, percentile stretch {F.STRETCH} to 8 bit x {F.BRIGHTNESS:g}, one band in R, G and B "
             "(the network's input at inference), alpha 255.\n"
             "masks/: the CNN's mask, 255 = terrain, 0 = rover - to clean (e.g. in Metashape, as the M2020 set).\n"
             "mxy/: MIPL's rover mask (geometric: the pixel's stereo XYZ inside the rover volume; blocky, no shadows).\n"

@@ -1425,8 +1425,9 @@ def test_linear16_of_a_real_product_and_the_archive_lookup(tmp_path):
     assert i16.dtype == np.uint16 and i16.shape == i8.shape
     free = (i8 < 255).all(axis=2)
     assert np.abs(i16[free] / 64.0 - i8[free]).max() <= 0.51                   # the 8-bit image is the 16-bit one / 64 ...
-    assert 0.005 < facts["clipped_in_8bit_share"] < 0.05 and facts["clipped_in_16bit_share"] == 0     # ... clipped at 255
-    assert i16.max() > 255 * 64 and facts["white_balance"] == [1.1, 1.4, 1.8] and facts["saturated_share"] == sat.mean()
+    # ... clipped at 255 (0.99.22: 6.5 % of this frame with the Navcam 8 % brighter; it was 3.9 %)
+    assert 0.005 < facts["clipped_in_8bit_share"] < 0.08 and facts["clipped_in_16bit_share"] == 0
+    assert i16.max() > 255 * 64 and facts["white_balance"] == [1.0, 1.224, 1.569] and facts["saturated_share"] == sat.mean()
     # a plateau is saturation; a smooth highlight is not
     g = np.random.default_rng(0)
     raw = g.uniform(0.1, 0.8, (200, 300, 3))
@@ -2614,10 +2615,15 @@ def test_block_settings_reach_the_16bit_frames_and_the_terrain_is_reused(tmp_pat
     (blk / "processed" / "mppp_config_v0p97.json").write_text(json.dumps({"mppp_version": "0.97.4", "config": old}))
     got = L.block_config(SimpleNamespace(root=blk / "colmap", settings={}))
     assert got["color"]["brightness_by_family"]["N"] == 0.5                  # the block's own setting
+    old98 = json.loads(json.dumps(old))
+    old98["color"]["brightness_by_family"] = {"N": 0.9}                      # a block of before 0.99.22
+    (blk / "processed" / "mppp_config_v0p97.json").write_text(json.dumps({"mppp_version": "0.97.4", "config": old98}))
+    assert L.block_config(SimpleNamespace(root=blk / "colmap", settings={}))["color"]["brightness_by_family"] == {"N": 0.9}
+    (blk / "processed" / "mppp_config_v0p97.json").write_text(json.dumps({"mppp_version": "0.97.4", "config": old}))
     assert got["color"]["white_balance_hazcam"] is None                      # processed before the Hazcam balance
     (blk / "processed" / "mppp_config_v0p98.json").write_text(json.dumps({"config": cfg}))
     os_ = __import__("os"); os_.utime(blk / "processed" / "mppp_config_v0p98.json", (2e9, 2e9))
-    assert L.block_config(SimpleNamespace(root=blk / "colmap", settings={}))["color"]["white_balance_hazcam"] == [1.104, 1.4, 2.004]
+    assert L.block_config(SimpleNamespace(root=blk / "colmap", settings={}))["color"]["white_balance_hazcam"] == [1.0, 1.211, 1.663]
     src, out = tmp_path / "first", tmp_path / "second"
     src.mkdir()
     V, F = _terrain(n=5, size=4.0)

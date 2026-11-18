@@ -282,6 +282,8 @@ class Pipeline:
             extra = []
             if promote and int(z) in set(getattr(self.a, "zcam_waive_aspect", None) or []):
                 extra += ["--promote-waive", "per-block aspect vs the Navcam"]
+            if promote and int(z) in set(getattr(self.a, "zcam_one_block", None) or []):
+                extra += ["--min-blocks", "1"]          # 0.99.22: a zoom only one block has (26 mm at Chal Rocks)
             if int(z) in set(getattr(self.a, "zcam_aspect_hold", None) or []):
                 extra += ["--zcam-aspect", "1.0"]
             rc = self._rpp("zcam_joints", out, ["calib", "zcam", "--zoom", z, "--group", group, "--root", self.root,
@@ -520,6 +522,9 @@ def main(argv=None) -> int:
     ap.add_argument("--zcam-waive-aspect", type=int, nargs="*", default=[], metavar="ZOOM",
                     help="0.95.5 (8 Nov): these zooms' joints promote when the per-block aspect against the Navcam is "
                          "their only failed check (calib zcam --promote-waive)")
+    ap.add_argument("--zcam-one-block", type=int, nargs="*", default=[], metavar="ZOOM",
+                    help="0.99.22 (Christian, 18 Nov: \"Promote 26\"): these zooms' joints promote from a single block "
+                         "(calib zcam --min-blocks 1; the first model of a zoom otherwise needs two)")
     ap.add_argument("--zcam-aspect-hold", type=int, nargs="*", default=[], metavar="ZOOM",
                     help="0.95.5: these zooms' joints hold fy / fx at 1 (calib zcam --zcam-aspect 1.0)")
     ap.add_argument("--zcam-group", default=None, help="the Mastcam-Z sites (default zcam_consensus)")

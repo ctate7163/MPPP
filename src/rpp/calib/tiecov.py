@@ -56,6 +56,31 @@ def _point_block_inverse(Hpp, n_points: int, rel_damp: float = 1e-12, lm: float 
     return sp.bsr_matrix((Binv, np.arange(n_points), np.arange(n_points + 1)), shape=(3 * n_points, 3 * n_points)).tocsr()
 
 
+def eliminate_unit(A: np.ndarray, Bg: np.ndarray, tol: float = 1e-10):
+    """The ties of one unit, A t + Bg g = 0 (t: the unit's tangent columns, g: the globals), solved for t:
+    t = -M g + N w.  Returns (M (k x |g|), N (k x n: the unit's directions no tie holds, free), extra (rows x |g|:
+    constraints left on the globals alone, extra g = 0)).
+
+    0.99.22: a unit with fewer independent tie rows than columns - one angle of a rig unit tied, which touches all
+    three columns of its rotation - is solved in the least-norm sense and keeps its untied directions free.  Before, it
+    stopped the exact refinement ("LinAlgError: Last 2 dimensions of the array must be square", the rig_T Navcam joint's
+    diagnostic pass of 18 Nov) and the exact covariance ("a unit's tie Jacobian is rank-deficient").  A fully tied unit
+    is solved as before (QR)."""
+    A = np.atleast_2d(np.asarray(A, float))
+    Bg = np.atleast_2d(np.asarray(Bg, float))
+    m, k = A.shape
+    if m >= k:
+        Q, R = np.linalg.qr(A, mode="complete")
+        Rk = R[:k, :k]
+        if np.linalg.matrix_rank(Rk) == k:
+            M = np.linalg.solve(Rk, Q[:, :k].T @ Bg)
+            return M, np.zeros((k, 0)), (Q[:, k:].T @ Bg if m > k else np.zeros((0, Bg.shape[1])))
+    U, sv, Vt = np.linalg.svd(A, full_matrices=True)
+    r = int(np.sum(sv > tol * max(float(sv[0]) if sv.size else 0.0, 1e-300)))
+    M = Vt[:r].T @ ((U[:, :r].T @ Bg) / sv[:r, None])
+    return M, Vt[r:].T, U[:, r:].T @ Bg
+
+
 def exact_tie_covariance(prob, tie_ids: Sequence[Any], point_blocks: Sequence[np.ndarray],
                          free_blocks: Sequence[np.ndarray], global_blocks: Dict[str, np.ndarray],
                          apply_loss: bool = True, rel_damp: float = 1e-12) -> Dict[str, Any]:
@@ -150,20 +175,16 @@ def exact_tie_covariance(prob, tie_ids: Sequence[Any], point_blocks: Sequence[np
             u["rows"] += rws
             u["cols"].update(cs)
         tied_map: Dict[int, np.ndarray] = {}                  # unit column (in Cu numbering) -> row of -M (|g|)
+        null_dirs: List[Any] = []                             # (unit columns, direction): what no tie holds
         for u in units.values():
             cols = sorted(u["cols"])
             A = Cu[u["rows"]][:, cols].toarray()
             Bg = Cg[u["rows"]]
-            Q, R = np.linalg.qr(A, mode="complete")
-            k = len(cols)
-            Rk = R[:k, :k]
-            if np.linalg.matrix_rank(Rk) < k:
-                raise ValueError("a unit's tie Jacobian is rank-deficient")
-            M = np.linalg.solve(Rk, Q[:, :k].T @ Bg)          # t_u = -M g
+            M, N, extra = eliminate_unit(A, Bg)               # t_u = -M g + N w
             for j, c in enumerate(cols):
                 tied_map[c] = -M[j]
-            if A.shape[0] > k:                                # extra rows: constraints on the globals
-                gcons += list(Q[:, k:].T @ Bg)
+            null_dirs += [(cols, N[:, q]) for q in range(N.shape[1])]
+            gcons += list(extra)                              # constraints left on the globals
         ng = len(gidx)
         if gcons:
             G = np.array(gcons)
@@ -179,6 +200,11 @@ def exact_tie_covariance(prob, tie_ids: Sequence[Any], point_blocks: Sequence[np
         Trows, Tcols, Tvals = [], [], []
         for j, c in enumerate(untied):
             Trows.append(int(c)); Tcols.append(j); Tvals.append(1.0)
+        for cols_, vec in null_dirs:                          # an under-tied unit's free directions: more free columns
+            for j, cu in enumerate(cols_):
+                if vec[j] != 0.0:
+                    Trows.append(int(ucols_all[cu])); Tcols.append(nf); Tvals.append(float(vec[j]))
+            nf += 1
         Tg = Ng
         for i, c in enumerate(gidx):
             for jy in range(ky):
@@ -222,6 +248,7 @@ def exact_tie_covariance(prob, tie_ids: Sequence[Any], point_blocks: Sequence[np
         out["variance_factor"] = float(np.sum(res ** 2) / max(m - n_eff, 1))
         out["dims"] = {"rows": int(m), "points": npts, "free_columns": int(nf), "global_columns": int(ng),
                        "global_constraints": int(rank), "tied_columns": len(tied_map),
+                       "untied_directions": len(null_dirs),
                        "condition": float(w[-1] / w[0])}
     except Exception as e:                                     # noqa: BLE001
         out["error"] = f"{type(e).__name__}: {e}"

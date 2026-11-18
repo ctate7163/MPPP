@@ -185,7 +185,7 @@ def exact_tie_refine(prob, ties: Sequence[Dict[str, Any]], point_blocks: Sequenc
         Cg = Cr[:, np.where(gmask)[0]].toarray()
         Cu = Cr[:, ucols_all].tocsr()
         # unit columns grouped by tie rows (as in tiecov)
-        from .tiecov import exact_tie_covariance as _unused  # noqa: F401  (same structure)
+        from .tiecov import eliminate_unit                 # the same structure as the exact covariance
         rows_by_cols: Dict[tuple, List[int]] = {}
         for i in range(Cu.shape[0]):
             sl = slice(Cu.indptr[i], Cu.indptr[i + 1])
@@ -214,16 +214,15 @@ def exact_tie_refine(prob, ties: Sequence[Dict[str, Any]], point_blocks: Sequenc
             u["rows"] += rws
             u["cols"].update(cs)
         tied_map: Dict[int, np.ndarray] = {}
+        null_dirs: List[Any] = []
         for u in units.values():
             cols = sorted(u["cols"])
             A = Cu[u["rows"]][:, cols].toarray()
-            Q, R = np.linalg.qr(A, mode="complete")
-            k = len(cols)
-            M = np.linalg.solve(R[:k, :k], Q[:, :k].T @ Cg[u["rows"]])
+            M, N, extra = eliminate_unit(A, Cg[u["rows"]])     # 0.99.22: an under-tied unit keeps its free directions
             for j, c in enumerate(cols):
                 tied_map[c] = -M[j]
-            if A.shape[0] > k:
-                gcons += list(Q[:, k:].T @ Cg[u["rows"]])
+            null_dirs += [(cols, N[:, q]) for q in range(N.shape[1])]
+            gcons += list(extra)
         ng = len(gidx)
         if gcons:
             _, sv, Vt = np.linalg.svd(np.array(gcons), full_matrices=True)
@@ -235,6 +234,11 @@ def exact_tie_refine(prob, ties: Sequence[Dict[str, Any]], point_blocks: Sequenc
         untied = np.array([c for i, c in enumerate(ucols_all) if i not in tied_map], int)
         nf = len(untied)
         Tr, Tc, Tv = list(map(int, untied)), list(range(nf)), [1.0] * nf
+        for cols_, vec in null_dirs:                          # free columns of the under-tied units
+            for j, cu in enumerate(cols_):
+                if vec[j] != 0.0:
+                    Tr.append(int(ucols_all[cu])); Tc.append(nf); Tv.append(float(vec[j]))
+            nf += 1
         for i, c in enumerate(gidx):
             for jy in np.nonzero(Ng[i])[0]:
                 Tr.append(int(c)); Tc.append(nf + int(jy)); Tv.append(float(Ng[i, jy]))
