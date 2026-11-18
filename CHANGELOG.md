@@ -3,6 +3,33 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.21 — 2026-11-17 (branch `rpp`)
+
+A validation set for the rover-mask model from frames no model has trained on (Christian, 20:19: "prepare 100 images
+from the blocks that are not in the training set. Make sure these are representative and span the cameras, time of day
+and mission sol. I will spot clean the auto generated masks ... they will become a new validation dataset").
+
+- **`rpp_studies.mask_training.validation_set`** (`python -m ... --blocks --training --pds --out --models`):
+  - candidates: every image of the aligned blocks (`mars2020_sol_*\colmap\project.json`, Curiosity's
+    `msl_sol_*\manifest.json`);
+  - out: the training set's frames, and - unless a camera runs short - their stereo partners and every frame of a
+    sequence the training set has a frame of at the same station and sol;
+  - a quota per camera (`QUOTAS`: Navcam 28, Mastcam-Z 34 by zoom, front Hazcam 10, rear Hazcam 6, Curiosity Navcam
+    16 and front Hazcam 6), and within a camera the frames spread over sol, local time and pointing (farthest point
+    first), one frame per station and sequence, the eyes balanced;
+  - the images as the training set's (`regen_config`; Curiosity: the block's image);
+  - the guess: the mean terrain probability of the models above 0.5; where the models' own masks differ is drawn in
+    the review panels (`review\NNN_<stem>.jpg`, most disagreement first) and counted in `manifest.csv`;
+  - `masks\<stem>.png` is the file to clean: a rerun never replaces it (`--force` does); `masks_auto\` keeps the
+    guess. `--select-only` writes the selection without reading an image.
+  - On the 17 Nov blocks and the v8 training set (5,437 frames): 19,930 candidates, 2,334 of them training frames;
+    all 100 selected frames are independent of the training set, sols 9-2022, local time 6.2-17.8 h, 19 blocks.
+- **`compare_mask_models --all-frames [--frames-like REGEX]`**: every frame of `--data` as the test, for a validation
+  set kept out of all training; `--split-ckpt` is then not needed. Its tables name Curiosity's cameras apart
+  (`make_mask_figure.family`).
+- Not run with the models here (no GPU in the sandbox): the inference, the images and the review panels are first run on
+  the PC (`_transfer\make_mask_validation_set.bat`).
+
 ## 0.99.20 — 2026-11-17 (branch `rpp`)
 
 The station terrain of the panoramas (Christian, 14:16 / 14:39 / 14:41: "the rockytop 3d model did not capture the tall
