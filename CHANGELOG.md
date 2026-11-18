@@ -3,6 +3,29 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.24 — 2026-11-18 (branch `rpp`)
+
+- **MSL block: misplaced frames are taken out before the cameras are refined** (Christian, 08:49: "it seems like two
+  alignments are superimposed one on top of the other"). They were. In the sols 124-306 block the three stations of
+  sols 301-306 (site 6, drives 410, 422, 450; 67 Navcam frames; 18-21 m from the main station by the labels) were
+  registered 2-4 m from the main station, as one rigid group, and 81 single frames of other stations sat more than
+  1 m from their own station (27 more than 5 m). The labels are right (no missing site offset): the links are false.
+  `drop_misplaced` removes every registered frame more than 3 m (`MISPLACED_M`) from its label position after the
+  similarity onto the labels, the similarity is made again, and `report.txt` lists the stations; the verdict fails a
+  block that loses more than 10 % of its frames this way.
+- **MSL Navcam: k3 held at zero, p1 and p2 fitted** ("for msl ncam, keep k3=0 and fit the p1 and p2"): `HELD_ZERO`
+  holds index 8 too, and the held terms are set to zero at the start of `finish` (a held term kept its start value
+  before). Model form `msl-brown-v2`. The significance study still frees k3 for its question (`free_k3`).
+- **MSL front Hazcams: a verdict and model files of their own** ("are the fhaz msl cameras also promotable?"):
+  `report.json` carries `verdicts` per family, `cmods_candidate` gets the `MSL_F*` files, and `promote` takes each
+  family by its own verdict (`--promote-families`, default NF). The limits are the Navcams'.
+- **Freeze: 100 mm promotes from one block, with 26 mm** ("Promote 100 mm with 26"): `ONE_BLOCK = (26, 100)`.
+- **`rpp_studies.calibration.compare_tied`**: Navcam tied joints side by side (cost, residuals, the slopes S_fx,
+  S_fy, S_k1 with their errors), for the test of the focal slopes per axis against k1(T).
+- **`rpp_studies.misc.free_space`**: what takes the space in a blocks root (per category, block and folder; a
+  hard-linked frame counted once) and the removal of the COLMAP databases or the dense folders (`--delete ...
+  --confirm DELETE`; permanent; a list of what went is written).
+
 ## 0.99.23 — 2026-11-18 (branch `rpp`)
 
 - **MSL block: one wild point no longer decides the reprojection error** (Christian, 08:35: "are these ultra large

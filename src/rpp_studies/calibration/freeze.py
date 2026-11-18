@@ -88,7 +88,7 @@ TAG = "freeze_3"              # 0.98.15 (15 Nov): freeze-3 - the deck-joint rig,
 ZOOMS = (26, 34, 48, 63, 79, 100, 110)     # 0.98.15: 26 and 100 mm too (promoted from two blocks)
 LADDER_SITES = ("seitah_overlook",)       # 0.98.21: the states run for the sol 121 zoom ladder (step ladder)
 WAIVE_ASPECT = (63, 79, 110)          # Christian, 8 Nov: "update the z63, z79, z110 models that are good enough"
-ONE_BLOCK = (26,)                     # 0.99.22 (Christian, 18 Nov: "Promote 26"): 26 mm is in one block (Chal Rocks large)
+ONE_BLOCK = (26, 100)   # 0.99.22 ("Promote 26": one block, Chal Rocks large); 0.99.24 ("Promote 100 mm with 26")
 # 0.99.22: what a new, empty root needs from the old one - the Mastcam-Z backlash lists the blocks' focus states are
 # labeled from (rpp.sfm.backlash; they live next to the block folders and no freeze step makes them)
 ROOT_SEED_FILES = ("zcam_low_backlash_found.csv", "zcam_focus_from_below.csv")
@@ -1078,7 +1078,7 @@ def parser() -> argparse.ArgumentParser:
                     help="auto: a Python with a CUDA torch for the comparison")
     ap.add_argument("--zcam-waive-aspect", type=int, nargs="*", default=list(WAIVE_ASPECT), metavar="ZOOM")
     ap.add_argument("--zcam-one-block", type=int, nargs="*", default=list(ONE_BLOCK), metavar="ZOOM",
-                    help="0.99.22: the zooms whose joint promotes from a single block (default 26)")
+                    help="0.99.22: the zooms whose joint promotes from a single block (default 26 and 100)")
     ap.add_argument("--seed-from", default=None, metavar="ROOT",
                     help="0.99.22: a new root - the Mastcam-Z backlash lists (zcam_low_backlash_found.csv, "
                          "zcam_focus_from_below.csv) copied from this root when --root has none")

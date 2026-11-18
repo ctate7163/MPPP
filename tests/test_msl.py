@@ -132,7 +132,7 @@ def _synthetic_stereo_block(seed=2, pairs_per_side=8):
     import pycolmap
     rng = np.random.default_rng(seed)
     rec = pycolmap.Reconstruction()
-    true = np.array([1225., 1226., 507., 503., -0.02, 0.01, 1e-4, -2e-4, 0.005, 0, 0, 0])
+    true = np.array([1225., 1226., 507., 503., -0.02, 0.01, 1e-4, -2e-4, 0.0, 0, 0, 0])      # 0.99.24: k3 = 0, as held
     groups = {1: "NLA", 2: "NRA", 3: "NLB", 4: "NRB"}
     for cid in groups:
         cam = pycolmap.Camera.create_from_model_name(cid, "FULL_OPENCV", 1000., 1024, 1024); cam.params = true.copy()
@@ -186,7 +186,7 @@ def test_msl_block_stages_rigs_scale_verdict_and_promotion(tmp_path, monkeypatch
     rep = B.finish(rec, man, work, 1, [], max_error_m=0.5)
     assert rep["ok"] and list(rep["stages"]) == ["free", "rigs", "pp_check", "thermal"]
     for g, c in rep["cameras"].items():
-        assert c["refined"][2:4] == [507.0, 503.0] and c["refined"][9:] == [0.0, 0.0, 0.0]         # held
+        assert c["refined"][2:4] == [507.0, 503.0] and c["refined"][8:] == [0.0, 0.0, 0.0, 0.0]    # held (0.99.24: k3 too)
         assert abs(c["refined"][0] - true[0]) < 1.5 and abs(c["refined"][4] - true[4]) < 0.003
     assert set(rep["rigs"]) == {"NA", "NB"} and rep["rigs"]["NA"]["pairs"] == 8 and rep["rigs"]["NA"]["singles"] == 0
     for side in "AB":
@@ -203,7 +203,8 @@ def test_msl_block_stages_rigs_scale_verdict_and_promotion(tmp_path, monkeypatch
     files = sorted(f.name for f in (work / "cmods_candidate").iterdir())
     assert files == ["MSL_NA_rig.json", "MSL_NB_rig.json", "MSL_NLA.json", "MSL_NLB.json", "MSL_NRA.json", "MSL_NRB.json"]
     d = json.loads((work / "cmods_candidate" / "MSL_NLA.json").read_text())
-    assert d["held_params"] == ["cx", "cy", "k4", "k5", "k6"] and d["form"] == B.MODEL_FORM and "Brown" in d["distortion"]
+    assert d["held_params"] == ["cx", "cy", "k3", "k4", "k5", "k6"] and d["form"] == B.MODEL_FORM and "Brown" in d["distortion"]
+    assert rep["misplaced"]["frames"] == 0 and set(rep["verdicts"]) == {"N"} and rep["verdicts"]["N"] == rep["verdict"]
     r = json.loads((work / "cmods_candidate" / "MSL_NA_rig.json").read_text())
     assert abs(np.linalg.norm(r["t_sensor_from_ref_m"]) - r["baseline_m"]) < 1e-9 and (r["ref"], r["sensor"]) == ("NLA", "NRA")
     cm = tmp_path / "cmods"
@@ -418,3 +419,24 @@ def test_one_wild_point_does_not_decide_the_reprojection_error():
     assert runs[-1]["wild_points_dropped"] >= 1 and rec.num_points3D() <= n0 - 1 and pid not in rec.points3D
     assert np.isfinite(runs[-1]["reprojection_px"]) and runs[-1]["reprojection_px"] < 1.0
     assert B.WILD_ERROR_PX == 40.0
+
+
+def test_msl_misplaced_frames_leave_the_model_and_fail_a_block_with_many():
+    """0.99.24 (Christian, 18 Nov 2026: "it seems like two alignments are superimposed one on top of the other"): the
+    frames registered far from their label position (sols 301-306 of the Yellowknife block sat on the main station, 21 m
+    from their labels) are taken out before the cameras are refined, listed per station, and counted by the verdict."""
+    from rpp_studies.msl import block as B
+    rec, man, true, rel = _synthetic_stereo_block(pairs_per_side=4)
+    names = [r["image"] for r in man["images"]]
+    lab = {n: np.asarray(rec.image(i + 1).projection_center(), float) for i, n in enumerate(names)}
+    lab[names[0]] = lab[names[0]] + [20.0, 0, 0]
+    lab[names[5]] = lab[names[5]] + [0, 7.0, 0]
+    kept, info = B.drop_misplaced(rec, man, lab)
+    assert kept.num_reg_images() == 14 and len(kept.images) == 14 and info["frames"] == 2 and info["of"] == 16
+    assert info["stations"][0]["median_m"] in (20.0, 7.0) and {s["frames"] for s in info["stations"]} == {1}
+    assert names[0] not in {im.name for im in kept.images.values()}
+    same, none = B.drop_misplaced(kept, man, {n: lab[n] for n in names if n not in (names[0], names[5])})
+    assert none["frames"] == 0 and same is kept
+    v = B.verdict({"cameras": {}, "misplaced": {"frames": 30, "of": 200}}, {"cameras": {}})
+    assert any(c["what"] == "misplaced frames share" and not c["ok"] for c in v["checks"])
+    assert B.HELD_ZERO["FULL_OPENCV"] == (8, 9, 10, 11) and B.MODEL_FORM == "msl-brown-v2"
