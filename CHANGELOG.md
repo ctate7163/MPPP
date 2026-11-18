@@ -3,6 +3,19 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.28 — 2026-11-18 (branch `rpp`)
+
+- **Rockytop is one Mastcam-Z block again, aligned first** (Christian, 12:39: "For the zcam consensus, combine skinner
+  and wildcat ridge so that all the zcam images align in rockytop instead ... Start with aligning rockytop"). In
+  `sites.json`, `rockytop` covers sols 460-534 with every zoom of both ridges (34, 63, 79, 100 - Wildcat's sol 510
+  focus stack ZCAM00064 - and 110 mm with both ridges' `zcam_include` sequences), the exclusions they shared and
+  Skinner Ridge's Mastcam-Z position prior (0.02 m). It replaces `wildcat_ridge` and `skinner_ridge` in
+  `zcam_consensus` (first: the freeze's `zcam_runs` aligns it first), `zcam34_consensus`, `zcam79_consensus`,
+  `zcam110_consensus` and `freeze2_z110_without_marble`; the two ridge sites stay defined but are in no group.
+  ZCAM08530 and ZCAM08538 (63 mm) are in the block, low on the backlash list since 12 Nov.
+- Single-sites stations Sol0477_S026D1004 (Skinner Ridge) and Sol0502_S026D1222 (Wildcat Ridge) are unchanged: their
+  terrain is the Navcam Rockytop block, which now ends at sol 534 instead of 530.
+
 ## 0.99.27 — 2026-11-18 (branch `rpp`)
 
 - **Station mesh of a Mastcam-Z run: the Mastcam-Z frames first** (Christian, 12:31: "For the z34 runs, the texture
