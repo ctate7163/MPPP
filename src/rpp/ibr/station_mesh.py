@@ -28,7 +28,9 @@ held within 1 m of the pivot.
 * a triangle is textured when it can be seen from somewhere within ``VIEW_RADIUS_M`` of the pivot (from the pivot and
   from ``VIEWPOINTS`` points on spheres of 0.5 and 1 m about it, those inside the model left out) - the space the
   viewer may move in - and the Navcam frames (``ROVER_FAMILIES``) color it; it gets a cell of the ``ROVER_TEXTURE_PX``
-  texture, colored as the terrain's cells are;
+  texture, colored as the terrain's cells are.  In a Mastcam-Z run (0.99.27) the Mastcam-Z frames color it first and
+  the Navcam frames where they do not (:func:`rover_families`); the terrain of such a run is the same: the Mastcam-Z
+  frames are its regular sources, the Navcam and front Hazcam frames fill in as the Mastcam-Z frames' weight goes out;
 * the other triangles are the rover gray of the panoramas, shaded a little by their slope.
 
 The two runs write ``<prefix>_station_mesh_terrain.npz`` / ``.jpg`` / ``.json`` and ``<prefix>_rover_station_mesh_rover...``
@@ -470,10 +472,22 @@ def viewpoints(pivot, radius_m: float = VIEW_RADIUS_M, n: int = VIEWPOINTS) -> n
     return np.concatenate([P[None], P + 0.5 * radius_m * d, P + radius_m * d])
 
 
+def rover_families(sources) -> str:
+    """The frames that color the rover: the Navcams, and the run's own cameras when they are others (0.99.27,
+    Christian, 18 Nov 2026: "For the z34 runs, the texture should come from the Z34 and the ncam with preferences to
+    the z34" - in a Mastcam-Z run its frames are the regular sources and the Navcam frames the fill-only ones, which
+    come in only as the Mastcam-Z frames' weight goes out)."""
+    own = "".join(sorted({s.name[:1] for s in sources if not getattr(s, "fill_only", False) and s.name}))
+    return ROVER_FAMILIES + "".join(f for f in own if f not in ROVER_FAMILIES and f != "F" and f != "R")
+
+
 def rover_part(scene, sources, station, pool=None, size: int = ROVER_TEXTURE_PX, view_radius_m: float = VIEW_RADIUS_M,
-               families: str = ROVER_FAMILIES, linear: bool = False, rows_per_chunk: int = 128) -> Dict[str, Any]:
-    """The rover model and its texture (see the module): {"V", "F", "uv", "texture", "record"}."""
+               families: Optional[str] = None, linear: bool = False, rows_per_chunk: int = 128) -> Dict[str, Any]:
+    """The rover model and its texture (see the module): {"V", "F", "uv", "texture", "record"}.  ``families``: the
+    frames that color it (default :func:`rover_families`)."""
     t0 = time.time()
+    if families is None:
+        families = rover_families(sources)
     rt = getattr(scene, "rover_triangles", None)
     if rt is None:
         raise ValueError("station mesh: the scene holds no rover model (rpp mesh --rover)")

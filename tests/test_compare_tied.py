@@ -5,8 +5,8 @@ def test_compare_tied_reads_cost_and_slopes(tmp_path, capsys):
     """0.99.24: the fx/fy against k1(T) test is read off one table of the joints."""
     from rpp_studies.calibration import compare_tied as C
     for name, cost, k1 in (("a", 45780.4, -1.33e-5), ("b", 45929.9, 0.0)):
-        d = tmp_path / name
-        d.mkdir()
+        d = tmp_path / name / ("navcam_joint" if name == "b" else "")      # 0.99.27: where rpp calib navcam writes it
+        d.mkdir(parents=True)
         eye = {"fx_ppm_per_degC": 38.5, "fy_ppm_per_degC": 38.5, "k1_per_degC": k1,
                "sd": {"fx_ppm_per_degC": 0.9, "fy_ppm_per_degC": 0.9, "k1_per_degC": 7e-7}}
         (d / "tied_joint.json").write_text(json.dumps({"final_cost": cost, "residuals": {"median_px": 0.1267, "rms_px": 0.2649},

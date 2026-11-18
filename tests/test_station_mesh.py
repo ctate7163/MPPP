@@ -74,7 +74,11 @@ def test_rover_textured_where_seen_within_1m_and_the_glb(tmp_path):
     src = O.station_sources(proj, rec, st, scale=1.0)
     rp = SM.rover_part(sc, src, st, size=512)
     r = rp["record"]
-    assert r["triangles"] == 12 and 0 < r["textured_triangles"] < 12 and r["viewpoints"] >= 60
+    assert r["triangles"] == 12 and 0 < r["textured_triangles"] < 12 and r["viewpoints"] >= 60 and r["families"] == "N"
+    for s in src[:2]:                                   # 0.99.27: a Mastcam-Z run - its frames first, the Navcams fill
+        s.name = "Z" + s.name[1:]
+    src[2].fill_only = True
+    assert SM.rover_families(src) == "NZ"
     to8 = lambda a: np.clip(np.rint(a), 0, 255).astype(np.uint8)
     tp = SM.terrain_part(sc, src, st, size=512, target=5000)
     (tmp_path / "st" / "with_rover").mkdir(parents=True)

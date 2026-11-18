@@ -3,6 +3,16 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.27 — 2026-11-18 (branch `rpp`)
+
+- **Station mesh of a Mastcam-Z run: the Mastcam-Z frames first** (Christian, 12:31: "For the z34 runs, the texture
+  should come from the Z34 and the ncam with preferences to the z34"). The terrain already was (the run's regular
+  sources are the 34 mm frames, the Navcam and front Hazcam frames fill in as their weight goes out); the rover was
+  colored by the Navcams alone and is now colored by the run's own cameras and the Navcams, the Navcams as fill
+  (`station_mesh.rover_families`).
+- `compare_tied` finds `tied_joint.json` in a joint's `navcam_joint` subfolder, where `rpp calib navcam` writes it
+  (`ncam_fxfy_k1T_test.bat` found none and wrote no table).
+
 ## 0.99.26 — 2026-11-18 (branch `rpp`)
 
 - **The station as a textured 3D surface, and the viewer's fourth mode "3D terrain and rover"** (Christian, 11:54 and
