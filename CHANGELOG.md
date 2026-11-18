@@ -3,6 +3,13 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.29 — 2026-11-18 (branch `rpp`)
+
+- **single-sites skips a station whose block has not finished its alignment** (Christian, 13:36: "The next ods should
+  use the post freeze blocks. Skip an ods site if the block has not aligned yet"): a block without
+  `colmap/run_done.json` in the root is reported and left out (`--any-block`: run it anyway). With
+  `--root D:\rover_blocks_f3` the panoramas come from the freeze-3 blocks.
+
 ## 0.99.28 — 2026-11-18 (branch `rpp`)
 
 - **Rockytop is one Mastcam-Z block again, aligned first** (Christian, 12:39: "For the zcam consensus, combine skinner

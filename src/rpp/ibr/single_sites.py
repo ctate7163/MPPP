@@ -200,6 +200,11 @@ def frame_args(frames: Dict[str, Any]) -> List[str]:
     return out
 
 
+def block_aligned(work: PathLike) -> bool:
+    """0.99.28: the block has finished its alignment (``colmap/run_done.json``)."""
+    return (Path(work) / "colmap" / "run_done.json").is_file()
+
+
 def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = None, labels: Optional[Sequence[str]] = None,
          steps: Sequence[str] = STEPS, variants: Optional[Sequence[str]] = None, ods_width: Optional[int] = None,
          rover_surface: bool = False, station_mesh: Union[bool, str] = False) -> List[Dict[str, Any]]:
@@ -573,6 +578,8 @@ def add_parser(sub) -> None:
     p.add_argument("--station-mesh-only", action="store_true",
                    help="0.99.26: only the station meshes of stations whose panoramas exist (rpp ods --station-mesh-only "
                         "for each variant, then the .glb; with --publish / --upload the fourth mode is published)")
+    p.add_argument("--any-block", action="store_true",
+                   help="0.99.28: run stations whose block has not finished its alignment too (default: skipped)")
     p.add_argument("--list", action="store_true", help="the stations of the config")
     p.add_argument("--dry-run", action="store_true", help="the commands, not run")
     p.add_argument("--install", metavar="DIR", default=None, help=f"write {BAT_NAME} (and make_square.bat) into DIR and stop")
@@ -596,6 +603,13 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
     runs = plan(cfg, root, out_root, a.labels, a.steps, a.variants, ods_width=a.width,
                 rover_surface=getattr(a, "rover_surface", False),
                 station_mesh="only" if getattr(a, "station_mesh_only", False) else getattr(a, "station_mesh", False))
+    if not getattr(a, "any_block", False):                      # 0.99.28 (Christian, 18 Nov 2026: "The next ods should use
+        late = [r for r in runs if not block_aligned(r["work"])]   # the post freeze blocks. Skip an ods site if the block
+        for r in late:                                          # has not aligned yet")
+            print(f"single-sites: {r['label']} skipped - its block {r['work']} has not finished its alignment (no colmap\\run_done.json)")
+        runs = [r for r in runs if r not in late]
+        if late:
+            print(f"single-sites: {len(runs)} station(s) to run, {len(late)} skipped for blocks not aligned yet")
     if a.dry_run:
         for r in runs:
             print(f"{r['label']}: {r['work']} -> {r['out']}")
