@@ -3,6 +3,19 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.23 — 2026-11-18 (branch `rpp`)
+
+- **MSL block: one wild point no longer decides the reprojection error** (Christian, 08:35: "are these ultra large
+  numbers for p1, p2 at the label in msl a bug?"). Yes. A point that ends almost in a camera's plane gets about
+  1e150 px from the Brown polynomial (k3 r^6), and the reported error is a plain mean over the points. In the sols
+  124-306 block it gave "refine rigs round 2: 1.1e149 px", failed the verdict ("reprojection rise with the rigs and
+  temperature bins = 4.5e149") - so nothing was promoted - and showed as 5e147 px in two lines of the significance
+  study. The per-camera residuals were 0.65-0.93 px throughout. `refine_cameras` now takes points with a mean error
+  above `WILD_ERROR_PX` (40 px) or not finite out of the model after every adjustment, the last round too, and
+  reports how many (`wild_points_dropped`, in the report's round lines).
+- The block's cameras, rigs and the significance study's per-camera results were not affected; the verdict was.
+  `msl_yellowknife_0p99p18.bat finish --sols 124 306` makes the stages and the verdict again from the aligned model.
+
 ## 0.99.22 — 2026-11-18 (branch `rpp`)
 
 For freeze-3 (Christian, 18 Nov 07:01: "keep k1 temp on ncam ... Promote 26 and hazcam. Fix the bug and look for other

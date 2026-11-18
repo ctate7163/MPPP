@@ -573,6 +573,23 @@ def prepare(work: Path, data: Path, preset: Dict[str, Any], camera: str = "openc
 
 
 # ------------------------------------------------------------------------------------------------- align
+# 0.99.23: a point whose mean reprojection error is above this (or not finite) after an adjustment is taken out of the
+# model.  The Brown polynomial (k3 r^6) of a point that ends almost in a camera's plane gives 1e150 px; the mean
+# reprojection error is a plain mean, so ONE such point made the sols 124-306 block report 1.1e149 px for its rig
+# stage, failed its verdict ("reprojection rise ... = 4.5e149") and showed as 5e147 px in the significance study -
+# with per-camera residuals of 0.65-0.93 px all along (Christian, 18 Nov: "are these ultra large numbers ... a bug?")
+WILD_ERROR_PX = 40.0
+
+
+def drop_wild_points(rec, cap_px: float = WILD_ERROR_PX) -> int:
+    """The points with a mean reprojection error above ``cap_px`` or not finite deleted from ``rec`` (its errors up to
+    date: ``update_point_3d_errors`` first).  Returns how many."""
+    bad = [int(pid) for pid, p in rec.points3D.items() if not np.isfinite(p.error) or p.error > cap_px]
+    for pid in bad:
+        rec.delete_point3D(pid)
+    return len(bad)
+
+
 def refine_cameras(rec, man: Dict[str, Any], rounds: int = 2, max_error_px: float = 4.0, hold_pp: bool = False,
                    rigs: bool = False, only: Optional[Sequence[int]] = None,
                    extra_const: Optional[Dict[int, Sequence[int]]] = None, skip_images: Sequence[int] = ()) -> List[Dict[str, Any]]:
@@ -615,9 +632,11 @@ def refine_cameras(rec, man: Dict[str, Any], rounds: int = 2, max_error_px: floa
         del held
         rec.update_point_3d_errors()                           # 0.99.17: the stored errors are the mapper's until refreshed -
         n_drop = 0                                             # compute_mean_reprojection_error() reads them
+        n_wild = drop_wild_points(rec)                         # 0.99.23: in every round, the last too
         if k < rounds - 1:
             n_drop = int(pycolmap.ObservationManager(rec).filter_all_points3D(float(max_error_px), 1.5))
         out.append({"round": k + 1, "reprojection_px": float(rec.compute_mean_reprojection_error()), "dropped": n_drop,
+                    "wild_points_dropped": n_wild,
                     "hold_pp": bool(hold_pp), "rigs": bool(rigs),
                     "cost": [float(getattr(summ, "initial_cost", float("nan"))), float(getattr(summ, "final_cost", float("nan")))]})
     return out
@@ -1492,7 +1511,8 @@ def report_text(man: Dict[str, Any], rep: Dict[str, Any]) -> str:
             lines.append(f"{k}: scale {s['scale']:.4f}, label centers off by median {s['median_m']:.3f} m, 95 % {s['p95_m']:.3f}, "
                          f"max {s['max_m']:.3f}")
     for r in rep.get("refine") or []:
-        lines.append(f"refine {r.get('stage', '')} round {r['round']}: reprojection {r['reprojection_px']:.3f} px, dropped {r['dropped']}")
+        lines.append(f"refine {r.get('stage', '')} round {r['round']}: reprojection {r['reprojection_px']:.3f} px, dropped {r['dropped']}"
+                     + (f", {r['wild_points_dropped']} wild point(s) (> {WILD_ERROR_PX:g} px) taken out" if r.get("wild_points_dropped") else ""))
     st = rep.get("stages") or {}
     if st:
         lines.append("stages (principal points held in 1 and 2): " + "; ".join(
