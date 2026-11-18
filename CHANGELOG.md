@@ -3,6 +3,14 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.31 — 2026-11-18 (branch `rpp`)
+
+- **26 and 100 mm bins need 100 observations, not 1000, to be tied to the lines** (Christian, 15:17: "lower the
+  1,000-observation minimum per bin for 100 mm and 26 mm"): `ztied.MIN_BIN_OBSERVATIONS_BY_ZOOM = {26: 100, 100: 100}`.
+  The 18 Nov Z100 joint had all 10 bins under 1000 (15-315 observations), so no line was fitted.
+- **`seq:ZCAM03022` in `rpp/data/exclude_images.txt`** ("add ZCAM03022 to the exclude list. Those z100 images are not
+  usable"): left out of every alignment.
+
 ## 0.99.30 — 2026-11-18 (branch `rpp`)
 
 - **48 mm high / low ratio held at the 34 mm model's** (Christian, 14:48: "Hold z48 ratio to z34 high low ratio"):

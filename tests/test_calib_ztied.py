@@ -1278,3 +1278,18 @@ def test_48mm_ratio_held_at_the_34mm_models(tmp_path, monkeypatch):
     assert Z.set_ratio_holds({"eyes": {"ZL063": {}}, "low_images": {"ZL063": 200}}, 63, verbose=False) == {}
     (cm / "M2020_ZCAM034_focus_model.json").write_text(json.dumps({"cameras": {}}))
     assert Z.set_ratio_holds({"eyes": {"ZL048": {}}, "low_images": {"ZL048": 200}}, 48, verbose=False) == {}
+
+
+def test_bin_minimum_lower_at_26_and_100mm():
+    """0.99.31 (Christian, 18 Nov 2026: "lower the 1,000-observation minimum per bin for 100 mm and 26 mm")."""
+    from rpp_studies.calibration import ztied as Z
+    assert Z.min_bin_observations(100) == 100 and Z.min_bin_observations(26) == 100
+    assert Z.min_bin_observations(34) == Z.MIN_BIN_OBSERVATIONS == 1000 and Z.min_bin_observations(None) == 1000
+
+
+def test_zcam03022_excluded_everywhere():
+    """0.99.31 (Christian, 18 Nov 2026: "add ZCAM03022 to the exclude list. Those z100 images are not usable")."""
+    from pathlib import Path
+    import rpp
+    txt = (Path(rpp.__file__).parent / "data" / "exclude_images.txt").read_text(encoding="utf-8")
+    assert any(l.split("#")[0].strip() == "seq:ZCAM03022" for l in txt.splitlines())

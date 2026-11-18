@@ -82,6 +82,14 @@ MIN_LOW_IMAGES = 6                     # (Christian, 27 Oct: "under ~6"; Z63 has
 # observations, fy / fx 1.7 % and 4.5 % off
 MIN_BIN_OBSERVATIONS = 1000                 # (Christian, 27 Oct: 500 -> 1000 - Seitah Overlook's ZR048 high-state bin,
 # 959 observations, fx 6547 / fy 6836, passed 500)
+# 0.99.31 (Christian, 18 Nov 2026: "lower the 1,000-observation minimum per bin for 100 mm and 26 mm"): the zooms with
+# few frames - the 18 Nov Z100 joint had all 10 bins under 1000 (15-315 observations) and fitted no line
+MIN_BIN_OBSERVATIONS_BY_ZOOM = {26: 100, 100: 100}
+
+
+def min_bin_observations(zoom: Optional[int]) -> int:
+    """The observations a bin camera needs to be tied to the lines at ``zoom``."""
+    return int(MIN_BIN_OBSERVATIONS_BY_ZOOM.get(int(zoom), MIN_BIN_OBSERVATIONS)) if zoom is not None else int(MIN_BIN_OBSERVATIONS)
 RATIO_HOLD_ZOOM = 34
 # 0.99.30 (Christian, 18 Nov 2026: "Hold z48 ratio to z34 high low ratio"): the zooms whose high / low ratio is always
 # held at the 34 mm model's of the same side (ZL034 for ZL048), however many low-state images they have.  At 48 mm the
@@ -323,6 +331,7 @@ def build(blocks: Dict[str, PathLike], model: Dict[str, Any], navcam_dir: Option
             fid = rec.images[int(r["image_id"])].frame_id
             if fid in rec.frames and rec.frames[fid].has_pose:
                 rec.deregister_frame(fid)
+    sg["zoom"] = int(zoom)
     mark_thin_bins(rec, proj, zunits, sg)          # 0.94.5
     sg["weak_sequences"] = weak_sequences(rec, zunits)                          # 0.96 (item F)
     return rec, proj, idx, st, units, zunits, sg
@@ -389,7 +398,8 @@ def mark_thin_bins(rec, proj, zunits: Dict[int, Dict[str, Any]], sg: Dict[str, A
     """0.94.5: the bin cameras with fewer than ``min_obs`` (:data:`MIN_BIN_OBSERVATIONS`) observations in the joint
     get ``thin`` - left out of the ties (fx, fy free, the principal point and distortion held at the start); then
     ``sg["low_images"]`` {eye: low-state images of the bins kept} and ``sg["thin_bins"]`` [names]."""
-    min_obs = MIN_BIN_OBSERVATIONS if min_obs is None else int(min_obs)
+    min_obs = min_bin_observations(sg.get("zoom")) if min_obs is None else int(min_obs)
+    sg["min_bin_observations"] = int(min_obs)
     obs: Dict[int, int] = {}
     for pt in rec.points3D.values():
         for el in pt.track.elements:
@@ -2044,7 +2054,7 @@ def fit_zjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = No
     res["split_cameras_left_out"] = list(sg.get("split_cameras_left_out") or [])
     res["low_cameras_not_on_list"] = list(sg.get("low_cameras_not_on_list") or [])
     res["thin_bins"] = list(sg.get("thin_bins") or [])          # 0.94.5
-    res["min_bin_observations"] = int(MIN_BIN_OBSERVATIONS)
+    res["min_bin_observations"] = int(sg.get("min_bin_observations") or min_bin_observations(zoom))
     res["found_list"] = sg.get("found_list")
     res.update({"zoom": zoom, "blocks": sorted({u["scape"] for u in zunits.values()}), "residuals": stats,
                 "zcam": _zstats(rec, zunits, proj.images), "rig": rig_result(proj, sg, zoom, ba), "final_cost": float(ba["final_cost"]),
@@ -2700,7 +2710,7 @@ def describe(res: Dict[str, Any]) -> List[str]:
                    + (f"; high / low ratio held at {e['ratio_hold']:.4f} ({e.get('ratio_hold_source')}: {e.get('low_images', 0)} "
                       + ("low-state images)" if e.get("ratio_hold_forced") else f"low-state images < {MIN_LOW_IMAGES})")
                       if e.get("ratio_hold") else "")
-                   + (f"; {e['thin_bins']} bins with < {MIN_BIN_OBSERVATIONS} observations left out" if e.get("thin_bins") else "")
+                   + (f"; {e['thin_bins']} bins with < {res.get('min_bin_observations') or MIN_BIN_OBSERVATIONS} observations left out" if e.get("thin_bins") else "")
                    + ("" if "d_cx_regular" in e.get("held", []) else
                       f"; low-state principal point {f('d_cx_regular')}, {f('d_cy_regular')} px from the high "
                       f"state's (" + (f"{e.get('paired_low_exposures', 0)} low-state exposures paired with ZL"
