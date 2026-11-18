@@ -3,6 +3,63 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.27 — 2026-11-18 (branch `rpp`)
+
+- **Station mesh of a Mastcam-Z run: the Mastcam-Z frames first** (Christian, 12:31: "For the z34 runs, the texture
+  should come from the Z34 and the ncam with preferences to the z34"). The terrain already was (the run's regular
+  sources are the 34 mm frames, the Navcam and front Hazcam frames fill in as their weight goes out); the rover was
+  colored by the Navcams alone and is now colored by the run's own cameras and the Navcams, the Navcams as fill
+  (`station_mesh.rover_families`).
+- `compare_tied` finds `tied_joint.json` in a joint's `navcam_joint` subfolder, where `rpp calib navcam` writes it
+  (`ncam_fxfy_k1T_test.bat` found none and wrote no table).
+
+## 0.99.26 — 2026-11-18 (branch `rpp`)
+
+- **The station as a textured 3D surface, and the viewer's fourth mode "3D terrain and rover"** (Christian, 11:54 and
+  11:57: "a simplified medium poly mesh of the 10m radius area to be textured. The texture should be 8kx8k and
+  projected onto the terrain largely from the perspective of the viewer ... the texture projection center might be
+  better a little above the pivot point without the rover. Add this as a fourth mode in rpv as 3D terrain and rover.
+  It should include the 3D rover. The 3D rover surfaces should be textured if they are visible anywhere from 1m of
+  the pivot and viewed by the ncams"). New `rpp.ibr.station_mesh`:
+  - the terrain: the station mesh within 10 m of the mast axis, without the rover model, simplified to about
+    300,000 triangles; an 8192 x 8192 texture in which a texel is a direction from 0.5 m above the pivot (azimuthal
+    equidistant about straight down: equal angles per texel, so the near ground gets the most texels per square meter;
+    no seam). Triangles that point cannot see, or sees edge on, get cells of their own in the corners outside the disc,
+    colored from the frames that see them. Every texel is the panorama's blend (`rpp.ibr.ods.shade_rays`); what no
+    frame colors is filled from around it;
+  - the rover: the Perseverance model's triangles that can be seen from within 1 m of the pivot (the pivot and 64
+    points on spheres of 0.5 and 1 m, those inside the model left out) get cells of a 4096 x 4096 texture colored by
+    the Navcam frames; the rest are the rover gray, shaded by slope;
+  - `rpp ods --station-mesh` makes the run's part (the terrain with the rover masked, the rover with `--rover`) while
+    its sources and render processes are there; `--station-mesh-only` the part alone, without a panorama;
+    `python -m rpp.ibr.station_mesh FOLDER` (and single-sites at its end) puts both into `<station>_station_mesh.glb`
+    (two textured meshes, meters about the pivot, the viewer's frame);
+  - single-sites asks every ods run for its part (`--no-station-mesh`: not); `--station-mesh-only` makes only the
+    station meshes of stations that have their panoramas;
+  - the viewer (`docs/ods/index.html`): the fourth variant shows the mesh in front of the terrain-only panorama, which
+    is its backdrop beyond 10 m; head motion is held within 1 m (`move_limit_m`) of where the mode started - beyond it
+    the surface comes along.
+- `rpp.ibr.ods.shade_rays`: the blend for any rays (`render_rows` is the panorama's rays and it); the render pool
+  runs texture bands too (`RenderPool.run`).
+
+## 0.99.25 — 2026-11-18 (branch `rpp`)
+
+- **The panorama render on several cores, the memory shared** (Christian, 11:17: "rewrite the ibr ods pipeline to
+  use multiple cores. Share memory between the workers"). New `rpp.ibr.parallel`: a panorama eye is rendered in bands
+  of rows (`rpp.ibr.ods.render_rows`, the old loop's body), and `RenderPool` gives the bands to worker processes.
+  The sources' pixels (image, low band, edge distance, saturation, rover mask) are computed once, on threads, into
+  one block of shared memory that every worker maps - no worker holds a copy of an image - and the pool lives for
+  all the eyes of a render, so the sources are read and blurred once, not once per eye. The surface's arrays are
+  shared too; each worker builds its own ray-casting structure from them (one thread each). The bands come back
+  through shared memory. The picture is the same bit for bit (tested against one process and against 0.99.24, 8- and
+  16-bit). A pool that fails leaves the render to the parent process, with a line in the log.
+  Workers: `--workers N` of `rpp ods` (`render_station(workers=)`), else `RPP_IBR_WORKERS`, else half the logical
+  processors, at most 8; 1 is the old path. `ods.json` records `render_processes`; the log gives, per eye, the bands'
+  time against the wall time.
+- `SourceImage.sample` no longer makes a float copy of the whole image for every band and source (the 8-bit image is
+  interpolated straight into float32: the same numbers).
+- `Scene.state` / `Scene.from_state`, `Scene.nthreads`.
+
 ## 0.99.24 — 2026-11-18 (branch `rpp`)
 
 - **MSL block: misplaced frames are taken out before the cameras are refined** (Christian, 08:49: "it seems like two

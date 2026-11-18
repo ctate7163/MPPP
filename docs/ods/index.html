@@ -34,7 +34,9 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
   The 3D rover is set again at the eyes' center whenever the station, the variant or the view changes and when R
   shows it.
   O = straight ahead of the rover (its +x, level); the N E S W O cross is at the upper right.
-  (terrain only, terrain with rover (projected), terrain with rover (3D model)).
+  (terrain only, terrain with rover (projected), terrain with rover (3D model), 3D terrain and rover).
+  0.99.26: 3D terrain and rover - the terrain within 10 m and the rover as textured surfaces (true parallax), the
+  terrain-only panorama beyond; the head may move 1 m from where the mode started, then the surface comes along.
 -->
 <style>
   html, body { margin: 0; height: 100%; background: #000; color: #eee; font: 14px/1.4 system-ui, sans-serif; overflow: hidden; }
@@ -417,7 +419,7 @@ function showWelcome(on) {
                                  { text: 'Mars 2020 Perseverance rover', px: 120, weight: 700 }]), WELCOME_AZ_DEG, 14, 5, 4.2));
     welcome.add(place(textPanel([{ text: 'trigger: next site   |   left trigger: back   |   stick: turn', px: 84, weight: 600 },
                                  { text: 'X: info and map   |   Y: home   |   A: view', px: 84, weight: 600 },
-                                 { text: 'B: terrain only (again: color skin)   |   grip: rover on, off or 3D', px: 84, weight: 600 }],
+                                 { text: 'B: terrain only (again: color skin)   |   grip: rover on, off, 3D, 3D terrain', px: 84, weight: 600 }],
                                 { back: 'rgba(0,0,0,0.35)', uniform: true }), WELCOME_AZ_DEG, -6, 5, 3.6));   // 0.99.14: one size
   }
   welcome.visible = !!on;
@@ -610,7 +612,9 @@ async function show() {
     texture = t;
     material.map = t; material.color.set(0xffffff); material.needsUpdate = true;
     showMark(/^(standard|enhanced)/.test(names[cur.w]) ? vr.ground_mark : null);   // not over the range and normal views
-    showRover(/^(standard|enhanced)/.test(names[cur.w]) ? vr.rover_surface : null);
+    // 0.99.26: the fourth mode, "3D terrain and rover" - the station mesh (terrain within 10 m and the rover,
+    // textured: rpp.ibr.station_mesh) in front of the terrain-only panorama, its backdrop beyond 10 m
+    showRover(/^(standard|enhanced)/.test(names[cur.w]) ? (vr.station_mesh || vr.rover_surface) : null);
     // 0.99.15 (Christian, 17 Nov 2026: "the north direction should be preserved when moving from site to site. I noticed
     // this looks rotated for the welcome screen compared to the van zyl site"): until now every panorama set its own start
     // heading (west for the welcome view, yaw_deg or north for a station), so a change of station turned the world under
@@ -863,6 +867,18 @@ function turnMarkText() {                                        // the ring's t
   d = Math.atan2(Math.sin(d), Math.cos(d));
   markOuter.rotation.z += d * 0.15;                              // eased: it does not twitch with the head
 }
+// 0.99.26 (Christian, 18 Nov 2026: head motion "held within 1 m of the pivot"): in the station-mesh mode the textured
+// surface comes along when the head goes farther than move_limit_m from where it was anchored, so the viewer stays in
+// the space every surface was textured for
+const offHead = new THREE.Vector3();
+function holdNearPivot() {
+  const vr = (variants(panos[cur.s] || {})[cur.v]) || {}, sm = vr.station_mesh;
+  if (!sm || !anchored) return;
+  const lim = sm.move_limit_m > 0 ? sm.move_limit_m : 1.0;
+  offHead.subVectors(head, fixed.position);
+  const L = offHead.length();
+  if (L > lim) fixed.position.addScaledVector(offHead, (L - lim) / L);
+}
 renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
   lookByKeys(dt);
@@ -871,6 +887,7 @@ renderer.setAnimationLoop(() => {
     renderer.xr.getCamera().getWorldPosition(head);              // stereo pair has no parallax to give for head movement
     world.position.copy(head);
     if (!anchored) { fixed.position.copy(head); anchored = true; }   // the rover surface stays there: it has parallax
+    holdNearPivot();
     buttons(dt);
   } else {                                                       // on a screen: ?head=x,y,z (m: east, up, south) moves the eye off
     camera.position.copy(headOffset);                            // the pivot, to look at the 3D rover's parallax (0.98.14)

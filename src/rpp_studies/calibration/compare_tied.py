@@ -38,9 +38,18 @@ def _find(d: Any, test) -> Optional[Dict[str, Any]]:
     return None
 
 
+def joint_file(folder: Path) -> Optional[Path]:
+    """``tied_joint.json`` of a joint's folder: in the folder or (as ``rpp calib navcam`` writes it) in its
+    ``navcam_joint`` subfolder (0.99.27: the first table found none)."""
+    for f in (Path(folder) / "tied_joint.json", Path(folder) / "navcam_joint" / "tied_joint.json"):
+        if f.is_file():
+            return f
+    return None
+
+
 def read(folder: Path) -> Dict[str, Any]:
     """{"cost", "median_px", "rms_px", "NL": {"fx", "fy", "k1": (value, sd)}, "NR": ...} of a joint's folder."""
-    res = json.loads((Path(folder) / "tied_joint.json").read_text(encoding="utf-8"))
+    res = json.loads(joint_file(Path(folder)).read_text(encoding="utf-8"))
     out: Dict[str, Any] = {"cost": res.get("final_cost")}
     if out["cost"] is None:
         c = _find(res, lambda x: "final_cost" in x)
@@ -88,7 +97,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     rows: Dict[str, Dict[str, Any]] = {}
     for j in a.joints:
         name, _, folder = j.rpartition("=")                       # a name may hold "=" ("k1(T)=0")
-        if not (Path(folder) / "tied_joint.json").is_file():
+        if joint_file(Path(folder)) is None:
             print(f"{name}: no tied_joint.json in {folder} (left out)")
             continue
         rows[name] = read(Path(folder))

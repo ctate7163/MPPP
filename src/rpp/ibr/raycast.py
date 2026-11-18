@@ -69,23 +69,46 @@ class Scene:
                           "radius_m": float(plane["radius_m"]), "inner_m": float(plane.get("inner_m", PLANE_FROM_M)),
                           "mesh_rim": plane.get("fit_radius_m") is not None}   # 0.99.20: the plane ends with the mesh
         self.sky = bool(sky)
-        self.o3d = o3d
-        self.scene = o3d.t.geometry.RaycastingScene()
-        self.ids: Dict[int, int] = {}
         V, F = mesh
         self.n_mesh_triangles = int(len(F))
-        if len(F):
-            gid = self.scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(_legacy(o3d, V, F)))
-            self.ids[int(gid)] = LABEL_MESH
-        if sphere is not None and len(sphere[1]):
-            gid = self.scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(_legacy(o3d, *sphere)))
-            self.ids[int(gid)] = LABEL_FAR
         self.mesh_V, self.mesh_F = V, F
+        self.sphere = sphere if (sphere is not None and len(sphere[1])) else None
+        self.nthreads = 0                # 0.99.25: the threads of a ray cast (0: all; a render worker process: 1)
+        self._build_raycaster()
         self.rover_triangles: Optional[Tuple[int, int]] = None     # 0.97.0: [first, end) of the rover model in the mesh
         self.terrain_triangles: Optional[Tuple[int, int]] = None   # 0.98.30: [first, end) of the surface from the cloud
         #                                                            (mesh_report "terrain_triangles"; not fill, floors, model)
         self.sky_radius_m: Optional[float] = None    # 0.97.0: the sky on a sphere of this radius about the plane's center
         self.far_field: Optional[Dict[str, Any]] = None   # 0.97.13: 1 / radius of the far surface per direction
+
+    def _build_raycaster(self) -> None:
+        """The ray-casting scene of ``mesh_V``, ``mesh_F`` and ``sphere`` (the same geometry ids in the same order
+        whenever it is built: the mesh first, then the sphere)."""
+        import open3d as o3d
+        self.o3d = o3d
+        self.scene = o3d.t.geometry.RaycastingScene()
+        self.ids: Dict[int, int] = {}
+        if len(self.mesh_F):
+            gid = self.scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(_legacy(o3d, self.mesh_V, self.mesh_F)))
+            self.ids[int(gid)] = LABEL_MESH
+        if self.sphere is not None:
+            gid = self.scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(_legacy(o3d, *self.sphere)))
+            self.ids[int(gid)] = LABEL_FAR
+
+    def state(self) -> Dict[str, Any]:
+        """0.99.25: everything but the ray-casting scene itself (which cannot go to another process), for
+        :meth:`from_state` there.  The arrays are the scene's own (not copied)."""
+        return {k: v for k, v in self.__dict__.items() if k not in ("o3d", "scene", "ids")}
+
+    @classmethod
+    def from_state(cls, state: Dict[str, Any], nthreads: Optional[int] = None) -> "Scene":
+        """The scene of :meth:`state`, its ray-casting scene built again."""
+        self = cls.__new__(cls)
+        self.__dict__.update(state)
+        if nthreads is not None:
+            self.nthreads = int(nthreads)
+        self._build_raycaster()
+        return self
 
     def set_sky_sphere(self, radius_m: Optional[float]) -> None:
         """0.97.0 (Christian, 12 Nov 2026: "the 3d terrain should probably stop at a 100 or 200 m radius sky sphere"
@@ -137,7 +160,7 @@ class Scene:
             return {"t": np.full(n, np.inf, np.float64), "label": np.zeros(n, np.uint8), "normal": np.zeros((n, 3), np.float32),
                     "tri": np.full(n, -1, np.int64)}
         rays = self.o3d.core.Tensor(np.ascontiguousarray(np.concatenate([o, np.asarray(dirs, np.float32)], axis=1)))
-        ans = self.scene.cast_rays(rays)
+        ans = self.scene.cast_rays(rays, nthreads=int(getattr(self, "nthreads", 0)))
         t = ans["t_hit"].numpy().astype(np.float64)
         gid = ans["geometry_ids"].numpy()
         label = np.zeros(len(t), np.uint8)
