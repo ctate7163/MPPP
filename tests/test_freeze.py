@@ -595,7 +595,7 @@ def test_new_root_is_seeded_with_the_backlash_lists_and_z26_promotes_from_one_bl
     assert not (root / "zcam_low_backlash_found.csv").exists()
     log = (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
     assert "zcam_low_backlash_found.csv from" in log and "dry run: not copied" in log
-    assert "--zcam-one-block 26" in log and fz.ONE_BLOCK == (26,)
+    assert "--zcam-one-block 26 100" in log and fz.ONE_BLOCK == (26, 100)
     # the real copy; a second call leaves the files alone
     a = fz.parser().parse_args(["--root", str(root), "--cmods", str(root / "cmods"), "--seed-from", str(old),
                                 "--no-logon-task"])

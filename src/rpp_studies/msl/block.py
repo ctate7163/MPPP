@@ -99,10 +99,19 @@ LOOK_MAX_M = 40.0
 # 0.99.16 (Christian, 17 Nov 2026: "hold the principal point on the first stage. Solve A pair rig and B pair rig
 # separately. If the camera models look good, then promote the MSL navcams the same way we do for Mars 2020"):
 # the parameters held in the bundle adjustments, by COLMAP model (indices into params)
-HELD_ZERO = {"FULL_OPENCV": (9, 10, 11), "THIN_PRISM_FISHEYE": (10, 11)}       # k4-k6; sx1, sy1 (as the Mars 2020 form)
+# k4-k6; sx1, sy1 (as the Mars 2020 form).  0.99.24 (Christian, 18 Nov 2026: "for msl ncam, keep k3=0 and fit the p1 and
+# p2"): the Navcams' k3 too - the significance study of sols 124-306 found it not needed (the image moves by at most
+# 0.09 px without it, no rise in the residuals), p1 and p2 needed (0.4-1.2 px)
+HELD_ZERO = {"FULL_OPENCV": (8, 9, 10, 11), "THIN_PRISM_FISHEYE": (10, 11)}
+# 0.99.24: a registered frame farther than this from its label position (after the similarity onto the labels) is taken
+# out of the model before the cameras are refined.  Sols 124-306: the three stations of sols 301-306 (site 6, drives
+# 410-450; 21 m from the main station by the labels) were registered 2-4 m from the main station - a second block
+# superimposed on the first (Christian, 18 Nov: "it seems like two alignments are superimposed") - and 27 single frames
+# of other stations sat 5-24 m from their own station
+MISPLACED_M = 3.0
 PRINCIPAL_POINT = (2, 3)
 ALPHA_MASKED = 128                     # the mask in the image's alpha channel, as the Mars 2020 blocks (0.5)
-MODEL_FORM = "msl-brown-v1"
+MODEL_FORM = "msl-brown-v2"            # v2 (0.99.24): the Navcams' k3 held at 0
 # 0.99.17 (Christian, 17 Nov 2026: "the msl navcams do have a strong temperature dependence. So model the focal length
 # and rig rotation as a function of temperature"): the thermal stage's bins and the laws' reference temperature
 T_BIN_DEGC = 10.0
@@ -592,13 +601,15 @@ def drop_wild_points(rec, cap_px: float = WILD_ERROR_PX) -> int:
 
 def refine_cameras(rec, man: Dict[str, Any], rounds: int = 2, max_error_px: float = 4.0, hold_pp: bool = False,
                    rigs: bool = False, only: Optional[Sequence[int]] = None,
-                   extra_const: Optional[Dict[int, Sequence[int]]] = None, skip_images: Sequence[int] = ()) -> List[Dict[str, Any]]:
+                   extra_const: Optional[Dict[int, Sequence[int]]] = None, skip_images: Sequence[int] = (),
+                   free_k3: bool = False) -> List[Dict[str, Any]]:
     """Bundle adjustment with every camera's focal lengths and distortion free and the terms of ``HELD_ZERO`` held (a
     subset manifold on the camera block); ``hold_pp``: the principal points held too (0.99.16).  ``rigs``: the stereo
     rigs' sensor-from-rig poses free (one per rig, :func:`add_rigs`).  Two frames' poses are held for the gauge.
     Between rounds the observations above ``max_error_px`` are dropped.  0.99.17: ``only`` - the parameter indices left
     free in every camera (the thermal stage: fx, fy); ``extra_const`` {camera id: indices} held besides (the
-    significance study); ``skip_images`` are left out of the problem (its jackknife)."""
+    significance study); ``skip_images`` are left out of the problem (its jackknife).  0.99.24: ``free_k3`` - the
+    Navcams' k3 free although it is in ``HELD_ZERO`` (the significance study, which asks whether it is needed)."""
     import pycolmap
     import pyceres
     out = []
@@ -619,6 +630,8 @@ def refine_cameras(rec, man: Dict[str, Any], rounds: int = 2, max_error_px: floa
         for cid in list(rec.cameras):
             cam = rec.camera(cid)                      # the camera in the reconstruction (its params are the block)
             const = list(HELD_ZERO.get(cam.model_name, ())) + (list(PRINCIPAL_POINT) if hold_pp else [])
+            if free_k3 and cam.model_name == "FULL_OPENCV":
+                const = [i for i in const if i != 8]
             const += list((extra_const or {}).get(int(cid), ()))
             pa = cam.params
             if only is not None:
@@ -1015,7 +1028,8 @@ def camera_residuals(rec, man: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
 
 
 LIMITS = {"registered_share": 0.75, "registered_frames": 100, "median_px": 0.6, "radial_spread": 0.15, "rig_pairs": 50,
-          "rig_cost_rise": 0.10, "pp_gain": 0.03, "baseline_agreement": 0.005, "thermal_bins": 3}
+          "rig_cost_rise": 0.10, "pp_gain": 0.03, "baseline_agreement": 0.005, "thermal_bins": 3,
+          "misplaced_share": 0.10}                             # 0.99.24: of the registered frames, taken out as misplaced
 
 
 def verdict(rep: Dict[str, Any], man: Dict[str, Any], family: str = "N") -> Dict[str, Any]:
@@ -1065,6 +1079,10 @@ def verdict(rep: Dict[str, Any], man: Dict[str, Any], family: str = "N") -> Dict
     if len(ratios) >= 2:
         d = max(ratios) / min(ratios) - 1.0
         add("rig baseline ratios agree", round(d, 4), f"<= {LIMITS['baseline_agreement']}", d <= LIMITS["baseline_agreement"])
+    mp = rep.get("misplaced")
+    if mp and mp.get("of"):                                    # 0.99.24: a block with many false links is not trusted
+        sh = mp["frames"] / mp["of"]
+        add("misplaced frames share", round(sh, 3), f"<= {LIMITS['misplaced_share']}", sh <= LIMITS["misplaced_share"])
     by_side = {sd: all(c["ok"] for c in checks if c["side"] in (None, sd)) for sd in sorted(sides)}
     return {"ok": all(c["ok"] for c in checks), "family": family, "sides": by_side, "checks": checks}
 
@@ -1153,7 +1171,7 @@ def significance(work: Path, folds: int = 4, family: str = "N") -> Dict[str, Any
     t0 = time.time()
 
     def solve(r, const=None, skip=()):
-        runs = refine_cameras(r, man, rounds=1, hold_pp=True, extra_const=const, skip_images=skip)
+        runs = refine_cameras(r, man, rounds=1, hold_pp=True, extra_const=const, skip_images=skip, free_k3=True)
         return {"reprojection_px": float(r.compute_mean_reprojection_error()), "cost": runs[-1]["cost"],
                 "cameras": {g: [float(x) for x in r.cameras[cid].params] for cid, g in nav.items()}}
     full_rec = copy.deepcopy(base)
@@ -1254,7 +1272,7 @@ def model_files(work: Path, rep: Dict[str, Any], man: Dict[str, Any], family: st
         t = temps.get(g) or []
         d = {"mission": "MSL", "model": cam["model"], "width": cam["width"], "height": cam["height"],
              "params": [float(x) for x in c["refined"]], "param_names": nm,
-             "distortion": "perspective with Brown-Conrady distortion (radial k1, k2, k3; tangential p1, p2); k4 = k5 = k6 = 0"
+             "distortion": "perspective with Brown-Conrady distortion (radial k1, k2; tangential p1, p2); k3 = k4 = k5 = k6 = 0"
              if cam["model"] == "FULL_OPENCV" else "fisheye (theta polynomial k1-k4) + tangential p1, p2; sx1 = sy1 = 0",
              "held_params": held, "pixel_origin": "corner of the first pixel (COLMAP)", "form": MODEL_FORM,
              "family": g[0], "eye": g[1], "side": g[2],
@@ -1305,30 +1323,46 @@ def _camera_thermal(rep: Dict[str, Any], g: str) -> Optional[Dict[str, Any]]:
             "note": "fx(T) = fx (1 + f_ppm_per_degC 1e-6 (T - T0)), fy alike; params are at T0; distortion and principal point without temperature terms"}
 
 
-def promote(work: Path, force: bool = False, dry_run: bool = False) -> Dict[str, Any]:
-    """The block's Navcam model files into the camera models in use, as the Mars 2020 models go
+def promote(work: Path, force: bool = False, dry_run: bool = False, families: str = "NF") -> Dict[str, Any]:
+    """The block's model files into the camera models in use, as the Mars 2020 models go
     (:func:`rpp.calib.models.promote`: checked, copied over the folder's files, a line with source and SHA-256 in
-    ``CHANGES.md``) - when the block's verdict is ok (``force``: anyway)."""
+    ``CHANGES.md``).  Each family of ``families`` (0.99.24: the front Hazcams too, "are the fhaz msl cameras also
+    promotable?") goes by its own verdict: all of it when the verdict is ok, the sides that pass otherwise (``force``:
+    all, anyway)."""
     from rpp.calib import models as M
     work = Path(work)
     rep = json.loads((work / "report.json").read_text(encoding="utf-8"))
-    v = rep.get("verdict") or {"ok": False, "checks": []}
     cand = work / "cmods_candidate"
     files = sorted(cand.glob("MSL_*.json")) if cand.is_dir() else []
     if not files:
         return {"promoted": False, "reason": f"no model files in {cand} (run the align step)"}
-    bad = [f"{c['what']} {c['value']} (limit {c['limit']})" for c in v.get("checks", []) if not c["ok"]]
-    good = [sd for sd, ok in (v.get("sides") or {}).items() if ok]
-    if force or v.get("ok"):
-        use, how = files, ("verdict ok" if v.get("ok") else "FORCED past the verdict")
-    elif good:                                                 # 0.99.17: a side that passes goes in without the other
-        use = [f for f in files if f.stem.split("_")[1][-1] in good]
-        how = f"side {', '.join(good)} only (not passed: {'; '.join(bad)})"
-    else:
-        return {"promoted": False, "reason": "the cameras do not pass: " + "; ".join(bad)}
-    note = f"MSL block {work.name}: {how}, reprojection {rep.get('reprojection_px', float('nan')):.3f} px"
+    verdicts = dict(rep.get("verdicts") or {})
+    if rep.get("verdict"):
+        verdicts.setdefault("N", rep["verdict"])
+    use, how, why, sides = [], [], [], {}
+    for fam in families:
+        mine = [f for f in files if f.stem.split("_")[1][0] == fam]
+        if not mine:
+            continue
+        v = verdicts.get(fam) or {"ok": False, "checks": [{"what": f"{fam} verdict", "value": None, "limit": "made", "ok": False}]}
+        bad = [f"{c['what']} {c['value']} (limit {c['limit']})" for c in v.get("checks", []) if not c["ok"]]
+        good = [sd for sd, ok in (v.get("sides") or {}).items() if ok]
+        if force or v.get("ok"):
+            use += mine
+            how.append(f"{fam}: " + ("verdict ok" if v.get("ok") else "FORCED past the verdict"))
+            sides[fam] = sorted(v.get("sides") or {})
+        elif good:                                             # 0.99.17: a side that passes goes in without the other
+            use += [f for f in mine if f.stem.split("_")[1][-1] in good]
+            how.append(f"{fam}: side {', '.join(good)} only")
+            why.append(f"{fam}: " + "; ".join(bad))
+            sides[fam] = good
+        else:
+            why.append(f"{fam}: " + "; ".join(bad))
+    if not use:
+        return {"promoted": False, "reason": "the cameras do not pass - " + " | ".join(why)}
+    note = f"MSL block {work.name}: {'; '.join(how)}, reprojection {rep.get('reprojection_px', float('nan')):.3f} px"
     res = M.promote(use, note=note[:400], dry_run=dry_run)
-    return {"promoted": not dry_run, "dry_run": dry_run, "sides": good if not (force or v.get("ok")) else sorted(v.get("sides") or {}), **res}
+    return {"promoted": not dry_run, "dry_run": dry_run, "sides": sides, "not_promoted": why, **res}
 
 
 def align(work: Path, max_features: int = 8192, threads: int = -1, max_error_m: float = 2.0, refine: bool = True,
@@ -1391,6 +1425,18 @@ def finish(rec, man: Dict[str, Any], work: Path, models: int = 1, others: Sequen
                            "models": int(models), "other_models": list(others),
                            "reprojection_px_mapper": float(rec.compute_mean_reprojection_error())}
     _to_block(rec, lab, max_error_m, rep, "similarity")
+    rec, rep["misplaced"] = drop_misplaced(rec, man, lab)      # 0.99.24: before anything is refined
+    if rep["misplaced"]["frames"]:
+        rep["similarity_with_misplaced"] = rep["similarity"]
+        _to_block(rec, lab, max_error_m, rep, "similarity")
+        rep["registered_kept"] = int(rec.num_reg_images())
+    for cid in list(rec.cameras):                              # 0.99.24: the held terms are held at zero
+        cam = rec.camera(cid)
+        pa = np.array(cam.params, float)
+        hz = [i for i in HELD_ZERO.get(cam.model_name, ()) if i < len(pa)]
+        if hz and np.any(pa[hz] != 0.0):
+            pa[hz] = 0.0
+            cam.params = pa
     start = {cid: np.array(c.params, float) for cid, c in rec.cameras.items()}
     gname = _camera_groups(rec, man)
     stages: Dict[str, Any] = {}
@@ -1456,6 +1502,8 @@ def finish(rec, man: Dict[str, Any], work: Path, models: int = 1, others: Sequen
     rep["label_residual_by_site_m"] = {str(s): {"frames": len(v), "median": round(float(np.median(v)), 3),
                                                 "max": round(float(np.max(v)), 3)} for s, v in sorted(per_site.items())}
     rep["verdict"] = verdict(rep, man)
+    fams = sorted({g[0] for g in rep["cameras"]})
+    rep["verdicts"] = {f: (rep["verdict"] if f == "N" else verdict(rep, man, f)) for f in fams}     # 0.99.24
     rep["minutes"] = round((time.time() - t0) / 60.0, 1)
     (out / "block_frame").mkdir(exist_ok=True)
     rec.write(out / "block_frame")
@@ -1463,11 +1511,53 @@ def finish(rec, man: Dict[str, Any], work: Path, models: int = 1, others: Sequen
     rec.export_PLY(str(work / "points_block_frame.ply"))
     (work / "cameras_refined.json").write_text(json.dumps(rep["cameras"], indent=1), encoding="utf-8")
     (work / "report.json").write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")
-    rep["model_files"] = {k: str(v) for k, v in model_files(work, rep, man).items()}
+    rep["model_files"] = {k: str(v) for f in fams for k, v in model_files(work, rep, man, f).items()}
     (work / "report.json").write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")
     (work / "report.txt").write_text(report_text(man, rep), encoding="utf-8")
     log.info("\n%s", report_text(man, rep))
     return rep
+
+
+def drop_misplaced(rec, man: Dict[str, Any], lab: Dict[str, np.ndarray], limit_m: float = MISPLACED_M):
+    """The registered frames farther than ``limit_m`` from their label position (``rec`` in the block frame) taken out of
+    the model, with the points they leave with fewer than two observations.  Returns (the model - read back from disk
+    without the frames taken out, so that every image in it has a pose - and {"limit_m", "frames", "of", "stations":
+    [{"station", "sols", "frames", "of" (registered at the station), "median_m", "offset_m" (median model minus
+    label, block frame)}] (most frames first)})."""
+    import shutil
+    import tempfile
+    import pycolmap
+    info = {r["image"]: r for r in man["images"]}
+    off, reg = {}, {}
+    for iid in list(rec.reg_image_ids()):
+        im = rec.image(iid)
+        r = info.get(im.name)
+        if r is None or im.name not in lab:
+            continue
+        st = f"S{int(r['site']):03d}D{int(r['drive']):04d}"
+        reg[st] = reg.get(st, 0) + 1
+        d = np.asarray(im.projection_center(), float) - lab[im.name]
+        if float(np.linalg.norm(d)) > float(limit_m):
+            off.setdefault(st, []).append((int(iid), d, int(r["sol"])))
+    gone = sorted({rec.image(i).frame_id for v in off.values() for i, _, _ in v})
+    if gone:
+        om = pycolmap.ObservationManager(rec)
+        for fid in gone:
+            if rec.frame(fid).has_pose():
+                om.deregister_frame(fid)
+        om.filter_points3D_with_short_tracks(2)
+        tmp = Path(tempfile.mkdtemp(prefix="rpp_msl_kept_"))
+        try:
+            rec.write(str(tmp))                                # only the registered images are written
+            rec = pycolmap.Reconstruction(str(tmp))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    stations = [{"station": st, "sols": sorted({s for _, _, s in v}), "frames": len(v), "of": reg[st],
+                 "median_m": round(float(np.median([np.linalg.norm(d) for _, d, _ in v])), 2),
+                 "offset_m": [round(float(x), 2) for x in np.median([d for _, d, _ in v], axis=0)]}
+                for st, v in sorted(off.items(), key=lambda kv: -len(kv[1]))]
+    return rec, {"limit_m": float(limit_m), "frames": int(sum(len(v) for v in off.values())), "of": int(sum(reg.values())),
+                 "stations": stations}
 
 
 def _to_block(rec, lab: Dict[str, np.ndarray], max_error_m: float, rep: Dict[str, Any], key: str) -> None:
@@ -1559,10 +1649,22 @@ def report_text(man: Dict[str, Any], rep: Dict[str, Any]) -> str:
         lines.append(f"scale: the model times {sc['factor']:.4f} to give the {sc['family']} rigs the label baseline (ratios before: "
                      f"{sc['ratio_before_by_rig']}); label centers then off by median {lc.get('median', float('nan')):.3f} m, "
                      f"max {lc.get('max', float('nan')):.3f} m")
-    v = rep.get("verdict")
-    if v:
+    mp = rep.get("misplaced")
+    if mp and mp.get("frames"):
+        lines.append(f"misplaced: {mp['frames']} of {mp['of']} registered frames were more than {mp['limit_m']:g} m from their "
+                     "label position and were taken out before the cameras were refined:")
+        for s in mp["stations"][:12]:
+            lines.append(f"  {s['station']} (sols {s['sols'][0]}-{s['sols'][-1]}): {s['frames']} of {s['of']} frames, median "
+                         f"{s['median_m']:.1f} m, model minus label {s['offset_m']} m")
+        if len(mp["stations"]) > 12:
+            lines.append(f"  ... and {len(mp['stations']) - 12} more stations")
+    vs = dict(rep.get("verdicts") or {})
+    if rep.get("verdict"):
+        vs.setdefault("N", rep["verdict"])
+    for fam, v in sorted(vs.items(), key=lambda kv: kv[0] != "N"):
         some = [sd for sd, ok in (v.get("sides") or {}).items() if ok]
-        lines.append("Navcam verdict: " + ("OK to promote" if v["ok"] else f"side {', '.join(some)} OK to promote, the rest not" if some else "NOT promoted"))
+        lines.append({"N": "Navcam", "F": "Front Hazcam", "R": "Rear Hazcam"}.get(fam, fam) + " verdict: "
+                     + ("OK to promote" if v["ok"] else f"side {', '.join(some)} OK to promote, the rest not" if some else "NOT promoted"))
         for c in v["checks"]:
             if not c["ok"]:
                 lines.append(f"  fails: {c['what']} = {c['value']} (limit {c['limit']})")
@@ -1607,6 +1709,8 @@ def main(argv=None) -> int:
                     help="align: the model's scale from the Navcam rigs' label baseline (default) or the label positions")
     ap.add_argument("--promote-if-ok", action="store_true", help="align / finish: promote the Navcam models when the verdict is ok")
     ap.add_argument("--force", action="store_true", help="promote: past a failed verdict")
+    ap.add_argument("--promote-families", default="NF",
+                    help="promote: the camera families (N Navcam, F front Hazcam), each by its own verdict (0.99.24)")
     ap.add_argument("--dry-run", action="store_true", help="promote: check and show, copy nothing")
     ap.add_argument("--mask-model", default="rpp_mask_v3", help="the mask CNN (registry name or file)")
     ap.add_argument("--radius-m", type=float, default=None, help="prepare: frames within this of the block's middle")
@@ -1693,9 +1797,11 @@ def main(argv=None) -> int:
         print((work / "significance.txt").read_text(encoding="utf-8"))
         return 0
     if a.step == "promote" or (a.promote_if_ok and a.step in ("align", "all", "finish") and rc == 0):
-        res = promote(work, force=a.force, dry_run=a.dry_run)
+        res = promote(work, force=a.force, dry_run=a.dry_run, families=a.promote_families)
         if res.get("promoted") or res.get("dry_run"):
             print(f"{'would promote' if res.get('dry_run') else 'promoted'} into {res['folder']}: " + ", ".join(sorted(res["files"])))
+            for w in res.get("not_promoted") or []:
+                print(f"  not promoted - {w}")
         else:
             print(f"not promoted: {res['reason']}")
             rc = rc or (1 if a.step == "promote" else 0)
