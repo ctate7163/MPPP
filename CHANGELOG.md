@@ -3,6 +3,22 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.35 — 2026-11-19 (branch `rpp`)
+
+Christian, 09:33: "how did the z34 fiducials test go?"
+
+- **The deck-fiducial study read its results in the wrong frame** (`rpp_studies.calibration.zcam_fiducials`): the
+  chain carries a center in its position frame (through Ry(-el)) and a rotation in its orientation frame (through
+  Ry(el)), so 0.99.34's c . (Q^T z) and Rot(Q_L) (c_R - c_L) mixed two frames (the first run put the ZR center at
+  x -241 mm in the ZL frame). The results are now the poses at the level head: each center in the level mast frame,
+  its boresight there, the ZR center in the ZL frame R_L (C_R - C_L), and the baseline, with sd from the fit's
+  covariance through a numerical Jacobian. The fit itself was right. The test checks the mast-frame centers and the
+  pair against the truth.
+- The first run, read again: with the focal law held the ZR center in the ZL frame is (240.2, 7.2, 15.0) +- (1.6, 2.0,
+  1.3) mm - the rig in use (15.0) and the Mastcam-Z joint (15.7), 2.8 sd from the N+Z joint (18.7); with the focal
+  scale free the deck pans (about two targets a frame) cannot separate scale and position (correlation -0.99).
+  `docs/calibration.md` says so.
+
 ## 0.99.34 — 2026-11-19 (branch `rpp`)
 
 Christian, 07:10-07:31: "Review for bugs. Clean the documentation. Prepare mask hf upload with new docs"; "Let's use a
