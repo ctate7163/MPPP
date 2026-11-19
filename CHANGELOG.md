@@ -3,6 +3,49 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.31 — 2026-11-18 (branch `rpp`)
+
+- **26 and 100 mm bins need 100 observations, not 1000, to be tied to the lines** (Christian, 15:17: "lower the
+  1,000-observation minimum per bin for 100 mm and 26 mm"): `ztied.MIN_BIN_OBSERVATIONS_BY_ZOOM = {26: 100, 100: 100}`.
+  The 18 Nov Z100 joint had all 10 bins under 1000 (15-315 observations), so no line was fitted.
+- **`seq:ZCAM03022` in `rpp/data/exclude_images.txt`** ("add ZCAM03022 to the exclude list. Those z100 images are not
+  usable"): left out of every alignment.
+
+## 0.99.30 — 2026-11-18 (branch `rpp`)
+
+- **48 mm high / low ratio held at the 34 mm model's** (Christian, 14:48: "Hold z48 ratio to z34 high low ratio"):
+  `ztied.RATIO_AT_34MM = (48,)` - each 48 mm eye's ratio is tied to the 34 mm model of its side in the models in use
+  (ZL034 for ZL048), however many low-state images it has; the model is promotable as before, and the report says why
+  the ratio is held. Why: the 48 mm regular-state data are nearly all Overlook Mountain (sol 1155), so the regular
+  focal length and that site's sequence offsets trade. From 15 Nov a 3-frame Seitah Overlook sequence, held at offset
+  0, fixed ZL048's regular state: 1.0106 against ZR048's 1.0074, with Overlook's ZL offsets at +3494 / +3260 ppm
+  (z +106). With those offsets moved into the regular level ZL048 is 1.0072. In the freeze the Z34 joint runs and is
+  promoted before the Z48 joint, which then holds at the new 34 mm ratios (pre-freeze-3 c: 1.0083 / 1.0087).
+- **The sol 121 zoom-ladder site in the panorama list** (Christian, 14:51: "Add the sol 121 location to the ods list.
+  Use the eod images with the one mid drive imaging for context"): `Sol0116_S004D1250` - Seitah Overlook's S004D1250,
+  its end-of-drive Navcam 360 of sol 116 (NCAM03116 x3, NCAM00303, NCAM02116 x2) and, as context, the one mid-drive
+  pair of the drive there (NCAM00310, sol 116, S004D1206). Its block is the Seitah Overlook Mastcam-Z block.
+
+## 0.99.29 — 2026-11-18 (branch `rpp`)
+
+- **single-sites skips a station whose block has not finished its alignment** (Christian, 13:36: "The next ods should
+  use the post freeze blocks. Skip an ods site if the block has not aligned yet"): a block without
+  `colmap/run_done.json` in the root is reported and left out (`--any-block`: run it anyway). With
+  `--root D:\rover_blocks_f3` the panoramas come from the freeze-3 blocks.
+
+## 0.99.28 — 2026-11-18 (branch `rpp`)
+
+- **Rockytop is one Mastcam-Z block again, aligned first** (Christian, 12:39: "For the zcam consensus, combine skinner
+  and wildcat ridge so that all the zcam images align in rockytop instead ... Start with aligning rockytop"). In
+  `sites.json`, `rockytop` covers sols 460-534 with every zoom of both ridges (34, 63, 79, 100 - Wildcat's sol 510
+  focus stack ZCAM00064 - and 110 mm with both ridges' `zcam_include` sequences), the exclusions they shared and
+  Skinner Ridge's Mastcam-Z position prior (0.02 m). It replaces `wildcat_ridge` and `skinner_ridge` in
+  `zcam_consensus` (first: the freeze's `zcam_runs` aligns it first), `zcam34_consensus`, `zcam79_consensus`,
+  `zcam110_consensus` and `freeze2_z110_without_marble`; the two ridge sites stay defined but are in no group.
+  ZCAM08530 and ZCAM08538 (63 mm) are in the block, low on the backlash list since 12 Nov.
+- Single-sites stations Sol0477_S026D1004 (Skinner Ridge) and Sol0502_S026D1222 (Wildcat Ridge) are unchanged: their
+  terrain is the Navcam Rockytop block, which now ends at sol 534 instead of 530.
+
 ## 0.99.27 — 2026-11-18 (branch `rpp`)
 
 - **Station mesh of a Mastcam-Z run: the Mastcam-Z frames first** (Christian, 12:31: "For the z34 runs, the texture

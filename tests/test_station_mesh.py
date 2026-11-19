@@ -137,3 +137,42 @@ def test_render_station_part_web_entry_and_plan(tmp_path, monkeypatch):
     src = (SS.__file__)
     page = (__import__("pathlib").Path(src).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
     assert "vr.station_mesh || vr.rover_surface" in page and "holdNearPivot" in page
+
+
+def test_single_sites_skips_stations_whose_block_is_not_aligned(tmp_path, capsys):
+    """0.99.28 (Christian, 18 Nov 2026: "The next ods should use the post freeze blocks. Skip an ods site if the block
+    has not aligned yet")."""
+    import argparse
+    from rpp.ibr import single_sites as SS
+    from rpp.waypoints.sites import load_site_table
+    cfg = {"stations": {"A": {"work": "m_a", "station": "3_10"}, "B": {"work": "m_b", "station": "3_11"}}}
+    cfgf = tmp_path / "ss.json"
+    cfgf.write_text(json.dumps(cfg))
+    (tmp_path / "m_a" / "colmap").mkdir(parents=True)
+    (tmp_path / "m_a" / "colmap" / "run_done.json").write_text("{}")
+    (tmp_path / "m_b" / "colmap").mkdir(parents=True)
+    assert SS.block_aligned(tmp_path / "m_a") and not SS.block_aligned(tmp_path / "m_b")
+    p = argparse.ArgumentParser()
+    SS.add_parser(p.add_subparsers(dest="cmd"))
+    a = p.parse_args(["single-sites", "--config", str(cfgf), "--root", str(tmp_path), "--dry-run", "A", "B"])
+    assert SS.cmd_single_sites(a) == 0
+    out = capsys.readouterr().out
+    assert "B skipped - its block" in out and "1 station(s) to run, 1 skipped" in out and "A: " in out
+    a = p.parse_args(["single-sites", "--config", str(cfgf), "--root", str(tmp_path), "--dry-run", "--any-block", "A", "B"])
+    SS.cmd_single_sites(a)
+    assert "skipped - its block" not in capsys.readouterr().out
+
+
+def test_sol121_seitah_station_in_the_list():
+    """0.99.30 (Christian, 18 Nov 2026: "Add the sol 121 location to the ods list. Use the eod images with the one mid
+    drive imaging for context")."""
+    import json
+    from pathlib import Path
+    from rpp.ibr import single_sites as SS
+    cfg = json.loads((Path(SS.__file__).parents[1] / "data" / "single_sites.json").read_text(encoding="utf-8"))
+    st = cfg["stations"]["Sol0116_S004D1250"]
+    assert st["station"] == "4_1250" and len(st["frames"]["images"]) == 11 and all("N0041250" in n for n in st["frames"]["images"])
+    assert len(st["context"]) == 2 and all("N0041206NCAM00310" in n for n in st["context"])
+    run = SS.plan(cfg, "/tmp/root", labels=["Sol0116_S004D1250"])[0]
+    ods = [c for c in run["commands"] if c["step"] == "ods"]
+    assert ods and all("--context-images" in c["argv"] for c in ods) and run["work"].endswith("seitah_overlook_zcam")

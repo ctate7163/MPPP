@@ -60,7 +60,7 @@ def _meta(stem, sol, site, drive, seq):
 def test_sites_json_is_the_site_list():
     from rpp.waypoints import sites as S
     t = S.load_site_table()
-    assert len(t["sites"]) >= 32 and load_sites()["rockytop"][1] == 530 and load_sites()["south_arm"] == (1359, 1412)
+    assert len(t["sites"]) >= 32 and load_sites()["rockytop"][1] == 534 and load_sites()["south_arm"] == (1359, 1412)
     for g, members in t["groups"].items():
         assert (members or g in ("zcam79_consensus", "zcam110_consensus")) and all(m in t["sites"] for m in members), g
     for k, v in t["sites"].items():
@@ -262,7 +262,7 @@ def test_shipped_sites_v0p75():
                                    "bell_island_large", "taylorfjellet_large", "origny_large", "hippo_pools"]
     assert "threeforks_north" not in g["ecam_consensus"] and "zcam34_consensus_v0p82" not in g and "threeforks_large" not in g["zcam34_consensus"]
     assert "navcam_consensus_v0p82" not in g
-    assert len(g["zcam34_consensus"]) == 15 and "olifants" in g["zcam34_consensus"] and "issole_seitah_south" in g["zcam34_consensus"] and g["zcam34_consensus"][:3] == ["butler_landing", "chal_rocks_large", "rochette"]   # 9 Nov: butler_landing; 22 Oct: chal_rocks_large back; 21 Oct (Christian): Issole back without its video sequence ZCAM05093, olifants back
+    assert len(g["zcam34_consensus"]) == 14 and "rockytop" in g["zcam34_consensus"] and "wildcat_ridge" not in g["zcam34_consensus"] and "olifants" in g["zcam34_consensus"] and "issole_seitah_south" in g["zcam34_consensus"] and g["zcam34_consensus"][:3] == ["butler_landing", "chal_rocks_large", "rochette"]   # 9 Nov: butler_landing; 22 Oct: chal_rocks_large back; 21 Oct (Christian): Issole back without its video sequence ZCAM05093, olifants back
 
 
 def test_zcam34_dev_group_sites_have_the_zoom():
@@ -428,7 +428,7 @@ def test_chal_rocks_110mm():
     from rpp_studies.calibration import run_pipeline as RP                  # the freeze's zoom filter lets a site's 100 mm through
     assert RP.SITE_ZOOMS_WITHOUT_JOINT == (26, 100) and 100 not in RP.ZOOMS and 26 not in RP.ZOOMS
     assert t["taylorfjellet"]["zcam"] == [34, 48, 63, 79, 110]   # 0.95.1: 110 (zcam_include)
-    assert t["rockytop"]["zcam"] == [34, 63, 79, 110] and set(t["rockytop"]["zcam_include"]) == {"110"}
+    assert t["rockytop"]["zcam"] == [34, 63, 79, 100, 110] and set(t["rockytop"]["zcam_include"]) == {"110"}
     assert True  # 0.95.0 (Christian, 27 Oct): the 48 mm pair back, held at the model
     assert t["seitah_overlook"]["zcam"] == [26, 34, 48, 63, 79, 100, 110] and t["belva_crater"]["zcam"] == [34, 110]   # 0.95.1: no 79
     assert t["marble_mountain"]["zcam"] == [34, 63, 110]                             # 0.95.1: a third Z110 block
@@ -480,3 +480,17 @@ def test_zcam_hold_keeps_chal_rocks_regular_and_large_out_of_a_filtered_run():
     k = lambda site, o: P.Settings(include_zcam=True, zcam_zooms=z(site, o), zcam_zooms_only=o).key_dict()
     assert k("chal_rocks", only) == k("chal_rocks", [34, 48, 63, 79, 110])
     assert k("chal_rocks_tiny", only) != k("chal_rocks_tiny", [34, 48, 63, 79, 110])
+
+
+def test_rockytop_is_one_mastcam_z_block_again():
+    """0.99.28 (Christian, 18 Nov 2026: "For the zcam consensus, combine skinner and wildcat ridge so that all the zcam
+    images align in rockytop instead" ... "Start with aligning rockytop"): Rockytop takes both ridges' places in every
+    Mastcam-Z group, first in zcam_consensus, with every zoom and both ridges' 110 mm sequences."""
+    from rpp.waypoints.sites import load_site_table
+    t = load_site_table()
+    g, r = t["groups"], t["sites"]["rockytop"]
+    for name, grp in g.items():
+        assert "wildcat_ridge" not in grp and "skinner_ridge" not in grp, name
+    assert g["zcam_consensus"][0] == "rockytop" and all("rockytop" in g[k] for k in ("zcam34_consensus", "zcam79_consensus", "zcam110_consensus"))
+    assert r["sols"] == [[460, 534]] and set(r["zcam_include"]["110"]) >= {"ZCAM08486", "ZCAM08529", "ZCAM08537", "ZCAM08548", "ZCAM07101"}
+    assert r["settings"]["zcam_station_prior_sigma_m"] == 0.02 and "S026D1110" not in r["settings"]["EXCLUDE"]

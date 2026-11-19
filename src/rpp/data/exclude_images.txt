@@ -17,6 +17,7 @@ seq:ZCAM05062        # Christian, 22 Oct
 seq:ZCAM05069        # Christian, 22 Oct (13:08)
 seq:ZCAM05070        # Christian, 22 Oct (13:08)
 seq:ZCAM05071        # Christian, 22 Oct (13:08)
+seq:ZCAM03022        # 100 mm frames that are not usable (Christian, 18 Nov 2026)
 
 # Mastcam-Z ZCAM00xxx and ZCAM01xxx sequences
 seq:ZCAM00*
