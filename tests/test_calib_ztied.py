@@ -370,6 +370,18 @@ def test_nz_joint_agrees_with_the_navcam_law_and_sees_a_wrong_one(tmp_path):
     from rpp_studies.calibration import tied as T
     st2 = T.start_values(law)                                         # what calib lawcheck --law reads
     assert st2["G"]["NL"][0] == pytest.approx(res2["navcam"]["NL"]["params_T0"]["fx"], abs=1e-6)
+    # 0.99.36 (Christian, 19 Nov 2026: "instead of holding the Z rig, can we hold the Z focal length?"): the second
+    # step keeps the Mastcam-Z focal-length terms (or the rig translation) where the Navcam-held step left them
+    res3 = NZ.fit_nzjoint({}, model=truth, scapes=[a, b], st=copy.deepcopy(bad), nav_points=None, z_points=None,
+                          iterations=40, passes=1, verbose=False, hold_zcam="focal")
+    assert res3["hold_zcam"] == "focal" and "focal length held" in NZ.describe(res3)[1]
+    for eye, held in res3["zcam_navcam_held"].items():
+        for k in ("a_fx_backlash", "a_fy_backlash", "a_fx_regular", "b"):
+            assert res3["zcam"]["eyes"][eye]["terms"][k] == pytest.approx(held[k], abs=1e-9), (eye, k)
+    assert res3["comparison"]["navcam"]["NL"]["fx"]["change"] == pytest.approx(-3.0, abs=1.0)    # the Navcam still pulled back
+    with pytest.raises(ValueError):
+        NZ.fit_nzjoint({}, model=truth, scapes=[a, b], st=copy.deepcopy(st), nav_points=None, z_points=None,
+                       iterations=2, passes=1, verbose=False, hold_zcam="everything")
 
 
 def test_zcam_joint_gives_the_regular_state_its_own_principal_point(tmp_path, monkeypatch):

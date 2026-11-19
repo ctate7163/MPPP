@@ -2019,8 +2019,11 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
     w = tmp_path / "web"
     w.mkdir()
     (w / "panos.json").write_text(json.dumps({"panos": [{"id": "A0", "variants": [{"key": "x", "views": {"standard": "a.jpg"}}]}]}))
-    doc = web.publish(r, w, width=128, titles={"S1": {"title": "One", "yaw_deg": 90, "note": None}})
+    doc = web.publish(r, w, width=128, titles={"S1": {"title": "One", "yaw_deg": 90, "note": None},
+                                               "A0": {"title": "Zero", "site_name": "Zero North (zcam)", "sols": [5]}})
     assert [p["id"] for p in doc["panos"]] == ["A0", "S1"]
+    assert doc["panos"][0]["site_name"] == "Zero North (zcam)" and doc["panos"][0]["sols"] == [5]   # 0.99.36: listed
+    assert doc["panos"][0]["title"] == "Zero"                     # before this run, renamed by the station list
     s1 = doc["panos"][1]
     assert s1["title"] == "One" and s1["yaw_deg"] == 90 and [v["key"] for v in s1["variants"]] == ["masked", "rover"]
     assert [v["label"] for v in s1["variants"]] == ["terrain only", "terrain with rover (projected)"]             # 0.98.5: this order
@@ -2053,6 +2056,19 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
     assert not (tmp_path / "web2" / "panos" / "S1_enhlocal_360_3DTD.jpg").exists()
     page = (Path(web.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
     assert 'id="eye"' in page and "sessionstart" in page and "setEye" in page                  # the eye shown on a screen
+    # 0.99.36 (Christian, 19 Nov 2026: "include center with the left and right eye if center is available")
+    cv2.imwrite(str(r / "S1" / "with_rover" / "S1_rover_ods_center.png"), np.full((128, 256, 3), 70, np.uint8))
+    cen = web.publish(r, tmp_path / "web5", width=128)["panos"][0]
+    assert cen["variants"][1]["center"] == {"standard": "panos/S1_rover_360_center.jpg"} and "center" not in cen["variants"][0]
+    assert cv2.imread(str(tmp_path / "web5" / "panos" / "S1_rover_360_center.jpg")).shape == (64, 128, 3)
+    # 0.99.36 ("the 2d rpv should show the 16k center panorama if the viewer's platform can handle it"): the full one too
+    assert cen["variants"][1]["center_full"] == {"standard": "panos/S1_rover_360_center_16k.jpg"}
+    assert cv2.imread(str(tmp_path / "web5" / "panos" / "S1_rover_360_center_16k.jpg")).shape == (128, 256, 3)
+    assert web.CENTER_FULL_WIDTH == 16384 and "center_full" in page and "maxTex >= 16384" in page
+    from rpp import __version__
+    assert cen["rpp"] == __version__ and f"const RPV_VERSION = '{__version__}';" in page   # the page's own version
+    for t in ("centerFileOf", "EYE_LAYER", "['center', 3]", 'id="ver"', "rendered with RPP"):
+        assert t in page, t
     im = cv2.imread(str(web.label_pano(tmp_path / "t.jpg", width=512)))
     assert im.shape == (512, 512, 3)
     b, g, rr = im[:256].reshape(-1, 3).astype(int).sum(0)       # the top half carries the blue "LEFT EYE" (BGR)
@@ -2170,6 +2186,8 @@ def test_nadir_mark_lines_credit_and_disc():
     assert lines == ["Mars 2020 Perseverance Rover", "Sol 461 - Rockytop", "Image credit: NASA/JPL-Caltech/MSSS", "made by C. Tate"]
     assert nadir.mark_lines(["NLF_0686_a", "NLF_0688_a"])[1] == "Sols 686, 688"
     assert nadir.mark_lines(["NLF_0686_a", "NLF_0687_a"])[1] == "Sols 686-687"
+    # 0.99.36: with Mastcam-Z frames the first sol of those alone (the Navcam fill frames' sols not either)
+    assert nadir.mark_lines(["ZL0_0690_a", "ZR0_0692_a", "NLF_0686_a"], "Three Forks North")[1] == "Sol 690 - Three Forks North"
     W, H = 4096, 2048
     m = nadir.make_mark(W, H, lines, center_azimuth_deg=90.0)          # the rover's front to the east
     band = H - m["row0"]
@@ -2800,6 +2818,7 @@ def test_ground_mark_published_and_upload_keeps_a_failed_push_for_the_next_one(t
     gm = doc["panos"][0]["variants"][0]["ground_mark"]
     assert (w / gm["file"]).is_file() and gm["depth_m"] == round(nm["depth_below_pivot_m"], 4)
     assert abs(gm["radius_m"] - web.MARK_SCALE * nm["radius_m"]) < 1e-3 and web.MARK_SCALE > 1.0     # a little larger
+    assert web.install_viewer(w) and (w / "index.html").is_file()      # what single-sites does after publish
     up = web.upload(w, ["Sol0091_S003D0010"], remote="nowhere", tries=2, wait_s=0)                    # the push cannot work
     assert not up["ok"] and up["committed"] and not up["pushed"] and "2 tries" in up["message"]
     assert json.loads((w / web.PENDING_NAME).read_text())["committed"] and "upload_pending" not in subprocess.run(
@@ -2808,6 +2827,9 @@ def test_ground_mark_published_and_upload_keeps_a_failed_push_for_the_next_one(t
     assert ok["ok"] and ok["pushed"] and ok["verified"] and not ok["committed"] and not (w / web.PENDING_NAME).exists()
     names = subprocess.run(["git", "-C", str(bare), "ls-tree", "-r", "--name-only", "main"], capture_output=True, text=True).stdout
     assert "docs/ods/panos/Sol0091_S003D0010_nadir_mark.png" in names and "docs/ods/panos.json" in names
+    # 0.99.36: the page goes up with the panoramas (the live viewer stayed at 17 Nov's page while only these went up)
+    assert "docs/ods/index.html" in names and "page and panoramas" in subprocess.run(
+        ["git", "-C", str(repo), "log", "--format=%s"], capture_output=True, text=True).stdout
     page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
     assert "ground_mark" in page and "CircleGeometry" in page
     assert "single-sites --upload %*" in SS.BAT and "--no-upload" in SS.BAT
@@ -3495,3 +3517,21 @@ def test_height_field_near_the_mast_fill_under_the_rim_and_dimmed_fill_normals()
     rim = (np.hypot(cf[:, 0] - 2, cf[:, 1]) < 0.9) & (np.hypot(cf[:, 0], cf[:, 1]) < 3.5)
     assert rim.sum() > 10 and (cf[rim, 2] < 0.1 * np.sin(cf[rim, 0]) + 0.004).all()
     assert M.FILL_TUCK_M == 0.005 and O.NORMAL_FILL_DIM == 0.45
+
+
+def test_viewer_names_three_forks_and_zcam():
+    """0.99.36 (Christian, 19 Nov 2026): "the three forks name in rpv should have a North or South if it is not the whole
+    three forks area. The z34 sites should have a (zcam) after the site name"; a Mastcam-Z station's one sol."""
+    import json as _json
+    from rpp.ibr import single_sites as ss
+    cfg = _json.loads((Path(ss.__file__).resolve().parents[1] / "data" / "single_sites.json").read_text(encoding="utf-8"))
+    names = {k: ss.viewer_name(v, k) for k, v in cfg["stations"].items()}
+    assert names["Sol0690_S032D1184_Z34"] == "Three Forks North (zcam)" and names["Sol0686_S032D1184"] == "Three Forks North"
+    assert names["Sol0670_S032D0672_Z34"] == "Three Forks South (zcam)" and names["Sol0670_S032D0672"] == "Three Forks South"
+    for k, n in names.items():                                   # no station is the whole Three Forks area
+        assert not n.startswith("Three Forks") or "North" in n or "South" in n, (k, n)
+        assert ("(zcam)" in n) == ss.is_zcam_station(cfg["stations"][k]), (k, n)
+    assert ss.viewer_sols(cfg["stations"]["Sol0690_S032D1184_Z34"], "Sol0690_S032D1184_Z34") == [690]
+    assert ss.viewer_sols(cfg["stations"]["Sol0686_S032D1184"], "Sol0686_S032D1184") is None
+    assert ss.mark_name(cfg["stations"]["Sol0690_S032D1184_Z34"]) == "Three Forks North"       # the disc: no tag (0.99.13)
+    assert "web.py" in ss.NOT_IN_CODE_KEY and "hf.py" in ss.NOT_IN_CODE_KEY and "ods.py" not in ss.NOT_IN_CODE_KEY

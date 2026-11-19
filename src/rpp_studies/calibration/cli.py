@@ -70,6 +70,11 @@ def add_parsers(sub) -> None:
                         "stopped at 101 in both passes)")
     p.add_argument("--passes", type=int, default=None, metavar="N",
                    help="zcam / nz: passes of the adjustment (default 2; the covariance on the last)")
+    p.add_argument("--hold-zcam", default=None, choices=("none", "rig", "focal"),
+                   help="nz (0.99.36): what of the Mastcam-Z the step with the Navcam free keeps where the Navcam-held "
+                        "step left it - none (default, or RPP_NZ_HOLD_ZCAM), rig (the rig translation) or focal (the "
+                        "law's focal-length terms): either takes out the trade of position along the boresight "
+                        "against focal length")
     p.add_argument("--wait-h", type=float, default=36.0, metavar="H",
                    help="wait up to this many hours for sites of the groups whose alignment is running (0.95.0; 0: take "
                         "the finished ones now)")
@@ -484,7 +489,8 @@ def _calib_nz(a: argparse.Namespace) -> int:
     res = NZ.fit_nzjoint(blocks, zoom=a.zoom, nav_points=a.points or Z.NAV_POINTS_PER_BLOCK,
                          iterations=int(getattr(a, "iterations", None) or 100),
                          passes=int(getattr(a, "passes", None) or 2),
-                         z_points=a.zpoints or Z.Z_POINTS_PER_BLOCK, navcam_blocks=extra)
+                         z_points=a.zpoints or Z.Z_POINTS_PER_BLOCK, navcam_blocks=extra,
+                         hold_zcam=getattr(a, "hold_zcam", None))
     w = NZ.write_nzjoint(res, out)
     for line in NZ.describe(res):
         print("  " + line)

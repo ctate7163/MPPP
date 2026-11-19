@@ -3,6 +3,49 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.36 — 2026-11-19 (branch `rpp`)
+
+Christian, 09:47-09:57: "is the new RPV version live"; "for the rpv browser layer, include center with the left and
+right eye if center is available"; "instead of holding the Z rig, can we hold the Z focal length?"; 'the rpv still has
+"Mars rover panorama viewer (RPV)" at the upper left of the browser. please put the rpp-rpv viewer version number on
+the lower left above the site name, images size, and version on which the site was rendered'; "i don't see the pivot
+motion in the 2d browser rpv"; "the 2d rpv should show the 16k center panarama if the viewer's platform can handle it";
+10:01-10:03: "the three forks name in rpv should have a North or South if it is not the whole three forks area. The z34
+sites should have a (zcam) after the site name to differentiate them"; 'the blue disk on the z34 Three Forks North
+should not have the ", 692" on it. For this and the future, just give it the first sol of the zcam images'.
+
+- **The live viewer page was never updated after 17 Nov** (`rpp.ibr.web.upload`). Since the viewer moved to its own
+  repository (`ctate7163/rpv`, 0.99.13), publishing copied the new `index.html` and `vendor/` into the checkout on
+  every run, but `upload` committed only `panos/` and `panos.json`. So GitHub Pages served the 17 Nov page: its old
+  title, and none of 0.99.14-0.99.35's viewer (the 3D modes, the screen eye movement, driving). `upload` now commits
+  the page too (`PAGE_FILES`: `index.html`, `vendor`, `.nojekyll`), with "page and panoramas" in the message when it
+  changed. The test checks that the page reaches the remote.
+- **Center panorama on a screen**: where a variant has the pivot's panorama (`*_ods_center.png`: the with-rover
+  variant when the rover surface is made), publish writes `<prefix>_360_center.jpg` (8K) and, from a wider source,
+  `<prefix>_360_center_16k.jpg` (16384 x 8192) - `center` and `center_full` in `panos.json` (`web.center_view`). The
+  page's eye menu adds `center` (layer 3, its own sphere and texture; L cycles left, right, center) and loads the
+  16K picture where the GPU takes a 16384 texture, the device has 8 GB or more and it is not a phone or a headset's
+  browser, the 8K one otherwise or after a failure.
+- **Versions at the lower left**: `RPV viewer <version>` (the page's `RPV_VERSION`, kept equal to `rpp.__version__`
+  by a test) above the station line, which now ends "<size of the picture shown> | rendered with RPP <version>"
+  (entries carry `rpp` beside the old `mppp`).
+- **Station names in the viewer** (`single_sites.viewer_name`, `viewer_sols`): the menu and info take the name from
+  the station list, before the one on the disc (`site_name` in `titles`), and `web.publish` renames the stations
+  already listed too - the live list had the Navcam Three Forks North (sol 686) as "Three Forks", from a disc made
+  before the station had its name. Mastcam-Z stations (`--cameras Z` in `ods_args`, or a `(Z34)` name) get
+  `(zcam)` after the name and their first sol only. A test keeps every Three Forks station North or South.
+- **The disc's sol for Mastcam-Z** (`nadir.mark_sols`): with Mastcam-Z frames in the panorama, the first sol of those
+  ("Sol 690", not "Sols 690, 692"). The disc is in the picture: the station's ods step has to run again.
+- **The step key leaves out the publishing modules** (`single_sites.NOT_IN_CODE_KEY`: `single_sites.py`, `web.py`,
+  `hf.py`): a change to the viewer's list no longer makes the meshes, depthmaps and panoramas again. This release
+  changes `nadir.py` and the key itself, so the next run of a station makes its mesh, depthmaps and ods once more
+  (the dense clouds are kept).
+- **`calib nz --hold-zcam none|rig|focal`** (`RPP_NZ_HOLD_ZCAM` for the freeze): the step with the Navcam free keeps
+  the Mastcam-Z rig translation or the law's focal-length terms (`nzjoint.ZFOCAL_TERMS`) where the Navcam-held step
+  left them; the record says which (`hold_zcam`). Default unchanged (`none`).
+- Docs: `station-products.md` (the page's upload, the version lines, the center panorama, the eye movement only in the
+  3D modes), `calibration.md` (`--hold-zcam`).
+
 ## 0.99.35 — 2026-11-19 (branch `rpp`)
 
 Christian, 09:33: "how did the z34 fiducials test go?"

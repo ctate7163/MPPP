@@ -215,6 +215,12 @@ two targets per frame, so the scale and the position correlate at -0.99. The hel
 focus (about -600 counts), which is below the terrain's focus range (222-1230), so the law is extrapolated there.
 The vicarious fiducials (5-10 more points a frame) are the way to a free-focal answer.
 
+`calib nz --hold-zcam rig|focal` (0.99.36; the default is `none`, or `RPP_NZ_HOLD_ZCAM`) keeps, in the step with the
+Navcam free, either the Mastcam-Z rig translation or the law's focal-length terms (a_fx and a_fy of both states, and
+the focus slope b) where the Navcam-held step left them. Either one takes out the trade of position along the
+boresight against focal length that let the 18 Nov N+Z joint move the ZR center 3.7 mm and its focal length 1000 ppm
+together; what is left of the Navcam's pull then shows in the Navcam terms and the other one.
+
 ```bash
 python -m rpp_studies.calibration.zcam_fiducials --pds D:\data\m2020\zcam --out D:\rover_blocks\camera_analysis\zcam34_fiducials --zoom 34
 ```

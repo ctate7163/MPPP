@@ -72,6 +72,43 @@ def mark_name(st: Dict[str, Any]) -> Optional[str]:
     return block_name(st.get("site"))
 
 
+ZCAM_TAG = "(zcam)"      # 0.99.36 (Christian, 19 Nov 2026: "The z34 sites should have a (zcam) after the site name to
+#                          differentiate them")
+
+
+def is_zcam_station(st: Dict[str, Any]) -> bool:
+    """Whether a station's panorama is made from Mastcam-Z frames (``--cameras Z...`` in its ``ods_args``, or a
+    camera tag such as ``(Z34)`` in its name)."""
+    import re
+    args = [str(x) for x in (st.get("ods_args") or [])]
+    for i, x in enumerate(args[:-1]):
+        if x == "--cameras" and args[i + 1].upper().startswith("Z"):
+            return True
+    return bool(re.search(r"\((?:Z|Mastcam-Z)\s*\d*(?:\s*mm)?\)\s*$", str(st.get("name") or ""), flags=re.I))
+
+
+def viewer_name(st: Dict[str, Any], label: str = "") -> str:
+    """The station's name in the viewer's menu and info (0.99.36): the name on its disc (:func:`mark_name`), with
+    ``(zcam)`` after it for a Mastcam-Z station - "Three Forks North (zcam)" beside the Navcam "Three Forks North".
+    The disc itself keeps the block's name alone (0.99.13)."""
+    nm = mark_name(st) or label
+    return f"{nm} {ZCAM_TAG}" if is_zcam_station(st) and ZCAM_TAG not in nm.lower() else nm
+
+
+def viewer_sols(st: Dict[str, Any], label: str = "") -> Optional[List[int]]:
+    """For a Mastcam-Z station the one sol the viewer gives (as on its disc, :func:`rpp.ibr.nadir.mark_sols`): the
+    first of its ``--sols`` in ``ods_args``, else the sol in its label; None for the others (the disc's sols)."""
+    import re
+    if not is_zcam_station(st):
+        return None
+    args = [str(x) for x in (st.get("ods_args") or [])]
+    for i, x in enumerate(args[:-1]):
+        if x == "--sols" and args[i + 1].isdigit():
+            return [int(args[i + 1])]
+    m = re.match(r"^Sol(\d+)", str(label))
+    return [int(m.group(1))] if m else None
+
+
 def block_workspace(name: str = "") -> str:
     """The block cloud's workspace folder: dense_block_N, or dense_block_<name> for a terrain set."""
     return f"dense_block_{name}" if name else BLOCK_WORKSPACE
@@ -306,14 +343,18 @@ STEP_OUTPUT = {"mesh": "mesh.ply", "depthmaps": "maps_report.md", "ods": "ods.js
 STATUS_FILE = "single_sites_status.json"
 
 
+NOT_IN_CODE_KEY = ("single_sites.py", "web.py", "hf.py")     # the runner and the publishing (panos.json, Hugging Face)
+
+
 def code_key() -> str:
     """A hash of the code the steps run (the ``rpp.ibr`` sources and the dense step's): a step is made again when it
-    changes, not on every version number."""
+    changes, not on every version number.  Not in it: this module and the publishing ones (:data:`NOT_IN_CODE_KEY`,
+    0.99.36: a change to the viewer's list no longer makes the meshes and panoramas again)."""
     import hashlib
     h = hashlib.sha1()
     here = Path(__file__).resolve().parent
     for f in sorted(here.glob("*.py")) + [here.parent / "sfm" / "dense.py"]:
-        if f.is_file() and f.name != "single_sites.py":
+        if f.is_file() and f.name not in NOT_IN_CODE_KEY:
             h.update(f.name.encode() + f.read_bytes().replace(b"\r\n", b"\n"))
     return h.hexdigest()[:16]
 
@@ -649,8 +690,9 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
             return "not published"
         from . import web
         logging.basicConfig(level=logging.INFO, format="%(message)s")
-        from .nadir import block_name                    # 0.97.17: the block's name without its size word
-        titles = {k: {"title": v.get("title") or v.get("name") or block_name(v.get("site")) or k,   # 0.98.19: the page puts "Sol 0xxx" before it
+        titles = {k: {"title": v.get("title") or viewer_name(v, k),   # 0.98.19: the page puts "Sol 0xxx" before it
+                      "site_name": viewer_name(v, k),     # 0.99.36: before the mark's name (made with the panorama)
+                      "sols": viewer_sols(v, k),          # 0.99.36: a Mastcam-Z station's first sol only
                       "note": v.get("web_note"), "yaw_deg": v.get("yaw_deg")} for k, v in st_cfg.items()}
         use_hf = bool(getattr(a, "upload", False)) and getattr(a, "host", "hf") == "hf"
         before = None
