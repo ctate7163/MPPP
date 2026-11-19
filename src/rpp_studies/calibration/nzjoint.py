@@ -25,6 +25,8 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 
 import numpy as np
 
+from rpp import env as rpp_env
+
 from . import joint as J
 from . import tied as T
 from . import ztied as Z
@@ -42,6 +44,10 @@ AGREE_MAX_NAV_RESIDUAL_RISE = 0.05
 AGREE_MAX_F_PPM = 100.0
 AGREE_MAX_PP_PX = 0.3
 TERMS_COMPARED = ("fx", "fy", "cx", "cy", "k1", "k2")
+
+
+HOLD_ZCAM = ("none", "rig", "focal")            # 0.99.36: what of the Mastcam-Z the second step holds
+ZFOCAL_TERMS = ("a_fx_backlash", "a_fy_backlash", "a_fx_regular", "a_fy_regular", "b")   # the law's focal length
 
 
 def _hold_z_pp(proj) -> None:
@@ -168,13 +174,23 @@ def fit_nzjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = N
                 z_points: int = Z.Z_POINTS_PER_BLOCK, iterations: int = 100, passes: int = 2, verbose: bool = True,
                 scapes: Optional[Sequence[Any]] = None, st: Optional[Dict[str, Any]] = None,
                 navcam_blocks: Optional[Dict[str, PathLike]] = None,
-                navcam_points: int = NAVCAM_ONLY_POINTS_PER_BLOCK) -> Dict[str, Any]:
+                navcam_points: int = NAVCAM_ONLY_POINTS_PER_BLOCK, hold_zcam: Optional[str] = None) -> Dict[str, Any]:
     """The Mastcam-Z joint first (Navcam held: the reference), then from the same merged blocks the combined
     adjustment (both laws free), and their comparison (:func:`compare`).  ``navcam_blocks`` (0.93): finished
     Navcam-only blocks {name: WORK} added to both adjustments with ``navcam_points`` points each, so the combined
     Navcam law is held by every Navcam block, not only by the Mastcam-Z blocks' Navcam frames (a block whose name is
-    one of ``blocks`` is left out: its Navcam frames are there already)."""
+    one of ``blocks`` is left out: its Navcam frames are there already).
+
+    ``hold_zcam`` (0.99.36; Christian, 19 Nov 2026: "instead of holding the Z rig, can we hold the Z focal length?"):
+    what of the Mastcam-Z the second step (the Navcam free) keeps where the first left it - "none" (as before: the law
+    and the rig translation free), "rig" (the rig's translation; its rotation free) or "focal" (the focal-length terms
+    of the law, :data:`ZFOCAL_TERMS`).  Inside a block the Mastcam-Z position along the boresight and its focal length
+    trade (d / r at range r): either one held takes the trade out (the 18 Nov joint moved the ZR center 3.7 mm and its
+    focal length 1000 ppm together).  The default comes from RPP_NZ_HOLD_ZCAM."""
     from rpp.sfm.project import zcam_focus_model_path
+    hold_zcam = str(hold_zcam or rpp_env.get("RPP_NZ_HOLD_ZCAM") or "none").lower()
+    if hold_zcam not in HOLD_ZCAM:
+        raise ValueError(f"hold_zcam {hold_zcam!r}: one of {HOLD_ZCAM}")
     if model is None:
         model = json.loads(zcam_focus_model_path(zoom=zoom).read_text(encoding="utf-8"))
     t = time.time()
@@ -216,12 +232,20 @@ def fit_nzjoint(blocks: Dict[str, PathLike], model: Optional[Dict[str, Any]] = N
     sg2 = copy.deepcopy(sg)
     for eye, arr in gz_h.items():
         sg2["eyes"][eye]["G"] = arr.copy()
+    zhold2 = {e: list(v) for e, v in zhold.items()}
+    if hold_zcam == "rig":                          # 0.99.36: the rig's translation where step 1 left it
+        sg2["rig_fit"] = "rotation"
+    elif hold_zcam == "focal":                      # 0.99.36: the law's focal-length terms where step 1 left them
+        for e in sg2["eyes"]:
+            zhold2[e] = sorted(set(zhold2.get(e, [])) | set(ZFOCAL_TERMS))
+    if verbose and hold_zcam != "none":
+        log.info(f"  step 2 holds the Mastcam-Z {'rig translation' if hold_zcam == 'rig' else 'focal length (' + ', '.join(ZFOCAL_TERMS) + ')'}")
     ba, gn, gz = adjust_nz(rec_h, proj_h, idx, st, units, zunits, sg2, iterations=iterations, passes=passes,
-                           verbose=verbose, zhold=zhold)
+                           verbose=verbose, zhold=zhold2)
     nz_stats = family_stats(rec_h, proj_h, units, idx, gn)
     nav_res = T.globals_result(st, gn, ba, units)
     z_res = Z.globals_result(sg2, gz, ba, zunits)
-    res: Dict[str, Any] = {"zoom": zoom, "blocks": sorted({u["scape"] for u in zunits.values()}),
+    res: Dict[str, Any] = {"zoom": zoom, "hold_zcam": hold_zcam, "blocks": sorted({u["scape"] for u in zunits.values()}),
                            "navcam_only_blocks": sorted(extra), "fixed_terms": fixed,
                            "navcam": nav_res, "zcam": z_res, "zcam_navcam_held": {e: dict(zip(Z.GLOBAL_TERMS, map(float, a)))
                                                                                  for e, a in gz_h.items()},
@@ -242,7 +266,8 @@ def _stats_line(s: Dict[str, Dict[str, float]]) -> str:
 def describe(res: Dict[str, Any]) -> List[str]:
     c = res["comparison"]
     out = [f"residuals, Navcam held: {_stats_line(c['residuals']['navcam_held'])}",
-           f"residuals, both free:   {_stats_line(c['residuals']['both_free'])}"]
+           f"residuals, both free:   {_stats_line(c['residuals']['both_free'])}"
+           + {"rig": " (the Mastcam-Z rig translation held)", "focal": " (the Mastcam-Z focal length held)"}.get(res.get("hold_zcam"), "")]
     for eye, rows in c["navcam"].items():
         parts = []
         for k in ("fx", "fy", "cx", "cy"):

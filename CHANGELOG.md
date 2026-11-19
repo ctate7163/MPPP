@@ -3,6 +3,91 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.37 — 2026-11-19 (branch `rpp`)
+
+Christian, 10:22: "regenerate the color products from the 16-bit images. regenerate and include the different color
+products. In the browser 2d version. Show a differ set of controls, including using the space bar to change the color
+map. Replace the enhanced local with just enhanced. The r button should be the same as the Rover icon to turn on and
+off the rover. Bring the info windows up a little. Move the NEWSo buttons up a little so that the top of N box is level
+with the top left bar. The color channels should be: standard color, raw color (with the standard white balanced
+revered to show what the raw images look like), enhanced color (enhancement with local brightness correction), enhanced
+tone (ton enhanced color with local brightness correction), dcs color (decorrelation stretch on just the sunlit terrain
+with the sky white and the rover/shadow black), normal map, distance map".
+
+- **`rpp.ibr.color_products`** (new; run by `rpp ods` after the enhanced views and by `--retone`, so
+  `rpp single-sites --retone` makes them from the 16-bit eyes with nothing rendered): `_raw_360_3DTD.jpg` (the
+  standard tone of linear / white balance), `_enhtone_360_3DTD.jpg` (base / detail tone mapping, the fast guided
+  filter at 4096 wide applied at full size) and `_dcs_360_3DTD.jpg` (decorrelation stretch from the sunlit terrain;
+  sky white, rover and its shadow black; masks from the center depth - the station's or its with_rover folder's - the
+  sky weight and the luminance). One parameter set per station (`color_products_parameters` in `tone_levels.json`),
+  recorded in `<prefix>_color_products.json`; the nadir disc copied from the standard view.
+- **Views**: `web.DEFAULT_VIEWS` = standard, raw color, enhanced local, enhanced tone, dcs color, normal map, distance
+  map. The page names standard "standard color" and enhanced local "enhanced color" (`VIEW_LABEL`; the keys stay, so
+  links and earlier entries work); every view but the normal and distance maps is a color view (the disc, the 3D
+  surfaces, B's color skins).
+- **Page on a screen**: space = next view (Shift+space back; the menus hand the keys back after a choice); R = the rover
+  button (it hid the 3D rover inside a 3D mode before); the welcome view lists the screen's keys instead of the
+  headset's buttons (those in a session); the info page 2 deg below the gaze line (7 before); the N E S W O cross at
+  8 px from the top, level with the bar, which keeps clear of it.
+- **dcs color** (10:52: "the dcs does not need to show the terrain's original colors underneath. It can be a colorful
+  splotchy mess for now"): each principal component stretched to sd 0.20 about mid gray (`DCS_SIGMA`, `DCS_MID`;
+  0.075 about the terrain's mean in the 18 Nov study).
+- **Install** (10:42-10:43: 'It has error: invalid requirement: "#". you should probably remove the comments from the
+  install instructions. It also looks like the Pypi link does not work. The download is too large. Does that include
+  any PDS data? we should remove that now'; "the install instructions should probably install into a dedicated conda
+  environment"): README, `docs/installation.md`, `docs/quickstart.md` and `CONTRIBUTING.md` install into a conda
+  environment of its own, from a shallow clone (`git clone --depth 1`: the files, about 40 MB, not the history), with
+  no comments inside the command blocks (a Windows prompt passed `#` to pip; a test keeps them out); PyPI is named as
+  not published yet (the page did not exist); `cd rpp`, not `cd RPP`.
+- **No PDS data in the repository**: the two test products (`tests/data/m20`, 11 MB) are removed. `tests/conftest.py`
+  looks for them in `RPP_TEST_DATA`, `tests/data/m20` and the user cache, and downloads them from the PDS Imaging Node
+  into the cache with `RPP_TEST_FETCH=1` (`rpp.pds.fetch_products`); without them the tests that read them are
+  skipped. The example set was already fetched from the PDS (`rpp example fetch`). Older commits still hold the
+  products; a shallow clone does not download them.
+
+## 0.99.36 — 2026-11-19 (branch `rpp`)
+
+Christian, 09:47-09:57: "is the new RPV version live"; "for the rpv browser layer, include center with the left and
+right eye if center is available"; "instead of holding the Z rig, can we hold the Z focal length?"; 'the rpv still has
+"Mars rover panorama viewer (RPV)" at the upper left of the browser. please put the rpp-rpv viewer version number on
+the lower left above the site name, images size, and version on which the site was rendered'; "i don't see the pivot
+motion in the 2d browser rpv"; "the 2d rpv should show the 16k center panarama if the viewer's platform can handle it";
+10:01-10:03: "the three forks name in rpv should have a North or South if it is not the whole three forks area. The z34
+sites should have a (zcam) after the site name to differentiate them"; 'the blue disk on the z34 Three Forks North
+should not have the ", 692" on it. For this and the future, just give it the first sol of the zcam images'.
+
+- **The live viewer page was never updated after 17 Nov** (`rpp.ibr.web.upload`). Since the viewer moved to its own
+  repository (`ctate7163/rpv`, 0.99.13), publishing copied the new `index.html` and `vendor/` into the checkout on
+  every run, but `upload` committed only `panos/` and `panos.json`. So GitHub Pages served the 17 Nov page: its old
+  title, and none of 0.99.14-0.99.35's viewer (the 3D modes, the screen eye movement, driving). `upload` now commits
+  the page too (`PAGE_FILES`: `index.html`, `vendor`, `.nojekyll`), with "page and panoramas" in the message when it
+  changed. The test checks that the page reaches the remote.
+- **Center panorama on a screen**: where a variant has the pivot's panorama (`*_ods_center.png`: the with-rover
+  variant when the rover surface is made), publish writes `<prefix>_360_center.jpg` (8K) and, from a wider source,
+  `<prefix>_360_center_16k.jpg` (16384 x 8192) - `center` and `center_full` in `panos.json` (`web.center_view`). The
+  page's eye menu adds `center` (layer 3, its own sphere and texture; L cycles left, right, center) and loads the
+  16K picture where the GPU takes a 16384 texture, the device has 8 GB or more and it is not a phone or a headset's
+  browser, the 8K one otherwise or after a failure.
+- **Versions at the lower left**: `RPV viewer <version>` (the page's `RPV_VERSION`, kept equal to `rpp.__version__`
+  by a test) above the station line, which now ends "<size of the picture shown> | rendered with RPP <version>"
+  (entries carry `rpp` beside the old `mppp`).
+- **Station names in the viewer** (`single_sites.viewer_name`, `viewer_sols`): the menu and info take the name from
+  the station list, before the one on the disc (`site_name` in `titles`), and `web.publish` renames the stations
+  already listed too - the live list had the Navcam Three Forks North (sol 686) as "Three Forks", from a disc made
+  before the station had its name. Mastcam-Z stations (`--cameras Z` in `ods_args`, or a `(Z34)` name) get
+  `(zcam)` after the name and their first sol only. A test keeps every Three Forks station North or South.
+- **The disc's sol for Mastcam-Z** (`nadir.mark_sols`): with Mastcam-Z frames in the panorama, the first sol of those
+  ("Sol 690", not "Sols 690, 692"). The disc is in the picture: the station's ods step has to run again.
+- **The step key leaves out the publishing modules** (`single_sites.NOT_IN_CODE_KEY`: `single_sites.py`, `web.py`,
+  `hf.py`): a change to the viewer's list no longer makes the meshes, depthmaps and panoramas again. This release
+  changes `nadir.py` and the key itself, so the next run of a station makes its mesh, depthmaps and ods once more
+  (the dense clouds are kept).
+- **`calib nz --hold-zcam none|rig|focal`** (`RPP_NZ_HOLD_ZCAM` for the freeze): the step with the Navcam free keeps
+  the Mastcam-Z rig translation or the law's focal-length terms (`nzjoint.ZFOCAL_TERMS`) where the Navcam-held step
+  left them; the record says which (`hold_zcam`). Default unchanged (`none`).
+- Docs: `station-products.md` (the page's upload, the version lines, the center panorama, the eye movement only in the
+  3D modes), `calibration.md` (`--hold-zcam`).
+
 ## 0.99.35 — 2026-11-19 (branch `rpp`)
 
 Christian, 09:33: "how did the z34 fiducials test go?"

@@ -345,7 +345,8 @@ the whole station). Each station's output also goes to `single_site_log.txt` in 
 `single_sites_summary.md` has a line per station and variant: the exit codes, how far the fused points reach, the
 ground plane, the panorama's coverage, whether the square is there. `--squares-only` only stacks the eye images
 already there; `--retone` makes the 8-bit images again from the 16-bit ones. Since 0.97.2 a mesh, depthmaps or ods
-step whose command, code (`rpp/ibr`, `sfm/dense.py`), cloud and upstream steps are unchanged since its last good
+step whose command, code (`rpp/ibr` without the runner and the publishing modules `web.py` and `hf.py` (0.99.36),
+`sfm/dense.py`), cloud and upstream steps are unchanged since its last good
 run is skipped (`--force` runs everything; `step_<name>.json` in the station's folder is the record), the second
 variant takes the first one's terrain mesh, and `single_sites_status.json` says what is running. `--publish DIR`
 (0.97.3) copies the stations' stereo JPEGs, reduced to `--publish-width`, into `DIR/panos` and lists them in

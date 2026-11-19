@@ -79,7 +79,8 @@ the normal is in the station's frame, RGB = 127.5 (1 + [east, north, up]), so le
 is used, so a fault seen there is in the mesh, the plane, the rover model or the far field and not in the blending.
 `rpp ods --no-geometry` leaves them out. The viewer lists them as "distance map" (log), "distance map linear" and
 "normal map" (0.98.30; "range log", "range linear" and "normal" before - those names still work in
-`--publish-views`). The upload's default views are standard, enhanced local, normal map and distance map. The normal
+`--publish-views`). The upload's default views (0.99.37) are standard, raw color, enhanced local, enhanced tone, dcs
+color, normal map and distance map; the page shows standard as "standard color" and enhanced local as "enhanced color". The normal
 map shows only the surface meshed from the cloud and the rover model: the fill under the rover, the apron to the
 ground plane's reach, the deck floors and the plane are black (a mesh made before 0.98.30 needs the mesh step again
 for this). The eyes are rendered at 16384 x 8192 (`rpp ods --width`); publishing reduces them to 8192.
@@ -160,7 +161,11 @@ the place alone (`dense_S003D2046`), and `--station` takes either form.
 |---|---|
 | `<prefix>_360_3DTD.png`, `.jpg` | both eyes in one square, **the left eye on top** (8-bit) |
 | `<prefix>_360_3DTD_16.png` | the same in 16-bit linear radiance units: the record for color work |
-| `<prefix>_enh_360_3DTD.jpg`, `_enhlocal_360_3DTD.jpg` | contrast-enhanced views, made from the 16-bit panoramas (terrain stretched; the sky smoothed; sky and deck may clip) |
+| `<prefix>_enh_360_3DTD.jpg`, `_enhlocal_360_3DTD.jpg` | contrast-enhanced views, made from the 16-bit panoramas (terrain stretched; the sky smoothed; nothing clips): `_enhlocal` is the viewer's "enhanced color" |
+| `<prefix>_raw_360_3DTD.jpg` | raw color (0.99.37): the standard view of the 16-bit values with the white balance divided out (`ods.json` linear16.white_balance) - the color of the RAD products |
+| `<prefix>_enhtone_360_3DTD.jpg` | enhanced tone (0.99.37): base / detail tone mapping - the local brightness (a guided filter, 1 deg) compressed, the detail x 1.8, each pixel's color ratios kept |
+| `<prefix>_dcs_360_3DTD.jpg` | dcs color (0.99.37): a decorrelation stretch fitted to the sunlit terrain; the sky white, the rover and its shadow black, the nadir disc as in the standard view |
+| `<prefix>_color_products.json` | the parameters of the three (`rpp.ibr.color_products`; one set per station, from the left eye, in `tone_levels.json`) |
 | `<prefix>_ods_sky_weight.png` | small map of the sky above the skyline: where the enhanced views smooth |
 | `<prefix>_ods_left`, `_right` `.png` / `_16.png` | the eyes apart (`--eyes left right center` adds the view from the pivot, a third more time) |
 | `<prefix>_ods_centre_depth.npz`, `_depth_16.png`, `_depth_*.jpg` | the range from the pivot for every pixel; from rays alone, seconds |
@@ -192,7 +197,8 @@ none); the constants are at the top of `rpp/ibr/ods.py`, and `ods.json` records 
 
 Within 20 degrees of straight down the panorama shows no terrain worth keeping (the mast, or filled-in ground). A
 light blue disc there carries two rows of black text near its rim, each over at most half the circle and centered on
-the rover's front: "Mars 2020 Perseverance Rover" with the sol and the site, and the image credit
+the rover's front: "Mars 2020 Perseverance Rover" with the sol and the site (with Mastcam-Z frames in, only the
+first sol of those: "Sol 690 - Three Forks North", 0.99.36), and the image credit
 (NASA/JPL-Caltech/MSSS for Navcam and Hazcam frames; NASA/JPL-Caltech/MSSS/ASU when Mastcam-Z frames are in)
 followed by "made by C. Tate". In the flat image they are two straight lines along the bottom; in a headset, facing the rover's front and
 looking down, they are two arcs ahead of you, upright. The letters are made about twice too wide in the flat image,
@@ -214,9 +220,11 @@ between a station's two variants.
 
 `docs/ods/index.html` is one static page (three.js, WebXR): it shows the `_360_3DTD` squares on a sphere per eye,
 with menus for station, variant and view, a link per view (`#<station>/<variant>/<view>`), drag and wheel on a
-screen and a choice of the eye shown there (left or right; the L key), and in a headset: right / left trigger = next / previous station, grip = variant,
+screen and a choice of the eye shown there (left, right, or the center where there is one; the L key), the space bar for
+the next view (0.99.37; Shift+space back), R for the rover on and off (as the rover button, 0.99.37), and in a headset: right / left trigger = next / previous station, grip = variant,
 A = view, X = info and map, Y = home (the welcome view, facing west), B = terrain only, thumbstick = turn (0.98.28). On a screen: the house
-button or H = home, B = terrain only, and the N E S W O cross at the upper right (O = level along the rover's +x). A line at the bottom reports what
+button or H = home, B = terrain only, and the N E S W O cross at the upper right, level with the bar (O = level along
+the rover's +x). On a screen the welcome view lists the keys (in a headset, the controller's buttons). A line at the bottom reports what
 the device can show (maximum texture size, compressed-texture formats).
 
 - On the documentation site: [https://ctate7163.github.io/rpv/](https://ctate7163.github.io/rpv/){target="_blank" rel="noopener"}
@@ -226,6 +234,23 @@ the device can show (maximum texture size, compressed-texture formats).
   commits and pushes that checkout (`--host github`: the pictures into its `panos/`, as before 0.99.3). Since 0.99.10 the
   repository's own `docs/ods` holds the page and `vendor/` only: the panoramas and their list live in `ctate7163/rpv`.
 - Another image list: `.../ods/?index=URL` (same origin, or a host that allows cross-origin requests).
+- Since 0.99.36 the upload commits the page (`index.html`, `vendor/`) with the panoramas. Before it only `panos/` and
+  `panos.json` were committed in `ctate7163/rpv`, so the live page stayed at the one of 17 Nov (0.99.13) while the
+  stations went up. `rpp single-sites <station> --publish-only --upload` puts a new page up with one station.
+- The menu and the info give a station's name from the station list (`single_sites.json`), not from its disc, so a
+  station renamed since its panoramas were made shows the new name at the next publish of any station: the Navcam
+  Three Forks North (sols 686, 688) had the disc's "Three Forks". A Mastcam-Z station has `(zcam)` after the name
+  ("Three Forks North (zcam)", its first sol only); its disc has the name alone, as the Navcam one (0.99.13).
+- The lower left shows two lines: the viewer's own version (`RPV viewer <version>`, the RPP release that wrote the
+  page) above the station, its note, the variant, the size of the picture shown and the RPP version it was rendered
+  with.
+- **The center panorama on a screen (0.99.36).** Where a variant has the panorama from the pivot itself (the
+  with-rover variant does when the rover surface is made: `rpp ods --eyes left right center`), the eye menu offers
+  `center` after the left and right eyes (the L key goes left, right, center). The publish step writes it as
+  `<prefix>_360_center.jpg` at 8192 x 4096, and as `<prefix>_360_center_16k.jpg` at 16384 x 8192 when the panorama is
+  wider (`center` and `center_full` in `panos.json`). The page loads the 16K one where the GPU takes a 16384 texture,
+  the device reports 8 GB or more and it is not a phone or a headset's browser; else, or when it fails, the 8K one.
+  A headset shows the two eyes as before.
 
 Status: a prototype. The fifth and sixth modes (0.99.32-0.99.33) have been loaded only in a headless Chrome, on a
 synthetic station; nothing of 0.99.32-0.99.33 has been tried in a headset yet. Tiled 16K / 32K images are not done.
@@ -253,7 +278,9 @@ the surface beyond).
 
 On a screen the eye moves a little where a 3D surface is shown (0.99.32): it sits 0.15 m in front of the point the
 view turns about (as eyes are in front of the neck), follows the mouse by up to 5 cm, and when left alone for 3 s
-circles slowly (3 cm; not when the system asks for reduced motion). P turns it off; `?still=1` opens without it.
+circles slowly (3 cm; not when the system asks for reduced motion). P turns it off; `?still=1` opens without it. In
+the panorama-only modes (terrain only, terrain with the projected rover) the picture is a sphere around the eye, so
+there is nothing for the eye to move against and the movement is off.
 
 The sixth mode is a simulation: each thumbstick's forward / back axis is the track on that side (skid steering: speed =
 their mean x 0.25 m/s, turn rate = their difference / 2.3 m; on a screen the arrow keys). The viewer rides at the mast

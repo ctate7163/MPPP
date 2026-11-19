@@ -1,21 +1,40 @@
 # Installation
 
-RPP needs Python 3.10 or later. From PyPI (<https://pypi.org/project/rover-photogrammetry-pipeline/>, 0.94.4 onwards):
+RPP needs Python 3.10 or later. Install RPP into a conda environment of its own (Miniforge, Miniconda or Anaconda), from the GitHub repository.
+It is not on PyPI yet: the name `rover-photogrammetry-pipeline` is reserved there for the first release. The same
+commands work in a Windows Anaconda Prompt, PowerShell and a Linux or macOS shell:
 
 ```bash
-pip install "rover-photogrammetry-pipeline[mask,sfm,plots]"
+conda create -n rpp -c conda-forge python=3.12 git -y
+conda activate rpp
+git clone --depth 1 https://github.com/ctate7163/rpp.git
+cd rpp
+pip install -e ".[mask,sfm,plots]"
+rpp doctor
 ```
 
-From the repository (the tests, studies, notebooks and Windows scripts are only there):
+- `--depth 1` downloads the current files only (about 40 MB) instead of the whole history.
+- `[mask,sfm,plots]` is what `rpp run` needs: torch and timm (masks), pycolmap 4.2, pyceres 2.6 and kornia (the
+  alignment), matplotlib (plots). PyTorch is the largest download; for a CUDA build install torch first as
+  <https://pytorch.org> says, and pip keeps it. `pip install -e .` alone reads and processes PDS products;
+  `".[all]"` adds the notebooks, the maps, the tests and the studies' packages.
+- `rpp doctor` reports what is installed and which camera models are in use.
+- `envs/rpp.yml` makes the same environment in one step: `conda env create -f envs/rpp.yml`, then
+  `conda activate rpp` and `pip install -e .` in the clone.
+
+No PDS data comes with the code: the example set, the products of other sols and the two products the tests use are
+downloaded from the PDS Imaging Node when they are needed (below; for the tests, `RPP_TEST_FETCH=1`).
+
+## Tests
 
 ```bash
-git clone https://github.com/ctate7163/rpp.git
-cd RPP
-pip install -e ".[all]"
-pytest -q                      # the test suite runs on the two PDS products in tests/data/m20
+pip install -e ".[dev]"
+pytest -q
 ```
 
-`envs/rpp.yml` is a conda environment with the same packages.
+The two PDS products some tests read (a Navcam frame of sol 461 and a Mastcam-Z frame of sol 464, 11 MB) are not in
+the repository. Set `RPP_TEST_FETCH=1` (`set RPP_TEST_FETCH=1` in a Windows prompt) once to download them from the
+PDS into the user cache, or `RPP_TEST_DATA` to a folder that holds them; without them those tests are skipped.
 
 ## Optional dependency groups
 
@@ -34,8 +53,7 @@ The base install reads and processes PDS products. The other parts of the pipeli
 | `docs` | mkdocs, mkdocs-material, mkdocstrings | this documentation site |
 | `all` | mask, sfm, error, plots, maps, notebooks, dev | everything except `release` and `docs` |
 
-For example, `pip install "rover-photogrammetry-pipeline[mask,sfm,plots]"` (or `pip install -e ".[mask,sfm,plots]"` in a clone) installs what
-`rpp run` needs.
+For example, `pip install -e ".[mask,sfm,plots]"` in the clone installs what `rpp run` needs.
 
 ## Models downloaded on first use
 

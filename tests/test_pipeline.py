@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import NLF, ZL0
+from conftest import NLF, ZL0, needs_data
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -122,6 +122,8 @@ def test_resolve_site(tmp_path, clean_env):
 
 @pytest.fixture
 def pds(tmp_path):
+    if not (NLF.is_file() and ZL0.is_file()):              # 0.99.37: the products come from the PDS (conftest)
+        pytest.skip("the two PDS test products are not here (RPP_TEST_FETCH=1)")
     d = tmp_path / "pds" / "sol0461"
     d.mkdir(parents=True)
     for f in (NLF, ZL0):

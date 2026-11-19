@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
 from pathlib import Path
+from conftest import needs_data  # noqa: E402  (0.99.37: the PDS products are fetched, see conftest)
 
 
 def _synthetic_cahv(fx=1200.0, fy=1190.0, cx=640.3, cy=479.1, seed=0):
@@ -27,6 +28,7 @@ def test_parse_zcam():
     assert fn.stereo_partner_stem == "ZR0_0709_0729888971_069RAD_N0332864ZCAM07114_0340LMA01"
 
 
+@needs_data
 def test_parse_navcam_and_downsample():
     from rpp import parse_filename
     fn = parse_filename("NLF_0709_0729883381_848RAD_N0332864SAPP00601_0A00LLJ01.IMG")
@@ -101,6 +103,7 @@ def test_ypr_matches_legacy_formula():
         assert np.allclose(pose.metashape_ypr_deg(), ypr, atol=1e-9)
 
 
+@needs_data
 def test_colmap_text_model_round_trip(tmp_path):
     from rpp.colmap import write_text_model
     R = Rotation.from_euler("xyz", [10, 20, 30], degrees=True).as_matrix()
@@ -154,6 +157,7 @@ def _navcam(eye="L", zero=()):
     return camera_from_colmap_json(data_dir() / f"cmods/M2020_N{eye}_fisheye_tangential.json", zero)
 
 
+@needs_data
 def test_navcam_camera_is_invertible_over_the_whole_frame():
     pycolmap = pytest.importorskip("pycolmap")
     from rpp.colmap import project_camera, unproject_camera
@@ -175,7 +179,7 @@ def test_navcam_camera_is_invertible_over_the_whole_frame():
     assert _navcam("L", ("p1", "p2"))["params"][6] == 0.0                  # TANGENTIAL = "zero" still possible
 
 
-DATA = Path(__file__).parent / "data" / "m20"
+from conftest import DATA  # noqa: E402,F401  (0.99.37: found or fetched, see conftest)
 
 
 from conftest import NLF  # noqa: E402  (0.91: the Rockytop products)
@@ -199,6 +203,7 @@ def _navcam_model():
     return json.loads((data_dir() / "cmods" / "M2020_NL_fisheye_tangential.json").read_text())
 
 
+@needs_data
 def test_navcam_label_is_cahvore_fisheye_and_matches_the_promoted_model():
     from rpp.cmod import CameraModel, compare_to_colmap
     cm, (dx, dy) = _label_model(NLF)
@@ -212,6 +217,7 @@ def test_navcam_label_is_cahvore_fisheye_and_matches_the_promoted_model():
     assert compare_to_colmap(wrong, nl["model"], nl["params"], 5120, 3840, step=160)["rms_px"] > 100
 
 
+@needs_data
 def test_decompose_matches_camera_py_and_rescale_is_exact():
     from rpp.camera import CAHVOR
     from rpp.labels import label_get, read_pds

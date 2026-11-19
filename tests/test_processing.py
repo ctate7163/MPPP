@@ -280,7 +280,7 @@ def test_reuse_existing_notices_a_new_waypoint_table(tmp_path):
     assert have == {} and rep["reason"] == "waypoint table changed"
 
 
-DATA = Path(__file__).parent / "data" / "m20"
+from conftest import DATA  # noqa: E402,F401  (0.99.37: found or fetched, see conftest)
 
 
 from conftest import NLF  # noqa: E402  (0.91: the Rockytop products)

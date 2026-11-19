@@ -2397,6 +2397,13 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             (out / "ods.json").write_text(json.dumps(rec_out, indent=1, default=str), encoding="utf-8")   # write_enhanced reads the exposure
             from .linear16 import write_enhanced
             rec_out["enhanced"] = write_enhanced(out, prefix, top=stack_top, levels_file=tone_levels_file)
+            try:                                         # 0.99.37: raw color, enhanced tone, dcs color
+                from .color_products import write_color_products
+                cp = write_color_products(out, prefix, top=stack_top, levels_file=tone_levels_file)
+                rec_out["color_products"] = {k: cp.get(k) for k in ("files", "notes")}
+            except Exception as e:                       # noqa: BLE001 - the panorama stands without them
+                log.warning("ods: no raw / enhanced tone / dcs views (%s)", e)
+                rec_out["color_products"] = {"error": str(e)}
     if prefix:                                       # the unprefixed files of before 10 Nov would be stale
         for n in OLD_NAMES:
             if (out / n).is_file():

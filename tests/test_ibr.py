@@ -1409,6 +1409,9 @@ def test_floating_surface_removed_and_deep_faces_cut(tmp_path):
 
 # ----------------------------------------------------------------------------- 10 Nov: the 16-bit linear panorama
 def test_linear16_of_a_real_product_and_the_archive_lookup(tmp_path):
+    from conftest import NLF as _nlf
+    if not _nlf.is_file():
+        pytest.skip("the PDS test product is not here (RPP_TEST_FETCH=1, see conftest)")
     import cv2
     import shutil
     from types import SimpleNamespace
@@ -2019,8 +2022,11 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
     w = tmp_path / "web"
     w.mkdir()
     (w / "panos.json").write_text(json.dumps({"panos": [{"id": "A0", "variants": [{"key": "x", "views": {"standard": "a.jpg"}}]}]}))
-    doc = web.publish(r, w, width=128, titles={"S1": {"title": "One", "yaw_deg": 90, "note": None}})
+    doc = web.publish(r, w, width=128, titles={"S1": {"title": "One", "yaw_deg": 90, "note": None},
+                                               "A0": {"title": "Zero", "site_name": "Zero North (zcam)", "sols": [5]}})
     assert [p["id"] for p in doc["panos"]] == ["A0", "S1"]
+    assert doc["panos"][0]["site_name"] == "Zero North (zcam)" and doc["panos"][0]["sols"] == [5]   # 0.99.36: listed
+    assert doc["panos"][0]["title"] == "Zero"                     # before this run, renamed by the station list
     s1 = doc["panos"][1]
     assert s1["title"] == "One" and s1["yaw_deg"] == 90 and [v["key"] for v in s1["variants"]] == ["masked", "rover"]
     assert [v["label"] for v in s1["variants"]] == ["terrain only", "terrain with rover (projected)"]             # 0.98.5: this order
@@ -2036,7 +2042,7 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
     xy = web.station_on_map("Sol0052_S003D2046", wp)
     assert xy and min(abs(xy[0] - a) + abs(xy[1] - b) for a, b in tr["xy"]) < 30 and web.station_on_map("nothing", wp) is None
     assert cv2.imread(str(w / "panos" / "S1_360_3DTD.jpg")).shape == (128, 128, 3)
-    assert not (w / "panos" / "S1_enh_360_3DTD.jpg").exists() and web.DEFAULT_VIEWS == ("standard", "enhanced local", "normal map", "distance map")
+    assert not (w / "panos" / "S1_enh_360_3DTD.jpg").exists() and web.DEFAULT_VIEWS == ("standard", "raw color", "enhanced local", "enhanced tone", "dcs color", "normal map", "distance map")
     # 0.98.12: the range and normal views at most GEOMETRY_WIDTH wide, whatever the color width
     for nm in ("S1_normal_360_3DTD.jpg", "S1_range_log_360_3DTD.jpg"):
         cv2.imwrite(str(r / "S1" / nm), np.full((256, 256, 3), 90, np.uint8))
@@ -2053,6 +2059,19 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
     assert not (tmp_path / "web2" / "panos" / "S1_enhlocal_360_3DTD.jpg").exists()
     page = (Path(web.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
     assert 'id="eye"' in page and "sessionstart" in page and "setEye" in page                  # the eye shown on a screen
+    # 0.99.36 (Christian, 19 Nov 2026: "include center with the left and right eye if center is available")
+    cv2.imwrite(str(r / "S1" / "with_rover" / "S1_rover_ods_center.png"), np.full((128, 256, 3), 70, np.uint8))
+    cen = web.publish(r, tmp_path / "web5", width=128)["panos"][0]
+    assert cen["variants"][1]["center"] == {"standard": "panos/S1_rover_360_center.jpg"} and "center" not in cen["variants"][0]
+    assert cv2.imread(str(tmp_path / "web5" / "panos" / "S1_rover_360_center.jpg")).shape == (64, 128, 3)
+    # 0.99.36 ("the 2d rpv should show the 16k center panorama if the viewer's platform can handle it"): the full one too
+    assert cen["variants"][1]["center_full"] == {"standard": "panos/S1_rover_360_center_16k.jpg"}
+    assert cv2.imread(str(tmp_path / "web5" / "panos" / "S1_rover_360_center_16k.jpg")).shape == (128, 256, 3)
+    assert web.CENTER_FULL_WIDTH == 16384 and "center_full" in page and "maxTex >= 16384" in page
+    from rpp import __version__
+    assert cen["rpp"] == __version__ and f"const RPV_VERSION = '{__version__}';" in page   # the page's own version
+    for t in ("centerFileOf", "EYE_LAYER", "['center', 3]", 'id="ver"', "rendered with RPP"):
+        assert t in page, t
     im = cv2.imread(str(web.label_pano(tmp_path / "t.jpg", width=512)))
     assert im.shape == (512, 512, 3)
     b, g, rr = im[:256].reshape(-1, 3).astype(int).sum(0)       # the top half carries the blue "LEFT EYE" (BGR)
@@ -2170,6 +2189,8 @@ def test_nadir_mark_lines_credit_and_disc():
     assert lines == ["Mars 2020 Perseverance Rover", "Sol 461 - Rockytop", "Image credit: NASA/JPL-Caltech/MSSS", "made by C. Tate"]
     assert nadir.mark_lines(["NLF_0686_a", "NLF_0688_a"])[1] == "Sols 686, 688"
     assert nadir.mark_lines(["NLF_0686_a", "NLF_0687_a"])[1] == "Sols 686-687"
+    # 0.99.36: with Mastcam-Z frames the first sol of those alone (the Navcam fill frames' sols not either)
+    assert nadir.mark_lines(["ZL0_0690_a", "ZR0_0692_a", "NLF_0686_a"], "Three Forks North")[1] == "Sol 690 - Three Forks North"
     W, H = 4096, 2048
     m = nadir.make_mark(W, H, lines, center_azimuth_deg=90.0)          # the rover's front to the east
     band = H - m["row0"]
@@ -2800,6 +2821,7 @@ def test_ground_mark_published_and_upload_keeps_a_failed_push_for_the_next_one(t
     gm = doc["panos"][0]["variants"][0]["ground_mark"]
     assert (w / gm["file"]).is_file() and gm["depth_m"] == round(nm["depth_below_pivot_m"], 4)
     assert abs(gm["radius_m"] - web.MARK_SCALE * nm["radius_m"]) < 1e-3 and web.MARK_SCALE > 1.0     # a little larger
+    assert web.install_viewer(w) and (w / "index.html").is_file()      # what single-sites does after publish
     up = web.upload(w, ["Sol0091_S003D0010"], remote="nowhere", tries=2, wait_s=0)                    # the push cannot work
     assert not up["ok"] and up["committed"] and not up["pushed"] and "2 tries" in up["message"]
     assert json.loads((w / web.PENDING_NAME).read_text())["committed"] and "upload_pending" not in subprocess.run(
@@ -2808,6 +2830,9 @@ def test_ground_mark_published_and_upload_keeps_a_failed_push_for_the_next_one(t
     assert ok["ok"] and ok["pushed"] and ok["verified"] and not ok["committed"] and not (w / web.PENDING_NAME).exists()
     names = subprocess.run(["git", "-C", str(bare), "ls-tree", "-r", "--name-only", "main"], capture_output=True, text=True).stdout
     assert "docs/ods/panos/Sol0091_S003D0010_nadir_mark.png" in names and "docs/ods/panos.json" in names
+    # 0.99.36: the page goes up with the panoramas (the live viewer stayed at 17 Nov's page while only these went up)
+    assert "docs/ods/index.html" in names and "page and panoramas" in subprocess.run(
+        ["git", "-C", str(repo), "log", "--format=%s"], capture_output=True, text=True).stdout
     page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
     assert "ground_mark" in page and "CircleGeometry" in page
     assert "single-sites --upload %*" in SS.BAT and "--no-upload" in SS.BAT
@@ -3161,7 +3186,7 @@ def test_o_looks_along_the_rover_x_and_y_b_home_buttons(tmp_path):
     assert web.rover_forward_azimuth({"rover_forward_azimuth_deg": 370.0, "text_centre_azimuth_deg": 1.0}) == 10.0
     assert web.rover_forward_azimuth({}) is None
     page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
-    assert "#compass { position: fixed; right: 12px; top: 52px;" in page and "-Math.PI / 4" not in page
+    assert "#compass { position: fixed; right: 12px; top: 8px;" in page and "-Math.PI / 4" not in page
     assert "TEXT_FROM_FORWARD_DEG = 135" in page and "rover_forward_azimuth_deg" in page
     assert 'id="home"' in page and "goHome" in page and "faceAfterLoad = 270" in page
     assert "pressed(src, 5)" in page and "if (left) goHome(); else terrainOnly();" in page
@@ -3360,7 +3385,7 @@ def test_viewer_keeps_north_across_stations_and_its_name_in_the_bar():
     a station change leaves the world's rotation alone; the bar and tab carry the viewer's name, which a list title of the
     viewer's own names does not replace."""
     page = (Path(__file__).resolve().parents[1] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
-    show = page[page.index("async function show()"):page.index("const color = k =>")]
+    show = page[page.index("async function show()"):page.index("function color(k)")]
     assert "if (!headingSet) {" in show and "headingSet = true;" in show
     assert show.count("world.rotation.y = yaw0 + turn;") == 1                       # inside the once-only block
     assert show.index("if (!headingSet) {") < show.index("world.rotation.y = yaw0 + turn;")
@@ -3495,3 +3520,73 @@ def test_height_field_near_the_mast_fill_under_the_rim_and_dimmed_fill_normals()
     rim = (np.hypot(cf[:, 0] - 2, cf[:, 1]) < 0.9) & (np.hypot(cf[:, 0], cf[:, 1]) < 3.5)
     assert rim.sum() > 10 and (cf[rim, 2] < 0.1 * np.sin(cf[rim, 0]) + 0.004).all()
     assert M.FILL_TUCK_M == 0.005 and O.NORMAL_FILL_DIM == 0.45
+
+
+def test_viewer_names_three_forks_and_zcam():
+    """0.99.36 (Christian, 19 Nov 2026): "the three forks name in rpv should have a North or South if it is not the whole
+    three forks area. The z34 sites should have a (zcam) after the site name"; a Mastcam-Z station's one sol."""
+    import json as _json
+    from rpp.ibr import single_sites as ss
+    cfg = _json.loads((Path(ss.__file__).resolve().parents[1] / "data" / "single_sites.json").read_text(encoding="utf-8"))
+    names = {k: ss.viewer_name(v, k) for k, v in cfg["stations"].items()}
+    assert names["Sol0690_S032D1184_Z34"] == "Three Forks North (zcam)" and names["Sol0686_S032D1184"] == "Three Forks North"
+    assert names["Sol0670_S032D0672_Z34"] == "Three Forks South (zcam)" and names["Sol0670_S032D0672"] == "Three Forks South"
+    for k, n in names.items():                                   # no station is the whole Three Forks area
+        assert not n.startswith("Three Forks") or "North" in n or "South" in n, (k, n)
+        assert ("(zcam)" in n) == ss.is_zcam_station(cfg["stations"][k]), (k, n)
+    assert ss.viewer_sols(cfg["stations"]["Sol0690_S032D1184_Z34"], "Sol0690_S032D1184_Z34") == [690]
+    assert ss.viewer_sols(cfg["stations"]["Sol0686_S032D1184"], "Sol0686_S032D1184") is None
+    assert ss.mark_name(cfg["stations"]["Sol0690_S032D1184_Z34"]) == "Three Forks North"       # the disc: no tag (0.99.13)
+    assert "web.py" in ss.NOT_IN_CODE_KEY and "hf.py" in ss.NOT_IN_CODE_KEY and "ods.py" not in ss.NOT_IN_CODE_KEY
+
+
+def test_color_products_raw_tone_dcs(tmp_path):
+    """0.99.37 (Christian, 19 Nov 2026): raw color (the white balance divided out), enhanced tone (base / detail) and
+    dcs color (sunlit terrain stretched; the sky white, the rover and its shadow black) from the 16-bit eyes."""
+    import cv2
+    from rpp.ibr import color_products as CP, linear16 as L
+    H, W = 128, 256
+    el = 90.0 - (np.arange(H) + 0.5) * 180.0 / H
+    rng = np.random.default_rng(1)
+    x = np.zeros((H, W, 3), np.float32)                          # BGR, 8-bit linear units
+    x[el > 0] = (120.0, 150.0, 170.0)                            # the sky, bright
+    ter = el <= 0
+    x[ter] = np.clip(rng.normal((40.0, 60.0, 90.0), 6.0, (int(ter.sum()), W, 3)), 1, None)
+    rov = np.zeros((H, W), np.uint8)
+    rov[96:112, 100:140] = 1                                     # the rover below the horizon
+    x[rov > 0] = (200.0, 200.0, 200.0)
+    x[100:112, 140:170] *= 0.25                                  # its shadow beside it
+    mark_row = 122
+    x[mark_row:] = (220.0, 200.0, 150.0)
+    lab = np.where(el[:, None] > 0, 2, 1).astype(np.uint8) * np.ones((1, W), np.uint8)
+    np.savez_compressed(tmp_path / "S1_ods_centre_depth.npz", range=np.ones((H, W), np.float32), label=lab, rover=rov)
+    (tmp_path / "ods.json").write_text(json.dumps({"linear16": {"exposure16": 1.0, "white_balance": [1.0, 1.224, 1.569]},
+                                                   "nadir_mark": {"first_row": mark_row}}))
+    for eye in ("left", "right"):
+        cv2.imwrite(str(tmp_path / f"S1_ods_{eye}_16.png"), np.clip(x * 64, 0, 65535).astype(np.uint16))
+        cv2.imwrite(str(tmp_path / f"S1_ods_{eye}.png"), np.rint(L.tone_pipeline(x)).astype(np.uint8))
+    f = tmp_path / "levels.json"
+    r = CP.write_color_products(tmp_path, "S1", levels_file=f)
+    raw, tone, dcs = (cv2.imread(r["files"][t]) for t in ("raw", "enhtone", "dcs"))
+    std = cv2.imread(str(tmp_path / "S1_ods_left.png"))
+    assert raw.shape == (2 * H, W, 3) and tone.shape == raw.shape and dcs.shape == raw.shape
+    t = ter.copy(); t[mark_row:] = False
+    rel_std = std[t].mean(axis=(0, 1)); rel_raw = raw[:H][t].mean(axis=(0, 1))
+    assert rel_raw[0] / rel_raw[2] < 0.8 * rel_std[0] / rel_std[2]     # less blue to red: the balance divided out
+    assert (dcs[:H][:40] > 250).all()                                   # the sky white
+    assert dcs[:H][100:110, 105:135].mean() < 4 and dcs[:H][100:110, 105:135].max() < 25    # the rover black (JPEG)
+    assert dcs[:H][103:110, 145:165].mean() < 4 and dcs[:H][103:110, 145:165].max() < 25    # and its shadow
+    P = r["parameters"]
+    band = (el > -30) & (el < -5)
+    g = np.clip(x[band][:, :90].reshape(-1, 3) / P["white_linear_8bit_units"], 0, 1) ** (1 / 2.2)
+    y = (g - np.asarray(P["dcs"]["mean_bgr"])) @ np.asarray(P["dcs"]["matrix_bgr"]).T
+    assert np.allclose(np.cov(y.T), CP.DCS_SIGMA ** 2 * np.eye(3), atol=0.25 * CP.DCS_SIGMA ** 2)   # equal, uncorrelated
+    assert np.abs(dcs[:H][mark_row + 2:].astype(int) - std[mark_row + 2:].astype(int)).mean() < 4   # the disc as standard
+    assert 0 < tone[:H][t].mean() < 255 and r["parameters_from"] == "computed"
+    assert "color_products_parameters" in json.loads(f.read_text())
+    r2 = CP.write_color_products(tmp_path, "S1", levels_file=f)
+    assert r2["parameters_from"] == "file"
+    from rpp.ibr import web
+    files = web.station_files(tmp_path)
+    assert {"raw color", "enhanced tone", "dcs color"} <= set(files) and files["raw color"].name == "S1_raw_360_3DTD.jpg"
+    assert web.DEFAULT_VIEWS == ("standard", "raw color", "enhanced local", "enhanced tone", "dcs color", "normal map", "distance map")

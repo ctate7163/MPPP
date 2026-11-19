@@ -26,10 +26,16 @@ log = logging.getLogger(__name__)
 
 STACK = "_360_3DTD.jpg"
 VIEWS = {"standard": "", "enhanced": "_enh", "enhanced local": "_enhlocal",      # view name -> file name part
+         "raw color": "_raw", "enhanced tone": "_enhtone", "dcs color": "_dcs",        # 0.99.37 (rpp.ibr.color_products)
          "distance map": "_range_log", "distance map linear": "_range_linear", "normal map": "_normal"}   # 0.97.20: the model's
 # 0.98.30 (Christian, 16 Nov 2026: 'Change "normal" to "normal map" and "range log" to "distance map"'): the names the
 # viewer shows; panos.json entries published before keep their old names, which the page shows by the new ones
-OLD_VIEW_NAMES = {"normal": "normal map", "range log": "distance map", "range linear": "distance map linear"}
+OLD_VIEW_NAMES = {"normal": "normal map", "range log": "distance map", "range linear": "distance map linear",
+                  "standard color": "standard", "enhanced color": "enhanced local"}     # 0.99.37: the page's names
+# 0.99.37 (Christian, 19 Nov 2026: "Replace the enhanced local with just enhanced"; the views "standard color, raw color,
+# enhanced color, enhanced tone, dcs color, normal map, distance map"): the page shows "standard" as "standard color"
+# and "enhanced local" as "enhanced color" (VIEW_LABEL in docs/ods/index.html); the keys stay, so links and the
+# entries published before keep working
 GEOMETRY_PARTS = ("_range_log", "_range_linear", "_normal")
 VARIANTS = (("masked", "", "terrain only"), ("rover", "with_rover", "terrain with rover (projected)"))   # key, sub-folder, label.  0.98.5
 #   (Christian, 14 Nov 2026: "a third mode after the terrain only, terrain with rover, and terrain with 3D rover"): this
@@ -38,7 +44,7 @@ ROVER_3D = ("rover3d", "terrain with rover (3D model)")
 # 0.99.26 (Christian, 18 Nov 2026: "Add this as a fourth mode in rpv as 3D terrain and rover. It should include the 3D
 # rover"): the terrain-only panorama as the backdrop, with the station mesh (rpp.ibr.station_mesh) in front of it
 TERRAIN_3D = ("terrain3d", "3D terrain and rover")     # 0.98.8 (Christian: "terrain only, terrain with rover proj, terrain with rover model")
-DEFAULT_VIEWS = ("standard", "enhanced local", "normal map", "distance map")   # 0.98.30 (Christian, 16 Nov 2026: "Include the
+DEFAULT_VIEWS = ("standard", "raw color", "enhanced local", "enhanced tone", "dcs color", "normal map", "distance map")   # 0.99.37; 0.98.30 (Christian, 16 Nov 2026: "Include the
 #   enhlocal image versions in the upload and let it be viewable as one of the skins that button B shows"); 0.98.12 (Christian, 15 Nov 2026: "Uploaded the range map too in log scale"); ("standard", "normal") from 0.98.5 (Christian: "Uploaded the normal maps too"); ("standard",) since 0.97.18 (Christian, 13 Nov 2026: "don't upload the enhanced version to github");
 #                                      ("standard", "enhanced") before; rpp single-sites --publish-views brings it back
 GEOMETRY_WIDTH = 4096              # 0.98.12: the range and normal views are published at most this wide (the color ones at width)
@@ -47,7 +53,8 @@ DEFAULT_WIDTH = 8192               # the square's side: 8192 x 8192 holds two 81
 
 
 def station_files(folder: PathLike) -> Dict[str, Path]:
-    """{view name: file} of the top-down stereo JPEGs in one variant's folder (``<prefix>[_enh|_enhlocal]_360_3DTD.jpg``)."""
+    """{view name: file} of the top-down stereo JPEGs in one variant's folder (``<prefix>[_enh|_enhlocal|_raw|_enhtone|_dcs|
+    _normal|_range_log|_range_linear]_360_3DTD.jpg``)."""
     out: Dict[str, Path] = {}
     for f in sorted(Path(folder).glob("*" + STACK)):
         stem = f.name[:-len(STACK)]
@@ -522,6 +529,45 @@ def station_info(folder: Path) -> Dict[str, Any]:
     return {}
 
 
+CENTER_JPG = "_360_center.jpg"     # 0.99.36: the panorama from the pivot (one eye, 2:1), for a screen
+CENTER_FULL_JPG = "_360_center_16k.jpg"
+CENTER_FULL_WIDTH = 16384          # 0.99.36 (Christian: "the 2d rpv should show the 16k center panorama if the viewer's
+#                                    platform can handle it"): the full-width copy, for a page whose GPU takes it
+
+
+def center_view(folder: PathLike, pano_dir: PathLike, width: int, quality: int = 88,
+                full_width: int = CENTER_FULL_WIDTH) -> Optional[Dict[str, str]]:
+    """0.99.36 (Christian, 19 Nov 2026: "for the rpv browser layer, include center with the left and right eye if
+    center is available"): the 8-bit center panorama of one variant's folder (``<prefix>_ods_center.png``, written by
+    ``rpp ods --eyes ... center``: the with-rover variant has it when the rover surface is made) as JPEGs in
+    ``pano_dir``: ``<prefix>_360_center.jpg`` at most ``width`` wide, and - when the panorama is wider than that -
+    ``<prefix>_360_center_16k.jpg`` at most ``full_width`` wide (the page takes it where the GPU can hold it).
+    Returns {"standard": "panos/<name>", "full": "panos/<name>" or absent}, or None without a center panorama."""
+    import cv2
+    cands = sorted(f for f in Path(folder).glob("*ods_cent*.png")
+                   if f.name.endswith(("ods_center.png", "ods_centre.png")))
+    if not cands:
+        return None
+    src = max(cands, key=lambda f: f.stat().st_mtime)
+    stem = src.name.rsplit("ods_cent", 1)[0].rstrip("_")
+    im = None
+    out: Dict[str, str] = {}
+    for key, name, w in (("standard", CENTER_JPG, width), ("full", CENTER_FULL_JPG, full_width)):
+        dst = Path(pano_dir) / f"{stem}{name}"
+        if not (dst.is_file() and dst.stat().st_mtime >= src.stat().st_mtime):
+            if im is None:
+                im = cv2.imread(str(src), cv2.IMREAD_COLOR)
+                if im is None:
+                    return None
+            if key == "full" and im.shape[1] <= width:           # no wider than the standard one: no second copy
+                break
+            j = im if im.shape[1] <= w else cv2.resize(im, (w, int(round(im.shape[0] * w / im.shape[1]))),
+                                                      interpolation=cv2.INTER_AREA)
+            cv2.imwrite(str(dst), j, [cv2.IMWRITE_JPEG_QUALITY, int(quality)])
+        out[key] = "panos/" + dst.name
+    return out
+
+
 def _copy(src: Path, dst: Path, width: int, quality: int) -> Dict[str, Any]:
     """``src`` to ``dst``, reduced to ``width`` (area filter) when wider; copied byte for byte otherwise.  Skipped when
     ``dst`` is newer than ``src``."""
@@ -545,9 +591,10 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
             ortho_root: Optional[PathLike] = None, render_map: bool = False,
             files_dir: Optional[PathLike] = None) -> Dict[str, Any]:
     """Every station folder of ``out_root`` (the output of ``rpp single-sites``) that has a stereo JPEG, into
-    ``web_dir``.  ``titles``: {station label: {"title", "note", "yaw_deg"}} (``yaw_deg``: the azimuth, degrees east
-    of north, straight ahead when the page opens).  Stations already in ``panos.json`` and not in ``out_root`` stay
-    listed.  ``ortho_root``: the folder whose ``dem/`` holds the orthomosaics for the map (default: ``out_root``'s
+    ``web_dir``.  ``titles``: {station label: {"title", "site_name", "sols", "note", "yaw_deg"}} (``site_name``,
+    ``sols``: the name and sols in the page's menu and info, before those in the panorama's mark; ``yaw_deg``: the azimuth, degrees east of north,
+    straight ahead when the page opens).  Stations already in ``panos.json`` and not in ``out_root`` stay listed, with
+    the names in ``titles``.  ``ortho_root``: the folder whose ``dem/`` holds the orthomosaics for the map (default: ``out_root``'s
     parent, the blocks' root).  ``render_map``: render the info page's map (rpp maps figures 8) when there is none.
     ``files_dir`` (0.99.3): the stations' pictures go there instead of ``web_dir/panos`` (the entries still say
     ``panos/<file>``) - the stage :mod:`rpp.ibr.hf` uploads to Hugging Face, outside the viewer's git checkout.
@@ -562,6 +609,10 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
         old = {p["id"]: p for p in json.loads(index.read_text(encoding="utf-8")).get("panos", [])}
     except (OSError, ValueError):
         old = {}
+    NAME_KEYS = ("title", "site_name", "sols", "note", "yaw_deg")         # 0.99.36: the names of stations listed before this
+    for k, e in old.items():                                     # run follow the station list too (a station renamed
+        t = (titles or {}).get(k) or {}                          # since its panoramas were made: Three Forks North)
+        e.update({n: t[n] for n in NAME_KEYS if t.get(n) is not None})
     wp, traverse = traverse_map()
     if traverse:                                                 # 0.98.14: the orbital picture under the map's line
         try:
@@ -587,7 +638,7 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
         if stations and d.name not in stations:
             continue
         third = fourth = fifth = sixth = None
-        entry: Dict[str, Any] = {"id": d.name, "title": d.name, "variants": [], "mppp": __version__,
+        entry: Dict[str, Any] = {"id": d.name, "title": d.name, "variants": [], "mppp": __version__, "rpp": __version__,
                                  "published": time.strftime("%Y-%m-%d")}
         entry.update({k: v for k, v in ((titles or {}).get(d.name) or {}).items() if v is not None})
         for key, sub, label in VARIANTS:
@@ -606,6 +657,12 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
                     n += 1
             if got:
                 var = {"key": key, "label": label, "views": got}
+                cv = center_view(d / sub, pano_dir, width, quality) if got.get("standard") else None
+                if cv:                                   # 0.99.36: the center eye, a screen's third choice
+                    var["center"] = {"standard": cv["standard"]}
+                    if cv.get("full"):                   # its 16K copy, for a GPU that can hold it
+                        var["center_full"] = {"standard": cv["full"]}
+                    n += len(cv)
                 gm = ground_mark(d / sub, web, pano_dir)
                 if gm:
                     var["ground_mark"] = gm
@@ -738,6 +795,7 @@ GIT_TIMEOUT_S = 900                # one git command (a push of several 10 MB pa
 PUSH_TRIES = 3                     # a push that fails for the network is tried again
 PUSH_WAIT_S = 30
 PENDING_NAME = "upload_pending.json"
+PAGE_FILES = ("index.html", "vendor", ".nojekyll")   # 0.99.36: committed by upload() with the panoramas
 
 
 def _git(repo: Path, *args: str, timeout: Optional[int] = None) -> Tuple[int, str]:
@@ -797,13 +855,19 @@ def upload(web_dir: PathLike, stations: Sequence[str] = (), remote: str = "origi
         return done(False, False, False, f"{repo} has an unfinished merge: finish it (git status, git add the listed files, git commit "
                     "--no-edit) or undo it (git merge --abort), then run this again")
     paths = [str(web / "panos"), str(web / "panos.json")]
+    # 0.99.36 (Christian, 19 Nov 2026: 'the rpv still has "Mars rover panorama viewer (RPV)" at the upper left'): the
+    # page itself too - since the viewer moved to its own repository (ctate7163/rpv, 0.99.13) publish copied the new
+    # index.html into it on every run, but only panos/ and panos.json were committed, so the live page stayed at the
+    # one of 17 Nov.  The page, its libraries and .nojekyll are committed with the panoramas when they changed.
+    paths += [str(web / n) for n in PAGE_FILES if (web / n).exists()]
     rc, out = _git(repo, "add", "--", *paths)
     if rc:
         return done(False, False, False, f"git add failed: {out}")
     committed = bool(_git(repo, "diff", "--cached", "--quiet", "--", *paths)[0])
     if committed:
         what = ", ".join(stations) if 0 < len(stations) <= 4 else f"{len(stations)} stations" if stations else "update"
-        rc, out = _git(repo, "commit", "-m", f"Viewer: panoramas {what} (RPP {__version__})", "--", *paths)
+        page = bool(_git(repo, "diff", "--cached", "--quiet", "--", *[pp for pp in paths if Path(pp).name in PAGE_FILES])[0])
+        rc, out = _git(repo, "commit", "-m", f"Viewer: {'page and ' if page else ''}panoramas {what} (RPP {__version__})", "--", *paths)
         if rc:
             return done(False, False, False, f"git commit failed: {out}")
     rc, branch = _git(repo, "rev-parse", "--abbrev-ref", "HEAD")

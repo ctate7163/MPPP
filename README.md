@@ -54,23 +54,32 @@ development releases; see [CHANGELOG.md](https://github.com/ctate7163/rpp/blob/m
 
 ## Install
 
-From PyPI (<https://pypi.org/project/rover-photogrammetry-pipeline/>):
+Install RPP into a conda environment of its own (Miniforge, Miniconda or Anaconda), from the GitHub repository.
+It is not on PyPI yet: the name `rover-photogrammetry-pipeline` is reserved there for the first release. The same
+commands work in a Windows Anaconda Prompt, PowerShell and a Linux or macOS shell:
 
 ```bash
-pip install "rover-photogrammetry-pipeline[mask,sfm,plots]"     # what `rpp run` needs; plain `pip install rover-photogrammetry-pipeline` reads and processes PDS products
-rpp doctor                            # what is installed, which camera models are in use
+conda create -n rpp -c conda-forge python=3.12 git -y
+conda activate rpp
+git clone --depth 1 https://github.com/ctate7163/rpp.git
+cd rpp
+pip install -e ".[mask,sfm,plots]"
+rpp doctor
 ```
 
-From the repository, with the tests, studies, notebooks and Windows scripts:
+- `--depth 1` downloads the current files only (about 40 MB) instead of the whole history.
+- `[mask,sfm,plots]` is what `rpp run` needs: torch and timm (masks), pycolmap 4.2, pyceres 2.6 and kornia (the
+  alignment), matplotlib (plots). PyTorch is the largest download; for a CUDA build install torch first as
+  <https://pytorch.org> says, and pip keeps it. `pip install -e .` alone reads and processes PDS products;
+  `".[all]"` adds the notebooks, the maps, the tests and the studies' packages.
+- `rpp doctor` reports what is installed and which camera models are in use.
+- `envs/rpp.yml` makes the same environment in one step: `conda env create -f envs/rpp.yml`, then
+  `conda activate rpp` and `pip install -e .` in the clone.
 
-```bash
-git clone https://github.com/ctate7163/rpp.git
-cd RPP
-pip install -e ".[all]"        # mask (torch, timm), sfm (pycolmap 4.2, pyceres 2.6, kornia), plots, notebooks, dev
-pytest -q                      # the test suite runs on the two PDS products in tests/data/m20
-```
+No PDS data comes with the code: the example set, the products of other sols and the two products the tests use are
+downloaded from the PDS Imaging Node when they are needed (below; for the tests, `RPP_TEST_FETCH=1`).
 
-Python ≥ 3.10. `envs/rpp.yml` is a conda environment with the same packages. The mask model (`rpp_mask_v3`,
+Python ≥ 3.10. The mask model (`rpp_mask_v3`,
 125 MB) comes from Hugging Face, [`ctate7163/rpp-mask`](https://huggingface.co/ctate7163/rpp-mask), into the user
 cache on first use (`RPP_CACHE` overrides the location); `rpp mask install <file.safetensors>` installs it
 offline. The LightGlue weights (45 MB) are fetched by kornia the same way; `RPP_LIGHTGLUE_WEIGHTS` names a local
