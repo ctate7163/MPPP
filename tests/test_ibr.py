@@ -971,7 +971,7 @@ def test_zoned_poisson_is_finer_near_the_mast_and_uses_the_given_normals():
     z = 0.05 * np.sin(3 * xy[:, 0]) * np.cos(3 * xy[:, 1])
     pts = np.c_[xy, z]
     nrm = np.tile([0.0, 0.0, 1.0], (len(pts), 1))
-    V, F, how, crep = M.zoned_poisson(pts, nrm, P, (0, 0, 1), 20.0, zones=((0, 4, 8), (4, 12, 8), (12, None, 8)))
+    V, F, how, crep = M.zoned_poisson(pts, nrm, P, (0, 0, 1), 20.0, zones=((0, 4, 8), (4, 12, 8), (12, None, 8)), height_field=False)
     assert [z_["zone_m"] for z_ in how["zones"]] == [[0, 4.0], [4, 12.0], [12, 20.0]]
     assert all(z_["normals"] == "given" and z_["triangles"] > 100 for z_ in how["zones"])
     cen, _, longest = M.triangle_geometry(V, F)
@@ -1122,7 +1122,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert all(cfg["stations"][k]["terrain"] == "block" and cfg["stations"][k]["work"].endswith("_zcam") for k in new98p30)
     assert set(cfg["stations"]) - Z34 - new98p6 == {"Sol0052_S003D2046", "Sol0461_S026D0630", "Sol0686_S032D1184", "Sol0474_S026D0850",
                                     "Sol1635_S079D0732", "Sol1411_S068D0142", "Sol1792_S087D0000", "Sol1454_S071D0056", "Sol0477_S026D1004", "Sol0502_S026D1222", "Sol2009_S092D0000", "Sol2022_S093D0000", "Sol1947_S091D0000",
-                                    "Sol1177_S054D0000", "Sol1183_S054D0866", "Sol1308_S061D1678", "Sol0609_S030D1172"} | new98p30   # 0.98.19: + Skinner Ridge, Wildcat Ridge, Hippo Pools 1947 / 2009 / 2022, Bright Angel 1177 / 1183, Pico Turquino 1308, Hidden Harbor 609
+                                    "Sol1177_S054D0000", "Sol1183_S054D0866", "Sol1308_S061D1678", "Sol0609_S030D1172", "Sol0116_S004D1250"} | new98p30   # 0.98.19: + Skinner Ridge, Wildcat Ridge, Hippo Pools 1947 / 2009 / 2022, Bright Angel 1177 / 1183, Pico Turquino 1308, Hidden Harbor 609
     assert len(cfg["stations"]["Sol0052_S003D2046"]["frames"]["images"]) == 12
     sa = cfg["stations"]["Sol1411_S068D0142"]                                 # 0.97.14: South Arm, sol 1411
     assert sa["site"] == "witch_hazel_large" and sa["station"] == "68_142" and len(sa["frames"]["images"]) == 18
@@ -1133,7 +1133,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     runs = SS.plan(cfg, root)
     runs = runs[::-1]                                    # 0.98.3: with no station named the last one runs first
     runs = [r for r in runs if r["label"] not in ("Sol0477_S026D1004", "Sol0502_S026D1222", "Sol2009_S092D0000", "Sol2022_S093D0000", "Sol1947_S091D0000",
-                                                   "Sol1177_S054D0000", "Sol1183_S054D0866", "Sol1308_S061D1678", "Sol0609_S030D1172")     # 0.98.19's nine (they run first)
+                                                   "Sol1177_S054D0000", "Sol1183_S054D0866", "Sol1308_S061D1678", "Sol0609_S030D1172", "Sol0116_S004D1250")     # 0.98.19's nine (they run first); 0.99.30's sol 116
             and r["label"] not in new98p30]                                                            # 0.98.30's eight (first of all)
     assert [Path(r["work"]).name for r in runs][8:] == [
         "mars2020_sol_0001_butler_landing_zcam", "mars2020_sol_0178_rochette_zcam", "mars2020_sol_0201_seitah_huge",
@@ -1165,7 +1165,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert block_name("van_zyl_overlook_huge") == "Van Zyl Overlook" and block_name("witch_hazel_large") == "Witch Hazel Hill"
     assert block_name("taylorfjellet_large") == "Taylorfjellet" and block_name("rockytop") == "Rockytop"
     assert block_name("not_a_site_tiny") == "Not A Site" and block_name(None) is None
-    assert all("name" not in v for k, v in cfg["stations"].items() if k not in ("Sol0477_S026D1004", "Sol0502_S026D1222", "Sol0686_S032D1184", "Sol0690_S032D1184_Z34", "Sol0670_S032D0672_Z34"))   # 0.98.19: these two are not "Rockytop"; 0.98.31: the Z34 station has no site to name it
+    assert all("name" not in v for k, v in cfg["stations"].items() if k not in ("Sol0477_S026D1004", "Sol0502_S026D1222", "Sol0686_S032D1184", "Sol0690_S032D1184_Z34", "Sol0670_S032D0672_Z34", "Sol0116_S004D1250"))   # 0.98.19: these two are not "Rockytop"; 0.98.31: the Z34 station has no site to name it
     names = {k: next(c["argv"][c["argv"].index("--site-name") + 1] for c in r["commands"] if c["step"] == "ods") for k, r in
              ((r["label"], r) for r in runs)}
     assert names["Sol0474_S026D0850"] == "Rockytop" and names["Sol1411_S068D0142"] == "Witch Hazel Hill"
@@ -3465,3 +3465,33 @@ def test_fill_is_smooth_fine_and_ends_at_the_mesh():
     assert abs(1.0 / inv[r_edge, 90] - 74.0) < 3.0 and abs(1.0 / inv[int(np.argmin(np.abs(el + 0.5))), 90] - 300.0) < 5.0
     r_rock = int(np.flatnonzero(el > 3.0)[-1])
     assert abs(1.0 / inv[r_rock, 270] - 300.0) < 1.0 and 0.4 < rep2["rim_ground_share"] < 0.6   # the skyline: a step
+
+
+def test_height_field_near_the_mast_fill_under_the_rim_and_dimmed_fill_normals():
+    """0.99.32 (Christian, 18 Nov 2026: "Mesh the 0-4 m zone as a height field seen from the mast, which cannot curl or
+    leave patches. Stitch the fill to the hole edges instead of overlapping its neighbors. Draw fill in the normal map
+    with its real normal, dimmed, instead of black")."""
+    from rpp.ibr import ods as O
+    rng = np.random.default_rng(3)
+    xy = rng.uniform(-4.5, 4.5, (300_000, 2))
+    z = 0.1 * np.sin(xy[:, 0]) + 0.002 * rng.normal(size=len(xy))
+    hole = (np.abs(xy[:, 0] - 2) < 0.4) & (np.abs(xy[:, 1]) < 0.4)
+    pts = np.c_[xy, z][~hole]
+    P = np.array([0.0, 0.0, 2.0])
+    V, F, how = M.height_field_arrays(pts, P, (0, 0, 1), 4.0)
+    n = np.cross(V[F[:, 1]] - V[F[:, 0]], V[F[:, 2]] - V[F[:, 0]])
+    assert how["method"] == "height field" and (n[:, 2] > 0).all()               # no triangle faces down: nothing curls
+    assert np.abs(V[:, 2] - 0.1 * np.sin(V[:, 0])).max() < 0.02
+    cen = V[F].mean(axis=1)
+    assert not ((np.abs(cen[:, 0] - 2) < 0.3) & (np.abs(cen[:, 1]) < 0.3)).any()  # the hole is left to the fill
+    V2, F2, h2, _ = M.zoned_poisson(np.c_[rng.uniform(-9, 9, (200_000, 2)), np.zeros(200_000)], None, P, (0, 0, 1), 8.0,
+                                    zones=((0, 4, 7), (4, None, 7)))
+    assert h2["zones"][0]["method"] == "height field" and h2["zones"][1]["method"].startswith("poisson")
+    # the fill hangs under the measured surface at a hole's rim
+    plane = {"normal": [0, 0, 1], "offset": 0.0, "centre": [0, 0, 0], "up": [0, 0, 1], "radius_m": 50.0}
+    Vf, Ff, rep = M.fill_terrain(V, F, P, (0, 0, 1), plane, 4.0, underlay=False)
+    new = Ff[rep["measured_triangles"]:]
+    cf = Vf[new].mean(axis=1)
+    rim = (np.hypot(cf[:, 0] - 2, cf[:, 1]) < 0.9) & (np.hypot(cf[:, 0], cf[:, 1]) < 3.5)
+    assert rim.sum() > 10 and (cf[rim, 2] < 0.1 * np.sin(cf[rim, 0]) + 0.004).all()
+    assert M.FILL_TUCK_M == 0.005 and O.NORMAL_FILL_DIM == 0.45

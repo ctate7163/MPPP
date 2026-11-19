@@ -3,6 +3,34 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.32 — 2026-11-18 (branch `rpp`)
+
+Christian, 21:18: "Build it ... Add the off pivot motion, swaying, and the cursor directed motion. Add fading at the end
+of the terrain mesh ... Mesh the 0–4 m zone as a height field ... Stitch the fill to the hole edges ... Draw fill in the
+normal map with its real normal, dimmed ... Build this as a fifth viewing mode."
+
+- **Fifth viewer mode, "3D terrain to the horizon and rover"** (`rpp.ibr.station_mesh`: `terrain_part(full=True)`,
+  `horizon_shell`, `assemble_scape`; `web.SCAPE_3D`, `web.station_scape`): one surface from under the rover to the far
+  field and the sky, no panorama behind it. `<station>_station_scape.glb` holds three meshes - "terrain" (the 10 m
+  terrain of the fourth mode), "horizon" (a sheet sampled from the scene on rings of equal angle from the projection
+  center: 0.5 deg x 0.25 deg up to the skyline, 8 rings of sky at 3 km) and "rover" (its own 4k texture). Terrain and
+  horizon share one 8k texture: straight down at the center, the skyline (the highest terrain seen, + 1.5 deg) on a
+  circle at 90 % of the inscribed radius, the sky to the zenith on the outer 10 %, the hidden triangles' cells in the
+  corners. The masked run makes this texture besides the fourth mode's (`station_mesh.SCAPE`).
+- **The near terrain fades out at its rim** (8 -> 10 m from the mast axis; in the fourth mode into the panorama, in the
+  fifth into the horizon sheet). In a headset the fourth mode's fade starts nearer as the head leaves the anchor.
+- **On a screen the eye moves** (`docs/ods/index.html`): 0.15 m in front of the turning point, +-0.05 m with the pointer,
+  a 0.03 m sway after 3 s without input (not with prefers-reduced-motion). P turns it off; `?still=1`.
+- **Fixed: the fourth mode drew the terrain only.** The page read the first mesh of a station mesh file, so the rover
+  part (in the file since 0.99.26) was never shown. R now hides the rover alone.
+- **Mesh, 0-4 m: a height field** (`mesh.height_field_arrays`; the terrain-only cloud): one median height per 1.5 cm
+  cell (coarser for a thin cloud), small gaps closed, larger ones left to the fill. No Poisson rim can curl there.
+- **The fill hangs under the measured surface** (`FILL_RIM_PERCENTILE` 5, `FILL_TUCK_M` 5 mm): a covered cell gives the
+  fill its low side, not its median, so the sheet meets a hole's rim from below and no longer shows through its
+  neighbors. (The sheet still spans the cells around a hole; it is not sewn to the mesh's boundary edges.)
+- **Normal panorama: the fill in its own normal's color x 0.45** (`ods.NORMAL_FILL_DIM`), not black.
+- Tests of 0.99.30's sol 116 station in `test_ibr` (two expectations had not been updated).
+
 ## 0.99.31 — 2026-11-18 (branch `rpp`)
 
 - **26 and 100 mm bins need 100 observations, not 1000, to be tied to the lines** (Christian, 15:17: "lower the

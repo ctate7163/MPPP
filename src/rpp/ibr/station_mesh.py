@@ -70,7 +70,23 @@ INSIDE_HITS = 5                 # a viewpoint whose rays meet the rover model in
 JPEG_QUALITY = 90
 GRAY_STRIP = (4, 64)            # the rover gray's cell: width, height (the shade by slope down the strip)
 SUFFIX = "station_mesh.glb"
-PART = {"terrain": "station_mesh_terrain", "rover": "station_mesh_rover"}
+PART = {"terrain": "station_mesh_terrain", "rover": "station_mesh_rover", "scape": "station_scape_terrain"}
+# 0.99.32 (Christian, 18 Nov 2026: "expanding the mesh to the horizon with a low poly mesh ... continuous from below the
+# rover to infinity ... One square uv mapping could go from the point below the prime pivot point, and extend outwards
+# to the horizon which lies on a circle about 90% of the max size of circle that will fit in the square. Beyond that
+# horizon circle, the uv ... goes to the sky"): the fifth mode's surface - see :func:`horizon_shell`
+SCAPE = True                    # the masked run also makes the fifth mode's terrain (a second 8k texture)
+SCAPE_SUFFIX = "station_scape.glb"
+HORIZON_FRAC = 0.90             # the skyline's circle: this share of the texture's inscribed circle
+SKYLINE_MARGIN_DEG = 1.5        # the full-density zone ends this far above the highest mesh seen from C ...
+SKYLINE_MIN_DEG = 10.0          # ... and at least this far above the horizontal: the scene's far surface (beyond the
+#                                 mesh) does not tell far hills from the sky, and hills seldom stand higher than this
+SHELL_FROM_M = 7.0              # the shell starts this far from the mast axis (the near mesh fades out over FADE_M)
+FADE_M = (8.0, 10.0)            # the near terrain's opacity: 1 at the first, 0 at the second (horizontal m from the axis)
+SHELL_AZ_STEP_DEG = 0.5
+SHELL_STEP_DEG = 0.25           # the shell's rings below the skyline
+SHELL_SKY_RINGS = 8             # ... and above it, to the zenith
+DOME_M = 3000.0                 # the sky's distance (and the farthest a terrain vertex is put)
 
 
 def _unit(v) -> np.ndarray:
@@ -142,27 +158,44 @@ def seen_from(rc, pts: np.ndarray, viewpoint: np.ndarray, tol_rel: float = 2e-3,
 
 
 # ------------------------------------------------------------------------------------------- the disc
-def disc_dirs(rows: np.ndarray, cols: np.ndarray, size: int, rpx: float, theta_max: float, up, north, east) -> Tuple[np.ndarray, np.ndarray]:
+def _theta_of_rho(rho: np.ndarray, rpx: float, theta_max: float, knee) -> np.ndarray:
+    """The angle from straight down of a texel ``rho`` px from the map's center.  ``knee`` (0.99.32) = (angle, share):
+    the angles up to it fill the share of the radius evenly, the rest - the sky, to the zenith - the remainder."""
+    if not knee:
+        return rho / rpx * theta_max
+    tk, fr = float(knee[0]), float(knee[1])
+    x = rho / rpx
+    return np.where(x <= fr, x / fr * tk, tk + (np.clip(x, fr, 1.0) - fr) / (1.0 - fr) * (np.pi - tk))
+
+
+def _rho_of_theta(th: np.ndarray, rpx: float, theta_max: float, knee) -> np.ndarray:
+    if not knee:
+        return th / theta_max * rpx
+    tk, fr = float(knee[0]), float(knee[1])
+    return rpx * np.where(th <= tk, th / tk * fr, fr + (th - tk) / (np.pi - tk) * (1.0 - fr))
+
+
+def disc_dirs(rows: np.ndarray, cols: np.ndarray, size: int, rpx: float, theta_max: float, up, north, east, knee=None) -> Tuple[np.ndarray, np.ndarray]:
     """(unit directions (n, 3), texel radius (n,) px) of the texels (rows, cols) of the azimuthal map (see the module)."""
     c = size / 2.0
     dx = np.asarray(cols, float) + 0.5 - c
     dy = c - (np.asarray(rows, float) + 0.5)
     rho = np.hypot(dx, dy)
-    th = rho / rpx * theta_max
+    th = _theta_of_rho(rho, rpx, theta_max, knee)
     ph = np.arctan2(dx, dy)
     s = np.sin(th)
     d = (np.cos(th)[:, None] * -_unit(up) + (s * np.sin(ph))[:, None] * _unit(east) + (s * np.cos(ph))[:, None] * _unit(north))
     return d, rho
 
 
-def disc_uv(X: np.ndarray, C, size: int, rpx: float, theta_max: float, up, north, east) -> np.ndarray:
+def disc_uv(X: np.ndarray, C, size: int, rpx: float, theta_max: float, up, north, east, knee=None) -> np.ndarray:
     """Texture coordinates (0..1, v down from the top) of the points (n, 3) on the azimuthal map about C."""
     v = np.asarray(X, float) - np.asarray(C, float)
     r = np.linalg.norm(v, axis=1)
     v = v / np.maximum(r, 1e-12)[:, None]
     th = np.arccos(np.clip(v @ -_unit(up), -1.0, 1.0))
     ph = np.arctan2(v @ _unit(east), v @ _unit(north))
-    rho = th / theta_max * rpx
+    rho = _rho_of_theta(th, rpx, theta_max, knee)
     c = size / 2.0
     return np.stack([(c + rho * np.sin(ph)) / size, (c - rho * np.cos(ph)) / size], axis=1)
 
@@ -292,7 +325,7 @@ def texture_rows(scene, sources: Sequence[Any], args: Dict[str, Any], r0: int, r
     dsc = args.get("disc")
     if dsc:
         rr, cc = np.mgrid[r0:r1, 0:S]
-        d, rho = disc_dirs(rr.ravel(), cc.ravel(), S, dsc["rpx"], dsc["theta_max"], dsc["up"], dsc["north"], dsc["east"])
+        d, rho = disc_dirs(rr.ravel(), cc.ravel(), S, dsc["rpx"], dsc["theta_max"], dsc["up"], dsc["north"], dsc["east"], knee=dsc.get("knee"))
         inside = rho <= dsc["rpx"] + GUTTER_PX
         flat.append(np.flatnonzero(inside))
         D.append(d[inside])
@@ -336,10 +369,11 @@ def render_texture(scene, sources: Sequence[Any], args: Dict[str, Any], pool=Non
     "cells": ``args["all_cells"]`` and ``args["normals"]``)."""
     S = int(args["size"])
     spans = [(r0, min(S, r0 + rows_per_chunk)) for r0 in range(0, S, rows_per_chunk)]
-    base = {k: v for k, v in args.items() if k not in ("all_cells", "normals")}
+    base = {k: v for k, v in args.items() if k not in ("all_cells", "normals", "want_sky")}
     per = [dict(base, cells=band_cells(args["all_cells"], args["normals"], r0, r1)) for r0, r1 in spans]
     rgb = np.zeros((S, S, 3), np.float32 if args.get("linear") else np.uint8)
     src = np.full((S, S), -1, np.int16)
+    sky = np.zeros((S, S), bool) if args.get("want_sky") else None      # 0.99.32: the far surface's texels
 
     def here(todo):
         for r0, r1 in todo:
@@ -349,8 +383,11 @@ def render_texture(scene, sources: Sequence[Any], args: Dict[str, Any], pool=Non
     for r0, r1, band in bands:
         rgb[r0:r1] = band["rgb"]
         src[r0:r1] = band["source"]
+        if sky is not None:                                      # 0.99.32: the sky's texels (not the far terrain's)
+            from .raycast import LABEL_FAR                       # beyond the mesh and the plane: the sky and the far hills
+            sky[r0:r1] = band["label"] == LABEL_FAR
     band = bands = None
-    return {"rgb": rgb, "source": src}
+    return {"rgb": rgb, "source": src, "sky": sky}
 
 
 def push_pull(rgb: np.ndarray, have: np.ndarray, region: np.ndarray) -> np.ndarray:
@@ -393,12 +430,73 @@ def fill_cells(rgb: np.ndarray, have: np.ndarray, cells: Dict[str, Any], default
     return n
 
 
+# ------------------------------------------------------------------------------------------- to the horizon (0.99.32)
+def horizon_shell(scene, C, pivot, up, north, east, from_m: float = SHELL_FROM_M, az_step_deg: float = SHELL_AZ_STEP_DEG,
+                  step_deg: float = SHELL_STEP_DEG, sky_rings: int = SHELL_SKY_RINGS, dome_m: float = DOME_M,
+                  margin_deg: float = SKYLINE_MARGIN_DEG) -> Dict[str, Any]:
+    """The surface seen from C beyond the near terrain, as one sheet: on rings of equal angle from straight down, a
+    vertex per ``az_step_deg`` where its ray from C meets the scene (the mesh, the ground plane, the far surface -
+    the sky sphere or the far field, which also carries the sky) or, where it meets nothing, at ``dome_m``.  The
+    rings run from the angle of ``from_m`` on the ground up to the map's knee (the highest ray that meets the mesh
+    or the plane plus ``margin_deg``, at least ``SKYLINE_MIN_DEG`` above the horizontal) every ``step_deg``, then
+    ``sky_rings`` more to the zenith.  Seen from C the sheet has no fold; its parallax for a head off C is the true one out to the far
+    field and none on the sky.  Returns {"V" (n, 3), "F" (m, 3) - the outer rings first, so a viewer that draws them
+    in order without a depth buffer draws the near ones over the far ones -, "knee" rad, "theta0" rad, "rings", "az"}."""
+    from .raycast import LABEL_FAR, LABEL_NONE, SKY_RANGE_M
+    C, up, north, east = np.asarray(C, float), _unit(up), _unit(north), _unit(east)
+
+    def cast(th, ph):
+        s = np.sin(th)
+        d = np.cos(th)[:, None] * -up + (s * np.sin(ph))[:, None] * east + (s * np.cos(ph))[:, None] * north
+        h = scene.cast(np.broadcast_to(C, d.shape).copy(), d)
+        t = np.asarray(h["t"], float)
+        open_ = (h["label"] == LABEL_NONE) | ~np.isfinite(t) | (t >= dome_m)       # nothing there: the dome
+        return d, np.where(open_, dome_m, t), open_ | (h["label"] == LABEL_FAR)   # ..., beyond the mesh and the plane
+    _, t_down, _ = cast(np.zeros(1), np.zeros(1))
+    h_c = float(t_down[0]) if t_down[0] < dome_m else 2.5
+    th0 = max(np.radians(20.0), float(np.arctan2(from_m, h_c)) - np.radians(3.0))
+    ph_c = np.radians(np.arange(0.0, 360.0, 1.0))
+    th_c = np.arange(th0, np.pi - 1e-6, np.radians(0.25))
+    TT, PP = np.meshgrid(th_c, ph_c, indexing="ij")
+    _, _, sky_c = cast(TT.ravel(), PP.ravel())
+    ground = ~sky_c.reshape(TT.shape)
+    top = float(th_c[np.flatnonzero(ground.any(axis=1)).max()]) if ground.any() else np.pi / 2
+    knee = float(np.clip(max(top + np.radians(margin_deg), np.pi / 2 + np.radians(SKYLINE_MIN_DEG)), th0 + np.radians(5.0),
+                         np.pi - np.radians(20.0)))
+    ths = np.r_[np.arange(th0, knee - 1e-9, np.radians(step_deg)), knee, np.linspace(knee, np.pi, int(sky_rings) + 1)[1:]]
+    phs = np.radians(np.arange(0.0, 360.0, az_step_deg))
+    nr, na = len(ths), len(phs)
+    TT, PP = np.meshgrid(ths, phs, indexing="ij")
+    d, t, sky_f = cast(TT.ravel(), PP.ravel())
+    low = (t >= dome_m) & (TT.ravel() < np.pi / 2 - 1e-3)        # a ray below the horizontal that meets nothing (a gap
+    t[low] = np.minimum(dome_m, h_c / np.cos(TT.ravel()[low]))   # in the scene): on the level ground under C, not the sky
+    V = C + d * t[:, None]
+    hd = np.linalg.norm((V - np.asarray(pivot, float)) - ((V - np.asarray(pivot, float)) @ up)[:, None] * up, axis=1).reshape(nr, na)
+    F = []
+    j = np.arange(na)
+    j1 = (j + 1) % na
+    for i in range(nr - 2, -1, -1):                              # the outer rings first
+        a_, b_, c_, d_ = i * na + j, i * na + j1, (i + 1) * na + j1, (i + 1) * na + j
+        far = (hd[i, j] >= from_m) | (hd[i, j1] >= from_m) | (hd[i + 1, j] >= from_m) | (hd[i + 1, j1] >= from_m)
+        F.append(np.stack([a_[far], b_[far], c_[far]], 1))
+        F.append(np.stack([a_[far], c_[far], d_[far]], 1))
+    F = np.vstack(F).astype(np.int64)
+    used = np.zeros(len(V), bool)
+    used[F.ravel()] = True
+    remap = np.cumsum(used) - 1
+    return {"V": V[used], "F": remap[F], "knee": knee, "theta0": float(th0), "rings": int(nr), "az": int(na)}
+
+
 # ------------------------------------------------------------------------------------------- the two parts
 def terrain_part(scene, sources, station, pool=None, size: int = TEXTURE_PX, radius_m: float = RADIUS_M,
                  center_above_m: float = CENTER_ABOVE_M, target: int = TARGET_TRIANGLES, linear: bool = False,
-                 rows_per_chunk: int = 128) -> Dict[str, Any]:
+                 rows_per_chunk: int = 128, full: bool = False) -> Dict[str, Any]:
     """The terrain mesh and its texture (see the module): {"V" block (n, 3), "F", "uv" (n, 2), "texture" (S, S, 3)
-    float or uint8 as the sources, "record"}."""
+    float or uint8 as the sources, "record"}.
+
+    ``full`` (0.99.32, the fifth mode): the texture's disc is the whole view from C - the angles up to the skyline on
+    ``HORIZON_FRAC`` of its radius, the sky to the zenith on the rest - and the part also holds "shell", the surface
+    from ``SHELL_FROM_M`` to the far field and the sky (:func:`horizon_shell`: {"V", "F", "uv"}), on the same texture."""
     t0 = time.time()
     P, up, north, east = (np.asarray(x, float) for x in (station.pivot, station.up, station.north, station.east))
     up = _unit(up)
@@ -417,6 +515,11 @@ def terrain_part(scene, sources, station, pool=None, size: int = TEXTURE_PX, rad
     used = np.unique(F[vis])
     th = np.arccos(np.clip(((V[used] - C) / np.linalg.norm(V[used] - C, axis=1)[:, None]) @ -up, -1, 1))
     theta_max = float(min(np.pi * 0.995, th.max() + np.radians(0.5)))
+    shell = knee = None
+    if full:
+        shell = horizon_shell(scene, C, P, up, north, east)
+        knee = (max(shell["knee"], theta_max), HORIZON_FRAC)
+        theta_max = float(np.pi)
     rpx = size / 2.0 - GUTTER_PX - 2
     disc = (size / 2.0, rpx + GUTTER_PX + 3)
     if float((nrm * area[:, None]).sum(0) @ up) < 0:            # the winding's normals point down: turned up (rays
@@ -426,19 +529,29 @@ def terrain_part(scene, sources, station, pool=None, size: int = TEXTURE_PX, rad
     lay = triangle_layout(V, F[hid], nh)
     cells = layout_cells(lay, area[hid], size, disc=disc)
     args = {"size": size, "linear": linear, "up": tuple(up), "offset_m": TERRAIN_OFFSET_M,
-            "disc": {"C": tuple(C), "rpx": rpx, "theta_max": theta_max, "up": tuple(up), "north": tuple(north), "east": tuple(east)},
-            "all_cells": cells, "normals": nh}
+            "disc": {"C": tuple(C), "rpx": rpx, "theta_max": theta_max, "up": tuple(up), "north": tuple(north), "east": tuple(east),
+                     "knee": knee},
+            "all_cells": cells, "normals": nh, "want_sky": bool(full)}
     tex = render_texture(scene, sources, args, pool, rows_per_chunk)
     rgb, have = np.asarray(tex.pop("rgb"), np.float32), tex.pop("source") >= 0
+    sky = tex.pop("sky", None)
     ax = (np.arange(size, dtype=np.float32) + 0.5 - size / 2.0) ** 2
     in_disc = (ax[None, :] + ax[:, None]) <= np.float32((rpx + GUTTER_PX) ** 2)
     del ax
     seen_disc = in_disc & have
-    filled = push_pull(rgb, have & in_disc, in_disc)
+    if full and sky is not None and (sky & have & in_disc).any():
+        # the sky's unseen texels from the seen sky, the ground's from the ground: no terrain color runs up the sky
+        ground = in_disc & ~sky
+        filled = push_pull(rgb, have & ground, ground)
+        filled |= push_pull(rgb, have & sky & in_disc, sky & in_disc)
+        del ground
+    else:
+        filled = push_pull(rgb, have & in_disc, in_disc)
+    sky = None
     med = np.median(rgb[seen_disc][::97], axis=0) if seen_disc.any() else np.full(3, 128.0)
     cell_filled = fill_cells(rgb, have, cells, med)
     # the mesh: the disc's triangles share their vertices; a cell's triangle has its own three
-    uv_v = disc_uv(V, C, size, rpx, theta_max, up, north, east)
+    uv_v = disc_uv(V, C, size, rpx, theta_max, up, north, east, knee=knee)
     Fv = F[vis]
     nv = len(V)
     Vo = np.concatenate([V, V[F[hid]].reshape(-1, 3)])
@@ -454,11 +567,20 @@ def terrain_part(scene, sources, station, pool=None, size: int = TEXTURE_PX, rad
                cell_texel_mm=None if cells["texel_m"] is None else round(1000 * cells["texel_m"], 2),
                disc_texels_colored=round(float(seen_disc.sum() / max(n_disc_texels, 1)), 4),
                disc_texels_filled=int(filled.sum()), cell_texels_filled=int(cell_filled),
-               mrad_per_texel=round(1000 * theta_max / rpx, 4), seconds=round(time.time() - t0, 1))
+               mrad_per_texel=round(1000 * (knee[0] / (knee[1] * rpx) if knee else theta_max / rpx), 4))
+    out_shell = None
+    if shell is not None:
+        out_shell = {"V": shell["V"], "F": shell["F"], "uv": disc_uv(shell["V"], C, size, rpx, theta_max, up, north, east, knee=knee)}
+        rec.update(full=True, skyline_deg=round(float(np.degrees(knee[0])) - 90.0, 2), horizon_frac=HORIZON_FRAC,
+                   texels_per_deg=round(float(knee[1] * rpx / np.degrees(knee[0])), 1),
+                   texels_per_deg_around_horizon=round(float(2 * np.pi * knee[1] * rpx * (np.pi / 2 / knee[0]) / 360.0), 1),
+                   shell={"triangles": int(len(shell["F"])), "from_m": SHELL_FROM_M, "rings": shell["rings"], "az": shell["az"],
+                          "dome_m": DOME_M}, fade_m=list(FADE_M))
+    rec["seconds"] = round(time.time() - t0, 1)
     log.info("station mesh: terrain %d triangles (%d from the center, %d in cells at %s mm), texture %d px, %.1f %% of the "
              "disc colored by the frames (%.0f s)", len(Fo), int(vis.sum()), len(hid), rec["cell_texel_mm"], size,
              100 * rec["disc_texels_colored"], rec["seconds"])
-    return {"V": Vo[keep], "F": remap[Fo], "uv": UVo[keep], "texture": rgb, "record": rec}
+    return {"V": Vo[keep], "F": remap[Fo], "uv": UVo[keep], "texture": rgb, "record": rec, "shell": out_shell}
 
 
 def viewpoints(pivot, radius_m: float = VIEW_RADIUS_M, n: int = VIEWPOINTS) -> np.ndarray:
@@ -567,7 +689,12 @@ def write_part(out_dir: PathLike, prefix: str, kind: str, part: Dict[str, Any], 
         raise RuntimeError("station mesh: the texture could not be encoded")
     (out / (stem + ".jpg")).write_bytes(enc.tobytes())
     Vp = page_frame(part["V"], station.pivot, station.east, station.up, station.north)
-    np.savez_compressed(out / (stem + ".npz"), V=Vp, F=np.asarray(part["F"], np.uint32), uv=np.asarray(part["uv"], np.float32))
+    extra = {}
+    sh = part.get("shell")
+    if sh is not None:                                           # 0.99.32: the surface to the horizon, on the same texture
+        extra = {"shell_V": page_frame(sh["V"], station.pivot, station.east, station.up, station.north),
+                 "shell_F": np.asarray(sh["F"], np.uint32), "shell_uv": np.asarray(sh["uv"], np.float32)}
+    np.savez_compressed(out / (stem + ".npz"), V=Vp, F=np.asarray(part["F"], np.uint32), uv=np.asarray(part["uv"], np.float32), **extra)
     rec = dict(part["record"], kind=kind, files=[stem + ".npz", stem + ".jpg"], vertices=int(len(Vp)), mesh_triangles=int(len(part["F"])))
     (out / (stem + ".json")).write_text(json.dumps(rec, indent=1), encoding="utf-8")
     return rec
@@ -575,7 +702,8 @@ def write_part(out_dir: PathLike, prefix: str, kind: str, part: Dict[str, Any], 
 
 # ------------------------------------------------------------------------------------------- the file
 def glb_bytes(parts: Sequence[Tuple[str, np.ndarray, np.ndarray, np.ndarray, bytes]], extras: Optional[Dict[str, Any]] = None) -> bytes:
-    """A binary glTF 2.0 file of textured meshes ``(name, V, F, uv, jpeg)``: unlit, double-sided materials."""
+    """A binary glTF 2.0 file of textured meshes ``(name, V, F, uv, jpeg)``: unlit, double-sided materials.  A part
+    whose ``jpeg`` is a string uses the texture of the earlier part of that name."""
     chunks, views = [], []
 
     def add(b: bytes, target: Optional[int] = None) -> int:
@@ -587,6 +715,7 @@ def glb_bytes(parts: Sequence[Tuple[str, np.ndarray, np.ndarray, np.ndarray, byt
         views.append(v)
         return len(views) - 1
     acc, meshes, mats, texs, imgs, nodes = [], [], [], [], [], []
+    by_name: Dict[str, int] = {}
     for name, V, F, uv, jpg in parts:
         V = np.ascontiguousarray(V, "<f4")
         uv = np.ascontiguousarray(uv, "<f4")
@@ -596,10 +725,14 @@ def glb_bytes(parts: Sequence[Tuple[str, np.ndarray, np.ndarray, np.ndarray, byt
                     "min": [float(x) for x in V.min(axis=0)], "max": [float(x) for x in V.max(axis=0)]})
         acc.append({"bufferView": add(uv.tobytes(), 34962), "componentType": 5126, "count": int(len(uv)), "type": "VEC2"})
         acc.append({"bufferView": add(F.tobytes(), 34963), "componentType": 5125, "count": int(len(F)), "type": "SCALAR"})
-        imgs.append({"bufferView": add(bytes(jpg)), "mimeType": "image/jpeg", "name": name})
-        texs.append({"source": len(imgs) - 1, "sampler": 0})
+        if isinstance(jpg, str):                                 # 0.99.32: the texture of the part of that name
+            ti = by_name[jpg]
+        else:
+            imgs.append({"bufferView": add(bytes(jpg)), "mimeType": "image/jpeg", "name": name})
+            texs.append({"source": len(imgs) - 1, "sampler": 0})
+            ti = by_name[name] = len(texs) - 1
         mats.append({"name": name, "doubleSided": True, "extensions": {"KHR_materials_unlit": {}},
-                     "pbrMetallicRoughness": {"baseColorTexture": {"index": len(texs) - 1}, "metallicFactor": 0.0, "roughnessFactor": 1.0}})
+                     "pbrMetallicRoughness": {"baseColorTexture": {"index": ti}, "metallicFactor": 0.0, "roughnessFactor": 1.0}})
         meshes.append({"name": name, "primitives": [{"attributes": {"POSITION": a_v, "TEXCOORD_0": a_v + 1}, "indices": a_v + 2,
                                                      "material": len(mats) - 1, "mode": 4}]})
         nodes.append({"mesh": len(meshes) - 1, "name": name})
@@ -626,6 +759,45 @@ def _part_files(folder: Path, kind: str) -> Optional[Tuple[Path, Path, Path]]:
     return None
 
 
+def assemble_scape(folder: PathLike, rover_folder: Optional[PathLike] = None, out: Optional[PathLike] = None) -> Optional[Dict[str, Any]]:
+    """0.99.32: ``<prefix>_station_scape.glb`` in ``folder`` - the fifth mode's file: the meshes "horizon" (the shell:
+    first, the viewer draws it first), "terrain" (the near terrain; both on the one terrain texture) and "rover" (the
+    rover part of ``rover_folder``, default ``folder/with_rover``, with its own).  None without a scape part."""
+    d = Path(folder)
+    tp = _part_files(d, "scape")
+    if tp is None:
+        return None
+    rp = _part_files(Path(rover_folder) if rover_folder else d / "with_rover", "rover")
+    recs: Dict[str, Any] = {}
+    with np.load(tp[0]) as z:
+        if "shell_V" not in z:
+            return None
+        parts = [("terrain", z["V"], z["F"], z["uv"], tp[1].read_bytes()), ("horizon", z["shell_V"], z["shell_F"], z["shell_uv"], "terrain")]
+    try:
+        recs["terrain"] = json.loads(tp[2].read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        recs["terrain"] = {}
+    if rp is not None:
+        with np.load(rp[0]) as z:
+            parts.append(("rover", z["V"], z["F"], z["uv"], rp[1].read_bytes()))
+        try:
+            recs["rover"] = json.loads(rp[2].read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            recs["rover"] = {}
+    stem = tp[0].name[:-len(PART["scape"] + ".npz")]
+    glb = Path(out) if out else d / (stem + SCAPE_SUFFIX)
+    t = recs["terrain"]
+    extras = {"station_scape": {"frame": "meters about the pivot: x east, y up, z south", "parts": [p[0] for p in parts],
+                                "fade_m": t.get("fade_m") or list(FADE_M), "dome_m": (t.get("shell") or {}).get("dome_m", DOME_M),
+                                "view_radius_m": (recs.get("rover") or {}).get("view_radius_m", VIEW_RADIUS_M)}}
+    glb.write_bytes(glb_bytes(parts, extras))
+    rec = {"file": glb.name, "bytes": glb.stat().st_size, "parts": recs, "triangles": int(sum(len(p[2]) for p in parts)),
+           "fade_m": extras["station_scape"]["fade_m"], "dome_m": extras["station_scape"]["dome_m"]}
+    glb.with_suffix(".json").write_text(json.dumps(rec, indent=1), encoding="utf-8")
+    log.info("station mesh: %s - %s, %d triangles, %.1f MB", glb.name, " + ".join(p[0] for p in parts), rec["triangles"], rec["bytes"] / 1e6)
+    return rec
+
+
 def assemble(folder: PathLike, rover_folder: Optional[PathLike] = None, out: Optional[PathLike] = None) -> Optional[Dict[str, Any]]:
     """``<prefix>_station_mesh.glb`` in ``folder`` (the station's terrain-only folder) from its terrain part and the
     rover part of ``rover_folder`` (default ``folder/with_rover``; the rover is left out when it has none).  None
@@ -649,7 +821,7 @@ def assemble(folder: PathLike, rover_folder: Optional[PathLike] = None, out: Opt
     stem = tp[0].name[:-len(PART["terrain"] + ".npz")]
     glb = Path(out) if out else d / (stem + SUFFIX)
     extras = {"station_mesh": {"frame": "meters about the pivot: x east, y up, z south", "parts": list(recs),
-                               "radius_m": recs["terrain"].get("radius_m"), "view_radius_m": (recs.get("rover") or {}).get("view_radius_m", VIEW_RADIUS_M)}}
+                               "radius_m": recs["terrain"].get("radius_m"), "fade_m": list(FADE_M), "view_radius_m": (recs.get("rover") or {}).get("view_radius_m", VIEW_RADIUS_M)}}
     glb.write_bytes(glb_bytes(parts, extras))
     rec = {"file": glb.name, "bytes": glb.stat().st_size, "parts": recs,
            "triangles": int(sum(len(p[2]) for p in parts))}
@@ -664,7 +836,8 @@ def main(argv=None) -> int:
     ap.add_argument("folder", help="the station's terrain-only folder (its with_rover folder holds the rover part)")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    return 0 if assemble(a.folder) else 1
+    one, two = assemble(a.folder), assemble_scape(a.folder)
+    return 0 if (one or two) else 1
 
 
 if __name__ == "__main__":

@@ -642,6 +642,7 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
                 if r["label"] in labels:
                     try:
                         _sm.assemble(Path(r["out"]))
+                        _sm.assemble_scape(Path(r["out"]))       # 0.99.32: the fifth mode
                     except Exception as e:               # noqa: BLE001
                         print(f"station mesh of {r['label']}: failed ({e})")
         if not a.publish:

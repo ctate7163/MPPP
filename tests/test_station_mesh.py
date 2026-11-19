@@ -176,3 +176,66 @@ def test_sol121_seitah_station_in_the_list():
     run = SS.plan(cfg, "/tmp/root", labels=["Sol0116_S004D1250"])[0]
     ods = [c for c in run["commands"] if c["step"] == "ods"]
     assert ods and all("--context-images" in c["argv"] for c in ods) and run["work"].endswith("seitah_overlook_zcam")
+
+
+def test_fifth_mode_surface_to_the_horizon_one_texture(tmp_path):
+    """0.99.32 (Christian, 18 Nov 2026: "expanding the mesh to the horizon with a low poly mesh ... continuous from below
+    the rover to infinity ... the horizon which lies on a circle about 90% of the max size of circle that will fit in the
+    square. Beyond that horizon circle, the uv ... goes to the sky"; "The 3d model rover should be a separate mesh and
+    texture from the terrain, but both can be bundled in the same glb file"; "Build this as a fifth viewing mode")."""
+    from rpp.ibr import ods as O, station_mesh as SM, rover_surface as RS, web
+    proj, rec, st, sc = _scene(tmp_path)
+    src = O.station_sources(proj, rec, st, scale=1.0)
+    C = np.asarray(st.pivot) + [0, 0, 0.5]
+    sh = SM.horizon_shell(sc, C, st.pivot, st.up, st.north, st.east, az_step_deg=2.0, step_deg=1.0)
+    r = np.linalg.norm(sh["V"] - C, axis=1)
+    assert np.isclose(r.max(), SM.DOME_M) and (r > 0.99 * SM.DOME_M).sum() > 100           # the sky, at the dome
+    hd = np.hypot(*(sh["V"][:, :2] - np.asarray(st.pivot)[:2]).T)
+    assert hd[sh["F"]].max(axis=1).min() >= SM.SHELL_FROM_M                                  # nothing of it under the rover
+    assert 99.9 < np.degrees(sh["knee"]) < 102.0                                             # flat ground: 10 deg above the horizontal at least
+    first, last = sh["V"][sh["F"][:10]].reshape(-1, 3), sh["V"][sh["F"][-10:]].reshape(-1, 3)
+    assert np.linalg.norm(first - C, axis=1).min() > 0.99 * SM.DOME_M and np.linalg.norm(last - C, axis=1).max() < 20   # the far rings first
+    tp = SM.terrain_part(sc, src, st, size=1024, target=8000, full=True)
+    rr = tp["record"]
+    assert rr["full"] and rr["horizon_frac"] == 0.9 and rr["shell"]["triangles"] == len(tp["shell"]["F"]) and rr["fade_m"] == [8.0, 10.0]
+    rpx = 1024 / 2 - SM.GUTTER_PX - 2
+    rho = np.hypot(tp["shell"]["uv"][:, 0] - 0.5, tp["shell"]["uv"][:, 1] - 0.5) * 1024
+    assert rho.max() <= rpx + 1e-3 and (rho > 0.9 * rpx + 1).any()                           # the sky beyond the 90 % circle
+    ground = np.linalg.norm(tp["shell"]["V"] - C, axis=1) < 0.5 * SM.DOME_M
+    assert rho[ground].max() <= 0.9 * rpx + 1e-3                                             # the terrain inside it
+    rho_in = np.hypot(tp["uv"][:, 0] - 0.5, tp["uv"][:, 1] - 0.5) * 1024
+    assert np.isfinite(tp["texture"]).all() and tp["texture"].shape == (1024, 1024, 3)
+    # the map and its inverse agree across the knee
+    knee = (np.radians(rr["skyline_deg"] + 90.0), 0.9)
+    rows, cols = np.array([100, 512, 900, 30]), np.array([512, 300, 700, 512])
+    d, _ = SM.disc_dirs(rows, cols, 1024, rpx, np.pi, st.up, st.north, st.east, knee=knee)
+    uv = SM.disc_uv(C + 5 * d, C, 1024, rpx, np.pi, st.up, st.north, st.east, knee=knee)
+    assert np.allclose(uv[:, 0] * 1024, cols + 0.5, atol=1e-6) and np.allclose(uv[:, 1] * 1024, rows + 0.5, atol=1e-6)
+    to8 = lambda a: np.clip(np.rint(a), 0, 255).astype(np.uint8)
+    rp = SM.rover_part(sc, src, st, size=256)
+    (tmp_path / "st" / "with_rover").mkdir(parents=True)
+    SM.write_part(tmp_path / "st", "S1", "scape", tp, st, to8)
+    SM.write_part(tmp_path / "st" / "with_rover", "S1", "rover", rp, st, to8)
+    out = SM.assemble_scape(tmp_path / "st")
+    assert out["file"] == "S1_station_scape.glb" and SM.assemble(tmp_path / "st") is None
+    doc, _ = RS.read_glb((tmp_path / "st" / out["file"]).read_bytes())
+    assert [m["name"] for m in doc["meshes"]] == ["terrain", "horizon", "rover"] and len(doc["images"]) == 2
+    tex = [doc["materials"][m["primitives"][0]["material"]]["pbrMetallicRoughness"]["baseColorTexture"]["index"] for m in doc["meshes"]]
+    assert tex[0] == tex[1] != tex[2]                                 # terrain and horizon on one texture, the rover on its own
+    assert doc["asset"]["extras"]["station_scape"]["fade_m"] == [8.0, 10.0]
+    pano = tmp_path / "panos"
+    pano.mkdir()
+    sc5 = web.station_scape(tmp_path / "st", tmp_path, pano)
+    assert sc5["whole"] and sc5["file"] == "panos/S1_station_scape.glb" and sc5["dome_m"] == SM.DOME_M and web.SCAPE_3D[0] == "scape3d"
+
+
+def test_viewer_has_the_screen_eye_movement_the_fade_and_every_mesh():
+    """0.99.32 (Christian: "Add the off pivot motion, swaying, and the cursor directed motion. Add fading at the end of
+    the terrain mesh")."""
+    import pathlib
+    from rpp.ibr import single_sites as SS
+    page = (pathlib.Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    for s in ("NECK_M = 0.15", "HOVER_M = 0.05", "SWAY_M = 0.03", "prefers-reduced-motion", "smoothstep(fade.x, fade.y, vR)",
+              "for (const me of doc.meshes)", "wholeScene", "m.userData.kind === 'rover'"):
+        assert s in page, s
+    assert "doc.meshes[0].primitives" not in page

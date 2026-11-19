@@ -1824,6 +1824,7 @@ def stack_file(out_dir: PathLike, prefix: str = "", ext: str = ".png", suffix: s
 
 
 GEOMETRY_VIEWS = ("range_log", "range_linear", "normal")
+NORMAL_FILL_DIM = 0.45            # 0.99.32: the hole fill's normal colors times this in the normal panorama
 GEOMETRY_WIDTH = 4096             # 0.98.12 (Christian, 15 Nov 2026: "Make those extra channels 4k and the same with the range
 #                                   map ... It doesn't need to be as high res as the ods"): the range and normal panoramas'
 #                                   width (the color ones' until 0.98.11)
@@ -1865,7 +1866,10 @@ def geometry_panorama(scene: Scene, station, out_dir: PathLike, prefix: str = ""
             #                                                    plane"): the mesh and the rover model only; the plane black
             synth = _synthetic_surface(scene, h.get("tri"))  # 0.98.30 (Christian, 16 Nov 2026: "The normal map render should not
             if synth is not None:                            # include the flat plane that extends out to the horizon. Somehow
-                nimg[synth.reshape(r1 - r0, width)] = 0      # the normal map keeps show the pea green flat plane under the
+                sm_ = synth.reshape(r1 - r0, width)          # the normal map keeps show the pea green flat plane under the
+                # 0.99.32 (Christian, 18 Nov 2026: "Draw fill in the normal map with its real normal, dimmed, instead of
+                # black"): the flat extension is gone since 0.99.20, so what is left is the fill of the mesh's holes
+                nimg[sm_] = (nimg[sm_].astype(np.float32) * NORMAL_FILL_DIM).astype(np.uint8)
             #                                                    rover"): the fill under the rover, the underlay and the apron
             #                                                    out to 200 m and the deck floors are mesh too - black as well
             nimg[lab == LABEL_FAR] = 255
@@ -2343,6 +2347,11 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                                                    rows_per_chunk=rows_per_chunk), "rover"
                 rec_out["station_mesh"] = _sm.write_part(out, pf, kind, part, station, to8)
                 del part
+                if use_masks and _sm.SCAPE:              # 0.99.32: the fifth mode's terrain, out to the horizon and the sky
+                    part = _sm.terrain_part(scene, sources, station, pool, size=_sm.TEXTURE_PX, target=_sm.TARGET_TRIANGLES,
+                                            linear=linear, rows_per_chunk=rows_per_chunk, full=True)
+                    rec_out["station_scape"] = _sm.write_part(out, pf, "scape", part, station, to8)
+                    del part
             except Exception as e:                       # noqa: BLE001 - the panoramas are not lost for it
                 log.warning("ods: the station mesh's part was not made (%s: %s)", type(e).__name__, e)
                 rec_out["station_mesh"] = {"failed": f"{type(e).__name__}: {e}"}
