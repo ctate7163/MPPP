@@ -186,7 +186,8 @@ def test_groups_and_block_sites():
     # 9 Nov (Christian): butler_landing (sols 1-14, site 3 drive 0000) in the zcam consensus
     # 0.97.0 (12 Nov): Rockytop split into the two ridges; four more sites
     # 0.99.5 (16 Nov, the rig knee): Issole / Seitah South (sols 201, 286-339)
-    assert g["zcam_consensus"] == ["butler_landing", "chal_rocks_large", "issole_seitah_south", "wildcat_ridge", "skinner_ridge", "taylorfjellet",
+    # 0.99.28 (18 Nov): Rockytop one block again (the two ridges merged), aligned first
+    assert g["zcam_consensus"] == ["rockytop", "butler_landing", "chal_rocks_large", "issole_seitah_south", "taylorfjellet",
                                    "seitah_overlook", "threeforks_north", "threeforks_south", "belva_crater_large",
                                    "marble_mountain", "bright_angel", "pico_turquino", "south_arm", "overlook_mountain",
                                    "airey_hill", "rose_river_falls", "hippo_pools"]
@@ -199,7 +200,7 @@ def test_groups_and_block_sites():
     # 2 Nov (Christian): Cannery Passage, an unofficial 48 / 63 / 110 mm block (sols 543-552), in no group
     assert t["sites"]["cannery_passage"]["zcam"] == [48, 63, 110]
     assert not any("cannery_passage" in v for v in g.values())
-    assert "wildcat_ridge" in g["zcam79_consensus"] and {"skinner_ridge", "marble_mountain"} <= set(g["zcam110_consensus"])   # 0.97.0: the ridges
+    assert "rockytop" in g["zcam79_consensus"] and {"rockytop", "marble_mountain"} <= set(g["zcam110_consensus"])   # 0.99.28: Rockytop one block;   # 0.97.0: the ridges
     assert g["zcam34_joint"][0] == "taylorfjellet"
     assert "airey_hill" not in g["ecam_consensus"] and "airey_hill" in g["zcam_consensus"]   # 2 Nov: out of the Navcam list
     assert "chal_rocks" not in g["zcam34_joint"] and "chal_rocks_large" in g["zcam34_joint"]
@@ -287,7 +288,7 @@ def test_excluded_station_is_not_selected_nor_an_anchor(tmp_path):
                                                       "seq:ZCAM05105", "seq:ZCAM05108", "seq:ZCAM05109",
                                                       "seq:ZCAM05110", "seq:ZCAM05111", "seq:ZCAM05112",
                                                       "seq:ZCAM05115", "seq:ZCAM05116",
-                                                      "zoom:110 except seq:ZCAM08529,ZCAM07101,ZCAM08486,ZCAM08548"]
+                                                      "zoom:110 except seq:ZCAM08529,ZCAM07101,ZCAM08537,ZCAM08548,ZCAM08486"]
     st = B.site_waypoint_stats({"sols": [[460, 530]], "settings": {"EXCLUDE": ["S026D0282"]}},
                                B.waypoint_points(ROOT / "src" / "rpp" / "data" / "M20_waypoints.json"))
     assert st["n_nearby"] == 0 and st["max_waypoint_separation_m"] < 30
@@ -671,7 +672,7 @@ def test_zcam_include_keeps_only_listed_sequences_at_a_zoom():
     kept, removed = apply_exclusions([mk("ZCAM01234", 110), mk("ZCAM08529", 110), mk("ZCAM01234", 63)], e)
     assert len(kept) == 2 and removed[0]["image"].endswith("ZCAM01234_1100LMA01")
     s = run_settings(site="rockytop")
-    assert "zoom:110 except seq:ZCAM08529,ZCAM07101,ZCAM08486,ZCAM08548" in s.exclude and "S026D0282" in s.exclude
+    assert "zoom:110 except seq:ZCAM08529,ZCAM07101,ZCAM08537,ZCAM08548,ZCAM08486" in s.exclude and "S026D0282" in s.exclude
     assert any(x.startswith("zoom:110") for x in run_settings(site="taylorfjellet").exclude)
     assert not any(str(x).startswith("zoom:") for x in s.replace(include_zcam=False).key_dict()["exclude"])
     assert any(str(x).startswith("zoom:") for x in s.replace(include_zcam=True).key_dict()["exclude"])
