@@ -21,7 +21,9 @@ balance x brightness / zenith scale x a fixed scale) and with nothing rendered a
                                   the local brightness (the base, radius TONE_RADIUS_DEG) and the detail; the base
                                   compressed only (never expanded) so the terrain band's 0.5-99.5 % span fits
                                   TONE_CONTRAST, its median set to TONE_MID, the detail x TONE_DETAIL; each pixel's
-                                  R:G:B ratios kept (to the power TONE_RATIO_POWER); gamma 2.2.
+                                  R:G:B ratios kept (to the power TONE_RATIO_POWER); gamma 2.2; then (0.99.38) the
+                                  values stretched x TONE_OUT_CONTRAST about the band's median and the colors x
+                                  TONE_OUT_SATURATION.
   <prefix>_dcs_360_3DTD.jpg       dcs color: a decorrelation stretch (Gillespie et al. 1986) - in the gamma view
                                   (linear / white, gamma 2.2) the principal components of the three bands given equal
                                   spread DCS_SIGMA about mid gray (the terrain's own color not kept), the statistics
@@ -62,7 +64,10 @@ GAMMA = 2.2
 WHITE_PCT = 99.9                     # the band's luminance shown as white (enhanced tone, dcs)
 TONE_WORK_WIDTH = 4096
 TONE_RADIUS_DEG, TONE_EPS = 1.0, 0.04
-TONE_CONTRAST, TONE_DETAIL, TONE_RATIO_POWER, TONE_MID = 8.0, 1.8, 1.15, 0.30
+TONE_CONTRAST, TONE_DETAIL, TONE_RATIO_POWER, TONE_MID = 8.0, 2.5, 1.2, 0.22   # 0.99.38 (Christian: "The enhanced tone
+#   looks too bland"): 1.8, 1.15, 0.30 in 0.99.37 (the 18 Nov study's) - more detail, a little more color, darker
+TONE_OUT_CONTRAST = 1.35        # 0.99.38: then the display values stretched about the terrain band's median by this
+TONE_OUT_SATURATION = 1.2       # ... and the colors' distance from their gray (luma) x this
 DCS_SIGMA = 0.20                     # 0.075 in the 18 Nov study; Christian, 19 Nov 2026: "the dcs does not need to show the
 #                                      terrain's original colors underneath. It can be a colorful splotchy mess for now"
 DCS_MID = 0.5                        # every component centered on mid gray
@@ -75,7 +80,8 @@ LUMA_BGR = np.array([0.0722, 0.7152, 0.2126], np.float32)
 STRIP_ROWS = 512
 RULE = (f"raw color: the standard view of linear / white balance; enhanced tone: base/detail tone mapping (guided filter "
         f"radius {TONE_RADIUS_DEG} deg, eps {TONE_EPS}; base compressed to a contrast of {TONE_CONTRAST:g} at most, median "
-        f"-> {TONE_MID}; detail x {TONE_DETAIL}; R:G:B ratios ^ {TONE_RATIO_POWER}; gamma {GAMMA}); dcs color: "
+        f"-> {TONE_MID}; detail x {TONE_DETAIL}; R:G:B ratios ^ {TONE_RATIO_POWER}; gamma {GAMMA}; then x {TONE_OUT_CONTRAST} about the "
+        f"band's median and saturation x {TONE_OUT_SATURATION}); dcs color: "
         f"decorrelation stretch in the gamma view, sigma {DCS_SIGMA} per principal component about {DCS_MID}, statistics from the sunlit "
         f"terrain (not sky, rover, its shadow, or darker than {DCS_SUNLIT_FRAC} x the band median), sky white, rover and "
         f"shadow black; white = the terrain band's ({BAND_DEG} deg) {WHITE_PCT} % luminance")
@@ -219,6 +225,8 @@ def _parameters(small: np.ndarray, m: Dict[str, np.ndarray], mark_row_small: Opt
     b_lo, b_hi = (np.percentile(sel, [0.5, 99.5]) if len(sel) else (0.0, 1.0))
     a_c = float(min(1.0, np.log(TONE_CONTRAST) / max(float(b_hi - b_lo), 1e-6)))
     b_mid = float(np.median(sel)) if len(sel) else 0.0
+    y0 = _tone_display(small, L, base, b_mid, a_c)              # 0.99.38: the band's median in the display values
+    out_mid = float(np.median(y0[band].mean(axis=1))) if band.any() else 0.5
     keep = band & ~m["sky"] & ~m["rover"] & ~m["shadow"] & (np.log(lum) >= float(m["L_med"]) + np.log(DCS_SUNLIT_FRAC))
     g = np.clip(small / ref, 0.0, 1.0) ** (1.0 / GAMMA)
     px = g[keep].astype(np.float64) if keep.sum() > 100 else g[band].astype(np.float64)
@@ -226,8 +234,24 @@ def _parameters(small: np.ndarray, m: Dict[str, np.ndarray], mark_row_small: Opt
     ev, E = np.linalg.eigh(np.cov((px - mu).T) + 1e-12 * np.eye(3))
     T = (E * (DCS_SIGMA / np.sqrt(np.maximum(ev, 1e-12)))) @ E.T
     return {"white_linear_8bit_units": ref, "tone": {"base_log_range": [float(b_lo), float(b_hi)], "base_median_log": b_mid,
-            "base_compression": a_c}, "dcs": {"mean_bgr": mu.tolist(), "matrix_bgr": T.tolist(), "eigenvalues": ev.tolist(),
+            "base_compression": a_c, "display_median": out_mid}, "dcs": {"mean_bgr": mu.tolist(), "matrix_bgr": T.tolist(), "eigenvalues": ev.tolist(),
             "pixels": int(keep.sum())}}
+
+
+def _tone_display(x: np.ndarray, Ls: np.ndarray, base: np.ndarray, b_mid: float, a_c: float) -> np.ndarray:
+    """The enhanced tone's display values (0-1, BGR) before its output stretch: the base compressed, the detail x
+    TONE_DETAIL, the color ratios kept (^ TONE_RATIO_POWER), gamma."""
+    lum = _lum(x)
+    Lo = np.exp((base - b_mid) * a_c + (Ls - base) * TONE_DETAIL) * TONE_MID
+    ratio = (x / lum[..., None]) ** TONE_RATIO_POWER
+    return np.clip(ratio * Lo[..., None], 0.0, 1.0) ** (1.0 / GAMMA)
+
+
+def _tone_stretch(y: np.ndarray, mid: float) -> np.ndarray:
+    """0.99.38: the display values stretched about ``mid`` (TONE_OUT_CONTRAST) and their colors (TONE_OUT_SATURATION)."""
+    y = np.clip(mid + (y - mid) * TONE_OUT_CONTRAST, 0.0, 1.0)
+    g = (y @ LUMA_BGR)[..., None]
+    return np.clip(g + TONE_OUT_SATURATION * (y - g), 0.0, 1.0)
 
 
 def _mark_row(out: Path, H: int) -> Optional[int]:
@@ -288,7 +312,7 @@ def write_color_products(out_dir: PathLike, prefix: str, top: str = "left", jpeg
         info: Dict[str, Any] = {}
         m = masks(small, layers, None if sky_w is None else sky_w.astype(np.float32) / 255.0, info)
         if params is None:
-            params, src = shared_value(levels_file, "color_products_parameters", lambda: _parameters(small, m, mrow4))
+            params, src = shared_value(levels_file, "color_products_parameters_v2", lambda: _parameters(small, m, mrow4))
             rec["parameters"], rec["parameters_from"] = params, src
         ref = float(params["white_linear_8bit_units"])
         tp = params["tone"]
@@ -316,14 +340,11 @@ def write_color_products(out_dir: PathLike, prefix: str, top: str = "left", jpeg
             up = lambda q, nearest=False: cv2.resize(q[s0:s1], (W, n), interpolation=cv2.INTER_NEAREST if nearest else cv2.INTER_LINEAR)[off:off + (r1 - r0)]   # noqa: E731
             dst = slice(half * H + r0, half * H + r1)
             squares["raw"][dst] = np.rint(tone_pipeline(xs / wb_bgr if wb_bgr is not None else xs)).astype(np.uint8)
-            lum = _lum(xs)                                               # enhanced tone
-            Ls = np.log(lum / ref)
+            Ls = np.log(_lum(xs) / ref)                                  # enhanced tone
             base = up(ga) * Ls + up(gb)
-            Lo = np.exp((base - tp["base_median_log"]) * tp["base_compression"] + (Ls - base) * TONE_DETAIL) * TONE_MID
-            del base, Ls
-            ratio = (xs / lum[..., None]) ** TONE_RATIO_POWER
-            squares["enhtone"][dst] = np.rint(255.0 * np.clip(ratio * Lo[..., None], 0.0, 1.0) ** (1.0 / GAMMA)).astype(np.uint8)
-            del ratio, Lo, lum
+            yt = _tone_display(xs, Ls, base, tp["base_median_log"], tp["base_compression"])
+            squares["enhtone"][dst] = np.rint(255.0 * _tone_stretch(yt, tp.get("display_median", 0.5))).astype(np.uint8)
+            del base, Ls, yt
             g = np.clip(xs / ref, 0.0, 1.0) ** (1.0 / GAMMA)            # dcs color
             d = np.clip((g - mu) @ T.T + mu_out, 0.0, 1.0)
             wt = up(white4, True) > 0

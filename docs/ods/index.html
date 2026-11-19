@@ -306,6 +306,22 @@ const MESH_FRAG = `
   varying vec2 vUv; varying float vR;
   uniform sampler2D map; uniform vec2 fade;
   void main() { gl_FragColor = vec4(texture2D(map, vUv).rgb, fade.y > fade.x ? 1.0 - smoothstep(fade.x, fade.y, vR) : 1.0); }`;
+// 0.99.38 (Christian, 19 Nov 2026: "The 3d terrain and rover should have its own normal map which changes with view"):
+// in the normal-map view the 3D surfaces are drawn with their own normals - each triangle's, in the surface's frame
+// (x east, y up, z south), in the colors of the panoramas' normal map: RGB = (1 + [east, north, up]) / 2 - so the
+// shading moves with the eye like the surface does.  The sky dome of the fifth mode is black, as the panorama's sky.
+const NORMAL_VERT = `
+  varying vec3 vP; varying float vR;
+  void main() { vP = position; vR = length(position.xz); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+const NORMAL_FRAG = `
+  precision highp float;
+  varying vec3 vP; varying float vR;
+  uniform vec2 fade;
+  void main() {
+    vec3 n = normalize(cross(dFdx(vP), dFdy(vP)));
+    vec3 c = length(vP) > 1500.0 ? vec3(0.0) : 0.5 * (1.0 + vec3(n.x, -n.z, n.y));
+    gl_FragColor = vec4(c, fade.y > fade.x ? 1.0 - smoothstep(fade.x, fade.y, vR) : 1.0);
+  }`;
 let meshFade = null, fadeBase = null, wholeScene = false;      // the terrain's fade uniform; its values at the anchor
 // 0.99.33: the ground (terrain, horizon) and the rover hang in groups of their own, so the sixth mode can move one
 // against the other
@@ -431,11 +447,35 @@ function dropRover() {
   }
   roverParts = [];
 }
-async function showRover(rs) {
+// 0.99.38: opt.normals - the normal-map shader on every part (above); opt.rover - another file for the rover (the
+// rover surface of the third mode, colored from the pivot's panorama at its full resolution), drawn in place of the
+// station mesh's own rover part (Christian: "The rover texture in the '3d terrain and rover' looks a lot worse than the
+// 'terrain with rover (3D model)' version")
+async function showRover(rs, opt = {}) {
   const id = ++roverId;
   dropRover();
   if (!rs || !rs.file) return;
+  const made = [];
   try {
+    let fadeU = null;
+    for (const [file, isMain] of [[rs, true]].concat(opt.rover && opt.rover.file && rs.triangles != null ? [[opt.rover, false]] : [])) {
+      const got = await loadSurface(file, { normals: !!opt.normals, skipRover: isMain && !!opt.rover && rs.triangles != null });
+      if (got.fade) fadeU = got.fade;
+      made.push(...got.made);
+      if (id !== roverId) break;
+    }
+    if (id !== roverId) { for (const m of made) { m.geometry.dispose(); for (const o of m.userData.textures) o.dispose(); m.material.dispose(); } return; }
+    roverParts = made;
+    for (const m of made) (m.userData.kind === 'rover' ? roverGroup : groundGroup).add(m);
+    if (rs.drive && rs.whole) driveStart(rs.drive);              // 0.99.33: the sixth mode
+    meshFade = fadeU; fadeBase = fadeU ? fadeU.clone() : null;
+    wholeScene = !!rs.whole && made.some(m => m.userData.kind === 'horizon');     // the fifth mode: no panorama behind
+    if (wholeScene) for (const k in spheres) spheres[k].visible = false;
+    anchored = false;
+  } catch (e) { console.warn('rover surface', e); }
+}
+async function loadSurface(rs, opt) {                            // -> {made: [meshes], fade: the terrain's fade uniform}
+  {
     const buf = await (await fetch(new URL(rs.file, base).href)).arrayBuffer();
     const dv = new DataView(buf);
     if (dv.getUint32(0, true) !== 0x46546C67) throw new Error('not a .glb file');
@@ -446,8 +486,28 @@ async function showRover(rs) {
     const pr = doc.asset && doc.asset.extras && doc.asset.extras.projection;
     const made = [], shared = new Map();
     let fadeU = null;
+    if (opt.normals) {                                           // 0.99.38: the surfaces' own normals, no textures
+      for (const me of doc.meshes) for (const prim of me.primitives) {
+        const kind = pr ? 'rover' : (me.name || 'rover');
+        if (opt.skipRover && kind === 'rover') continue;
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(arr(prim.attributes.POSITION, Float32Array, 3), 3));
+        g.setIndex(new THREE.BufferAttribute(arr(prim.indices, Uint32Array, 1), 1));
+        const terrain = kind === 'terrain', horizon = kind === 'horizon', fade = new THREE.Vector2(0, 0);
+        if (terrain && rs.fade_m) { fade.set(rs.fade_m[0], rs.fade_m[1]); fadeU = fade; }
+        const mat = new THREE.ShaderMaterial({ vertexShader: NORMAL_VERT, fragmentShader: NORMAL_FRAG, side: THREE.DoubleSide,
+          uniforms: { fade: { value: fade } }, transparent: terrain && !!rs.fade_m, depthTest: !horizon, depthWrite: !horizon });
+        const m = new THREE.Mesh(g, mat);
+        m.userData.textures = []; m.userData.kind = kind;
+        m.renderOrder = horizon ? 0.5 : 1; m.frustumCulled = false;
+        m.visible = roverOn || kind !== 'rover';
+        made.push(m);
+      }
+      return { made, fade: fadeU };
+    }
     // 0.99.32: every mesh of the file (until now the first alone: a station mesh's rover part was never drawn)
     for (const me of doc.meshes) for (const prim of me.primitives) {
+      if (opt.skipRover && !pr && (me.name || 'rover') === 'rover') continue;   // 0.99.38: the rover from its own file
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(arr(prim.attributes.POSITION, Float32Array, 3), 3));
       g.setIndex(new THREE.BufferAttribute(arr(prim.indices, Uint32Array, 1), 1));
@@ -497,15 +557,8 @@ async function showRover(rs) {
       m.visible = roverOn || m.userData.kind !== 'rover';
       made.push(m);
     }
-    if (id !== roverId) { for (const m of made) { m.geometry.dispose(); for (const o of m.userData.textures) o.dispose(); m.material.dispose(); } return; }
-    roverParts = made;
-    for (const m of made) (m.userData.kind === 'rover' ? roverGroup : groundGroup).add(m);
-    if (rs.drive && rs.whole) driveStart(rs.drive);              // 0.99.33: the sixth mode
-    meshFade = fadeU; fadeBase = fadeU ? fadeU.clone() : null;
-    wholeScene = !!rs.whole && made.some(m => m.userData.kind === 'horizon');     // the fifth mode: no panorama behind
-    if (wholeScene) for (const k in spheres) spheres[k].visible = false;
-    anchored = false;
-  } catch (e) { console.warn('rover surface', e); }
+    return { made, fade: fadeU };
+  }
 }
 
 // ---------------------------------------------------------------- words in the scene (0.98.4)
@@ -568,7 +621,7 @@ const VIEWER_NAME = 'Rover Photogrammetry Viewer (RPV)';
 // 0.99.36 (Christian, 19 Nov 2026: "please put the rpp-rpv viewer version number on the lower left above the site name,
 // images size, and version on which the site was rendered"): the page's own version (the RPP release that wrote it;
 // tests/test_station_mesh.py keeps it equal to rpp.__version__), above the station's line
-const RPV_VERSION = '0.99.37';
+const RPV_VERSION = '0.99.38';
 $('ver').textContent = `RPV viewer ${RPV_VERSION}`;
 const CREDIT = 'Created by Christian Tate at MSSS';   // 0.99.14 (Christian, 17 Nov 2026: 'remove the "for research purposes" phrase')
 const CODE_URL = 'https://github.com/ctate7163/rpp';   // 0.98.29: the repository renamed MPPP -> RPP
@@ -864,7 +917,11 @@ async function show() {
     showMark(color(names[cur.w]) ? vr.ground_mark : null);        // not over the range and normal views
     // 0.99.26: the fourth mode, "3D terrain and rover" - the station mesh (terrain within 10 m and the rover,
     // textured: rpp.ibr.station_mesh) in front of the terrain-only panorama, its backdrop beyond 10 m
-    showRover(color(names[cur.w]) ? (vr.station_mesh || vr.rover_surface) : null);
+    // 0.99.38: in the normal-map view a 3D mode draws its surfaces with their own normals; the station mesh's rover is
+    // the third mode's projected rover surface where the station has one
+    const nmView = /^normal/.test(names[cur.w] || '');
+    if (vr.station_mesh && (color(names[cur.w]) || nmView)) showRover(vr.station_mesh, { normals: nmView, rover: vr.rover_surface });
+    else showRover(color(names[cur.w]) || (nmView && vr.rover_surface) ? vr.rover_surface : null, { normals: nmView });
     // 0.99.15 (Christian, 17 Nov 2026: "the north direction should be preserved when moving from site to site. I noticed
     // this looks rotated for the welcome screen compared to the van zyl site"): until now every panorama set its own start
     // heading (west for the welcome view, yaw_deg or north for a station), so a change of station turned the world under
@@ -1025,14 +1082,15 @@ let yaw = 0, pitch = 0, drag = null;
 // moves a little, so the 3D rover and terrain shift against what is behind them -
 //   * it sits NECK_M in front of the point the view turns about (as the eyes are in front of the neck);
 //   * it follows the pointer by up to HOVER_M, eased (a mouse, no button needed);
-//   * left alone for SWAY_AFTER_S it circles slowly, SWAY_M wide (not when the system asks for reduced motion).
+//   * (0.99.32-0.99.37: left alone for 3 s it circled slowly, 3 cm wide.)
 // P turns it off and on; ?still=1 opens with it off.  Only where there is a 3D surface to see it on.
-const NECK_M = 0.15, HOVER_M = 0.05, SWAY_M = 0.03, SWAY_PERIOD_S = 6, SWAY_AFTER_S = 3;
+// 0.99.38 (Christian, 19 Nov 2026: "remove the swaying", and a smaller pointer move): no sway; the
+// pointer moves the eye by up to 2 cm (5 cm before)
+const NECK_M = 0.15, HOVER_M = 0.02;
 let motionOn = new URLSearchParams(location.search).get('still') !== '1';
-const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const hover = new THREE.Vector2(), hoverNow = new THREE.Vector2(), eyeMove = new THREE.Vector3();
 const eyeFwd = new THREE.Vector3(), eyeRight = new THREE.Vector3(), eyeUp = new THREE.Vector3();
-let lastInput = performance.now(), swayGain = 0;
+let lastInput = performance.now();
 const touched = () => { lastInput = performance.now(); };
 for (const ev of ['pointerdown', 'wheel', 'keydown']) window.addEventListener(ev, touched, { passive: true });
 window.addEventListener('pointermove', e => {
@@ -1047,10 +1105,7 @@ function screenEye3(dt) {                                        // -> eyeMove: 
   camera.matrixWorld.extractBasis(eyeRight, eyeUp, eyeFwd);       // the camera's x, y and z (it looks along -z)
   const k = 1 - Math.exp(-dt / 0.25);
   hoverNow.lerp(hover, k);
-  const idle = (performance.now() - lastInput) / 1000;
-  swayGain += ((!calm && idle > SWAY_AFTER_S ? 1 : 0) - swayGain) * (1 - Math.exp(-dt / 0.8));
-  const ph = 2 * Math.PI * performance.now() / 1000 / SWAY_PERIOD_S;
-  const sx = HOVER_M * hoverNow.x + SWAY_M * swayGain * Math.cos(ph), sy = HOVER_M * hoverNow.y + 0.5 * SWAY_M * swayGain * Math.sin(ph);
+  const sx = HOVER_M * hoverNow.x, sy = HOVER_M * hoverNow.y;
   return eyeMove.addScaledVector(eyeFwd, -NECK_M).addScaledVector(eyeRight, sx).addScaledVector(eyeUp, sy);
 }
 function look() {
@@ -1090,11 +1145,12 @@ function roverForward(p) {
   return null;
 }
 const FACE_AZ = { N: 0, E: 90, S: 180, W: 270 };
+const O_PITCH_DEG = -30;     // 0.99.38 (Christian, 19 Nov 2026: "on the 2d viewer, the o button should point the view 30 below the horizon")
 function face(k) {
   if (renderer.xr.isPresenting) return;
   const azDeg = k === 'O' ? (roverFrontAz != null ? roverFrontAz : startAz(panos[cur.s] || {})) : FACE_AZ[k];
   yaw = THREE.MathUtils.degToRad(azDeg) - world.rotation.y;
-  pitch = 0;
+  pitch = k === 'O' ? THREE.MathUtils.degToRad(O_PITCH_DEG) : 0;    // 0.99.38: O looks down along the rover's +x
   look();
 }
 for (const k of 'NESWO') $('face' + k).onclick = () => face(k);

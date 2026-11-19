@@ -3,6 +3,39 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.38 — 2026-11-19 (branch `rpp`)
+
+Christian, 11:41-11:53: "the rockytop mesh has some spiky artifacts. remove the spikes. the dark normal patches are image
+textured strangely ... The 3d terrain and rover should have its own normal map which changes with view. remove the
+swaying" (and a smaller move of the eye with the pointer); "The rover texture in the '3d terrain and rover' looks a lot
+worse than the 'terrain with rover (3D model)' version. why is that?"; "the welcome screen should now have the same
+color products as Van zyl"; "the enhanced color has too much saturations and black clipping. The enhanced tone looks
+too bland"; "on the 2d viewer, the o button should point the view 30 below the horizon"; the freeze start that ended
+after "3. the code to the newest bundle".
+
+- **Height field near the mast** (`mesh.height_field_arrays`): a cell's height is the true median (a two-point cell
+  took its higher point: the needles up to 4 m tall at 2-4 m from the mast, Sol 461) and needs 3 points; a cell of
+  fewer than 8 points more than 0.10 m from the 4x coarser grid's median is dropped; empty cells take the heights of
+  the coarser grids (2x, 4x, 8x, only inside a coarse cell that has points itself) - fewer fill patches, the dark ones
+  of the normal map; where neighboring cells differ by more than 0.06 m (a rock's face: the walls round the boulder at
+  Sol 474 and 477) the height field leaves the cells about it (grown 4 cells, the enclosed ones too) to a Poisson
+  surface of the same points (`zoned_poisson`: "height field + poisson on the faces"). A station's mesh, depth maps
+  and panoramas have to be made again to show it.
+- **RPV 3D modes**: the normal-map view draws the surfaces with their own normals (`NORMAL_FRAG`, in the panoramas'
+  normal colors; it moves with the eye); the rover is the third mode's projected rover surface (colored from the
+  pivot's panorama, the full resolution) in place of the station mesh's baked rover (`web.publish` gives the 3D
+  variants `rover_surface`). No sway; the pointer moves the eye 2 cm at most (5 before). O looks 30 deg down on a
+  screen (`O_PITCH_DEG`).
+- **Welcome view**: every view of Van Zyl's terrain-only variant, muted (`web.welcome_pano`; the standard one before).
+- **Enhanced color**: saturation x 0.68 (0.85), the terrain's darkest 1 % from 0.16 of the range (0.10), local
+  contrast 0.6 (0.8) fading within 60 levels of black and white (40) - Sol 461: saturation median 71 -> 48 (the
+  standard view's 54), pixels below 12 of 255 3.2 % -> 0.4 %. **Enhanced tone**: detail x 2.5 (1.8), color ratios ^1.2,
+  median 0.22 (0.30), then x 1.35 about the band's median and saturation x 1.2 (`color_products_parameters_v2`).
+- **sync_code.bat, sync_rpp.bat**: the copy in %TEMP% is CALLed. Run without CALL from inside a block, the block's
+  `exit /b` ran in the context of a batch file that CALLed sync_code.bat and ended it - `start_freeze3_when_ready.bat`
+  stopped silently after the sync on 18 Nov 21:09 and 19 Nov 11:49 (its copy in _transfer calls the copy itself now).
+- Test: `test_cmods_dir_is_the_default_camera_folder` no longer reads the tree's `rpp_cmods.txt` (the PC's sync failure).
+
 ## 0.99.37 — 2026-11-19 (branch `rpp`)
 
 Christian, 10:22: "regenerate the color products from the 16-bit images. regenerate and include the different color

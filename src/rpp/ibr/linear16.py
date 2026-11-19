@@ -384,15 +384,17 @@ ENH_S = 5.5                      # 6.0 until 0.97.24
 # The terrain band's ENH_LOW_PCT..ENH_HIGH_PCT span takes ENH_OUT_LOW..ENH_OUT_HIGH of the 8 bits through the S-curve;
 # what is darker runs down a toe to black at zero radiance only; what is brighter (the deck, the sky) rolls off
 # toward white along a shoulder.  Both join the S-curve with its own slope.
-ENH_OUT_LOW = 0.10              # 0.06 until 0.98.29 - 0.98.30 (Christian, 16 Nov 2026: "the enh and enhlocal should have a
+ENH_OUT_LOW = 0.16              # 0.99.38 (Christian, 19 Nov 2026: "the enhanced color has too much saturations and black
+#                                 clipping"): 0.10 until 0.99.37; 0.06 until 0.98.29 - 0.98.30 (Christian, 16 Nov 2026: "the enh and enhlocal should have a
 #                                 little less saturation and black clipping. Otherwise they look really good"): the
 #                                 terrain's darkest 1 % starts higher, and the toe below it with it
 ENH_OUT_HIGH = 0.88
-ENH_SATURATION = 0.85            # 0.98.30: the color's distance from its gray (Rec. 601 luma) after the curve - the curve
+ENH_SATURATION = 0.68            # 0.99.38: 0.85 until 0.99.37 (Sol 461, terrain band: saturation median 71 -> 48, the
+#                                 standard view's 54; pixels below 12 of 255: 3.2 % -> 0.4 %).  0.98.30: the color's distance from its gray (Rec. 601 luma) after the curve - the curve
 #                                 acts on each channel alike and steepens the colors with the contrast (1.0 before)
 ENH_LOCAL_SIGMA_FRAC = 0.0025
-ENH_LOCAL_AMOUNT = 0.8
-ENH_LOCAL_KNEE = 40.0            # 0.98.30: the unsharp mask darkens a pixel at most by its lightness over this (and brightens
+ENH_LOCAL_AMOUNT = 0.6           # 0.99.38: 0.8 until 0.99.37
+ENH_LOCAL_KNEE = 60.0            # 0.99.38: 40 until 0.99.37            # 0.98.30: the unsharp mask darkens a pixel at most by its lightness over this (and brightens
 #                                 it by its distance to white over it) - near black it fades out instead of clipping
 
 

@@ -277,8 +277,11 @@ near terrain fades out between 8 and 10 m from the mast axis (in the fourth mode
 the surface beyond).
 
 On a screen the eye moves a little where a 3D surface is shown (0.99.32): it sits 0.15 m in front of the point the
-view turns about (as eyes are in front of the neck), follows the mouse by up to 5 cm, and when left alone for 3 s
-circles slowly (3 cm; not when the system asks for reduced motion). P turns it off; `?still=1` opens without it. In
+view turns about (as eyes are in front of the neck) and follows the mouse by up to 2 cm (0.99.38; 5 cm, and a slow
+sway when left alone, before). P turns it off; `?still=1` opens without it. In the 3D modes the normal-map view draws
+the surfaces with their own normals, so the shading moves with the eye, and the rover is the projected rover surface
+of the third mode (the pivot's panorama at its full resolution; the station mesh's own rover texture is 4096 texels a
+side for the whole model) - its parts the pivot does not see are gray (0.99.38). In
 the panorama-only modes (terrain only, terrain with the projected rover) the picture is a sphere around the eye, so
 there is nothing for the eye to move against and the movement is off.
 
@@ -295,6 +298,12 @@ The 0-4 m zone is a height field seen from the mast (one median height per 1.5 c
 gaps closed), not a Poisson surface: it cannot fold over a hole's rim. The holes left (under and behind the rover) are
 filled by a smooth sheet hung from the low side of the surface around them, 5 mm under it, so it meets a hole's rim
 from below. The normal panorama shows that fill in its own normal's color at 45 % brightness.
+
+0.99.38: a cell's height is the median of at least 3 points (a cell of two took the higher one: needles of 1-4 m at
+2-4 m from the mast); a cell of fewer than 8 points more than 10 cm from the median of the 4x coarser grid is dropped;
+empty cells take the heights of the 2x, 4x and 8x grids where those have points, so the thinner cloud beyond 2-3 m
+leaves fewer holes to the fill; and where neighboring cells differ by more than 6 cm - the face of a rock, which a
+height field can only draw as a wall - the cells about it are meshed by Poisson from the same points.
 
 ### Color for display (a study, 0.99.33)
 

@@ -136,7 +136,7 @@ def test_render_station_part_web_entry_and_plan(tmp_path, monkeypatch):
     assert web.TERRAIN_3D == ("terrain3d", "3D terrain and rover")
     src = (SS.__file__)
     page = (__import__("pathlib").Path(src).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
-    assert "vr.station_mesh || vr.rover_surface" in page and "holdNearPivot" in page
+    assert "showRover(vr.station_mesh, { normals: nmView, rover: vr.rover_surface })" in page and "holdNearPivot" in page
 
 
 def test_single_sites_skips_stations_whose_block_is_not_aligned(tmp_path, capsys):
@@ -244,7 +244,9 @@ def test_viewer_has_the_screen_eye_movement_the_fade_and_every_mesh():
     import pathlib
     from rpp.ibr import single_sites as SS
     page = (pathlib.Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
-    for s in ("NECK_M = 0.15", "HOVER_M = 0.05", "SWAY_M = 0.03", "prefers-reduced-motion", "smoothstep(fade.x, fade.y, vR)",
+    # 0.99.38 (Christian: "remove the swaying", and a smaller pointer move): 2 cm, no sway
+    assert "SWAY_M" not in page and "swayGain" not in page
+    for s in ("NECK_M = 0.15", "HOVER_M = 0.02", "smoothstep(fade.x, fade.y, vR)", "NORMAL_FRAG", "skipRover", "O_PITCH_DEG = -30",
               "for (const me of doc.meshes)", "wholeScene", "m.userData.kind === 'rover'"):
         assert s in page, s
     assert "doc.meshes[0].primitives" not in page
