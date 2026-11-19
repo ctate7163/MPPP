@@ -49,6 +49,7 @@ A_CONTRAST, A_DETAIL, A_RADIUS_DEG, A_EPS, A_RATIO_POWER, A_MID = 8.0, 1.8, 1.0,
 B_SCALE, B_SAT = 1.6, 1.3
 C_SIGMA = 0.075
 SKY_REF_EL_DEG, ROVER_GROW_DEG, SKY_GROW_PX = 15.0, 3.0, 2          # (the last at a quarter of the width)
+SKY_RIM_DEG = 1.0                    # mesh pixels this close to the far surface may be sky (the mesh's fat silhouette)
 LUMA = np.array([0.2126, 0.7152, 0.0722], np.float32)               # RGB
 
 
@@ -88,7 +89,8 @@ def masks(small: np.ndarray, full_hw: Tuple[int, int], depth: Optional[str], rov
         near = mesh & ((el4 > -10.0) & (el4 < 0.0))[:, None] & ok4
         L_ter = float(np.median(L[near])) if near.sum() > 1000 else float(np.percentile(L[ok4], 50))
         cut = 0.5 * (L_sky + L_ter)
-        rim = mesh & (cv2.dilate(far.astype(np.uint8), np.ones((23, 23), np.uint8)) > 0)
+        kr = 2 * max(1, int(round(SKY_RIM_DEG * w4 / 360.0))) + 1        # 0.99.34: 1 deg at any width (23 px at 4096)
+        rim = mesh & (cv2.dilate(far.astype(np.uint8), np.ones((kr, kr), np.uint8)) > 0)
         like = ((far | rim) & (L > cut)).astype(np.uint8)
         like = cv2.morphologyEx(like, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
         _, lab = cv2.connectedComponents(like, connectivity=4)

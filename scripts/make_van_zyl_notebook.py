@@ -1,4 +1,4 @@
-"""Writes notebooks/van_zyl_ods_example.ipynb (0.99.33; Christian, 18 Nov 2026: "Make a notebook that downloads van zyl
+"""Writes notebooks/van_zyl_ods_example.ipynb (0.99.33, tiny block 0.99.34; Christian, 18 Nov 2026: "Make a notebook that downloads van zyl
 ecam frames and build the ods and models through the whole pipeline. Use this as an example to illustrate the process
 and RPP design features").  Run from the repository root: ``python scripts/make_van_zyl_notebook.py``."""
 from __future__ import annotations
@@ -22,7 +22,7 @@ def code(text: str, tags=()) -> None:
 
 
 md(r"""
-# Van Zyl Overlook, sol 52: from the PDS to stereo panoramas, 3D models and the viewer
+# Van Zyl Overlook, sol 52 (tiny): from the PDS to stereo panoramas, 3D models and the viewer
 
 This notebook starts from nothing and ends with the station in the Rover Photogrammetry Viewer (RPV): it downloads
 one station's Navcam frames from the PDS Imaging Node, aligns them with the promoted camera models and the rover's own
@@ -30,22 +30,27 @@ poses, builds the terrain, renders the omnidirectional stereo (ODS) panoramas, m
 and publishes them to a local copy of the viewer.  Along the way it points out how RPP is built and why.
 
 **The station.** Perseverance at Van Zyl Overlook on sol 52 (site 3, drive 2046; the station `Sol0052_S003D2046`
-of `rpp/data/single_sites.json`): six Navcam stereo pairs of the end-of-drive panorama, with context frames for the
-terrain - the pair taken just before the last drive (S003D2016) and the end-of-drive panorama of sol 33 at
-S003D1374, 63 m west.  It is the first station of the public viewer.
+of `rpp/data/single_sites.json`): six Navcam stereo pairs of the end-of-drive panorama and the front Hazcam pair, with
+one context pair for the terrain - the Navcam pair taken mid-drive, at drive 2016, before the sol's last drive.  It is
+the first station of the public viewer.
+
+**A tiny block** (0.99.34; Christian, 19 Nov 2026: "Let's use a van zyl tiny with just the one site and its mid drive
+imaging"): one sol, one site, 16 frames - small enough to download and align in minutes.  The packaged station also
+has the sol 33 end-of-drive panorama (S003D1374, 63 m west) as context; the viewer's own copy uses it, this example
+leaves it out.  The panoramas and models come out the same way; the terrain beyond about 20 m is thinner.
 
 **What you need.**
 
 | | |
 |---|---|
-| RPP | 0.99.33 or later, installed with `pip install -e ".[all]"` from the repository (the viewer page comes from its `docs/ods`) |
+| RPP | 0.99.34 or later, installed with `pip install -e ".[all]"` from the repository (the viewer page comes from its `docs/ods`) |
 | GPU | pycolmap built with CUDA for the dense step (patch-match stereo); the other steps run on the CPU |
-| disk | about 3 GB (the PDS products, the processed frames, the dense cloud and the panoramas) |
-| time | about 1-2 hours on a desktop with a GPU - most of it the dense step and the panoramas |
+| disk | about 2 GB (the PDS products, the processed frames, the dense cloud and the panoramas) |
+| time | about an hour on a desktop with a GPU - most of it the dense step and the panoramas |
 | network | the PDS Imaging Node (https://pds-imaging.jpl.nasa.gov) and the mask model's download |
 
 Every step writes its products and a JSON record next to them and can be run again: a step whose inputs, settings and
-code have not changed is skipped.  *This notebook was written for 0.99.33 and has not yet been run end to end on a
+code have not changed is skipped.  *This notebook was written for 0.99.34 and has not yet been run end to end on a
 fresh machine - please report what breaks.*
 """)
 
@@ -104,7 +109,8 @@ from rpp.ibr import single_sites as SS
 packaged = SS.load_config()
 station = dict(packaged["stations"][LABEL])
 frames = station["frames"]["images"]
-context = station.get("context", [])
+SOL = 52
+context = [c for c in station.get("context", []) if int(c.split("_")[1]) == SOL]    # the mid-drive pair only
 print(station["note"][:400], "...\n")
 print(len(frames), "station frames,", len(context), "context frames; e.g.", frames[0])
 """)
@@ -124,8 +130,13 @@ from rpp import pds
 names = [Path(n).with_suffix(".IMG").name for n in frames + context]
 rep = pds.fetch_products(names, PDS)
 print({k: rep[k] for k in ("downloaded", "kept", "bytes")}, "| failed:", rep["failed"] or "none")
-haz = pds.fetch_sols(PDS, [52], cameras=("fcam",), match="N0032046")      # the front Hazcams at site 3, drive 2046
+haz = pds.fetch_sols(PDS, [SOL], cameras=("fcam",), match="N0032046")    # the front Hazcams at site 3, drive 2046
 print("front Hazcam:", haz["sols"], {k: haz.get(k) for k in ("downloaded", "kept")})
+# what else the Navcams took on sol 52 at site 3 (names only, nothing downloaded): other mid-drive stops show up here
+import re
+listed = pds.fetch_sols(PDS, [SOL], cameras=("ncam",), match="N003", list_only=True)["names"]
+drives = sorted({m.group(1) for n in listed for m in [re.search(r"_N003(\d{4})NCAM", n)] if m})
+print("sol 52, site 3 Navcam drives:", drives)
 """)
 
 md(r"""
@@ -158,10 +169,10 @@ copies of the frames, `colmap/images16/`, not from the 8-bit ones.)
 code(r"""
 from rpp.pipeline import Settings, resolve_site, select_products, process_site
 from rpp.sfm.workdir import load_manifest
-SITE = "van_zyl_sol52_example"
+SITE = "van_zyl_tiny"
 settings = Settings(
     pds_dir=PDS, scapes_root=SCAPES,
-    sites_extra={SITE: {"sols": [[33, 33], [52, 52]], "label": "Van Zyl Overlook (example)", "zcam": []}},
+    sites_extra={SITE: {"sols": [[SOL, SOL]], "label": "Van Zyl Overlook tiny (example)", "zcam": []}},
     add_nearby_waypoints=0,        # only what was downloaded
     hazcams=("F",),                # the front Hazcams at the block's stations; () = Navcam only
     workers=4,
@@ -238,7 +249,8 @@ what is done.
 
 code(r"""
 cfg = {k: v for k, v in packaged.items() if k != "stations"}
-own = {k: station[k] for k in ("station", "frames", "context", "note") if k in station}
+own = {k: station[k] for k in ("station", "frames", "note") if k in station}
+own["context"] = context                           # the mid-drive pair only (see section 2)
 cfg["stations"] = {LABEL: dict(own, work=str(WORK), title="Van Zyl Overlook (example)")}
 has_f = any(Path(x["outputs"]["PNG8"]).name.startswith("FLF_") for x in manifest["images"])
 if not has_f:                                      # no front Hazcam at the station: nothing to fill the ground with

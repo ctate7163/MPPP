@@ -440,3 +440,41 @@ def test_msl_misplaced_frames_leave_the_model_and_fail_a_block_with_many():
     v = B.verdict({"cameras": {}, "misplaced": {"frames": 30, "of": 200}}, {"cameras": {}})
     assert any(c["what"] == "misplaced frames share" and not c["ok"] for c in v["checks"])
     assert B.HELD_ZERO["FULL_OPENCV"] == (8, 9, 10, 11) and B.MODEL_FORM == "msl-brown-v2"
+
+
+def test_verdict_judges_the_edge_rise_and_holds_a_narrow_law_flat(tmp_path):
+    """0.99.34 (Christian, 19 Nov 2026: "Promote what we can from msl"): a residual that falls toward the edge is no
+    distortion misfit; a side whose frames cover one narrow temperature range passes with its law held flat, and the
+    flat files carry the parameters at the frames' mean temperature (Yellowknife Bay's side A front Hazcams)."""
+    import numpy as np
+    from rpp_studies.msl import block as B
+    falling = [{"r": [0.0, 0.3], "share": 0.25, "rms_px": 0.62}, {"r": [0.3, 0.6], "share": 0.62, "rms_px": 0.59},
+               {"r": [0.6, 0.8], "share": 0.12, "rms_px": 0.56}, {"r": [0.8, 1.0], "share": 0.01, "rms_px": 0.48}]
+    rising = [dict(b, rms_px=v) for b, v in zip(falling, (0.40, 0.45, 0.60, 0.80))]
+    assert B.radial_rise(falling, 0.59) < 0 < 0.15 < B.radial_rise(rising, 0.5)
+    cam = {"registered": 160}
+    rep = {"cameras": {"FLA": cam, "FRA": cam},
+           "residuals": {g: {"median_px": 0.26, "rms_px": 0.59, "by_radius": falling, "radial_spread": 0.24} for g in ("FLA", "FRA")},
+           "thermal": {"cameras": {g: {"bins": [{"T_degC": -4.5, "frames": 14}, {"T_degC": 2.2, "frames": 146}],
+                                       "T_range_degC": [-4.5, 2.2]} for g in ("FLA", "FRA")},
+                       "rigs": {"FA": {"bins": [{"T_degC": -4.5, "pairs": 14}, {"T_degC": 2.2, "pairs": 94}]}}},
+           "rigs": {"FA": {"pairs": 108, "baseline_ratio": 1.0}},
+           "stages": {"free": {"reprojection_px": 0.40}, "rigs": {"reprojection_px": 0.41}, "thermal": {"reprojection_px": 0.41}}}
+    man = {"cameras": {"FLA": {"frames": 166}, "FRA": {"frames": 162}}}
+    v = B.verdict(rep, man, "F")
+    assert v["ok"] and v["flat_law_sides"] == ["A"], [c for c in v["checks"] if not c["ok"]]
+    wide = json.loads(json.dumps(rep))
+    wide["thermal"]["cameras"]["FLA"]["T_range_degC"] = [-30.0, 2.2]
+    assert not B.verdict(wide, man, "F")["sides"]["A"]                # two bins over 32 degC: no flat law
+    d = {"family": "F", "eye": "L", "side": "A", "params": [455.08, 455.23, 506.0, 524.6] + [0.0] * 8,
+         "thermal": {"T0_degC": -20.0, "f_ppm_per_degC": -6.78, "T_range_degC": [-4.5, 2.2], "bins": 2}}
+    f = B.flat_law(d, rep)
+    Tm = (14 * -4.5 + 146 * 2.2) / 160
+    assert f["params"][0] == pytest.approx(455.08 * (1 - 6.78e-6 * (Tm + 20.0))) and f["thermal"]["f_ppm_per_degC"] == 0.0
+    assert f["thermal"]["flat"] and f["thermal"]["flat_at_degC"] == pytest.approx(Tm, abs=0.01)
+    rig = {"family": "F", "side": "A", "ref": "FLA", "R_sensor_from_ref": np.eye(3).tolist(),
+           "thermal": {"T0_degC": -20.0, "pitch_mdeg_per_degC": 0.0, "yaw_mdeg_per_degC": -4.0, "roll_mdeg_per_degC": 0.0}}
+    fr = B.flat_law(rig, rep)
+    Tr = (14 * -4.5 + 94 * 2.2) / 108
+    ang = np.degrees(np.arcsin(np.asarray(fr["R_sensor_from_ref"])[0][2])) * 1000        # yaw about y, mdeg
+    assert ang == pytest.approx(-4.0 * (Tr + 20.0), rel=1e-3) and fr["thermal"]["yaw_mdeg_per_degC"] == 0.0

@@ -349,16 +349,24 @@ def test_upload_checks_sha_and_uploads_file_and_card(tmp_path, monkeypatch):
             calls.append(("create", repo_id, kw.get("private")))
 
         def upload_file(self, path_or_fileobj, path_in_repo, repo_id, **kw):
-            calls.append(("upload", Path(path_or_fileobj).name, path_in_repo, repo_id))
+            what = path_or_fileobj.decode() if isinstance(path_or_fileobj, bytes) else Path(path_or_fileobj).name
+            calls.append(("upload", what, path_in_repo, repo_id))
 
     monkeypatch.setitem(sys.modules, "huggingface_hub", types.SimpleNamespace(HfApi=FakeApi))
     card = tmp_path / "card.md"
-    card.write_text("# card")
+    card.write_text("# card {{sha256:m1}}")
     rel = _release()
     assert rel.upload_model("m1", card=card) == url                   # exported from source_checkpoint first
     assert (tmp_path / "m1.safetensors").is_file()
+    assert rel.fill_card("{{bytes:a}} {{sha256:a}}", {"models": {"a": {"bytes": 1234567, "sha256": "ab"}}}) == "1,234,567 ab"
     assert calls == [("create", "me/mask", False), ("upload", "m1.safetensors", "m1.safetensors", "me/mask"),
-                     ("upload", "card.md", "README.md", "me/mask")]
+                     ("upload", f"# card {ref['sha256']}", "README.md", "me/mask")]
+    calls.clear()                                                       # 0.99.34: a card field without a value:
+    card.write_text("# card {{sha256:m2}}")                             # nothing is uploaded
+    with pytest.raises(ValueError, match="sha256 of m2"):
+        rel.upload_model("m1", card=card)
+    assert calls == []
+    card.write_text("# card")
     (tmp_path / "m1.safetensors").write_bytes(b"other")
     with pytest.raises(ValueError, match="not uploading"):
         rel.upload_model("m1", card=card)

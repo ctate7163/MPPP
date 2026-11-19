@@ -111,11 +111,12 @@ The same functions are importable (`rpp.pipeline.Settings`, `process_site`, `ali
 start to finish: processing, the alignment and its health, the dense cloud, the station mesh, the depth and
 photometric maps, the stereoscopic panorama, the exports.  The research studies have a notebook each under
 `notebooks/studies/` (`camera_models`, `error_analysis`, `mask_training`, `sites_maps`).
-`notebooks/van_zyl_ods_example.ipynb` (0.99.33) starts from nothing: it downloads one station's Navcam frames (Van Zyl
-Overlook, sol 52, with context frames of sol 52 and 33) from the PDS Imaging Node and takes them through the whole
-pipeline to the stereo panoramas, the 3D station models and a local copy of the viewer, explaining the design as it
-goes.  Reruns reuse processed
-images, features and matches; a changed setting or a promoted camera model changes the run key and realigns.
+`notebooks/van_zyl_ods_example.ipynb` (0.99.33; a tiny block since 0.99.34) starts from nothing: it downloads one
+station's frames (Van Zyl Overlook, sol 52: the six Navcam pairs of the end-of-drive panorama, the front Hazcam pair
+and the Navcam pair taken mid-drive - 16 frames) from the PDS Imaging Node and takes them through the whole pipeline
+to the stereo panoramas, the 3D station models and a local copy of the viewer, explaining the design as it goes.
+Reruns reuse processed images, features and matches; a changed setting or a promoted camera model changes the run key
+and realigns.
 
 Outputs of `process`: `images_png16/<PDS stem>.png` (the mask in the alpha channel), `references.txt` for
 Metashape *Import Reference*, `colmap/sparse_prior/` (cameras, poses, rig), `mppp_manifest_<version>.json` and

@@ -3,6 +3,47 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.34 — 2026-11-19 (branch `rpp`)
+
+Christian, 07:10-07:31: "Review for bugs. Clean the documentation. Prepare mask hf upload with new docs"; "Let's use a
+van zyl tiny with just the one site and it's mid drive imaging"; "Z34 needs to be anchor to the fiducials in order to
+fix its position in the mast frame. Prepare that study"; "Promote what we can from msl"; "If you make changes to the
+code, leave them on v0p99".
+
+- **Mask model `rpp_mask_v5` prepared for Hugging Face** (the v5.2 run `convnext_tiny_s4_seg_20261118_v5p2`: Curiosity
+  Navcam and front Hazcam frames in training; 0.977 exclusion IoU on the 90 hand-cleaned frames of `validation_set_v1`
+  against 0.973 for v3, +0.0043 [+0.0003, +0.0088]). Registry entry (`released: false`, the SHA-256 written by the
+  export on the PC); the card (`docs/hf_model_card.md`) has a v5 section with the validation table and its cautions;
+  the card's `{{sha256:NAME}}` and `{{bytes:NAME}}` are filled from the registry by `release_mask_model upload`
+  (`fill_card`), which now refuses a model without a registry SHA-256, fills the card before uploading anything, and
+  sets `released: true` after the upload. `upload_mask_models.bat` (`_transfer`) does rename, export, upload and
+  verify of v5, v4 and v3. The default stays `rpp_mask_v3`. `docs/masks.md` and `RELEASING.md` updated.
+- **MSL verdict, two refinements** (`rpp_studies.msl.block`): the residual's change with radius is judged one way
+  (`radial_rise`: the outer bins over the inner, as a share of the rms; a residual that falls toward the edge - the
+  near ground in the middle of a Hazcam frame - is no distortion misfit); a side whose frames span 10 degC at most
+  (`NARROW_T_DEGC`) passes with fewer than three temperature bins, and `promote` writes its files with the law held
+  flat (`flat_law`: the parameters at the frames' mean temperature, the slopes 0, the range recorded). `promote` judges
+  by the current rules. At Yellowknife Bay this passes the front Hazcams of side A (the FA rig file at -20 degC had
+  been extrapolated 22 degC from two bins: 90 mdeg); side B still fails on FLB's registered share (0.736).
+  `msl_promote_hazcam.bat` (`_transfer`): a dry run, a question, the promotion.
+- **Study: Mastcam-Z on the deck fiducials** (`rpp_studies.calibration.zcam_fiducials`): the zoom's deck frames from
+  the PDS labels, the surveyed targets found in them, and each eye's center in the mast head through the deck_joint
+  chain, along the boresight too (focal law held, or a focal scale free); the ZR center in the ZL frame beside the
+  18 Nov joints' (15.0 / 15.7 / 18.7 mm). On synthetic deck pans: 0.06 mm along the boresight with the law held,
+  0.35 mm with the focal scale free. `zcam_fiducial_anchor.bat` (`_transfer`).
+- **Van Zyl notebook on a tiny block**: sol 52 alone - the station's six Navcam pairs, the front Hazcam pair and the
+  Navcam pair taken mid-drive at S003D2016 (16 frames; the packaged station's sol 33 context is left out); it lists
+  the other sol 52 site 3 Navcam drives the PDS holds. `van_zyl_notebook.bat` brings `D:\code\RPP_ods` up to date
+  itself (`update_rpp_ods.bat`).
+- **Bugs fixed**: a failure of the fifth mode's terrain (`station_scape`) no longer overwrites the station mesh's
+  record in `ods.json` (it has its own); `assemble_scape`'s docstring said the horizon comes first in the file (it
+  comes after the terrain, whose texture it shares; the viewer draws it first by render order); the Mastcam-Z block
+  aspect check took the 1000-observation cut at every zoom (now the zoom's line cut: 100 at 26 and 100 mm); the
+  color study's sky rim was 23 px at any panorama width (now 1 degree).
+- Docs: `calibration.md` gains the deck-fiducial study and the Curiosity blocks; `api.md` the study module; stale
+  MPPP paths in `RELEASING.md`; README and quickstart for the tiny Van Zyl block; the mask-training notebook names the
+  current models and no longer promotes by default.
+
 ## 0.99.33 — 2026-11-18 (branch `rpp`)
 
 - **Sixth viewer mode, "Drive the rover (simulation)"** (Christian, 22:26: "Build a simple skid steering option. Call it

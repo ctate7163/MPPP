@@ -2347,14 +2347,18 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                                                    rows_per_chunk=rows_per_chunk), "rover"
                 rec_out["station_mesh"] = _sm.write_part(out, pf, kind, part, station, to8)
                 del part
-                if use_masks and _sm.SCAPE:              # 0.99.32: the fifth mode's terrain, out to the horizon and the sky
+            except Exception as e:                       # noqa: BLE001 - the panoramas are not lost for it
+                log.warning("ods: the station mesh's part was not made (%s: %s)", type(e).__name__, e)
+                rec_out["station_mesh"] = {"failed": f"{type(e).__name__}: {e}"}
+            if use_masks and _sm.SCAPE:                  # 0.99.32: the fifth mode's terrain, out to the horizon and the sky
+                try:                                     # 0.99.34: its own record - a failure here is not the station mesh's
                     part = _sm.terrain_part(scene, sources, station, pool, size=_sm.TEXTURE_PX, target=_sm.TARGET_TRIANGLES,
                                             linear=linear, rows_per_chunk=rows_per_chunk, full=True)
                     rec_out["station_scape"] = _sm.write_part(out, pf, "scape", part, station, to8)
                     del part
-            except Exception as e:                       # noqa: BLE001 - the panoramas are not lost for it
-                log.warning("ods: the station mesh's part was not made (%s: %s)", type(e).__name__, e)
-                rec_out["station_mesh"] = {"failed": f"{type(e).__name__}: {e}"}
+                except Exception as e:                   # noqa: BLE001
+                    log.warning("ods: the fifth mode's terrain was not made (%s: %s)", type(e).__name__, e)
+                    rec_out["station_scape"] = {"failed": f"{type(e).__name__}: {e}"}
     finally:
         for s in sources:
             s.release()

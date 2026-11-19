@@ -760,9 +760,10 @@ def _part_files(folder: Path, kind: str) -> Optional[Tuple[Path, Path, Path]]:
 
 
 def assemble_scape(folder: PathLike, rover_folder: Optional[PathLike] = None, out: Optional[PathLike] = None) -> Optional[Dict[str, Any]]:
-    """0.99.32: ``<prefix>_station_scape.glb`` in ``folder`` - the fifth mode's file: the meshes "horizon" (the shell:
-    first, the viewer draws it first), "terrain" (the near terrain; both on the one terrain texture) and "rover" (the
-    rover part of ``rover_folder``, default ``folder/with_rover``, with its own).  None without a scape part."""
+    """0.99.32: ``<prefix>_station_scape.glb`` in ``folder`` - the fifth mode's file: the meshes "terrain" (the near
+    terrain), "horizon" (the shell, on the terrain's texture - so it comes after it in the file; the viewer draws it
+    first, by its render order, without the depth test) and "rover" (the rover part of ``rover_folder``, default
+    ``folder/with_rover``, with its own texture).  None without a scape part."""
     d = Path(folder)
     tp = _part_files(d, "scape")
     if tp is None:
