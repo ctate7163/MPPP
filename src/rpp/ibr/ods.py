@@ -225,6 +225,7 @@ class SourceImage:
         self.rover_mask_file: Optional[Path] = None       # 0.97.0, rover shown: the rover mask kept for the surface check
         self.fill_only = False                            # 0.97.7: colors only what no regular source sees (a Hazcam frame)
         self.context = False                              # 0.97.15: a frame from another place or sol (see station_sources)
+        self.no_rover = False                             # 0.99.46: never colors the rover model (render_station: rover_zcam)
         self._rover: Optional[np.ndarray] = None
         self._adopted = False                             # 0.99.25: the pixel arrays are views of shared memory (adopt)
         self._rover_fixed: Optional[np.ndarray] = None    # ... and the rover mask as sample_rover uses it (or None)
@@ -754,8 +755,9 @@ def candidates(scene: Scene, sources: Sequence[SourceImage], o: np.ndarray, d: n
                 same = rp == surf
                 rej_px[ij[~same]] = True
                 ij, dist = ij[same], dist[same]
-        if on_rover is not None and getattr(src, "context", False) and len(ij):
-            keep = ~on_rover[ij]                             # 0.97.15: a context frame never colors the rover model
+        if on_rover is not None and (getattr(src, "context", False) or getattr(src, "no_rover", False)) and len(ij):
+            keep = ~on_rover[ij]                             # 0.97.15: a context frame never colors the rover model (0.99.46:
+            #                                                  nor a Mastcam-Z frame of a run without --rover-zcam)
             ij, dist = ij[keep], dist[keep]
         if not len(ij):
             continue
@@ -2089,8 +2091,13 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                    fill_families: str = "", nadir_mark: bool = True, site_name: Optional[str] = None,
                    nadir_mark_deg: Optional[float] = None, far_field: Optional[bool] = None,
                    context_images: Sequence[str] = (), geometry: bool = True, workers: Optional[int] = None,
-                   station_mesh: Union[bool, str] = False) -> Dict[str, Any]:
-    """0.99.40: ``width`` "auto" - :func:`auto_width` of the station's own frames (8192 or 16384).
+                   station_mesh: Union[bool, str] = False, rover_zcam: bool = False) -> Dict[str, Any]:
+    """0.99.46: ``rover_zcam`` - the Mastcam-Z frames color the rover too (a run with a dedicated Mastcam-Z deck pan in
+    stereo, e.g. Three Forks North's ZCAM05086); else the rover is colored by the Navcam frames alone, in the panorama
+    and in the 3D rover (Christian, 19 Nov 2026: "the rover texture should come from the ncam images unless and there
+    is a dedicated zcam deck pan in stereo").
+
+    0.99.40: ``width`` "auto" - :func:`auto_width` of the station's own frames (8192 or 16384).
 
     0.99.26: ``station_mesh`` - also the station mesh's part of this run (:mod:`rpp.ibr.station_mesh`: the terrain
     with the rover masked, the rover with it shown); "only": that part alone, no panorama (the record of the part is
@@ -2185,6 +2192,10 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                               mast_pose=mast_pose, fill_images=fill_names, context_images=ctx_names, rover_pose=pose)
     if not sources:
         raise ValueError(f"station {station.label}: no source images of families {families!r} with a pose")
+    if not rover_zcam:                                   # 0.99.46: the rover from the Navcam frames - a Mastcam-Z frame
+        for s_ in sources:                               # colors it only in a run with a dedicated stereo deck pan
+            if s_.name[:1].upper() == "Z":
+                s_.no_rover = True
     axes = dict(up=station.up, north=station.north, east=station.east)
     t0 = time.time()
 

@@ -1,12 +1,13 @@
-# Publish RPP to PyPI (https://pypi.org/project/rover-photogrammetry-pipeline/) when a GitHub release is published (0.94.4 onwards).
-# Trusted publishing (OpenID Connect): no API token is stored anywhere. One-time setup on pypi.org - a "pending
-# publisher" for the project name rover-photogrammetry-pipeline, owner ctate7163, repository RPP, workflow publish.yml, environment pypi
-# (docs/RELEASING.md, section 8). "Run workflow" by hand publishes to TestPyPI instead, as a rehearsal.
-name: publish
+# Publish RPP to PyPI (https://pypi.org/project/rover-photogrammetry/) when a version tag v* is pushed (0.99.46; a
+# published GitHub release from 0.94.4, publish.yml). Trusted publishing (OpenID Connect): no API token is stored
+# anywhere. One-time setup on pypi.org - a "pending publisher" for the project rover-photogrammetry, owner ctate7163,
+# the repository, workflow release.yml, environment pypi (docs/RELEASING.md, section 8). "Run workflow" by hand
+# publishes to TestPyPI instead, as a rehearsal.
+name: release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags: ["v*"]
   workflow_dispatch:
 
 jobs:
@@ -22,11 +23,21 @@ jobs:
           python -m pip install --upgrade pip build twine
           python -m build
           python -m twine check --strict dist/*
-      - name: The version is the release tag
-        if: github.event_name == 'release'
+      - name: The version is the tag
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           v=$(python -c "import sys; sys.path.insert(0, 'src'); import rpp; print(rpp.__version__)")
-          test "v$v" = "${{ github.event.release.tag_name }}" || { echo "tag ${{ github.event.release.tag_name }} but __version__ $v"; exit 1; }
+          test "v$v" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} but __version__ $v"; exit 1; }
+      - name: The wheel holds no checkpoints, PDS products or run folders
+        run: |
+          python - <<'PY'
+          import glob, sys, zipfile
+          names = [n for w in glob.glob("dist/*.whl") for n in zipfile.ZipFile(w).namelist()]
+          bad = [n for n in names if n.lower().endswith((".pt", ".safetensors", ".img", ".vic"))
+                 or "/runs/" in n or "/checkpoints/" in n or "Claude outputs" in n]
+          print(len(names), "files in the wheel")
+          sys.exit("not for the wheel: " + ", ".join(bad[:20]) if bad else 0)
+          PY
       - name: The wheel installs and runs
         run: |
           python -m venv /tmp/w && /tmp/w/bin/pip install dist/*.whl
@@ -39,12 +50,12 @@ jobs:
           path: dist/
 
   pypi:
-    if: github.event_name == 'release'
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/project/rover-photogrammetry-pipeline/
+      url: https://pypi.org/project/rover-photogrammetry/
     permissions:
       id-token: write
     steps:
@@ -60,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: testpypi
-      url: https://test.pypi.org/project/rover-photogrammetry-pipeline/
+      url: https://test.pypi.org/project/rover-photogrammetry/
     permissions:
       id-token: write
     steps:

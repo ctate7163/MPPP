@@ -649,11 +649,13 @@ def viewpoints(pivot, radius_m: float = VIEW_RADIUS_M, n: int = VIEWPOINTS) -> n
 
 
 def rover_families(sources) -> str:
-    """The frames that color the rover: the Navcams, and the run's own cameras when they are others (0.99.27,
-    Christian, 18 Nov 2026: "For the z34 runs, the texture should come from the Z34 and the ncam with preferences to
-    the z34" - in a Mastcam-Z run its frames are the regular sources and the Navcam frames the fill-only ones, which
-    come in only as the Mastcam-Z frames' weight goes out)."""
-    own = "".join(sorted({s.name[:1] for s in sources if not getattr(s, "fill_only", False) and s.name}))
+    """The frames that color the rover: the Navcams.  0.99.27-0.99.45: and a Mastcam-Z run's own frames first.
+    0.99.46 (Christian, 19 Nov 2026: "the rover texture should come from the ncam images unless and there is a dedicated
+    zcam deck pan in stereo"): the run's own other cameras only for the sources marked as a deck pan - none are, unless
+    the run is given ``--rover-zcam`` (rpp ods; then its Mastcam-Z frames color the rover, the Navcam ones where they do
+    not see it); a source with ``no_rover`` never does."""
+    own = "".join(sorted({s.name[:1] for s in sources if not getattr(s, "fill_only", False) and s.name
+                          and not getattr(s, "no_rover", False)}))
     return ROVER_FAMILIES + "".join(f for f in own if f not in ROVER_FAMILIES and f != "F" and f != "R")
 
 

@@ -118,7 +118,7 @@ def block_workspace(name: str = "", cameras: Optional[str] = None) -> str:
 
 
 ZCAM_360_MIN_FRAMES = 36          # 0.99.43: left-eye 34 mm frames of one sol at a station that make it a "Z34 360"
-_Z34 = __import__("re").compile(r"^ZL\d_(\d{4})_\d+_\w+?_N(\d{3})(\d{4})ZCAM\d{5}_034")
+_Z34 = __import__("re").compile(r"^Z([LR])\d_(\d{4})_\d+_\w+?_N(\d{3})(\d{4})ZCAM\d{5}_034")
 
 
 def zcam_companions(cfg: Dict[str, Any], root: PathLike, names_of=None) -> Dict[str, str]:
@@ -180,10 +180,14 @@ def zcam_companions(cfg: Dict[str, Any], root: PathLike, names_of=None) -> Dict[
                 cache[str(zwork)] = []
         sd = (int(m.group(1)), int(m.group(2)))
         per_sol: Dict[int, int] = {}
+        frames_of: Dict[int, List[str]] = {}
         for n in cache[str(zwork)]:
             z = _Z34.match(n)
-            if z and (int(z.group(2)), int(z.group(3))) == sd:
-                per_sol[int(z.group(1))] = per_sol.get(int(z.group(1)), 0) + 1
+            if z and (int(z.group(3)), int(z.group(4))) == sd:
+                s_ = int(z.group(2))
+                frames_of.setdefault(s_, []).append(n)
+                if z.group(1) == "L":                            # the count: left-eye frames
+                    per_sol[s_] = per_sol.get(s_, 0) + 1
         if not per_sol or max(per_sol.values()) < int(cfg.get("zcam_360_min_frames", ZCAM_360_MIN_FRAMES)):
             continue
         sol = max(per_sol, key=lambda k: (per_sol[k], -k))
@@ -192,7 +196,12 @@ def zcam_companions(cfg: Dict[str, Any], root: PathLike, names_of=None) -> Dict[
         cfg["stations"][zlab] = {
             "name": f"{mark_name(st) or lab} (Z34)", "work": zwork.name, "station": st["station"], "derived_from": lab,
             "frames": dict(st.get("frames") or {}), "variants": ["masked", "rover"], "terrain": "block",
-            "ods_args": ["--cameras", "Z", "--sols", str(sol), "--zcam-scale", "0.5", "--fill-cameras", "NF", "--no-gains"],
+            # 0.99.46: the panorama's frames named - the 34 mm frames of that sol, both eyes.  Without --images rpp ods
+            # takes the frames the station's dense workspace was made from (the Navcam ones), --sols left none, and
+            # it fell back to every Mastcam-Z frame of the station, all sols and zooms
+            "ods_args": ["--cameras", "Z", "--sols", str(sol), "--zcam-scale", "0.5", "--fill-cameras", "NF", "--no-gains",
+                         "--images", *sorted(frames_of[sol])],
+            "depthmaps_variants": ["none"],                      # 0.99.46: no per-frame maps (the Navcam station has them)
             "context": [f"N?F_*_{tok}NCAM*.png", f"F?F_*_{tok}FHAZ*.png", *(st.get("context") or [])],
             "note": f"0.99.43, made by zcam_companions: the {per_sol[sol]} left-eye 34 mm frames of sol {sol} at this station "
                     f"(the Mastcam-Z block {zwork.name}), after the Navcam station {lab}"}
@@ -323,6 +332,16 @@ def frame_args(frames: Dict[str, Any]) -> List[str]:
     return out
 
 
+def sol_order(labels: Sequence[str]) -> List[str]:
+    """0.99.46 (Christian, 19 Nov 2026: "put the single sites in sol order"): the stations by the sol in their labels
+    (Sol0009_... first); a Mastcam-Z version comes right after its Navcam station anyway (:func:`plan`)."""
+    import re
+    def key(lab):
+        m = re.match(r"^Sol(\d+)", str(lab))
+        return (int(m.group(1)) if m else 10 ** 6, str(lab))
+    return sorted(labels, key=key)
+
+
 def block_aligned(work: PathLike) -> bool:
     """0.99.28: the block has finished its alignment (``colmap/run_done.json``)."""
     return (Path(work) / "colmap" / "run_done.json").is_file()
@@ -342,7 +361,7 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
     for lab in cfg["stations"]:
         by_key.setdefault(station_key(lab).upper(), []).append(lab)
     todo = []
-    for lab in (list(labels) if labels else [k for k, v in cfg["stations"].items() if not v.get("experimental")][::-1]):   # 0.98.3 (Christian, 14 Nov 2026: "run in reverse order by default"): the config's last station first
+    for lab in (list(labels) if labels else sol_order([k for k, v in cfg["stations"].items() if not v.get("experimental")])):   # 0.99.46: in sol order (the config's last first from 0.98.3)
         todo += [lab] if lab in cfg["stations"] else by_key.get(str(lab).upper(), [lab])      # 0.98.2: an "experimental"
         #                                                                                       station runs only when named
     if companions:                                              # 0.99.43: a Mastcam-Z version right after its Navcam station
@@ -792,7 +811,7 @@ def _single_sites_pass(a: argparse.Namespace) -> int:
         return 0
     given = list(a.labels) if a.labels else None
     if getattr(a, "all", False) and not a.labels:                # 0.99.3: the experimental stations too
-        a.labels = list(cfg["stations"])[::-1]
+        a.labels = sol_order(list(cfg["stations"]))              # 0.99.46: in sol order
     if getattr(a, "station_mesh_only", False):                   # 0.99.26
         a.steps, a.station_mesh = ["ods"], True
     pairs = None

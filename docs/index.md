@@ -6,7 +6,7 @@ Metashape**.
 
 **Formerly MPPP.** Until 0.98 the pipeline was called MPPP (Mars Photogrammetry Preprocessing Pipeline). Since 0.99
 it is RPP: `import rpp`, the `rpp` command, the `RPP_*` environment variables, the mask models `rpp_mask_v*` and the
-PyPI distribution `rover-photogrammetry-pipeline`. The old names still work in 0.99 (`import mppp`, `python -m mppp`,
+PyPI distribution `rover-photogrammetry`. The old names still work in 0.99 (`import mppp`, `python -m mppp`,
 the `MPPP_*` variables, `mppp_mask_v3`), and WORK folders keep their file names (`mppp_manifest_*.json`,
 `mppp_status.json`, ...), so blocks made by MPPP are reused as they are (`rpp.ondisk` lists the names that stay).
 

@@ -1111,7 +1111,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     z = SS.plan(cfg, tmp_path, labels=["Sol0690_S032D1184_Z34"])[0]["commands"]
     zm = [c for c in z if c["variant"] == "masked"]                              # 0.98.22: + the rover variant
     assert len(zm) == 4 and {c["variant"] for c in z} == {"masked", "rover"}
-    assert "--context-images" in zm[-1]["argv"] and zm[-1]["argv"][-10:] == ["--cameras", "Z", "--sols", "690", "692", "--zcam-scale", "0.5", "--fill-cameras", "NF", "--no-gains"]   # 0.98.30: + the sol 692 deck pan; 0.99.13: no gains
+    assert "--context-images" in zm[-1]["argv"] and zm[-1]["argv"][-11:] == ["--cameras", "Z", "--sols", "690", "692", "--zcam-scale", "0.5", "--fill-cameras", "NF", "--no-gains", "--rover-zcam"]   # 0.98.30: + the sol 692 deck pan; 0.99.13: no gains; 0.99.46: its deck pan colors the rover
     rs = [c for c in SS.plan(cfg, tmp_path, labels=["Sol0052_S003D2046"], rover_surface=True)[0]["commands"] if c["step"] == "ods"]
     assert [c["argv"][-4:] == ["--eyes", "left", "right", "center"] for c in rs] == [c["variant"] == "rover" for c in rs]
     new98p6 = {"Sol0009_S003D0000", "Sol0180_S007D0000", "Sol0204_S007D1836", "Sol0248_S008D0000", "Sol0361_S011D0000", "Sol0565_S029D0000", "Sol1955_S091D0124", "Sol1965_S091D0806", "Sol1189_S054D1152"}      # 0.98.6, 0.98.7: eight more stations (Christian, 14 Nov 2026)
@@ -1120,7 +1120,10 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     new98p30 = {"Sol0073_S003D2430", "Sol0449_S026D0000", "Sol0670_S032D0672", "Sol0784_S039D0926", "Sol0816_S039D1418",
                 "Sol1601_S078D4716", "Sol1615_S079D0198", "Sol1883_S088D1722"}   # 0.98.30: a Navcam panorama at every Z34 360
     assert all(cfg["stations"][k]["terrain"] == "block" and cfg["stations"][k]["work"].endswith("_zcam") for k in new98p30)
-    assert set(cfg["stations"]) - Z34 - new98p6 == {"Sol0052_S003D2046", "Sol0461_S026D0630", "Sol0686_S032D1184", "Sol0474_S026D0850",
+    new99p46 = {"Sol0011_S003D0000_Z34", "Sol0086_S004D0048", "Sol0362_S011D0108", "Sol0422_S024D0000", "Sol0797_S039D1170",
+                "Sol0960_S047D0000", "Sol1154_S052D2644", "Sol1155_S052D2644_Z48"}    # 0.99.46: a Navcam station at every Z 360
+    assert all(cfg["stations"][k]["work"].endswith("_zcam") and cfg["stations"][k]["frames"]["images"] for k in new99p46)
+    assert set(cfg["stations"]) - Z34 - new98p6 - new99p46 == {"Sol0052_S003D2046", "Sol0461_S026D0630", "Sol0686_S032D1184", "Sol0474_S026D0850",
                                     "Sol1635_S079D0732", "Sol1411_S068D0142", "Sol1792_S087D0000", "Sol1454_S071D0056", "Sol0477_S026D1004", "Sol0502_S026D1222", "Sol2009_S092D0000", "Sol2022_S093D0000", "Sol1947_S091D0000",
                                     "Sol1177_S054D0000", "Sol1183_S054D0866", "Sol1308_S061D1678", "Sol0609_S030D1172", "Sol0116_S004D1250"} | new98p30   # 0.98.19: + Skinner Ridge, Wildcat Ridge, Hippo Pools 1947 / 2009 / 2022, Bright Angel 1177 / 1183, Pico Turquino 1308, Hidden Harbor 609
     assert len(cfg["stations"]["Sol0052_S003D2046"]["frames"]["images"]) == 12
@@ -1131,21 +1134,13 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     for f in ("mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0460_rockytop", "mars2020_sol_0413_threeforks_large"):
         (root / f).mkdir(parents=True)
     runs = SS.plan(cfg, root)
-    runs = runs[::-1]                                    # 0.98.3: with no station named the last one runs first
-    runs = [r for r in runs if r["label"] not in ("Sol0477_S026D1004", "Sol0502_S026D1222", "Sol2009_S092D0000", "Sol2022_S093D0000", "Sol1947_S091D0000",
-                                                   "Sol1177_S054D0000", "Sol1183_S054D0866", "Sol1308_S061D1678", "Sol0609_S030D1172", "Sol0116_S004D1250")     # 0.98.19's nine (they run first); 0.99.30's sol 116
-            and r["label"] not in new98p30]                                                            # 0.98.30's eight (first of all)
-    assert [Path(r["work"]).name for r in runs][8:] == [
-        "mars2020_sol_0001_butler_landing_zcam", "mars2020_sol_0178_rochette_zcam", "mars2020_sol_0201_seitah_huge",
-        "mars2020_sol_0201_seitah_huge", "mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0421_enchanted_lake_large",
-        "mars2020_sol_1948_hippo_pools", "mars2020_sol_1962_marble_mountain", "mars2020_sol_1175_bright_angle_large"]          # 0.98.6: the eight new stations' blocks
-    runs = runs[:8]
-    assert [Path(r["work"]).name for r in runs] == ["mars2020_sol_0015_van_zyl_overlook_huge", "mars2020_sol_0460_rockytop",
-                                                    "mars2020_sol_0413_threeforks_large", "mars2020_sol_0460_rockytop",
-                                                    "mars2020_sol_1601_taylorfjellet_large",
-                                                    "mars2020_sol_1355_witch_hazel_large", "mars2020_sol_1765_origny_large",
-                                                    "mars2020_sol_1431_bell_island_large"]
-    r0 = runs[0]
+    sols = [int(r["label"][3:7]) for r in runs]
+    assert sols == sorted(sols)                          # 0.99.46: in sol order (0.98.3-0.99.45: the config's last first)
+    by = {r["label"]: Path(r["work"]).name for r in runs}
+    assert by["Sol0052_S003D2046"] == "mars2020_sol_0015_van_zyl_overlook_huge" and by["Sol0461_S026D0630"] == "mars2020_sol_0460_rockytop"
+    assert by["Sol0686_S032D1184"] == "mars2020_sol_0413_threeforks_large" and by["Sol0009_S003D0000"] == "mars2020_sol_0001_butler_landing_zcam"
+    assert by["Sol1411_S068D0142"] == "mars2020_sol_1355_witch_hazel_large" and by["Sol0180_S007D0000"] == "mars2020_sol_0178_rochette_zcam"
+    r0 = next(r for r in runs if r["label"] == "Sol0052_S003D2046")
     steps = [(c["variant"], c["step"]) for c in r0["commands"]]
     assert steps == [("masked", "dense"), ("rover", "mesh"), ("rover", "ods"),             # 0.97.14: the maps for the
                      ("masked", "mesh"), ("masked", "depthmaps"), ("masked", "ods")]          # terrain only, no photometry
@@ -1165,7 +1160,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert block_name("van_zyl_overlook_huge") == "Van Zyl Overlook" and block_name("witch_hazel_large") == "Witch Hazel Hill"
     assert block_name("taylorfjellet_large") == "Taylorfjellet" and block_name("rockytop") == "Rockytop"
     assert block_name("not_a_site_tiny") == "Not A Site" and block_name(None) is None
-    assert all("name" not in v for k, v in cfg["stations"].items() if k not in ("Sol0477_S026D1004", "Sol0502_S026D1222", "Sol0686_S032D1184", "Sol0690_S032D1184_Z34", "Sol0670_S032D0672_Z34", "Sol0116_S004D1250"))   # 0.98.19: these two are not "Rockytop"; 0.98.31: the Z34 station has no site to name it
+    assert all("name" not in v for k, v in cfg["stations"].items() if k not in ("Sol0477_S026D1004", "Sol0502_S026D1222", "Sol0686_S032D1184", "Sol0690_S032D1184_Z34", "Sol0670_S032D0672_Z34", "Sol0116_S004D1250", "Sol0011_S003D0000_Z34", "Sol1155_S052D2644_Z48"))   # 0.98.19: these two are not "Rockytop"; 0.98.31: the Z34 station has no site to name it
     names = {k: next(c["argv"][c["argv"].index("--site-name") + 1] for c in r["commands"] if c["step"] == "ods") for k, r in
              ((r["label"], r) for r in runs)}
     assert names["Sol0474_S026D0850"] == "Rockytop" and names["Sol1411_S068D0142"] == "Witch Hazel Hill"
@@ -1199,6 +1194,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
             (out / "Sol0091_S003D0010_360_3DTD.jpg").write_bytes(b"x")
         return 0
     monkeypatch.setattr(SS, "_run", fake_run)
+    runs = [next(r for r in runs if r["label"] == k) for k in ("Sol0052_S003D2046", "Sol0461_S026D0630", "Sol0686_S032D1184")]
     rc = SS.run_all(runs, root / "single_sites")
     assert rc == 1                                                                     # one station failed
     rock = [c for c in calls if "26_630" in c]
@@ -3688,3 +3684,20 @@ def test_ods_width_from_the_stations_own_frames():
     import inspect
     from rpp.ibr import cli
     assert 'width=a.width or "auto"' in inspect.getsource(cli)
+
+
+def test_frames_fall_back_to_the_stations_own_frames_of_the_sols(tmp_path):
+    """0.99.46: a Mastcam-Z station's dense workspace records Navcam frames; --sols of the Mastcam-Z sol must not leave an
+    empty list (which rpp ods took for every frame of the station)."""
+    import json as _json
+    from types import SimpleNamespace as NS
+    from rpp.ibr.cli import _frames
+    d = tmp_path / "dense_S003D0000_block"
+    d.mkdir()
+    nav = ["NLF_0009_1_a.png", "NRF_0009_1_a.png"]
+    z = ["ZL0_0011_1_034.png", "ZR0_0011_1_034.png", "ZL0_0020_1_110.png"]
+    (d / "mppp_dense.json").write_text(_json.dumps({"subset": nav}))
+    st = NS(key="S003D0000", images=nav + z)
+    proj = NS(root=tmp_path)
+    assert _frames(proj, st, NS(images=None, sols=[11], exclude=None)) == z[:2]
+    assert _frames(proj, st, NS(images=None, sols=[9], exclude=None)) == nav

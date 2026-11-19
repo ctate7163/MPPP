@@ -3,6 +3,45 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.46 — 2026-11-19 (branch `rpp`)
+
+From the dry run of the freeze-3 station run (Christian, 15:28):
+
+- **A Mastcam-Z version took every Mastcam-Z frame of its station.** `rpp ods` without `--images` takes the frames
+  the station's dense workspace was made from - for a Mastcam-Z station its Navcam frames - and `--sols` then left
+  none; the empty list read as "every frame of the station", so every sol and zoom (Butler Landing's 110 mm frames
+  too). `_frames` now falls back to the station's own frames of those sols, and the stations `zcam_companions` makes
+  name their frames (`--images`: the 34 mm frames of that sol, both eyes). This also holds for the config's own
+  Mastcam-Z stations (Three Forks North and South).
+- The Mastcam-Z versions make no per-frame maps (`depthmaps`): the Navcam station has them.
+- `rpp single-sites` runs the stations in sol order (Christian, 15:30: "put the single sites in sol order"; the
+  config's last first before), each Mastcam-Z version right after its Navcam station.
+- `Sol0011_S003D0000_Z34` in the config: Butler Landing's Mastcam-Z 34 mm 360 of sol 11 (54 pairs), after
+  `Sol0009_S003D0000` (15:30: "add Sol0011_S003D0000 and a _Z34 for every z34 360"); the other Z34 360s get theirs
+  from `zcam_companions`. `rpp ods --images` takes patterns (`Z?0_0011_*_N0030000ZCAM*_034*`).
+- `Sol0449_S026D0000` (Rose River Falls) is rendered in the block `mars2020_sol_0449_rose_river_falls_zcam`, which
+  freeze 3 aligns, not in `mars2020_sol_0437_knob_mountain_large_zcam` (15:31). The Mastcam-Z consensus list
+  (`zcam_consensus` in sites.json) already has rose_river_falls and not knob_mountain_large.
+- **PyPI distribution `rover-photogrammetry`** (Christian, 19 Nov 2026: "I like rover-photogrammetry because it is
+  shorter and general to the pipeline and viewer"; `rover-photogrammetry-pipeline` from 0.99.0): the import name and
+  the command stay `rpp`. `.github/workflows/release.yml` (was `publish.yml`) publishes on a pushed tag `v*` by
+  trusted publishing and to TestPyPI on a manual run, and checks that the wheel holds no checkpoints, PDS products or
+  run folders; the project URLs add Source and Viewer; README (PyPI install line, the other `rpp` package, the CUDA
+  torch) and RELEASING.md section 8 (accounts, pending publishers, tag release, twine fallback).
+- **The rover from the Navcam frames** (Christian, 15:41: "the rover texture should come from the ncam images unless
+  and there is a dedicated zcam deck pan in stereo"): in a Mastcam-Z run the Mastcam-Z frames no longer color the
+  rover - in the panorama (a `no_rover` source, as a context frame) and in the 3D rover (`station_mesh.rover_families`)
+  - unless `rpp ods --rover-zcam` is given: Three Forks North (the deck pan ZCAM05086 of sol 692) has it.
+- **A Navcam station at every Mastcam-Z 360 of the blocks** (15:32: "every z34 site should have a navcam site"; 15:41:
+  "Add overlook mountain and its z48 360 to the list"): from the Mastcam-Z blocks of the old root, the 34 mm 360s
+  without one got their end-of-drive Navcam station - `Sol0086_S004D0048` (Chal Rocks), `Sol0362_S011D0108` (Chal
+  Rocks), `Sol0422_S024D0000` (Enchanted Lake), `Sol0797_S039D1170` (Belva Crater), `Sol0960_S047D0000` (Airey Hill) -
+  each with its Z34 version from `zcam_companions` once its block is aligned; Overlook Mountain: `Sol1154_S052D2644`
+  and its 48 mm 360 `Sol1155_S052D2644_Z48` (244 pairs, half size).
+- `recolor_rpv.bat` is now the freeze-3 station run (Christian, 15:29: "instead of rpv_stations_freeze3.bat, make it
+  just the default recolor_rpv.bat"): the page first, then every station whose block in `D:\rover_blocks_f3` is
+  aligned, each Mastcam-Z version right after its Navcam station, the others as their blocks come in.
+
 ## 0.99.45 — 2026-11-19 (branch `rpp`)
 
 - `rpp single-sites`: every log line of the publishing was printed twice (the rpp logger's console handler and a

@@ -1,7 +1,7 @@
 # Installation
 
 RPP needs Python 3.10 or later. Install RPP into a conda environment of its own (Miniforge, Miniconda or Anaconda), from the GitHub repository.
-It is not on PyPI yet: the name `rover-photogrammetry-pipeline` is reserved there for the first release. The same
+It will be on PyPI as `rover-photogrammetry` (the import name and the command are `rpp`). The same
 commands work in a Windows Anaconda Prompt, PowerShell and a Linux or macOS shell:
 
 ```bash

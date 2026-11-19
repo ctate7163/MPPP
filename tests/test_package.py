@@ -83,7 +83,7 @@ def test_cmods_dir_is_the_default_camera_folder(monkeypatch, tmp_path):
 
 def test_version():
     import rpp
-    assert rpp.__version__ == "0.99.45" and rpp.VERSION_TAG == "v0p99"
+    assert rpp.__version__ == "0.99.46" and rpp.VERSION_TAG == "v0p99"
     cff = (ROOT / "CITATION.cff").read_text()
     assert f"version: {rpp.__version__}" in cff
     assert f"## {rpp.__version__}" in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -142,7 +142,8 @@ def test_no_logger_call_with_flush():
 def test_pypi_packaging():
     """0.94.4 (Christian: https://pypi.org/project/mppp/ for the JOSS submission): the metadata PyPI shows, the
     sdist contents, the trusted-publishing workflow and `rpp --version`.  0.99.0: the distribution is
-    rover-photogrammetry-pipeline (Christian, 16 Nov: "I like rover-photogrammetry-pipeline name for PyPI")."""
+    rover-photogrammetry-pipeline (Christian, 16 Nov: "I like rover-photogrammetry-pipeline name for PyPI").  0.99.46:
+    rover-photogrammetry (Christian, 19 Nov: "I like rover-photogrammetry because it is shorter"), release.yml on tags."""
     import subprocess
     import sys
     try:
@@ -152,9 +153,12 @@ def test_pypi_packaging():
     root = Path(__file__).resolve().parents[1]
     pp = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     pr = pp["project"]
-    assert pr["name"] == "rover-photogrammetry-pipeline" and pr["license"] == "Apache-2.0" and set(pr["license-files"]) == {"LICENSE", "NOTICE"}
+    assert pr["name"] == "rover-photogrammetry" and pr["license"] == "Apache-2.0" and set(pr["license-files"]) == {"LICENSE", "NOTICE"}
     assert pr["authors"][0]["name"] == "Christian Tate" and "Programming Language :: Python :: 3" in pr["classifiers"]
-    assert {"Homepage", "Documentation", "Repository", "Issues", "Changelog"} <= set(pr["urls"])
+    assert {"Homepage", "Documentation", "Repository", "Source", "Viewer", "Issues", "Changelog"} <= set(pr["urls"])
+    assert pr["optional-dependencies"]["all"][0].startswith("rover-photogrammetry[")
+    assert not any(p.endswith((".pt", ".safetensors")) or "checkpoint" in p or "runs" in p
+                   for p in pp["tool"]["setuptools"]["package-data"]["rpp"])     # no model weights or run folders in the wheel
     assert pr["scripts"] == {"rpp": "rpp.cli:main", "mppp": "mppp:cli_main"}      # 0.99: the mppp command too
     assert pp["tool"]["setuptools"]["packages"]["find"]["include"] == ["rpp*", "mppp*"]
     # every data file is in the wheel's package data
@@ -167,9 +171,17 @@ def test_pypi_packaging():
             assert any(fnmatch.fnmatch(rel, p) for p in pats), rel
     man = (root / "MANIFEST.in").read_text(encoding="utf-8")
     assert "graft tests/data" in man and "prune studies" in man and "prune paper" in man
-    wf = (root / ".github" / "workflows" / "publish.yml").read_text(encoding="utf-8")
+    assert not (root / ".github" / "workflows" / "publish.yml").exists()
+    wf = (root / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
     assert "pypa/gh-action-pypi-publish@release/v1" in wf and "id-token: write" in wf and "environment:" in wf
-    assert "release:" in wf and "twine check --strict" in wf
+    assert 'tags: ["v*"]' in wf and "twine check --strict" in wf and "https://test.pypi.org/legacy/" in wf
+    assert "startsWith(github.ref, 'refs/tags/v')" in wf and ".safetensors" in wf
+    try:                                                   # installed (pip install -e .): the metadata under the new name
+        import importlib.metadata as md
+        assert md.metadata("rover-photogrammetry")["Name"] == "rover-photogrammetry"
+    except md.PackageNotFoundError:
+        pass
+    assert "pip install \"rover-photogrammetry[mask,sfm,plots]\"" in (root / "README.md").read_text(encoding="utf-8")
     readme = (root / "README.md").read_text(encoding="utf-8")
     import re
     assert 'pip install -e ".[mask,sfm,plots]"' in readme and "conda create -n rpp" in readme   # 0.99.38: a conda env, the clone

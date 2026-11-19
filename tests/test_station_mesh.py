@@ -395,8 +395,13 @@ def test_zcam_companions_follow_their_navcam_station_and_block_cameras(tmp_path,
     st = cfg["stations"][zlab]
     assert SS.is_zcam_station(st) and st["work"].endswith("rockytop_zcam") and st["ods_args"][:4] == ["--cameras", "Z", "--sols", "466"]
     assert "N?F_*_N0260630NCAM*.png" in st["context"] and SS.viewer_name(st, zlab).endswith("(zcam)")
+    oa = st["ods_args"]                                            # 0.99.46: the 34 mm frames of that sol named, both eyes
+    assert oa[oa.index("--images") + 1:] == sorted(n for n in z if n.startswith("ZL0_0466") and "_0340" in n)
     runs = SS.plan(cfg, tmp_path, labels=[lab, "Sol0474_S026D0850"], companions=pairs, block_cameras="NF", terrain="block")
     assert [r["label"] for r in runs] == [lab, zlab, "Sol0474_S026D0850"]
+    assert not any(c["step"] == "depthmaps" for c in runs[1]["commands"])
+    zods = next(c["argv"] for c in runs[1]["commands"] if c["step"] == "ods")
+    assert "--images" in zods and "--sols" in zods
     dense = next(c["argv"] for c in runs[0]["commands"] if c["step"] == "dense")
     mesh = next(c["argv"] for c in runs[0]["commands"] if c["step"] == "mesh")
     assert dense[dense.index("--block-cameras") + 1] == "NF" and "--block-images" not in dense      # --terrain block: not the named set
@@ -426,3 +431,24 @@ def test_wait_for_blocks_runs_what_comes_in_and_stops(tmp_path, monkeypatch):
     calls.clear()
     monkeypatch.setattr(SS, "_single_sites_pass", lambda a: (calls.append(1), setattr(a, "_ran", []), setattr(a, "_late", ["B"]), 0)[-1])
     assert SS.cmd_single_sites(NS(wait_for_blocks=0.0, poll_min=15.0, dry_run=False, any_block=False)) == 0 and len(calls) == 1
+
+
+def test_stations_in_sol_order_butler_z34_and_rose_river_falls():
+    """0.99.46 (Christian, 19 Nov 2026: "put the single sites in sol order. add Sol0011_S003D0000 and a _Z34 for every
+    z34 360"; "use rose river falls instead")."""
+    from rpp.ibr import single_sites as SS
+    cfg = SS.load_config()
+    runs = SS.plan(cfg, "/r", labels=None)
+    labs = [r["label"] for r in runs]
+    sols = [int(l[3:7]) for l in labs]
+    assert sols == sorted(sols) and labs[0] == "Sol0009_S003D0000"
+    runs = SS.plan(cfg, "/r", labels=SS.sol_order(list(cfg["stations"])), companions={"Sol0009_S003D0000": "Sol0011_S003D0000_Z34"})
+    labs = [r["label"] for r in runs]
+    assert labs[:2] == ["Sol0009_S003D0000", "Sol0011_S003D0000_Z34"]
+    z = next(c["argv"] for c in runs[1]["commands"] if c["step"] == "ods")
+    assert "Z?0_0011_*_N0030000ZCAM*_034*" in z and not any(c["step"] == "depthmaps" for c in runs[1]["commands"])
+    assert cfg["stations"]["Sol0449_S026D0000"]["work"] == "mars2020_sol_0449_rose_river_falls_zcam"
+    import json as _json
+    from rpp.waypoints.sites import load_site_table
+    g = load_site_table().get("groups") or _json.loads((__import__("pathlib").Path(SS.__file__).resolve().parents[1] / "data" / "sites.json").read_text())["groups"]
+    assert "rose_river_falls" in g["zcam_consensus"] and "knob_mountain_large" not in g["zcam_consensus"]

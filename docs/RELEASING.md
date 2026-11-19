@@ -5,7 +5,7 @@ This covers four things:
 1. the code, pushed to `https://github.com/ctate7163/rpp`;
 2. the released mask model, exported to **safetensors** and attached to a **GitHub release**;
 3. the same model on **Hugging Face**;
-4. the package on **PyPI**, <https://pypi.org/project/rover-photogrammetry-pipeline/> (section 8).
+4. the package on **PyPI**, <https://pypi.org/project/rover-photogrammetry/> (section 8).
 
 Section 7 covers the documentation site, the Zenodo DOI and the JOSS submission.
 
@@ -225,35 +225,43 @@ References:
 3. Zenodo, *Archive a release from GitHub*: <https://help.zenodo.org/docs/github/archive-software/github-upload/>
 4. Zenodo, *Describe your software*: <https://help.zenodo.org/docs/github/describe-software/>
 
-## 8. PyPI (`pip install rover-photogrammetry-pipeline`)
+## 8. PyPI (`pip install rover-photogrammetry`)
 
-`.github/workflows/publish.yml` builds the sdist and the wheel, checks them (`twine check --strict`, the version
-against the release tag, a clean install of the wheel) and uploads them to PyPI when a GitHub release is published.
-It uses PyPI **trusted publishing**: GitHub proves to PyPI which repository and workflow is uploading, so no API
-token is stored anywhere [5]. The same GitHub release also goes to Zenodo (section 7), so one release does both.
+The distribution is `rover-photogrammetry` (0.99.46, Christian, 19 Nov 2026: "I like rover-photogrammetry because it
+is shorter and general to the pipeline and viewer"; `rover-photogrammetry-pipeline` from 0.99.0). The import package
+and the command stay `rpp`; the PyPI package named `rpp` is another project (a REAPER file parser).
+
+`.github/workflows/release.yml` builds the sdist and the wheel and checks them (`twine check --strict`, the version
+against the tag, no checkpoints, PDS products or run folders in the wheel, a clean install of the wheel). Pushing a
+tag `vX.Y.Z` uploads to PyPI; *Actions > release > Run workflow* uploads to TestPyPI only. It uses PyPI **trusted
+publishing**: GitHub proves to PyPI which repository and workflow is uploading, so no API token is stored anywhere [5].
+
+### Accounts (website logins only; no code holds them)
+
+- PyPI: `ctate7163`
+- TestPyPI: `ctate71`
 
 ### One-time setup (on pypi.org and github.com, by hand)
 
-1. Create an account on <https://pypi.org> (and, for rehearsals, <https://test.pypi.org> - a separate account) and
-   turn on two-factor authentication (PyPI requires it to publish).
-2. **Add a pending publisher** - the project `rover-photogrammetry-pipeline` does not exist on PyPI yet (0.99.0: `rpp` on PyPI is another project, a REAPER file parser; the import name stays `rpp`), and this reserves the name for
-   this repository [6]: PyPI, *Your account > Publishing > Add a new pending publisher > GitHub*:
-   * PyPI project name: `rover-photogrammetry-pipeline`
+1. Two-factor authentication on both accounts (PyPI requires it to publish).
+2. **Add a pending publisher** [6]: pypi.org, logged in as ctate7163, *Account > Publishing > Add a new pending
+   publisher > GitHub*:
+   * PyPI project name: `rover-photogrammetry`
    * Owner: `ctate7163`
-   * Repository name: `RPP`
-   * Workflow name: `publish.yml`
+   * Repository name: the repository's current name on GitHub
+   * Workflow name: `release.yml`
    * Environment name: `pypi`
 
-   On TestPyPI the same, with the environment name `testpypi`.
-3. GitHub: *Settings > Environments > New environment*: `pypi` (optionally with *Required reviewers* = you, so a
-   release waits for your click before uploading) and `testpypi`.
+   On test.pypi.org, logged in as ctate71, the same with the environment name `testpypi`. A pending publisher does not
+   reserve the name; only the first upload does.
+3. GitHub: *Settings > Environments > New environment*: `pypi` (optionally with *Required reviewers* = you, so an
+   upload waits for your click) and `testpypi`.
 
 ### Each release
 
 4. Before the release, the camera models in use must be committed: models promoted on the PC
-   (`src/rpp/data/cmods/`, for example `M2020_FR.json`, `M2020_RL.json`, `M2020_RR.json` of 23 Oct) are untracked
-   files until they are added - `git status src/rpp/data/cmods`, then `git add` and commit them - otherwise the
-   wheel ships without them.
+   (`src/rpp/data/cmods/`) are untracked files until they are added - `git status src/rpp/data/cmods`, then `git add`
+   and commit them - otherwise the wheel ships without them.
 5. Check the version in `src/rpp/__init__.py`, `CITATION.cff` and `CHANGELOG.md`, then build locally once:
 
    ```bat
@@ -262,15 +270,23 @@ token is stored anywhere [5]. The same GitHub release also goes to Zenodo (secti
    python -m twine check --strict dist\*
    ```
 
-6. Rehearsal (optional): GitHub, *Actions > publish > Run workflow*: it builds and uploads to TestPyPI only. Then
-   `pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ rover-photogrammetry-pipeline` in a fresh
-   environment.
-7. Publish the GitHub release `vX.Y.Z` (section 7, step 7). The workflow uploads to PyPI; the project page is
-   <https://pypi.org/project/rover-photogrammetry-pipeline/>. A version can be uploaded only once - a fix needs a new version number.
+6. Rehearsal: *Actions > release > Run workflow*: it builds and uploads to TestPyPI only. Check
+   `https://test.pypi.org/project/rover-photogrammetry/`, then in a clean conda environment
+   `pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ rover-photogrammetry`.
+7. `git tag vX.Y.Z` and `git push origin vX.Y.Z`: the workflow uploads to PyPI; check
+   <https://pypi.org/project/rover-photogrammetry/>. A version can be uploaded only once - a fix needs a new version
+   number. The GitHub release for Zenodo (section 7) is made from the same tag.
 
-The wheel holds the package and its data (site definitions, camera models in use, lists, waypoint snapshot,
-790 KB); the sdist adds the tests and their two PDS products (12 MB). The studies, notebooks, Windows scripts,
-paper and documentation site stay in the repository (`MANIFEST.in`).
+### Manual fallback (twine)
+
+With an API token from the PyPI account page (scoped to the project after the first upload):
+`python -m twine upload dist\*` with the user name `__token__` and the token entered at the prompt, or kept in the
+keyring, or in `%USERPROFILE%\.pypirc` on the maintainer's PC (`[pypi]`, `username = __token__`). The token is never
+committed.
+
+The wheel holds the package and its data (site definitions, camera models in use, lists, waypoint snapshot); the
+sdist adds the tests. The studies, notebooks, Windows scripts, paper and documentation site stay in the repository
+(`MANIFEST.in`).
 
 5. PyPI, *Trusted publishers*: <https://docs.pypi.org/trusted-publishers/>
 6. PyPI, *Creating a PyPI project with a trusted publisher*: <https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/>
