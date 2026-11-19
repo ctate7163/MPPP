@@ -12,8 +12,8 @@ Christian, 12:27: "the curser should move 5 cm. the 3d terrain should go out to 
   "remove the code: ... text from the welcome screen").
 - The top bar says "RPV" (Christian, 12:41: 'on the top banner, replace "Rover Photogrammetry Viewer (RPV)" with
   "RPV"'); the browser tab and the welcome view keep the whole name.
-- The view "dcs color" is labeled "decorrelation stretch" (Christian, 12:49); its key in `panos.json` and its files
-  keep the old name.
+- The view "dcs color" is labeled "decorrelation stretch" (Christian, 12:49) and "raw color" "original color" (12:54);
+  their keys in `panos.json` and their files keep the old names.
 - **The station mesh within 20 m** (`station_mesh.RADIUS_M`; 10 m before): the terrain simplified to 500,000 triangles
   (300,000), fading out between 18 and 20 m (8-10 m; the station mesh's .json now records it and the page reads it, a
   file made before keeps 8-10 m); the fifth mode's shell from 17 m (7 m); cells of their own only for the hidden or

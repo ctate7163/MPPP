@@ -162,7 +162,7 @@ the place alone (`dense_S003D2046`), and `--station` takes either form.
 | `<prefix>_360_3DTD.png`, `.jpg` | both eyes in one square, **the left eye on top** (8-bit) |
 | `<prefix>_360_3DTD_16.png` | the same in 16-bit linear radiance units: the record for color work |
 | `<prefix>_enh_360_3DTD.jpg`, `_enhlocal_360_3DTD.jpg` | contrast-enhanced views, made from the 16-bit panoramas (terrain stretched; the sky smoothed; nothing clips): `_enhlocal` is the viewer's "enhanced color" |
-| `<prefix>_raw_360_3DTD.jpg` | raw color (0.99.37): the standard view of the 16-bit values with the white balance divided out (`ods.json` linear16.white_balance) - the color of the RAD products |
+| `<prefix>_raw_360_3DTD.jpg` | raw color (0.99.37; RPV calls it "original color" from 0.99.39): the standard view of the 16-bit values with the white balance divided out (`ods.json` linear16.white_balance) - the color of the RAD products |
 | `<prefix>_enhtone_360_3DTD.jpg` | enhanced tone (0.99.37): base / detail tone mapping - the local brightness (a guided filter, 1 deg) compressed, the detail x 1.8, each pixel's color ratios kept |
 | `<prefix>_dcs_360_3DTD.jpg` | dcs color (0.99.37; RPV calls it "decorrelation stretch" from 0.99.39): a decorrelation stretch fitted to the sunlit terrain; the sky white, the rover and its shadow black, the nadir disc as in the standard view |
 | `<prefix>_color_products.json` | the parameters of the three (`rpp.ibr.color_products`; one set per station, from the left eye, in `tone_levels.json`) |

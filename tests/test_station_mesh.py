@@ -253,7 +253,7 @@ def test_viewer_has_the_screen_eye_movement_the_fade_and_every_mesh():
     page = (pathlib.Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
     # 0.99.38 (Christian: "remove the swaying"): no sway; 0.99.39 (Christian: "the curser should move 5 cm")
     assert "SWAY_M" not in page and "swayGain" not in page
-    for s in ("NECK_M = 0.15", "HOVER_M = 0.05", "half = 20.5", "limit: 15.0,", "'dcs color': 'decorrelation stretch'", "smoothstep(fade.x, fade.y, vR)", "NORMAL_FRAG", "skipRover", "O_PITCH_DEG = -30",
+    for s in ("NECK_M = 0.15", "HOVER_M = 0.05", "half = 20.5", "limit: 15.0,", "'dcs color': 'decorrelation stretch'", "'raw color': 'original color'", "smoothstep(fade.x, fade.y, vR)", "NORMAL_FRAG", "skipRover", "O_PITCH_DEG = -30",
               "for (const me of doc.meshes)", "wholeScene", "m.userData.kind === 'rover'"):
         assert s in page, s
     assert "doc.meshes[0].primitives" not in page

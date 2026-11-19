@@ -812,10 +812,11 @@ function views(p, v) { return Object.keys((variants(p)[v] || {}).views || {}); }
 // entries published before, shown (and accepted in a link) by the new ones
 // 0.99.37 (Christian, 19 Nov 2026: "Replace the enhanced local with just enhanced"; the views "standard color, raw
 // color, enhanced color, enhanced tone, dcs color, normal map, distance map"): the keys of panos.json stay
-// 0.99.39 (Christian, 19 Nov 2026: "change dcs color to decorrelation stretch"): the label; the key stays "dcs color"
+// 0.99.39 (Christian, 19 Nov 2026: "change dcs color to decorrelation stretch"; "instead of raw color, call it original
+// color"): the labels; the keys stay "dcs color" and "raw color"
 const VIEW_LABEL = { 'normal': 'normal map', 'range log': 'distance map', 'range linear': 'distance map linear',
                      'standard': 'standard color', 'enhanced local': 'enhanced color', 'enhanced': 'enhanced (global)',
-                     'dcs color': 'decorrelation stretch' };
+                     'dcs color': 'decorrelation stretch', 'raw color': 'original color' };
 const viewLabel = k => VIEW_LABEL[k] || k;
 
 function fill() {
