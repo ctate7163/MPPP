@@ -1803,7 +1803,8 @@ def test_exposure_and_enhanced_views(tmp_path):
     v = L.tone_enhanced(x, ref, lo, hi, med)
     assert v.min() >= 0 and v.max() <= 255 and 70 < np.median(v[32:].mean(axis=2)) < 185
     assert (v[:4] > 250).all() and (v[:4] < 255).all()                # 0.98.0: the sky near white, not clipped
-    assert v[32:].std() > 1.4 * (255.0 * (x[32:] / x[32:].max())).std()   # more contrast on the terrain than a plain scale
+    assert v[32:].std() > 1.3 * (255.0 * (x[32:] / x[32:].max())).std()   # more contrast on the terrain than a plain scale
+    #                                                                       (1.3: 0.99.38's saturation x 0.68)
     #                                                                       (1.5 before 0.98.30: saturation x 0.85 now)
     f = tmp_path / "levels.json"
     assert L.shared_value(f, "exposure16", lambda: 1.5) == (1.5, "computed")
@@ -2548,7 +2549,7 @@ def test_enhanced_views_smooth_the_sky(tmp_path):
     el = 90.0 - (np.arange(H) + 0.5) / H * 180.0
     x = np.zeros((H, W, 3), np.float32)
     x[:] = (120.0 + 30.0 * np.cos(np.radians(el)))[:, None, None]
-    x[60:140, 300:420] *= 1.06                                             # a frame 6 % brighter than the sky around it
+    x[60:140, 300:420] *= 1.15                                             # a frame 15 % brighter than the sky around it (6 % before 0.99.38: its shoulder compresses the bright sky more)
     x[el <= 0] = 60.0
     x[300:, ::7] = 200.0                                                   # terrain texture, brighter than the sky
     w = np.zeros((H // 4, W // 4), np.float32)
@@ -2556,7 +2557,7 @@ def test_enhanced_views_smooth_the_sky(tmp_path):
     before = x.copy()
     y, wf = L.smooth_sky(x.copy(), w)
     step = lambda a: abs(float(a[100, 299, 0]) - float(a[100, 301, 0]))    # noqa: E731
-    assert step(before) > 6.0 and step(y) < 1.0
+    assert step(before) > 15.0 and step(y) < 2.5
     assert np.array_equal(y[el <= 0], before[el <= 0]) and wf.shape == (H, W) and wf[10, 10] == 1.0 and wf[300, 10] == 0.0
     g = np.clip(before, 0, 255).astype(np.uint8)
     assert np.array_equal(L.local_contrast(g, np.ones((H, W), np.float32)), cv2.cvtColor(cv2.cvtColor(g, cv2.COLOR_BGR2LAB), cv2.COLOR_LAB2BGR))
@@ -2574,7 +2575,7 @@ def test_enhanced_views_smooth_the_sky(tmp_path):
     a1 = cv2.imread(str(out / "S1_enh_360_3DTD.jpg"))
     assert r0["sky"].startswith("as rendered") and r1["sky"].startswith("smoothed")
     edge = lambda a: abs(float(a[100, 296:299].mean()) - float(a[100, 302:305].mean()))      # noqa: E731
-    assert edge(a0) > 2.0 and edge(a1) <= 0.7 * edge(a0)
+    assert edge(a0) > 1.5 and edge(a1) <= 0.7 * edge(a0)          # (> 2.0 before 0.99.38's milder local contrast)
     assert np.abs(a0[320:500].astype(int) - a1[320:500]).max() <= 2        # the terrain: the same picture
 
 
@@ -3101,6 +3102,17 @@ def test_welcome_picture_keeps_its_color_and_the_map_gets_an_orthomosaic(tmp_pat
     m = cv2.imread(str(f)).reshape(-1, 3).mean(axis=0)
     assert "muted" in f.name and not (w / "panos" / f"{web.WELCOME_ID}{web.STACK}").exists()
     assert m[2] - m[0] > 60 and (m[2] - m[0]) < 0.75 * 160                    # still orange, less so
+    # 0.99.38 (Christian, 19 Nov 2026: "the welcome screen should now have the same color products as Van zyl"): every
+    # view of the terrain-only variant, muted; a view without its picture here keeps the one made before
+    cv2.imwrite(str(w / "panos" / "S_dcs_360_3DTD.jpg"), img)
+    vz = {"variants": [{"key": "rover", "views": {"standard": "panos/R_360_3DTD.jpg"}},
+                       {"key": "masked", "views": {"standard": "panos/S_360_3DTD.jpg", "dcs color": "panos/S_dcs_360_3DTD.jpg",
+                                                   "normal map": "panos/S_normal_360_3DTD.jpg"}}]}
+    e2 = web.welcome_pano(w, vz)
+    assert e2["variants"][0]["views"] == {"standard": f"panos/{web.WELCOME_ID}_muted{web.STACK}",
+                                          "dcs color": f"panos/{web.WELCOME_ID}_dcs_color_muted{web.STACK}"}
+    (w / "panos" / "S_dcs_360_3DTD.jpg").unlink()
+    assert "dcs color" in web.welcome_pano(w, vz)["variants"][0]["views"]     # made before: kept
     # the map's picture
     rasterio = pytest.importorskip("rasterio")
     pytest.importorskip("pyproj")
@@ -3211,7 +3223,8 @@ def test_viewer_moves_to_its_own_repository(tmp_path, monkeypatch):
     assert "location.replace('https://ctate7163.github.io/rpv/' + location.search + location.hash)" in head
     assert "/^\\/RPV(\\/|$)/.test(location.pathname)" in head      # 0.99.13: a copy still served at /RPV/ sends on too
     assert "location.hostname === 'ctate7163.github.io'" in head and "(RPP|MPPP)" in head
-    assert "const CODE_URL = 'https://github.com/ctate7163/rpp';" in page
+    # 0.99.39 (Christian: "remove the code: ... text from the welcome screen")
+    assert "CODE_URL" not in page and "'Code: '" not in page and ". Code: " not in page
     # installed into another folder (the RPV checkout), the page is the same file - the redirect only fires on /RPP/ods/
     assert web.install_viewer(tmp_path / "RPV") and (tmp_path / "RPV" / "index.html").read_text(encoding="utf-8") == page
 
@@ -3368,7 +3381,7 @@ def test_viewer_station_arrows_rover_button_and_title():
     assert "Curiosity-class rover" in nav and nav.count("<circle") == 3
     assert "$('prevSt').onclick = () => step('s', -1);" in page and "$('nextSt').onclick = () => step('s', 1);" in page
     assert "function roverToggle()" in page and "updateNav();" in page
-    assert "<title>Rover Photogrammetry Viewer (RPV)</title>" in page and '<span id="title">Rover Photogrammetry Viewer (RPV)</span>' in page
+    assert "<title>Rover Photogrammetry Viewer (RPV)</title>" in page and '<span id="title">Rover Photogrammetry Viewer</span>' in page   # 0.99.40: the bar
     assert "/stereo panoramas|panorama viewer|photogrammetry viewer/i.test(j.title)" in page
     import inspect
     assert inspect.signature(web.publish).parameters["title"].default == "Rover Photogrammetry Viewer (RPV)"
@@ -3390,7 +3403,7 @@ def test_viewer_keeps_north_across_stations_and_its_name_in_the_bar():
     assert show.count("world.rotation.y = yaw0 + turn;") == 1                       # inside the once-only block
     assert show.index("if (!headingSet) {") < show.index("world.rotation.y = yaw0 + turn;")
     assert "<title>Rover Photogrammetry Viewer (RPV)</title>" in page
-    assert '<span id="title">Rover Photogrammetry Viewer (RPV)</span>' in page
+    assert '<span id="title">Rover Photogrammetry Viewer</span>' in page            # 0.99.40 (Christian: in full, white)
     assert "!/stereo panoramas|panorama viewer|photogrammetry viewer/i.test(j.title)" in page
 
 
@@ -3506,12 +3519,14 @@ def test_height_field_near_the_mast_fill_under_the_rim_and_dimmed_fill_normals()
     V, F, how = M.height_field_arrays(pts, P, (0, 0, 1), 4.0)
     n = np.cross(V[F[:, 1]] - V[F[:, 0]], V[F[:, 2]] - V[F[:, 0]])
     assert how["method"] == "height field" and (n[:, 2] > 0).all()               # no triangle faces down: nothing curls
+    assert how["faces_to_poisson_cells"] == 0
     assert np.abs(V[:, 2] - 0.1 * np.sin(V[:, 0])).max() < 0.02
     cen = V[F].mean(axis=1)
-    assert not ((np.abs(cen[:, 0] - 2) < 0.3) & (np.abs(cen[:, 1]) < 0.3)).any()  # the hole is left to the fill
+    assert not ((np.abs(cen[:, 0] - 2) < 0.15) & (np.abs(cen[:, 1]) < 0.15)).any()  # the hole is left to the fill (0.99.38:
+    #                                                                     its rim takes the coarser grids' heights)
     V2, F2, h2, _ = M.zoned_poisson(np.c_[rng.uniform(-9, 9, (200_000, 2)), np.zeros(200_000)], None, P, (0, 0, 1), 8.0,
                                     zones=((0, 4, 7), (4, None, 7)))
-    assert h2["zones"][0]["method"] == "height field" and h2["zones"][1]["method"].startswith("poisson")
+    assert h2["zones"][0]["method"].startswith("height field") and h2["zones"][1]["method"].startswith("poisson")
     # the fill hangs under the measured surface at a hole's rim
     plane = {"normal": [0, 0, 1], "offset": 0.0, "centre": [0, 0, 0], "up": [0, 0, 1], "radius_m": 50.0}
     Vf, Ff, rep = M.fill_terrain(V, F, P, (0, 0, 1), plane, 4.0, underlay=False)
@@ -3583,10 +3598,86 @@ def test_color_products_raw_tone_dcs(tmp_path):
     assert np.allclose(np.cov(y.T), CP.DCS_SIGMA ** 2 * np.eye(3), atol=0.25 * CP.DCS_SIGMA ** 2)   # equal, uncorrelated
     assert np.abs(dcs[:H][mark_row + 2:].astype(int) - std[mark_row + 2:].astype(int)).mean() < 4   # the disc as standard
     assert 0 < tone[:H][t].mean() < 255 and r["parameters_from"] == "computed"
-    assert "color_products_parameters" in json.loads(f.read_text())
+    assert "color_products_parameters_v2" in json.loads(f.read_text())
     r2 = CP.write_color_products(tmp_path, "S1", levels_file=f)
     assert r2["parameters_from"] == "file"
     from rpp.ibr import web
     files = web.station_files(tmp_path)
     assert {"raw color", "enhanced tone", "dcs color"} <= set(files) and files["raw color"].name == "S1_raw_360_3DTD.jpg"
     assert web.DEFAULT_VIEWS == ("standard", "raw color", "enhanced local", "enhanced tone", "dcs color", "normal map", "distance map")
+
+
+def test_height_field_drops_spikes_fills_sparse_cells_and_leaves_rock_faces_to_poisson():
+    """0.99.38 (Christian, 19 Nov 2026: "the rockytop mesh has some spiky artifacts. remove the spikes"; the dark normal
+    patches; the boulder's walls): two-point cells no longer take their higher point, a sparse cell far from the 4x
+    grid's median goes, empty cells take the coarser grids' heights, and a rock's faces are meshed by Poisson."""
+    from rpp.ibr import mesh as M
+    rng = np.random.default_rng(5)
+    r = np.sqrt(rng.uniform(0, 16, 400_000))                       # denser near the mast, as a cloud is
+    r = r ** 1.6 / 4 ** 0.6
+    t = rng.uniform(0, 2 * np.pi, len(r))
+    xy = np.c_[r * np.cos(t), r * np.sin(t)]
+    z = 0.002 * rng.normal(size=len(xy))
+    pts = [np.c_[xy, z]]
+    for k in range(12):                                            # needles: pairs of points 1-4 m up at 2.5-3.8 m
+        a = rng.uniform(0, 2 * np.pi); rr = rng.uniform(2.5, 3.8)
+        c = np.array([rr * np.cos(a), rr * np.sin(a)])
+        pts.append(np.c_[np.tile(c + 0.003, (2, 1)), [rng.uniform(1, 4)] * 2])
+    box = (np.abs(xy[:, 0] + 2.0) < 0.4) & (np.abs(xy[:, 1]) < 0.3)  # a 0.8 m block, 0.6 m tall, at 2 m
+    pts[0] = pts[0][~box]
+    g = np.mgrid[-2.4:-1.6:0.01, -0.3:0.3:0.01].reshape(2, -1).T
+    pts.append(np.c_[g, np.full(len(g), 0.6)])                     # its top
+    for x0 in (-2.4, -1.6):
+        yz = np.mgrid[-0.3:0.3:0.01, 0:0.6:0.01].reshape(2, -1).T
+        pts.append(np.c_[np.full(len(yz), x0), yz])                # two of its faces
+    for y0 in (-0.3, 0.3):
+        xz = np.mgrid[-2.4:-1.6:0.01, 0:0.6:0.01].reshape(2, -1).T
+        pts.append(np.c_[xz[:, 0], np.full(len(xz), y0), xz[:, 1]])
+    pts = np.vstack(pts)
+    P = np.array([0.0, 0.0, 2.0])
+    st = {}
+    V, F, how = M.height_field_arrays(pts, P, (0, 0, 1), 4.0, steep=st)
+    rock = (np.abs(V[:, 0] + 2.0) < 0.55) & (np.abs(V[:, 1]) < 0.45)
+    assert (V[~rock, 2] < 0.08).all(), V[~rock][np.argsort(-V[~rock, 2])[:3]]   # no needle stands
+    assert how["spikes_dropped"] + how["cells_from_coarser_grids"] > 0 and st["cells"] > 0
+    assert st["inside"](np.array([[-2.0, 0.0, 0.6], [2.0, 0.0, 0.0]])).tolist() == [True, False]
+    cen = V[F].mean(axis=1)
+    assert not ((np.abs(cen[:, 0] + 2.0) < 0.35) & (np.abs(cen[:, 1]) < 0.25)).any()   # no walls: the block is Poisson's
+    hf = np.hypot(cen[:, 0], cen[:, 1])
+    ring = (hf > 3.0) & (hf < 3.9)
+    assert ring.sum() > 0.8 * np.pi * (3.9 ** 2 - 3.0 ** 2) / (2 * how["cell_m"] ** 2) * 0.9   # the sparse ring is meshed
+    V2, F2, h2, c2 = M.zoned_poisson(pts, None, P, (0, 0, 1), 6.0, zones=((0, 4, 8), (4, None, 7)))
+    assert h2["zones"][0]["method"] == "height field + poisson on the faces"
+    cen2 = V2[F2].mean(axis=1)
+    on_block = (np.abs(cen2[:, 0] + 2.0) < 0.3) & (np.abs(cen2[:, 1]) < 0.2) & (cen2[:, 2] > 0.4)
+    assert on_block.sum() > 20                                      # the block's top is there, from Poisson
+
+
+def test_ods_width_from_the_stations_own_frames():
+    """0.99.40 (Christian, 19 Nov 2026: "ncam medium res station can be at 8k. Only ncam highres and z34 sites need to be
+    16k"): without --width, 16384 for a Mastcam-Z station and for frames finer than 0.5 mrad a pixel, else 8192."""
+    from types import SimpleNamespace as NS
+    from rpp.ibr import ods as O
+
+    class Cam:
+        def __init__(self, f):
+            self.f = f
+            self.params = [f]
+
+        def mean_focal_length(self):
+            return self.f
+
+    def rec(fs):
+        return NS(cameras={i: Cam(f) for i, f in enumerate(fs)},
+                  images={i: NS(name=n, camera_id=i) for i, n in enumerate(f"N{i}.png" if f > 0 else f"Z{i}.png" for i, f in enumerate(fs))})
+    full, binned = 3058.0, 1529.0                                # Navcam: 0.33 and 0.65 mrad a pixel
+    assert O.auto_width(rec([full] * 5 + [binned] * 2), [f"N{i}.png" for i in range(7)])[0] == 16384
+    w, r = O.auto_width(rec([binned] * 6), [f"N{i}.png" for i in range(6)])
+    assert w == 8192 and abs(r["median_mrad"] - 0.654) < 0.01 and r["panorama_mrad"] > r["median_mrad"]
+    assert O.auto_width(rec([full] * 4), [f"N{i}.png" for i in range(4)], scale=0.5)[0] == 8192     # read at half size
+    zc = NS(cameras={0: Cam(3570.0)}, images={0: NS(name="ZL0_0690.png", camera_id=0)})             # Mastcam-Z 34 mm
+    assert O.auto_width(zc, ["ZL0_0690.png"], zcam_scale=0.5)[0] == 16384                            # a Mastcam-Z station
+    assert O.auto_width(zc, [])[0] == O.DEFAULT_WIDTH
+    import inspect
+    from rpp.ibr import cli
+    assert 'width=a.width or "auto"' in inspect.getsource(cli)

@@ -3,6 +3,85 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.40 — 2026-11-19 (branch `rpp`)
+
+Christian, 13:00: "change the mode banner to be just for the terrain. the terrain can be terrain stereo, terrain local
+3D, or terrain full 3D. the rover is just visible or not. In stereo mode its the ods, and full 3D in the others. Move
+drive mode to a steering wheel icon above the rover show/hide button. That is experimental and should be hidden.
+Driver mode uses the full 3D terrain and rover. The full 3d terrain model does not need the ods since the photo sphere
+is built into the 3d model"; 13:01: "ncam medium res station can be at 8k. Only ncam highres and z34 sites need to be
+16k".
+
+- **RPV**: the menu is the terrain (terrain stereo, terrain local 3D, terrain full 3D; V; headset: the right grip); the
+  rover button (R; headset: the left grip) shows or hides the rover - in stereo the with-rover panorama, in the 3D modes
+  the 3D rover, without loading anything again; a station change keeps both. The full 3D terrain loads no panorama
+  (and no center picture): its views are its texture and the normal map, and "loading" stays up until its file is in.
+  The drive is a steering wheel above the rover button, shown only with `?experimental=1`. B: the rover hidden in the
+  terrain mode shown (again: the next color view). The page opens with the rover hidden. `panos.json` is unchanged:
+  every station already published works with it; a link may end in `/no-rover`.
+- RPV (Christian, 13:12): the steering wheel has a "Beta" tag; in a headset a thumbstick click starts and ends the drive
+  (where the station has it, also without `?experimental=1`), and in the drive the sticks' left / right turn the view
+  as elsewhere while forward / back is each side's track. The directions in the sky (NORTH, EAST, SOUTH, WEST) are 75 %
+  as large (10.5 m wide at 40 m), 24 deg up (32), white in a solid orange outline with 0.12 em between the letters,
+  and they show with the info page (I, X) at every station as well as in the welcome view. The home button and the O of
+  the direction cross are in the maps' orange (#ff9500; Christian, 13:17); the bar says "Rover Photogrammetry Viewer"
+  in white again, without "(RPV)" (13:22: "on second thought, leave the Rover Photogrammetry Viewer in white and
+  written out without the abreviation").
+- **`rpp ods` width** (`ods.auto_width`; `ods.json` "width_rule"): without `--width`, 16384 for a Mastcam-Z station
+  and where the median pixel angle of the station's own frames is finer than 0.5 mrad (full-resolution Navcam,
+  0.33 mrad), else 8192 (2x-binned Navcam, 0.65 mrad, against 0.77 mrad a pixel at 8192).
+
+## 0.99.39 — 2026-11-19 (branch `rpp`)
+
+Christian, 12:27: "the curser should move 5 cm. the 3d terrain should go out to 20 m instead of 10 m".
+
+- RPV on a screen: the pointer moves the eye by up to 5 cm again (`HOVER_M`; 2 cm in 0.99.38; still no sway).
+- The welcome view (and its credit on a screen) without the "Code: github.com/ctate7163/rpp" line (Christian, 12:40:
+  "remove the code: ... text from the welcome screen").
+- The top bar says "RPV" (Christian, 12:41: 'on the top banner, replace "Rover Photogrammetry Viewer (RPV)" with
+  "RPV"'); the browser tab and the welcome view keep the whole name.
+- The view "dcs color" is labeled "decorrelation stretch" (Christian, 12:49) and "raw color" "original color" (12:54);
+  their keys in `panos.json` and their files keep the old names.
+- **The station mesh within 20 m** (`station_mesh.RADIUS_M`; 10 m before): the terrain simplified to 500,000 triangles
+  (300,000), fading out between 18 and 20 m (8-10 m; the station mesh's .json now records it and the page reads it, a
+  file made before keeps 8-10 m); the fifth mode's shell from 17 m (7 m); cells of their own only for the hidden or
+  edge-on triangles within 10 m (`CELL_RADIUS_M`; flat ground is edge on from C at about 20 m, and the cells share one
+  texel size); the sixth mode's drive limit 15 m (6 m) and its height grid +-20.5 m (+-10.5 m). A station shows it
+  once it is rendered again (`recolor_rpv_0p99p39.bat`: the four Rockytop stations and Sol 690 Z34).
+
+## 0.99.38 — 2026-11-19 (branch `rpp`)
+
+Christian, 11:41-11:53: "the rockytop mesh has some spiky artifacts. remove the spikes. the dark normal patches are image
+textured strangely ... The 3d terrain and rover should have its own normal map which changes with view. remove the
+swaying" (and a smaller move of the eye with the pointer); "The rover texture in the '3d terrain and rover' looks a lot
+worse than the 'terrain with rover (3D model)' version. why is that?"; "the welcome screen should now have the same
+color products as Van zyl"; "the enhanced color has too much saturations and black clipping. The enhanced tone looks
+too bland"; "on the 2d viewer, the o button should point the view 30 below the horizon"; the freeze start that ended
+after "3. the code to the newest bundle".
+
+- **Height field near the mast** (`mesh.height_field_arrays`): a cell's height is the true median (a two-point cell
+  took its higher point: the needles up to 4 m tall at 2-4 m from the mast, Sol 461) and needs 3 points; a cell of
+  fewer than 8 points more than 0.10 m from the 4x coarser grid's median is dropped; empty cells take the heights of
+  the coarser grids (2x, 4x, 8x, only inside a coarse cell that has points itself) - fewer fill patches, the dark ones
+  of the normal map; where neighboring cells differ by more than 0.06 m (a rock's face: the walls round the boulder at
+  Sol 474 and 477) the height field leaves the cells about it (grown 4 cells, the enclosed ones too) to a Poisson
+  surface of the same points (`zoned_poisson`: "height field + poisson on the faces"). A station's mesh, depth maps
+  and panoramas have to be made again to show it.
+- **RPV 3D modes**: the normal-map view draws the surfaces with their own normals (`NORMAL_FRAG`, in the panoramas'
+  normal colors; it moves with the eye); the rover is the third mode's projected rover surface (colored from the
+  pivot's panorama, the full resolution) in place of the station mesh's baked rover (`web.publish` gives the 3D
+  variants `rover_surface`). No sway; the pointer moves the eye 2 cm at most (5 before). O looks 30 deg down on a
+  screen (`O_PITCH_DEG`).
+- **Welcome view**: every view of Van Zyl's terrain-only variant, muted (`web.welcome_pano`; the standard one before).
+- **Enhanced color**: saturation x 0.68 (0.85), the terrain's darkest 1 % from 0.16 of the range (0.10), local
+  contrast 0.6 (0.8) fading within 60 levels of black and white (40) - Sol 461: saturation median 71 -> 48 (the
+  standard view's 54), pixels below 12 of 255 3.2 % -> 0.4 %. **Enhanced tone**: detail x 2.5 (1.8), color ratios ^1.2,
+  median 0.22 (0.30), then x 1.35 about the band's median and saturation x 1.2 (`color_products_parameters_v2`).
+- **sync_code.bat, sync_rpp.bat**: the copy in %TEMP% is CALLed. Run without CALL from inside a block, the block's
+  `exit /b` ran in the context of a batch file that CALLed sync_code.bat and ended it - `start_freeze3_when_ready.bat`
+  stopped silently after the sync on 18 Nov 21:09 and 19 Nov 11:49 (its copy in _transfer calls the copy itself now).
+- Test: `test_cmods_dir_is_the_default_camera_folder` no longer reads the tree's `rpp_cmods.txt` (the PC's sync failure).
+
 ## 0.99.37 — 2026-11-19 (branch `rpp`)
 
 Christian, 10:22: "regenerate the color products from the 16-bit images. regenerate and include the different color

@@ -137,7 +137,8 @@ DRIVE_3D = ("drive3d", "Drive the rover (simulation)")
 DRIVE = {"track_m": 2.3,                    # between the left and the right wheels (about)
          "wheels_fwd_m": [1.10, 0.0, -1.07],    # the three axles ahead of the rover's center (about; ROVER_NAV x)
          "speed_m_s": 0.25,                 # both sticks full ahead (the rover's own top speed is about 0.04 m/s)
-         "limit_m": 6.0}                    # the pivot stays within this of where it stood (the near terrain ends at 10 m)
+         "limit_m": 15.0}                   # the pivot stays within this of where it stood (0.99.39: the near terrain ends at
+#                                             20 m, 10 m before - 6 m then)
 
 
 def drive_settings() -> Dict[str, Any]:
@@ -179,7 +180,8 @@ def station_mesh(folder: Path, web: Path, pano_dir: Optional[Path] = None) -> Op
     except (OSError, ValueError):
         rec = {}
     lim = ((rec.get("parts") or {}).get("rover") or {}).get("view_radius_m", 1.0)
-    return {"file": "panos/" + glb.name, "triangles": rec.get("triangles"), "move_limit_m": lim, "fade_m": [8.0, 10.0], "experimental": True}
+    return {"file": "panos/" + glb.name, "triangles": rec.get("triangles"), "move_limit_m": lim,
+            "fade_m": rec.get("fade_m") or [8.0, 10.0], "experimental": True}      # 0.99.39: the file's own (8-10 m before)
 
 
 WELCOME_ID = "welcome"
@@ -198,47 +200,63 @@ WELCOME_YAW_DEG = 270.0      # 0.98.19: the welcome view opens looking west, whe
 def welcome_pano(web: Path, station_entry: Optional[Dict[str, Any]], pano_dir: Optional[Path] = None) -> Optional[Dict[str, Any]]:
     """0.98.4 (Christian, 14 Nov 2026: "Remove the fake ods. In its stead put van zyl grayed out with north south and
     east in the sky in white letters ... Rover Photogrammetry Viewer (0.98.19; was MPPP stereo viewer) for Mars 2020 Perseverance Rover in bold welcoming
-    letters a few meters from the viewer"): the list's first entry - Van Zyl Overlook's standard panorama, its colors
-    muted a little (WELCOME_MUTE; gray until 0.98.13), reduced to WELCOME_WIDTH.  The page draws the words over it (an entry with "welcome": true).  None when
-    Van Zyl is not published."""
+    letters a few meters from the viewer"): the list's first entry - Van Zyl Overlook's panoramas, their colors muted a
+    little (WELCOME_MUTE; gray until 0.98.13), reduced to WELCOME_WIDTH.  0.99.38 (Christian, 19 Nov 2026: "the welcome
+    screen should now have the same color products as Van zyl"): every view of its terrain-only variant (the standard
+    one alone before).  A view whose picture is not here (Van Zyl's pictures are on Hugging Face) keeps the welcome
+    picture made before.  The page draws the words over it (an entry with "welcome": true).  None when Van Zyl is not
+    published."""
     import cv2
     if not station_entry:
         return None
-    var = next((v for v in station_entry.get("variants", []) if v.get("views", {}).get("standard")), None)
+    vs = station_entry.get("variants", [])
+    var = next((v for v in vs if v.get("key") == "masked" and v.get("views", {}).get("standard")), None) or \
+        next((v for v in vs if v.get("views", {}).get("standard")), None)
     if var is None:
         return None
-    rel = str(var["views"]["standard"])
-    src = web / rel
-    if pano_dir is not None and rel.startswith("panos/") and (Path(pano_dir) / rel[6:]).is_file():
-        src = Path(pano_dir) / rel[6:]                           # 0.99.3: this run's picture, in the Hugging Face stage
-    dst = web / "panos" / f"{WELCOME_ID}_muted{STACK}"
-    if not src.is_file():                                        # 0.99.3: Van Zyl's pictures are on Hugging Face (a URL):
-        return _welcome_entry(dst) if dst.is_file() else None   # the welcome picture made before stays
     old = web / "panos" / f"{WELCOME_ID}{STACK}"                 # the gray one of before 0.98.14
     if old.is_file():
         old.unlink()
-    if not (dst.is_file() and dst.stat().st_mtime >= src.stat().st_mtime):
-        img = cv2.imread(str(src), cv2.IMREAD_COLOR)
-        if img is None:
-            return None
-        if img.shape[1] > WELCOME_WIDTH:
-            img = cv2.resize(img, (WELCOME_WIDTH, WELCOME_WIDTH), interpolation=cv2.INTER_AREA)
-        g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32)[..., None]
-        sat, gain, lift = WELCOME_MUTE
-        m = np.clip(gain * (g + sat * (img.astype(np.float32) - g)) + lift * 255.0, 0, 255).astype(np.uint8)
-        cv2.imwrite(str(dst), m, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        try:
-            from .xmp import tag_stereo
-            tag_stereo(dst, extra={"Station": WELCOME_STATION})
-        except Exception:                                    # noqa: BLE001
-            pass
-    return _welcome_entry(dst)
+    views: Dict[str, str] = {}
+    for name, rel in var["views"].items():
+        rel = str(rel)
+        tag = "" if name == "standard" else "_" + re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+        dst = web / "panos" / f"{WELCOME_ID}{tag}_muted{STACK}"
+        src = web / rel
+        if pano_dir is not None and rel.startswith("panos/") and (Path(pano_dir) / rel[6:]).is_file():
+            src = Path(pano_dir) / rel[6:]                       # 0.99.3: this run's picture, in the Hugging Face stage
+        if not src.is_file():                                    # 0.99.3: Van Zyl's pictures are on Hugging Face (a URL):
+            if dst.is_file():                                    # the welcome picture made before stays
+                views[name] = "panos/" + dst.name
+            continue
+        if not (dst.is_file() and dst.stat().st_mtime >= src.stat().st_mtime):
+            img = cv2.imread(str(src), cv2.IMREAD_COLOR)
+            if img is None:
+                continue
+            if img.shape[1] > WELCOME_WIDTH:
+                img = cv2.resize(img, (WELCOME_WIDTH, WELCOME_WIDTH), interpolation=cv2.INTER_AREA)
+            g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.float32)[..., None]
+            sat, gain, lift = WELCOME_MUTE
+            m = np.clip(gain * (g + sat * (img.astype(np.float32) - g)) + lift * 255.0, 0, 255).astype(np.uint8)
+            cv2.imwrite(str(dst), m, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            try:
+                from .xmp import tag_stereo
+                tag_stereo(dst, extra={"Station": WELCOME_STATION})
+            except Exception:                                    # noqa: BLE001
+                pass
+        views[name] = "panos/" + dst.name
+    if "standard" not in views:
+        return None
+    return _welcome_entry(views)
 
 
-def _welcome_entry(dst: Path) -> Dict[str, Any]:
+def _welcome_entry(views) -> Dict[str, Any]:
+    """The welcome entry: ``views`` {view: "panos/<file>"} (0.99.38), or the one picture (a Path) of before."""
+    if isinstance(views, Path):
+        views = {"standard": "panos/" + views.name}
     return {"id": WELCOME_ID, "title": "Welcome", "welcome": True, "site_name": "Rover Photogrammetry Viewer (RPV)",
             "yaw_deg": WELCOME_YAW_DEG,                       # 0.98.19 (Christian, 16 Nov 2026): it opens looking west
-            "variants": [{"key": "welcome", "label": "welcome", "views": {"standard": "panos/" + dst.name}}]}
+            "variants": [{"key": "welcome", "label": "welcome", "views": dict(views)}]}
 
 
 TRAVERSE_POINTS = 400
@@ -671,14 +689,17 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
                     rs = rover_surface(d / "with_rover", web, pano_dir)        # 0.98.5: a variant of its own, listed last
                     if rs:
                         third = dict(var, key=ROVER_3D[0], label=ROVER_3D[1], rover_surface=rs)
+                    # 0.99.38: the 3D modes carry the rover surface too - the page draws the rover from it (colored
+                    # from the pivot's panorama at full resolution) in place of the station mesh's baked rover
+                    extra = {"rover_surface": rs} if rs else {}
                     sm = station_mesh(d / sub if sub else d, web, pano_dir)        # 0.99.26: the fourth mode
                     if sm:
-                        fourth = dict(var, key=TERRAIN_3D[0], label=TERRAIN_3D[1], station_mesh=sm)
+                        fourth = dict(var, key=TERRAIN_3D[0], label=TERRAIN_3D[1], station_mesh=sm, **extra)
                     sc = station_scape(d / sub if sub else d, web, pano_dir)       # 0.99.32: the fifth mode
                     if sc:
-                        fifth = dict(var, key=SCAPE_3D[0], label=SCAPE_3D[1], station_mesh=sc)
+                        fifth = dict(var, key=SCAPE_3D[0], label=SCAPE_3D[1], station_mesh=sc, **extra)
                         if "rover" in (sc.get("parts") or []):    # 0.99.33: the sixth mode needs the rover in the file
-                            sixth = dict(var, key=DRIVE_3D[0], label=DRIVE_3D[1], station_mesh=dict(sc, drive=drive_settings()))
+                            sixth = dict(var, key=DRIVE_3D[0], label=DRIVE_3D[1], station_mesh=dict(sc, drive=drive_settings()), **extra)
         # 0.98.4 (Christian, 14 Nov 2026: "always at ground level even when the rover is displayed"): with the rover in
         # the picture the mark was put at the deck's depth under the mast; the page's disc lies on the terrain in both
         # variants - the terrain-only variant's depth, the disc as wide there as it looks in the panorama

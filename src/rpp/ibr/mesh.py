@@ -389,59 +389,142 @@ def poisson_arrays(points: np.ndarray, normals: Optional[np.ndarray] = None, dep
 # patches"): the innermost zone is one height per cell of a horizontal grid - no surface can fold over a hole's rim
 HEIGHT_FIELD_TO_M = 4.0           # the zones that end within this of the mast axis are height fields (0: Poisson)
 HEIGHT_FIELD_CELL_M = 0.015       # the grid's cell (the cloud has a point every 6 mm or so there)
-HEIGHT_FIELD_MIN_POINTS = 2       # a cell with fewer points has no height of its own
+HEIGHT_FIELD_MIN_POINTS = 3       # a cell with fewer points has no height of its own (0.99.38: 2 until 0.99.37)
 HEIGHT_FIELD_CLOSE = 2            # passes that give an empty cell with >= 5 of 8 neighbors their mean
+# 0.99.38 (Christian, 19 Nov 2026: "the rockytop mesh has some spiky artifacts. remove the spikes. the dark normal
+# patches ..."): the spikes (up to 4 m tall at 2-4 m from the mast, Sol 461) were cells of two points, whose "median"
+# was the higher one; the dark patches (fill, no measured surface) were cells the cloud thins out in beyond 2-3 m; the
+# walls round the boulder at Sol 474 and 477 are what a height field makes of a rock face (one height per column).
+HEIGHT_FIELD_LEVELS = (2, 4, 8)   # coarser grids (x the cell) whose medians fill the empty cells and judge the sparse ones
+HEIGHT_FIELD_SPIKE_M = 0.10       # a cell of few points this far above or below the 4x grid's median there is dropped
+HEIGHT_FIELD_SPIKE_POINTS = 8     # ... "few"
+HEIGHT_FIELD_STEEP_M = 0.06       # a step between neighboring cells larger than this (about 76 deg at 1.5 cm) is a face:
+HEIGHT_FIELD_STEEP_GROW = 4       # the cells about it (grown this many cells, the enclosed ones too) are meshed by Poisson
 
 
-def height_field_arrays(points: np.ndarray, pivot: Sequence[float], up: Sequence[float], radius_m: float,
-                        cell_m: Optional[float] = None, min_points: int = HEIGHT_FIELD_MIN_POINTS,
-                        close: int = HEIGHT_FIELD_CLOSE) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
-    """(V, F, record): the points within ``radius_m`` of the mast axis as a height field - a square grid across the
-    vertical (``up``), a vertex at each cell with points (its center, at the points' median height), two triangles
-    where four neighboring cells have one, one where three do.  Small gaps are closed (``close``); a larger one stays
-    open for :func:`fill_terrain`.  The triangles' normals point up."""
-    P = np.asarray(pivot, float)
-    e, n, u = _horizontal_axes(up)
-    d = np.asarray(points, float) - P
-    x, y, z = d @ e, d @ n, d @ u
-    if cell_m is None:                                          # about four points to a cell, HEIGHT_FIELD_CELL_M at least
-        n_in = int((np.hypot(x, y) <= radius_m).sum())
-        cell_m = max(HEIGHT_FIELD_CELL_M, float(np.sqrt(4.0 * np.pi * float(radius_m) ** 2 / max(n_in, 1))))
-    N = int(np.ceil(float(radius_m) / cell_m))
-    ix, iy = np.floor(x / cell_m).astype(np.int64) + N, np.floor(y / cell_m).astype(np.int64) + N
-    ok = (ix >= 0) & (ix < 2 * N) & (iy >= 0) & (iy < 2 * N) & (np.hypot(x, y) <= radius_m)
+def _grid_medians(x: np.ndarray, y: np.ndarray, z: np.ndarray, cell: float, N: int, min_points: int) -> Tuple[np.ndarray, np.ndarray]:
+    """(H, count) on a 2N x 2N grid of ``cell``: the median height of each cell's points (the mean of the two middle
+    ones for an even count), NaN where fewer than ``min_points``."""
+    ix, iy = np.floor(x / cell).astype(np.int64) + N, np.floor(y / cell).astype(np.int64) + N
+    ok = (ix >= 0) & (ix < 2 * N) & (iy >= 0) & (iy < 2 * N)
     H = np.full((2 * N, 2 * N), np.nan)
+    C = np.zeros((2 * N, 2 * N), np.int64)
     if ok.any():
         key = iy[ok] * (2 * N) + ix[ok]
         order = np.lexsort((z[ok], key))
         ks, zs = key[order], z[ok][order]
         st = np.flatnonzero(np.r_[True, ks[1:] != ks[:-1]])
         cnt = np.diff(np.r_[st, len(ks)])
+        C.ravel()[ks[st]] = cnt
         good = cnt >= int(min_points)
-        H.ravel()[ks[st[good]]] = zs[st[good] + cnt[good] // 2]
-    measured = int(np.isfinite(H).sum())
+        lo_i, hi_i = st + (cnt - 1) // 2, st + cnt // 2
+        H.ravel()[ks[st[good]]] = 0.5 * (zs[lo_i[good]] + zs[hi_i[good]])
+    return H, C
+
+
+def _upsample(Hc: np.ndarray, f: int, shape: Tuple[int, int]) -> np.ndarray:
+    """A coarse grid's heights (NaN where none) at the fine grid's cells: normalized bilinear, NaN where no coarse cell
+    near has a height."""
+    import cv2
+    have = np.isfinite(Hc).astype(np.float32)
+    num = cv2.resize(np.where(have > 0, Hc, 0.0).astype(np.float32), (shape[1], shape[0]), interpolation=cv2.INTER_LINEAR)
+    den = cv2.resize(have, (shape[1], shape[0]), interpolation=cv2.INTER_LINEAR)
+    out = np.where(den > 0.25, num / np.maximum(den, 1e-6), np.nan)
+    own = np.repeat(np.repeat(np.isfinite(Hc), f, axis=0), f, axis=1)[:shape[0], :shape[1]]
+    return np.where(own, out, np.nan)                            # only inside a coarse cell that has points itself
+
+
+def height_field_arrays(points: np.ndarray, pivot: Sequence[float], up: Sequence[float], radius_m: float,
+                        cell_m: Optional[float] = None, min_points: int = HEIGHT_FIELD_MIN_POINTS,
+                        close: int = HEIGHT_FIELD_CLOSE, steep: Optional[Dict[str, Any]] = None
+                        ) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
+    """(V, F, record): the points within ``radius_m`` of the mast axis as a height field - a square grid across the
+    vertical (``up``), a vertex at each cell with points (its center, at the points' median height), two triangles
+    where four neighboring cells have one, one where three do.  0.99.38: a cell of few points far from the median of
+    the 4x coarser grid there is dropped (a spike); the empty cells take the coarser grids' heights (2x, 4x, 8x, the
+    finest that has one); small gaps are closed (``close``); a larger one stays open for :func:`fill_terrain`.  Where
+    neighboring cells differ by more than HEIGHT_FIELD_STEEP_M (a rock's face) no triangle is made: ``steep`` (a dict)
+    receives ``inside(points) -> bool``, the cells to mesh by Poisson instead.  The triangles' normals point up."""
+    from scipy import ndimage
+    P = np.asarray(pivot, float)
+    e, n, u = _horizontal_axes(up)
+    d = np.asarray(points, float) - P
+    x, y, z = d @ e, d @ n, d @ u
+    inr = np.hypot(x, y) <= radius_m
+    x, y, z = x[inr], y[inr], z[inr]
+    if cell_m is None:                                          # about four points to a cell, HEIGHT_FIELD_CELL_M at least
+        cell_m = max(HEIGHT_FIELD_CELL_M, float(np.sqrt(4.0 * np.pi * float(radius_m) ** 2 / max(len(x), 1))))
+    N = int(np.ceil(float(radius_m) / cell_m))
+    H, C = _grid_medians(x, y, z, cell_m, N, min_points)
+    measured0 = int(np.isfinite(H).sum())
+    coarse = {}
+    for f in HEIGHT_FIELD_LEVELS:
+        Nc = int(np.ceil(N / f))
+        Hc, _ = _grid_medians(x, y, z, cell_m * f, Nc, min_points)
+        up_ = _upsample(Hc, f, (2 * Nc * f, 2 * Nc * f))
+        off = Nc * f - N                                        # the coarse grid is centered the same way
+        coarse[f] = up_[off:off + 2 * N, off:off + 2 * N]
+    ref = coarse[4] if 4 in coarse else coarse[max(coarse)]
+    spike = np.isfinite(H) & np.isfinite(ref) & (C < HEIGHT_FIELD_SPIKE_POINTS) & (np.abs(H - ref) > HEIGHT_FIELD_SPIKE_M)
+    H[spike] = np.nan
+    from_coarse = 0
+    jj0, ii0 = np.mgrid[0:2 * N, 0:2 * N]
+    inside_disc = np.hypot((ii0 - N + 0.5) * cell_m, (jj0 - N + 0.5) * cell_m) <= radius_m
+    for f in HEIGHT_FIELD_LEVELS:                               # the empty cells from the finest coarser grid with a height
+        add = ~np.isfinite(H) & np.isfinite(coarse[f]) & inside_disc
+        H[add] = coarse[f][add]
+        from_coarse += int(add.sum())
     for _ in range(int(close)):
         have = np.isfinite(H)
         Hp = np.pad(np.where(have, H, 0.0), 1)
         Wp = np.pad(have.astype(float), 1)
-        s = sum(Hp[1 + a:1 + a + 2 * N, 1 + b:1 + b + 2 * N] for a in (-1, 0, 1) for b in (-1, 0, 1) if (a, b) != (0, 0))
+        s_ = sum(Hp[1 + a:1 + a + 2 * N, 1 + b:1 + b + 2 * N] for a in (-1, 0, 1) for b in (-1, 0, 1) if (a, b) != (0, 0))
         w = sum(Wp[1 + a:1 + a + 2 * N, 1 + b:1 + b + 2 * N] for a in (-1, 0, 1) for b in (-1, 0, 1) if (a, b) != (0, 0))
         add = ~have & (w >= 5)
-        H[add] = s[add] / w[add]
+        H[add] = s_[add] / w[add]
     have = np.isfinite(H)
+    # a rock's face: a step between neighbors; the cells about it (and those it encloses) are left to Poisson
+    Hz = np.where(have, H, np.nan)
+    jump = np.zeros_like(have)
+    with np.errstate(invalid="ignore"):
+        dx = np.abs(Hz[:, 1:] - Hz[:, :-1]) > HEIGHT_FIELD_STEEP_M
+        dy = np.abs(Hz[1:, :] - Hz[:-1, :]) > HEIGHT_FIELD_STEEP_M
+    jump[:, 1:] |= dx
+    jump[:, :-1] |= dx
+    jump[1:, :] |= dy
+    jump[:-1, :] |= dy
+    steep_m = np.zeros_like(have)
+    if jump.any():
+        steep_m = ndimage.binary_dilation(jump, iterations=int(HEIGHT_FIELD_STEEP_GROW))
+        steep_m = ndimage.binary_fill_holes(steep_m)
     vid = np.full(H.shape, -1, np.int64)
     vid[have] = np.arange(int(have.sum()))
     jj, ii = np.nonzero(have)                                   # rows are y, columns x
     V = P + ((ii - N + 0.5) * cell_m)[:, None] * e + ((jj - N + 0.5) * cell_m)[:, None] * n + H[have][:, None] * u
     a_, b_, c_, d_ = vid[:-1, :-1], vid[:-1, 1:], vid[1:, 1:], vid[1:, :-1]     # (x, y), (x+1, y), (x+1, y+1), (x, y+1)
-    m4 = (a_ >= 0) & (b_ >= 0) & (c_ >= 0) & (d_ >= 0)
+    st4 = steep_m[:-1, :-1] | steep_m[:-1, 1:] | steep_m[1:, 1:] | steep_m[1:, :-1]
+    m4 = (a_ >= 0) & (b_ >= 0) & (c_ >= 0) & (d_ >= 0) & ~st4
     tris = [np.stack([a_[m4], b_[m4], c_[m4]], 1), np.stack([a_[m4], c_[m4], d_[m4]], 1)]
     for miss, tri in (((a_ < 0), (b_, c_, d_)), ((b_ < 0), (a_, c_, d_)), ((c_ < 0), (a_, b_, d_)), ((d_ < 0), (a_, b_, c_))):
-        m3 = miss & (tri[0] >= 0) & (tri[1] >= 0) & (tri[2] >= 0)
+        m3 = miss & (tri[0] >= 0) & (tri[1] >= 0) & (tri[2] >= 0) & ~st4
         tris.append(np.stack([tri[0][m3], tri[1][m3], tri[2][m3]], 1))
     F = np.vstack(tris).astype(np.int64) if len(V) else np.zeros((0, 3), np.int64)
-    return V, F, {"method": "height field", "cell_m": float(cell_m), "cells_measured": measured,
-                  "cells_closed": int(have.sum()) - measured, "triangles": int(len(F))}
+    if steep is not None:
+        grown = ndimage.binary_dilation(steep_m, iterations=1) if steep_m.any() else steep_m
+
+        def inside(Q: np.ndarray, _g=grown) -> np.ndarray:
+            dq = np.asarray(Q, float) - P
+            qi = np.floor((dq @ e) / cell_m).astype(np.int64) + N
+            qj = np.floor((dq @ n) / cell_m).astype(np.int64) + N
+            okq = (qi >= 0) & (qi < 2 * N) & (qj >= 0) & (qj < 2 * N)
+            out = np.zeros(len(dq), bool)
+            out[okq] = _g[qj[okq], qi[okq]]
+            return out
+        steep.update(inside=inside, cells=int(steep_m.sum()))
+    return V, F, {"method": "height field", "cell_m": float(cell_m), "cells_measured": measured0,
+                  "spikes_dropped": int(spike.sum()), "cells_from_coarser_grids": from_coarse,
+                  "cells_closed": int(have.sum()) - measured0 + int(spike.sum()) - from_coarse,
+                  "faces_to_poisson_cells": int(steep_m.sum()), "triangles": int(len(F))}
 
 
 def zoned_poisson(points: np.ndarray, normals: Optional[np.ndarray], pivot: Sequence[float], up: Sequence[float],
@@ -466,8 +549,20 @@ def zoned_poisson(points: np.ndarray, normals: Optional[np.ndarray], pivot: Sequ
             continue
         last = hi is None or float(hi) >= float(radius_m)          # the outermost zone ends at the mesh radius itself
         if height_field and lo == 0 and HEIGHT_FIELD_TO_M and outer <= HEIGHT_FIELD_TO_M and not last:      # 0.99.32
-            V, F, how = height_field_arrays(points[sel], P, up, outer + overlap_m)
+            st_: Dict[str, Any] = {}
+            V, F, how = height_field_arrays(points[sel], P, up, outer + overlap_m, steep=st_)
             crep = {"triangles_in": int(len(F)), "steps": [{"step": "height field", "removed": 0, **how}], "triangles_out": int(len(F))}
+            if st_.get("cells"):                                 # 0.99.38: the rocks' faces by Poisson
+                V2, F2, how2 = poisson_arrays(points[sel], None if normals is None else normals[sel], depth=depth, viewpoint=P)
+                V2, F2, crep2 = clean_arrays(V2, F2, P, points=points[sel], up=up, radius_m=outer + overlap_m, **(clean or {}))
+                if len(F2):
+                    cen2, _, _ = triangle_geometry(V2, F2)
+                    V2, F2 = keep_triangles(V2, F2, st_["inside"](cen2))
+                    F = np.vstack([np.asarray(F, np.int64), np.asarray(F2, np.int64) + len(V)]) if len(F2) else F
+                    V = np.vstack([V, V2]) if len(F2) else V
+                how = dict(how, method="height field + poisson on the faces", poisson_face_triangles=int(len(F2)))
+                crep["steps"].append({"step": "poisson on the faces (0.99.38)", "triangles": int(len(F2))})
+                crep["triangles_out"] = int(len(F))
         else:
             V, F, how = poisson_arrays(points[sel], None if normals is None else normals[sel], depth=depth, viewpoint=P)
             V, F, crep = clean_arrays(V, F, P, points=points[sel], up=up, radius_m=outer if last else outer + overlap_m,

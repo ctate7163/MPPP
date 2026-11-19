@@ -68,6 +68,13 @@ DEFAULT_WIDTH = 16384             # 0.98.30 (Christian, 16 Nov 2026: "Render the
 #                                   8k versions for upload"): 16K per eye; rpp single-sites --upload / web.publish reduce
 #                                   the JPEGs to 8K (web.DEFAULT_WIDTH, area filter).  8192 from 0.97.10 ("let's make 8k ods
 #                                   standard for now"), 16384 from 0.97.4 to 0.97.9
+# 0.99.40 (Christian, 19 Nov 2026: "ncam medium res station can be at 8k. Only ncam highres and z34 sites need to be
+# 16k"): rpp ods without --width picks the width from the station's own frames (:func:`auto_width`): 16384 for a
+# Mastcam-Z station (most of its own frames Mastcam-Z) and where the median of the frames' pixel angles (1 / focal
+# length in pixels, at the scale they are read) is finer than AUTO_FINE_MRAD - full-resolution Navcam (0.33 mrad) -
+# else AUTO_COARSE_WIDTH: 2x-binned Navcam (0.65 mrad) is resolved by an 8192-wide panorama (0.77 mrad a pixel)
+AUTO_FINE_MRAD = 0.5
+AUTO_COARSE_WIDTH = 8192
 DEFAULT_IPD_M = 0.064
 # 0.97.0 (Christian, 12 Nov 2026, Quest 3: "when I tilt my head down ... I go cross-eyed"): pole merging.  An ODS
 # pair is right only at the horizon: toward a pole each column keeps its own eye offset, so in a view looking down
@@ -2044,7 +2051,34 @@ def expand_names(names: Optional[Sequence[str]], have) -> List[str]:
     return out
 
 
-def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width: int = DEFAULT_WIDTH, ipd_m: float = DEFAULT_IPD_M,
+def auto_width(rec, names: Sequence[str], scale: float = 1.0, zcam_scale: float = 1.0) -> Tuple[int, Dict[str, Any]]:
+    """0.99.40: (width, record) - :data:`DEFAULT_WIDTH` when most of the frames ``names`` are Mastcam-Z or the median
+    pixel angle of them (read at ``scale``, a Mastcam-Z frame at ``zcam_scale``) is finer than
+    :data:`AUTO_FINE_MRAD`, else :data:`AUTO_COARSE_WIDTH`; DEFAULT_WIDTH when none of them has a camera."""
+    by = {im.name: im for im in rec.images.values()}
+    mrad = []
+    for n in names:
+        im = by.get(n)
+        if im is None:
+            continue
+        cam = rec.cameras[im.camera_id]
+        try:
+            f = float(cam.mean_focal_length())
+        except Exception:                                        # noqa: BLE001 - a camera without the method
+            f = float(np.asarray(cam.params, float)[0])
+        s = zcam_scale if n[:1].upper() == "Z" else scale
+        if f > 0 and s > 0:
+            mrad.append(1000.0 / (f * s))
+    if not mrad:
+        return DEFAULT_WIDTH, {"rule": "auto", "frames": 0, "width": DEFAULT_WIDTH}
+    med = float(np.median(mrad))
+    zcam = sum(1 for n in names if n[:1].upper() == "Z" and n in by) * 2 > len(mrad)
+    w = DEFAULT_WIDTH if (zcam or med < AUTO_FINE_MRAD) else AUTO_COARSE_WIDTH
+    return w, {"rule": "auto", "frames": len(mrad), "median_mrad": round(med, 4), "fine_below_mrad": AUTO_FINE_MRAD,
+               "mastcam_z": zcam, "width": w, "panorama_mrad": round(2000.0 * np.pi / w, 4)}
+
+
+def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width: Union[int, str] = DEFAULT_WIDTH, ipd_m: float = DEFAULT_IPD_M,
                    families: str = "N", scale: float = 1.0, zcam_scale: float = 1.0, images: Optional[Sequence[str]] = None,
                    rows_per_chunk: int = 128, eyes: Sequence[str] = ("left", "right"), use_masks: bool = True,
                    gains: bool = True, stack_top: str = "left", sky_fill: bool = True,
@@ -2056,7 +2090,9 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                    nadir_mark_deg: Optional[float] = None, far_field: Optional[bool] = None,
                    context_images: Sequence[str] = (), geometry: bool = True, workers: Optional[int] = None,
                    station_mesh: Union[bool, str] = False) -> Dict[str, Any]:
-    """0.99.26: ``station_mesh`` - also the station mesh's part of this run (:mod:`rpp.ibr.station_mesh`: the terrain
+    """0.99.40: ``width`` "auto" - :func:`auto_width` of the station's own frames (8192 or 16384).
+
+    0.99.26: ``station_mesh`` - also the station mesh's part of this run (:mod:`rpp.ibr.station_mesh`: the terrain
     with the rover masked, the rover with it shown); "only": that part alone, no panorama (the record of the part is
     returned).
 
@@ -2071,9 +2107,15 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
     out.mkdir(parents=True, exist_ok=True)
     if prefix is None:
         prefix = ods_prefix(station.label, rover=not use_masks)
-    height = width // 2
     by_ = {im.name for im in rec.images.values() if im.has_pose}
     own = [n for n in (list(images) if images else [n for n in station.images if n[:1].upper() in set(families.upper())]) if n in by_]
+    width_rule = None
+    if isinstance(width, str):                       # 0.99.40: "auto" - from the station's own frames
+        width, width_rule = auto_width(rec, own, scale, zcam_scale)
+        log.info("ods: width %d (auto: median pixel angle %s mrad of %d own frames)", width,
+                 width_rule.get("median_mrad"), width_rule.get("frames"))
+    width = int(width)
+    height = width // 2
     context_images = expand_names(context_images, by_)       # 0.98.19: a name may be a pattern (N?F_0606_*N0301096*)
     ctx_names = [n for n in dict.fromkeys(context_images or ()) if n in by_]         # 0.97.15: see station_sources
     gone = [n for n in (context_images or ()) if n not in by_]
@@ -2136,6 +2178,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
     if hasattr(scene, "set_sky_sphere"):                 # 0.97.0: the sky on a sphere, the plane out to it
         scene.set_sky_sphere(SKY_RADIUS_M if isinstance(sky_radius_m, str) else sky_radius_m)
     rec_out: Dict[str, Any] = {"station": station.to_json(), "prefix": prefix, "width": width, "height": height, "ipd_m": ipd_m,
+                               "width_rule": width_rule or {"rule": "given", "width": width},
                                "sky_radius_m": getattr(scene, "sky_radius_m", None), "range_merge_m": ([RANGE_MERGE_FROM_M, RANGE_MERGE_TO_M] if RANGE_MERGE else None), "near_merge_m": NEAR_MERGE_M,
                                "pole_merge_deg": ({"up": POLE_MERGE_DEG, "down": POLE_MERGE_DOWN_DEG} if isinstance(pole_merge_deg, str)
                                                   else pole_merge_deg if isinstance(pole_merge_deg, dict)

@@ -25,8 +25,11 @@ REM Log: %TEMP%\rpp_sync_<test>.log per test file.  Then: git push origin main (
 REM ======================================================================================================
 if /i not "%~1"=="--from-copy" (
   copy /y "%~f0" "%TEMP%\rpp_sync_code_run.bat" >nul || ( echo cannot copy %~f0 to %TEMP% & pause & exit /b 1 )
-  "%TEMP%\rpp_sync_code_run.bat" --from-copy "%~dp0" %*
-  exit /b %ERRORLEVEL%
+  REM 0.99.38: CALLed. Run without CALL from inside this block, the exit /b below ran in the context of
+  REM a batch file that CALLed this one and ended it - start_freeze3_when_ready.bat stopped after the sync.
+  REM The block is read whole before it runs, so the file may change under it; exit /b keeps the copy's code
+  call "%TEMP%\rpp_sync_code_run.bat" --from-copy "%~dp0" %*
+  exit /b
 )
 setlocal EnableExtensions EnableDelayedExpansion
 set "HERE=%~2"

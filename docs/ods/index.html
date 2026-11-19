@@ -23,7 +23,12 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
   rpp single-sites --upload installs there; this file in the pipeline's docs/ods sends visitors there.
   Link to one view:   https://ctate7163.github.io/rpv/#<station>/<variant>/<view>      e.g.  #Sol0052_S003D2046/rover/enhanced
   Another image list: .../rpv/?index=https://<same origin or CORS-enabled host>/panos.json
-  Keys: left / right arrows = station (in the sixth mode the arrows drive the rover), V = variant, E or space = view
+  0.99.40: the menu is the terrain - terrain stereo (the panoramas), terrain local 3D (the textured terrain within 20 m
+  in front of the terrain-only panorama), terrain full 3D (one textured surface to the horizon and the sky, no
+  panorama); the rover button / R shows or hides the rover (in stereo the with-rover panorama, in 3D the 3D rover);
+  the drive (the full 3D terrain and the rover) is the steering wheel above the rover button, with ?experimental=1 only.
+  A link may end in /no-rover (a 3D mode with the rover hidden).
+  Keys: left / right arrows = station (in the drive the arrows drive the rover), V = terrain, E or space = view
   (0.99.37: space, Shift+space back), R = the rover on / off as the rover button (0.99.37), I = info,
   L = the next eye (on a screen: left, right, and the center where the station has it), P = the screen's eye movement on / off (0.99.32), drag = look, wheel = zoom;
   0.98.19: W A S D held = look up / left / down / right, Shift+N / E / S / W = face that way, N = north, O = the front of the
@@ -31,7 +36,7 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
   Headset (0.98.4): right trigger = next station, left trigger = the one before, thumbstick left / right = turn,
   X = info page on the left hand (site, sol, map), A = the next view (0.99.37: standard color, raw color, enhanced color,
   enhanced tone, dcs color, normal map, distance map),
-  grip = variant   (0.98.13: A and X swapped)
+  right grip = terrain, left grip = the rover (0.99.40; grip = variant before)   (0.98.13: A and X swapped)
   0.98.28: Y = home (the welcome view, facing west), B = terrain only; on a screen the house button or H, and B.
   0.98.30: B = terrain only (no rover) in a color view; B again = its next color skin (standard, enhanced local).
   The 3D rover is set again at the eyes' center whenever the station, the variant or the view changes and when R
@@ -43,7 +48,7 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
   turning point, with the pointer, and a slow sway when left alone; P turns that off).
   0.99.33: a sixth, "Drive the rover (simulation)" - the fifth mode's surface with the rover moved over it by the two
   thumbsticks (forward / back: the track on that side; on a screen the arrow keys); the viewer rides at the mast.
-  0.99.26: 3D terrain and rover - the terrain within 10 m and the rover as textured surfaces (true parallax), the
+  0.99.26: 3D terrain and rover - the terrain within 10 m (20 m from 0.99.39) and the rover as textured surfaces (true parallax), the
   terrain-only panorama beyond; the head may move 1 m from where the mode started, then the surface comes along.
 -->
 <style>
@@ -51,11 +56,16 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
   #bar { position: fixed; left: 0; right: 0; top: 0; padding: 8px 156px 8px 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
          background: linear-gradient(#000c, #0000); z-index: 2; }
   #bar select, #bar button { background: #222; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; font: inherit; }
-  #title { font-weight: 600; margin-right: 6px; }
+  /* 0.99.40 (Christian, 19 Nov 2026: "The home icon, the o in the center of the NEWS cross and RPV banner text should be
+     orange. Use the brand orange used in the maps"): MAP_ORANGE, the station square's orange on the maps - then "on
+     second thought, leave the Rover Photogrammetry Viewer in white and written out without the abreviation": the bar's
+     name white, in full */
+  #title { font-weight: 600; margin-right: 6px; color: #fff; }
+  #bar button#home, #compass button#faceO { color: #ff9500; }
   #bar button#home { display: inline-flex; align-items: center; padding: 3px 7px; }
   #VRButton.rpv-big { width: 160px !important; left: calc(50% - 80px) !important; padding: 16px 8px !important;
                       font: bold 18px sans-serif !important; }   /* 0.98.28: larger where VR is supported */
-  /* 0.99.1 (Christian, 16 Nov 2026: "make the made by and code text solid black. The Rover Pho Viewer font should
+  /* 0.99.1 (Christian, 16 Nov 2026: "make the made by and code text solid black (0.99.39: the code line removed). The Rover Pho Viewer font should
      have blue fill and orange outsides, the same colors as used in the blue circle and the orange on the maps"):
      the credit black, 9 px (11 px, gray until 0.98.29); the title in the welcome view light blue in orange */
   #credit { position: fixed; left: 10px; bottom: 44px; color: #000; font-size: 9px; font-weight: 400; z-index: 2; }
@@ -76,7 +86,15 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
   #nav button { width: 44px; height: 40px; background: #222c; color: #eee; border: 1px solid #555; border-radius: 6px;
                 display: inline-flex; align-items: center; justify-content: center; padding: 0; cursor: pointer; }
   #nav button:hover { background: #444; }
-  #nav button#roverBtn.on { border-color: #f90; color: #fc6; }
+  #nav button#roverBtn.on, #nav button#driveBtn.on { border-color: #f90; color: #fc6; }
+  /* 0.99.40 (Christian, 19 Nov 2026: "Move drive mode to a steering wheel icon above the rover show/hide button. That is
+     experimental and should be hidden"): shown only with ?experimental=1, where the station has the drive */
+  #roverWrap { position: relative; display: inline-flex; }
+  #nav button#driveBtn { position: absolute; left: 0; bottom: calc(100% + 6px); display: none; }
+  /* 0.99.40 (Christian: "The steering wheel icon should have a Beta next to it indicating that it is an experimental
+     feature") */
+  #driveBeta { position: absolute; right: calc(100% + 6px); bottom: calc(100% + 18px); display: none; font-size: 11px;
+               font-weight: 700; color: #fc6; background: #222c; border: 1px solid #f90; border-radius: 4px; padding: 1px 5px; }
   #msg { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 1;
          font-size: 16px; text-shadow: 0 0 6px #000; }
 </style>
@@ -85,9 +103,9 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
 <body>
 <div id="bar">
   <button id="home" title="welcome view, facing west (H; headset: Y)" aria-label="home"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 9.5V20h5v-6h3v6h5V9.5"/></svg></button>
-  <span id="title">Rover Photogrammetry Viewer (RPV)</span>
+  <span id="title">Rover Photogrammetry Viewer</span>
   <select id="station" title="station"></select>
-  <select id="variant" title="variant"></select>
+  <select id="variant" title="terrain: stereo panorama, local 3D, full 3D (V; headset: right grip)"></select>
   <select id="view" title="view"></select>
   <select id="eye" title="which eye's panorama a screen shows - or the center, where the station has it (a headset shows both eyes)">
     <option value="left">left eye</option><option value="right">right eye</option>
@@ -100,7 +118,7 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
 </div>
 <div id="nav">
   <button id="prevSt" title="previous station (left arrow)" aria-label="previous station"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5 8 12l7 7"/></svg></button>
-  <button id="roverBtn" title="the rover on / off (terrain only, or with the rover)" aria-label="rover on or off"><svg width="34" height="26" viewBox="0 0 34 26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><!-- a Curiosity-class rover from the side: the deck, the RTG at the back, the mast and its camera head, the arm, six wheels on the rocker-bogie (three seen) --><rect x="9" y="11" width="15" height="4" rx="0.6"/><path d="M9 12.2 5.2 9.6M9 14 4.6 12.4M5.2 9.6 4.6 12.4"/><path d="M20.5 11V4.2"/><rect x="18.2" y="1.6" width="6.4" height="2.6" rx="0.6"/><path d="M24 12.6 28.6 10.4 30.2 13.6"/><path d="M7 21.5 11 15.6 15 18.2 17 21.5M15 18.2 13 21.5M27 21.5 22.6 15.6"/><circle cx="7" cy="21.5" r="2.3"/><circle cx="17" cy="21.5" r="2.3"/><circle cx="27" cy="21.5" r="2.3"/></svg></button>
+  <span id="roverWrap"><span id="driveBeta" title="an experimental feature">Beta</span><button id="driveBtn" title="drive the rover - an experimental simulation on the full 3D terrain (the arrow keys)" aria-label="drive the rover"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><!-- a steering wheel: the rim, the hub, three spokes --><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M10 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M3.4 10.6 10 11.6M20.6 10.6 14 11.6M12 14v6.9"/></svg></button><button id="roverBtn" title="the rover shown / hidden (R; headset: left grip)" aria-label="rover shown or hidden"><svg width="34" height="26" viewBox="0 0 34 26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><!-- a Curiosity-class rover from the side: the deck, the RTG at the back, the mast and its camera head, the arm, six wheels on the rocker-bogie (three seen) --><rect x="9" y="11" width="15" height="4" rx="0.6"/><path d="M9 12.2 5.2 9.6M9 14 4.6 12.4M5.2 9.6 4.6 12.4"/><path d="M20.5 11V4.2"/><rect x="18.2" y="1.6" width="6.4" height="2.6" rx="0.6"/><path d="M24 12.6 28.6 10.4 30.2 13.6"/><path d="M7 21.5 11 15.6 15 18.2 17 21.5M15 18.2 13 21.5M27 21.5 22.6 15.6"/><circle cx="7" cy="21.5" r="2.3"/><circle cx="17" cy="21.5" r="2.3"/><circle cx="27" cy="21.5" r="2.3"/></svg></button></span>
   <button id="nextSt" title="next station (right arrow)" aria-label="next station"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg></button>
 </div>
 <div id="msg">loading the list ...</div>
@@ -259,7 +277,7 @@ async function showMark(gm) {
 // (A file of 0.98.2-0.98.13 - a grid mesh with its own texture coordinates - is still shown, as it was.)
 const fixed = new THREE.Group();
 scene.add(fixed);
-let roverParts = [], roverOn = true, roverId = 0, anchored = false;
+let roverParts = [], roverOn = false, roverId = 0, anchored = false;     // 0.99.40: roverOn - the rover shown (button R)
 renderer.xr.addEventListener('sessionstart', () => { anchored = false; });
 const ROVER_VERT = `
   varying vec3 vP;
@@ -306,6 +324,22 @@ const MESH_FRAG = `
   varying vec2 vUv; varying float vR;
   uniform sampler2D map; uniform vec2 fade;
   void main() { gl_FragColor = vec4(texture2D(map, vUv).rgb, fade.y > fade.x ? 1.0 - smoothstep(fade.x, fade.y, vR) : 1.0); }`;
+// 0.99.38 (Christian, 19 Nov 2026: "The 3d terrain and rover should have its own normal map which changes with view"):
+// in the normal-map view the 3D surfaces are drawn with their own normals - each triangle's, in the surface's frame
+// (x east, y up, z south), in the colors of the panoramas' normal map: RGB = (1 + [east, north, up]) / 2 - so the
+// shading moves with the eye like the surface does.  The sky dome of the fifth mode is black, as the panorama's sky.
+const NORMAL_VERT = `
+  varying vec3 vP; varying float vR;
+  void main() { vP = position; vR = length(position.xz); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+const NORMAL_FRAG = `
+  precision highp float;
+  varying vec3 vP; varying float vR;
+  uniform vec2 fade;
+  void main() {
+    vec3 n = normalize(cross(dFdx(vP), dFdy(vP)));
+    vec3 c = length(vP) > 1500.0 ? vec3(0.0) : 0.5 * (1.0 + vec3(n.x, -n.z, n.y));
+    gl_FragColor = vec4(c, fade.y > fade.x ? 1.0 - smoothstep(fade.x, fade.y, vR) : 1.0);
+  }`;
 let meshFade = null, fadeBase = null, wholeScene = false;      // the terrain's fade uniform; its values at the anchor
 // 0.99.33: the ground (terrain, horizon) and the rover hang in groups of their own, so the sixth mode can move one
 // against the other
@@ -322,12 +356,12 @@ fixed.add(groundGroup); fixed.add(roverGroup);
 //     their mean, its turn rate their difference over the track width.  On a screen: the arrow keys.
 //   * ride along: the viewer stays at the mast head, so it is the ground that is moved and turned under the rover;
 //   * the rover's height, pitch and roll: the plane through the terrain's heights under its six wheels;
-//   * it stops DRIVE.limit_m from where it stood (the textured terrain ends at 10 m).
+//   * it stops DRIVE.limit_m from where it stood (the textured terrain ends at 20 m; 10 m until 0.99.39).
 const DRIVE = { on: false, grid: null, az0: 0, az: 0, e: 0, n: 0, pf: 0.8, pr: 0.56, track: 2.3, wheels: [1.1, 0.0, -1.07],
-                speed: 0.25, limit: 6.0, fit0: null, tilt: new THREE.Quaternion(), hm: 2.0 };
+                speed: 0.25, limit: 15.0, fit0: null, tilt: new THREE.Quaternion(), hm: 2.0 };
 const driveKeys = new Set();
 function heightGrid(geoms) {                                     // the terrain's height (page y) on a 0.1 m grid about the pivot
-  const cell = 0.1, half = 10.5, N = Math.round(2 * half / cell), sum = new Float32Array(N * N), cnt = new Uint16Array(N * N);
+  const cell = 0.1, half = 20.5, N = Math.round(2 * half / cell), sum = new Float32Array(N * N), cnt = new Uint16Array(N * N);
   for (const g of geoms) {
     const p = g.getAttribute('position').array;
     for (let i = 0; i < p.length; i += 3) {
@@ -431,11 +465,35 @@ function dropRover() {
   }
   roverParts = [];
 }
-async function showRover(rs) {
+// 0.99.38: opt.normals - the normal-map shader on every part (above); opt.rover - another file for the rover (the
+// rover surface of the third mode, colored from the pivot's panorama at its full resolution), drawn in place of the
+// station mesh's own rover part (Christian: "The rover texture in the '3d terrain and rover' looks a lot worse than the
+// 'terrain with rover (3D model)' version")
+async function showRover(rs, opt = {}) {
   const id = ++roverId;
   dropRover();
   if (!rs || !rs.file) return;
+  const made = [];
   try {
+    let fadeU = null;
+    for (const [file, isMain] of [[rs, true]].concat(opt.rover && opt.rover.file && rs.triangles != null ? [[opt.rover, false]] : [])) {
+      const got = await loadSurface(file, { normals: !!opt.normals, skipRover: isMain && !!opt.rover && rs.triangles != null });
+      if (got.fade) fadeU = got.fade;
+      made.push(...got.made);
+      if (id !== roverId) break;
+    }
+    if (id !== roverId) { for (const m of made) { m.geometry.dispose(); for (const o of m.userData.textures) o.dispose(); m.material.dispose(); } return; }
+    roverParts = made;
+    for (const m of made) (m.userData.kind === 'rover' ? roverGroup : groundGroup).add(m);
+    if (rs.drive && rs.whole) driveStart(rs.drive);              // 0.99.33: the sixth mode
+    meshFade = fadeU; fadeBase = fadeU ? fadeU.clone() : null;
+    wholeScene = !!rs.whole && made.some(m => m.userData.kind === 'horizon');     // the fifth mode: no panorama behind
+    if (wholeScene) for (const k in spheres) spheres[k].visible = false;
+    anchored = false;
+  } catch (e) { console.warn('rover surface', e); }
+}
+async function loadSurface(rs, opt) {                            // -> {made: [meshes], fade: the terrain's fade uniform}
+  {
     const buf = await (await fetch(new URL(rs.file, base).href)).arrayBuffer();
     const dv = new DataView(buf);
     if (dv.getUint32(0, true) !== 0x46546C67) throw new Error('not a .glb file');
@@ -446,8 +504,28 @@ async function showRover(rs) {
     const pr = doc.asset && doc.asset.extras && doc.asset.extras.projection;
     const made = [], shared = new Map();
     let fadeU = null;
+    if (opt.normals) {                                           // 0.99.38: the surfaces' own normals, no textures
+      for (const me of doc.meshes) for (const prim of me.primitives) {
+        const kind = pr ? 'rover' : (me.name || 'rover');
+        if (opt.skipRover && kind === 'rover') continue;
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(arr(prim.attributes.POSITION, Float32Array, 3), 3));
+        g.setIndex(new THREE.BufferAttribute(arr(prim.indices, Uint32Array, 1), 1));
+        const terrain = kind === 'terrain', horizon = kind === 'horizon', fade = new THREE.Vector2(0, 0);
+        if (terrain && rs.fade_m) { fade.set(rs.fade_m[0], rs.fade_m[1]); fadeU = fade; }
+        const mat = new THREE.ShaderMaterial({ vertexShader: NORMAL_VERT, fragmentShader: NORMAL_FRAG, side: THREE.DoubleSide,
+          uniforms: { fade: { value: fade } }, transparent: terrain && !!rs.fade_m, depthTest: !horizon, depthWrite: !horizon });
+        const m = new THREE.Mesh(g, mat);
+        m.userData.textures = []; m.userData.kind = kind;
+        m.renderOrder = horizon ? 0.5 : 1; m.frustumCulled = false;
+        m.visible = roverOn || kind !== 'rover';
+        made.push(m);
+      }
+      return { made, fade: fadeU };
+    }
     // 0.99.32: every mesh of the file (until now the first alone: a station mesh's rover part was never drawn)
     for (const me of doc.meshes) for (const prim of me.primitives) {
+      if (opt.skipRover && !pr && (me.name || 'rover') === 'rover') continue;   // 0.99.38: the rover from its own file
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(arr(prim.attributes.POSITION, Float32Array, 3), 3));
       g.setIndex(new THREE.BufferAttribute(arr(prim.indices, Uint32Array, 1), 1));
@@ -497,30 +575,25 @@ async function showRover(rs) {
       m.visible = roverOn || m.userData.kind !== 'rover';
       made.push(m);
     }
-    if (id !== roverId) { for (const m of made) { m.geometry.dispose(); for (const o of m.userData.textures) o.dispose(); m.material.dispose(); } return; }
-    roverParts = made;
-    for (const m of made) (m.userData.kind === 'rover' ? roverGroup : groundGroup).add(m);
-    if (rs.drive && rs.whole) driveStart(rs.drive);              // 0.99.33: the sixth mode
-    meshFade = fadeU; fadeBase = fadeU ? fadeU.clone() : null;
-    wholeScene = !!rs.whole && made.some(m => m.userData.kind === 'horizon');     // the fifth mode: no panorama behind
-    if (wholeScene) for (const k in spheres) spheres[k].visible = false;
-    anchored = false;
-  } catch (e) { console.warn('rover surface', e); }
+    return { made, fade: fadeU };
+  }
 }
 
 // ---------------------------------------------------------------- words in the scene (0.98.4)
 // Text is drawn on a canvas and shown on a flat panel: a real surface at a real distance, so both eyes agree on it.
 const MARK_BLUE = '#b0d4ee';      // 0.99.1: the nadir disc's light blue (nadir.BACKGROUND_RGB = 176, 212, 238)
 const MAP_ORANGE = '#ff9500';     // the orange of the station square on the map
-function textPanel(lines, opt = {}) {                            // lines: [{text, px, weight, color, outline}] ; returns a Mesh 1 unit wide
+function textPanel(lines, opt = {}) {                            // lines: [{text, px, weight, color, outline, outlineWidth, spacing}] ; returns a Mesh 1 unit wide
   const pad = 40, W = opt.width || 2048, font = l => `${l.weight || 800} ${l.px}px system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
   const c = document.createElement('canvas'), g = c.getContext('2d');
   const Hpx = pad * 2 + lines.reduce((a, l) => a + l.px * 1.25, 0);
   c.width = W; c.height = Math.ceil(Hpx);
   if (opt.back) { g.fillStyle = opt.back; g.beginPath(); g.roundRect(0, 0, c.width, c.height, 48); g.fill(); }
   g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
-  const fit = l => { let px = l.px; g.font = font(l);            // the size at which a line fits the width
-    while (g.measureText(l.text).width > W - 2 * pad && px > 12) { px -= 4; g.font = font({ ...l, px }); }
+  // 0.99.40: l.spacing - letter spacing in em (canvas letterSpacing), so the letters of the sky's words keep apart
+  const space = (l, px) => { if ('letterSpacing' in g) g.letterSpacing = l.spacing ? `${Math.round(px * l.spacing)}px` : '0px'; };
+  const fit = l => { let px = l.px; g.font = font(l); space(l, px);   // the size at which a line fits the width
+    while (g.measureText(l.text).width > W - 2 * pad && px > 12) { px -= 4; g.font = font({ ...l, px }); space(l, px); }
     return px; };
   // 0.99.14 (Christian, 17 Nov 2026: "make the control instructions on the welcome page a uniform size font"): with
   // opt.uniform every line takes the size of the line that needs the most shrinking
@@ -528,10 +601,10 @@ function textPanel(lines, opt = {}) {                            // lines: [{tex
   let y = pad;
   for (const l of lines) {
     const px = one || fit(l);
-    g.font = font({ ...l, px });
+    g.font = font({ ...l, px }); space(l, px);
     y += l.px * 0.625;
-    if (l.outline) {                                             // 0.99.1: a colored outline (the title)
-      g.strokeStyle = l.outline; g.lineWidth = Math.max(3, px * 0.08); g.strokeText(l.text, W / 2, y);   // thin: not bold
+    if (l.outline) {                                             // 0.99.1: a colored outline (the title); 0.99.40: its width
+      g.strokeStyle = l.outline; g.lineWidth = Math.max(3, px * (l.outlineWidth || 0.08)); g.strokeText(l.text, W / 2, y);   // thin: not bold
     } else if (l.plain) {                                        // 0.99.1: solid, no outline (the credit lines)
     } else {
       g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = Math.max(4, px * 0.10); g.strokeText(l.text, W / 2, y);
@@ -560,22 +633,24 @@ function place(m, azDeg, elDeg, dist, width) {                   // in the page'
 const WELCOME_AZ_DEG = 270;                     // 0.98.19: the welcome view opens looking west, its title there
 // 0.98.27 (Christian, 16 Nov 2026: 'the ods welcome page should read Rover Photogrammetry Viewer (RPV) followed by a line
 // about it being created by Christian Tate at MSSS for research purposes with the code available at the github link').
-// CODE_URL: the pipeline's repository (GitHub forwards the old name, MPPP).
+// (0.99.39: the line with the code's link removed.)
 // 0.99.13 (Christian, 17 Nov 2026: 'The title on the rpv website should be "Mars rover panorama viewer (RPV)" instead of
 // the old list title'); 11:10 / 11:38: "rename welcome page name to rover photogrammetry viewer (RPV)" - the bar, the
-// tab and the welcome view all say Rover Photogrammetry Viewer (RPV)
+// tab and the welcome view all say Rover Photogrammetry Viewer (RPV).  0.99.39 (Christian, 19 Nov 2026: 'on the top
+// banner, replace "Rover Photogrammetry Viewer (RPV)" with "RPV"'): the bar said RPV; 0.99.40 ("leave the Rover
+// Photogrammetry Viewer in white and written out without the abreviation"): the bar says Rover Photogrammetry Viewer
 const VIEWER_NAME = 'Rover Photogrammetry Viewer (RPV)';
 // 0.99.36 (Christian, 19 Nov 2026: "please put the rpp-rpv viewer version number on the lower left above the site name,
 // images size, and version on which the site was rendered"): the page's own version (the RPP release that wrote it;
 // tests/test_station_mesh.py keeps it equal to rpp.__version__), above the station's line
-const RPV_VERSION = '0.99.37';
+const RPV_VERSION = '0.99.40';
 $('ver').textContent = `RPV viewer ${RPV_VERSION}`;
 const CREDIT = 'Created by Christian Tate at MSSS';   // 0.99.14 (Christian, 17 Nov 2026: 'remove the "for research purposes" phrase')
-const CODE_URL = 'https://github.com/ctate7163/rpp';   // 0.98.29: the repository renamed MPPP -> RPP
-{                                                 // on a screen the welcome view also gets the credit with a link to click
-  const c = $('credit'), l = document.createElement('a');
-  l.href = CODE_URL; l.target = '_blank'; l.rel = 'noopener'; l.textContent = CODE_URL.replace(/^https:\/\//, '');
-  c.title = 'Malin Space Science Systems, San Diego'; c.append(CREDIT + '. Code: ', l);
+// 0.99.39 (Christian, 19 Nov 2026: "remove the code: ... text from the welcome screen"): the credit alone, no link to
+// the repository (in the welcome view and on a screen)
+{                                                 // on a screen the welcome view also gets the credit
+  const c = $('credit');
+  c.title = 'Malin Space Science Systems, San Diego'; c.append(CREDIT);
   c.style.display = 'none';
 }
 const welcome = new THREE.Group();
@@ -583,30 +658,48 @@ welcome.visible = false;
 world.add(welcome);
 let welcomeBuilt = false;
 let ctlHeadset = null, ctlScreen = null;     // 0.99.37: the welcome view's two sets of controls
+// 0.99.40 (Christian, 19 Nov 2026: "the North, West, etc. letters in the sky should be 75% their current size and have a
+// solid orange outline and come down a little. put a little more space between the letters so that they don't overlap.
+// Those should also become visible in info mode when I or X or pushed"): 10.5 m wide at 40 m (14 before), 24 deg up
+// (32), white in a solid orange outline, 0.12 em between the letters; their own group, shown in the welcome view and
+// while the info page is up (any station)
+const skyWords = new THREE.Group();
+skyWords.visible = false;
+world.add(skyWords);
+let skyWordsBuilt = false;
+function updateSkyWords() {
+  const on = welcome.visible || infoPanel.visible;
+  if (on && !skyWordsBuilt) {
+    skyWordsBuilt = true;
+    for (const [name, az] of [['NORTH', 0], ['EAST', 90], ['SOUTH', 180], ['WEST', 270]])
+      skyWords.add(place(textPanel([{ text: name, px: 300, weight: 800, outline: MAP_ORANGE, outlineWidth: 0.14, spacing: 0.12 }],
+                                   { width: 1400 }), az, 24, 40, 10.5));
+  }
+  skyWords.visible = on;
+}
 function showWelcome(on) {
   if (on && !welcomeBuilt) {
     welcomeBuilt = true;
-    for (const [name, az] of [['NORTH', 0], ['EAST', 90], ['SOUTH', 180], ['WEST', 270]])
-      welcome.add(place(textPanel([{ text: name, px: 300, weight: 800 }], { width: 1400 }), az, 32, 40, 14));
     // 0.98.19 (Christian, 16 Nov 2026: 'change the text to "Rover Photogrammetry Viewer". Put the text under West, and
     // make west the opening direction'): the title under WEST, which the page opens looking at
     welcome.add(place(textPanel([{ text: VIEWER_NAME, px: 190, weight: 900, color: MARK_BLUE, outline: MAP_ORANGE },
                                  { text: CREDIT, px: 56, weight: 400, color: '#000', plain: true },   // 0.99.1: smaller (80 px), solid black
-                                 { text: 'Code: ' + CODE_URL.replace(/^https:\/\//, ''), px: 56, weight: 400, color: '#000', plain: true },
                                  { text: 'Mars 2020 Perseverance rover', px: 120, weight: 700 }]), WELCOME_AZ_DEG, 14, 5, 4.2));
     ctlHeadset = place(textPanel([{ text: 'trigger: next site   |   left trigger: back   |   stick: turn', px: 84, weight: 600 },
                                  { text: 'X: info and map   |   Y: home   |   A: view', px: 84, weight: 600 },
-                                 { text: 'B: terrain only (again: color skin)   |   grip: rover on, off, 3D, 3D terrain', px: 84, weight: 600 }],
+                                 { text: 'B: terrain only (again: color skin)   |   right grip: terrain   |   left grip: rover', px: 84, weight: 600 },
+                                 { text: 'stick click: drive the rover (beta)   |   in the drive: sticks forward / back', px: 84, weight: 600 }],
                                 { back: 'rgba(0,0,0,0.35)', uniform: true }), WELCOME_AZ_DEG, -6, 5, 3.6);   // 0.99.14: one size
     // 0.99.37 (Christian, 19 Nov 2026: "In the browser 2d version. Show a differ set of controls, including using the
     // space bar to change the color map"): on a screen the keys and the mouse instead
-    ctlScreen = place(textPanel([{ text: '\u2190 \u2192: site   |   space: color map   |   R: rover on / off   |   V: mode', px: 84, weight: 600 },
+    ctlScreen = place(textPanel([{ text: '\u2190 \u2192: site   |   space: color map   |   R: rover on / off   |   V: terrain', px: 84, weight: 600 },
                                  { text: 'drag or W A S D: look   |   wheel: zoom   |   N E S W O: face   |   L: eye', px: 84, weight: 600 },
                                  { text: 'I: info and map   |   H: home   |   B: terrain only   |   P: motion on / off', px: 84, weight: 600 }],
                                 { back: 'rgba(0,0,0,0.35)', uniform: true }), WELCOME_AZ_DEG, -6, 5, 3.6);
     welcome.add(ctlHeadset, ctlScreen);
   }
   welcome.visible = !!on;
+  updateSkyWords();
   controlsFor();
   $('credit').style.display = on ? '' : 'none';
 }
@@ -629,7 +722,7 @@ let traverse = null, leftGrip = null, orthoImage = null, dtmImage = null;
 for (let i = 0; i < 2; i++) {
   const g = renderer.xr.getControllerGrip(i);
   g.addEventListener('connected', e => { if (e.data && e.data.handedness === 'left') leftGrip = g; });
-  g.addEventListener('disconnected', () => { if (leftGrip === g) { leftGrip = null; if (infoPanel.parent === g) { scene.add(infoPanel); infoPanel.visible = false; } } });
+  g.addEventListener('disconnected', () => { if (leftGrip === g) { leftGrip = null; if (infoPanel.parent === g) { scene.add(infoPanel); infoPanel.visible = false; updateSkyWords(); } } });
   scene.add(g);
 }
 // 0.98.19 (Christian, 16 Nov 2026): "The drop down list of ods should start with Sol 0xxx then have the site name. No
@@ -725,7 +818,7 @@ const fwd = new THREE.Vector3();
 const INFO_TILT_RAD = -1.2;      // 0.98.14 (Christian: "Tilt the info window back further so that it is easier to read from the
 //                                  wrist"): the page leans back 69 deg from upright on the controller (40 deg before)
 function toggleInfo() {
-  if (infoPanel.visible) { infoPanel.visible = false; return; }
+  if (infoPanel.visible) { infoPanel.visible = false; updateSkyWords(); return; }
   drawInfo();
   if (renderer.xr.isPresenting && leftGrip) {                    // on the left hand: 19 cm wide (16 until 0.98.14), above the controller
     leftGrip.add(infoPanel);
@@ -745,6 +838,7 @@ function toggleInfo() {
     infoPanel.lookAt(at);
   }
   infoPanel.visible = true;
+  updateSkyWords();                                              // 0.99.40: the directions in the sky with the info page
 }
 
 // ---------------------------------------------------------------- the list and the choice
@@ -753,21 +847,73 @@ const startAz = p => p.yaw_deg != null ? p.yaw_deg : (p.welcome ? WELCOME_AZ_DEG
 const maxTex = renderer.capabilities.maxTextureSize;
 
 function variants(p) { return p.variants || []; }
-function views(p, v) { return Object.keys((variants(p)[v] || {}).views || {}); }
+// 0.99.40 (Christian, 19 Nov 2026: "The full 3d terrain model does not need the ods since the photo sphere is built into
+// the 3d model"): a whole variant (the full 3D terrain, and the drive on it) loads no panorama - its views are its own
+// texture (standard color) and the normal map
+const isWhole = q => !!(q && q.station_mesh && q.station_mesh.whole);
+function views(p, v) {
+  const q = variants(p)[v] || {}, ks = Object.keys(q.views || {});
+  if (!isWhole(q)) return ks;
+  const w = ks.filter(k => k === 'standard' || /^normal/.test(k));
+  return w.length ? w : ks.slice(0, 1);
+}
 // 0.98.30 (Christian, 16 Nov 2026: 'Change "normal" to "normal map" and "range log" to "distance map"'): the names of
 // entries published before, shown (and accepted in a link) by the new ones
 // 0.99.37 (Christian, 19 Nov 2026: "Replace the enhanced local with just enhanced"; the views "standard color, raw
 // color, enhanced color, enhanced tone, dcs color, normal map, distance map"): the keys of panos.json stay
+// 0.99.39 (Christian, 19 Nov 2026: "change dcs color to decorrelation stretch"; "instead of raw color, call it original
+// color"): the labels; the keys stay "dcs color" and "raw color"
 const VIEW_LABEL = { 'normal': 'normal map', 'range log': 'distance map', 'range linear': 'distance map linear',
-                     'standard': 'standard color', 'enhanced local': 'enhanced color', 'enhanced': 'enhanced (global)' };
+                     'standard': 'standard color', 'enhanced local': 'enhanced color', 'enhanced': 'enhanced (global)',
+                     'dcs color': 'decorrelation stretch', 'raw color': 'original color' };
 const viewLabel = k => VIEW_LABEL[k] || k;
+
+// 0.99.40 (Christian, 19 Nov 2026: "change the mode banner to be just for the terrain. the terrain can be terrain stereo,
+// terrain local 3D, or terrain full 3D. the rover is just visible or not. In stereo mode its the ods, and full 3D in the
+// others. Move drive mode to a steering wheel icon above the rover show/hide button. That is experimental and should be
+// hidden. Driver mode uses the full 3D terrain and rover"): the menu chooses the terrain; the rover button (R) shows or
+// hides the rover - in stereo the with-rover panorama, in the 3D modes the 3D rover; the drive is the steering wheel,
+// shown only with ?experimental=1.  panos.json keeps its variants: the terrain and the rover pick one of them.
+const TERRAIN_MODES = [['stereo', 'terrain stereo'], ['local', 'terrain local 3D'], ['full', 'terrain full 3D']];
+const MODE_OF = { masked: 'stereo', rover: 'stereo', rover3d: 'stereo', terrain3d: 'local', scape3d: 'full', drive3d: 'drive' };
+const MODE_KEYS = { local: ['terrain3d'], full: ['scape3d'], drive: ['drive3d'] };
+const MODE_FALLBACK = { drive: 'full', full: 'local', local: 'stereo' };   // where a station lacks the mode
+const EXPERIMENTAL = new URLSearchParams(location.search).get('experimental') === '1';
+let mode = 'stereo';
+const modeKeys = m => m === 'stereo' ? (roverOn ? ['rover', 'rover3d'] : ['masked']) : MODE_KEYS[m] || [];
+function modesOf(p) {                            // the terrain modes this station has
+  const ks = variants(p).map(q => q.key);
+  return TERRAIN_MODES.filter(([m]) => m === 'stereo' ? ks.some(k => MODE_OF[k] === 'stereo') : MODE_KEYS[m].some(k => ks.includes(k)));
+}
+const viewName = () => views(panos[cur.s] || {}, cur.v)[cur.w];
+function pick(p, m, wname) {                     // cur.v and cur.w for terrain mode m and roverOn; the view kept by its name
+  const vs = variants(p);
+  let j = -1;
+  for (const k of modeKeys(m)) { j = vs.findIndex(q => q.key === k); if (j >= 0) break; }
+  if (j < 0 && MODE_FALLBACK[m]) return pick(p, MODE_FALLBACK[m], wname);
+  if (j < 0) j = vs.findIndex(q => MODE_OF[q.key] === 'stereo');
+  cur.v = Math.max(j, 0);
+  mode = MODE_OF[(vs[cur.v] || {}).key] || 'stereo';
+  const names = views(p, cur.v), k = names.indexOf(wname);
+  cur.w = k >= 0 ? k : Math.max(names.indexOf('standard'), 0);
+}
+function roverShown() {
+  const q = variants(panos[cur.s] || {})[cur.v];
+  return mode === 'stereo' ? isRoverVariant(q) : mode === 'drive' || roverOn;
+}
+function modeLabel() {
+  const m = mode === 'drive' ? 'full' : mode;
+  return ((TERRAIN_MODES.find(x => x[0] === m) || [])[1] || '') + (mode === 'drive' ? ', driving the rover (simulation)' : roverShown() ? ' + rover' : '');
+}
+const hashOf = (p, vr) => `#${p.id}/${vr.key}/${viewLabel(viewName())}${mode !== 'stereo' && !roverShown() ? '/no-rover' : ''}`;
 
 function fill() {
   const p = panos[cur.s];
   $('station').innerHTML = panos.map((q, i) => `<option value="${i}">${menuLabel(q)}</option>`).join('');
   $('station').value = cur.s;
-  $('variant').innerHTML = variants(p).map((q, i) => `<option value="${i}">${q.label || q.key}</option>`).join('');
-  $('variant').value = cur.v;
+  $('variant').innerHTML = modesOf(p).map(([m, label]) => `<option value="${m}">${label}</option>`).join('');   // 0.99.40
+  $('variant').value = mode === 'drive' ? 'full' : mode;
+  $('eye').style.display = isWhole(variants(p)[cur.v]) ? 'none' : '';     // no panorama in the full 3D terrain
   $('view').innerHTML = views(p, cur.v).map((k, i) => `<option value="${i}">${viewLabel(k)}</option>`).join('');
   $('view').value = cur.w;
   centerOk = !!centerFileOf();                                   // 0.99.36: center, where this choice has one
@@ -787,6 +933,7 @@ const fullOk = () => !fullFailed && maxTex >= 16384 && (navigator.deviceMemory |
 function centerFileOf(full) {
   const p = panos[cur.s], vr = p && variants(p)[cur.v], names = p ? views(p, cur.v) : [];
   const k = names[cur.w];
+  if (isWhole(vr)) return null;                                  // 0.99.40: the full 3D terrain draws no panorama
   if (full !== false && fullOk() && vr && vr.center_full && vr.center_full[k]) return vr.center_full[k];
   return (vr && vr.center && vr.center[k]) || null;
 }
@@ -845,26 +992,36 @@ async function show() {
   cur.v = Math.min(cur.v, Math.max(variants(p).length - 1, 0));
   const names = views(p, cur.v);
   cur.w = Math.min(cur.w, Math.max(names.length - 1, 0));
+  mode = MODE_OF[(variants(p)[cur.v] || {}).key] || 'stereo';    // 0.99.40
   fill();
   updateNav();
   const vr = variants(p)[cur.v], file = vr && vr.views[names[cur.w]];
   if (!file) { msg('no image for this choice'); return; }
-  history.replaceState(null, '', `#${p.id}/${vr.key}/${viewLabel(names[cur.w])}`);
+  history.replaceState(null, '', hashOf(p, vr));
   anchored = false;                                             // 0.98.30: the 3D rover set again at the eyes' center
-  const id = ++loadId, url = new URL(file, base).href;
+  const id = ++loadId, url = new URL(file, base).href, whole = isWhole(vr);
   msg(`loading ${p.title || p.id} ...`);
   setEye(wantEye);                                               // 0.99.36: center where this choice has one, else the left eye
   try {
-    const bmp = await decodePano(url);
-    if (id !== loadId) { bmp.close(); return; }                  // another choice was made meanwhile
-    const t = panoTexture(bmp);
-    if (texture) { texture.dispose(); if (texture.image && texture.image.close) texture.image.close(); }
-    texture = t;
-    material.map = t; material.color.set(0xffffff); material.needsUpdate = true;
+    let size = '';
+    if (!whole) {                                                // 0.99.40: the full 3D terrain has its own sphere
+      const bmp = await decodePano(url);
+      if (id !== loadId) { bmp.close(); return; }                // another choice was made meanwhile
+      const t = panoTexture(bmp);
+      if (texture) { texture.dispose(); if (texture.image && texture.image.close) texture.image.close(); }
+      texture = t;
+      material.map = t; material.color.set(0xffffff); material.needsUpdate = true;
+      size = `${bmp.width} x ${bmp.height}`;
+    }
     showMark(color(names[cur.w]) ? vr.ground_mark : null);        // not over the range and normal views
-    // 0.99.26: the fourth mode, "3D terrain and rover" - the station mesh (terrain within 10 m and the rover,
-    // textured: rpp.ibr.station_mesh) in front of the terrain-only panorama, its backdrop beyond 10 m
-    showRover(color(names[cur.w]) ? (vr.station_mesh || vr.rover_surface) : null);
+    // 0.99.26: the fourth mode, "3D terrain and rover" - the station mesh (terrain within 20 m - 10 m until 0.99.39 -
+    // and the rover, textured: rpp.ibr.station_mesh) in front of the terrain-only panorama, its backdrop beyond
+    // 0.99.38: in the normal-map view a 3D mode draws its surfaces with their own normals; the station mesh's rover is
+    // the third mode's projected rover surface where the station has one
+    const nmView = /^normal/.test(names[cur.w] || '');
+    const surf = vr.station_mesh && (color(names[cur.w]) || nmView) ? showRover(vr.station_mesh, { normals: nmView, rover: vr.rover_surface })
+      : showRover(color(names[cur.w]) || (nmView && vr.rover_surface) ? vr.rover_surface : null, { normals: nmView });
+    if (whole) { await surf; if (id !== loadId) return; }        // 0.99.40: the 3D file is the picture: "loading" until it is in
     // 0.99.15 (Christian, 17 Nov 2026: "the north direction should be preserved when moving from site to site. I noticed
     // this looks rotated for the welcome screen compared to the van zyl site"): until now every panorama set its own start
     // heading (west for the welcome view, yaw_deg or north for a station), so a change of station turned the world under
@@ -880,7 +1037,7 @@ async function show() {
     showWelcome(!!p.welcome);
     if (faceAfterLoad) { faceAz(faceAfterLoad); faceAfterLoad = null; }
     if (infoPanel.visible) drawInfo();
-    noteParts = [p.title || p.id, p.note, vr.label, `${bmp.width} x ${bmp.height}`,
+    noteParts = [p.title || p.id, p.note, modeLabel(), whole ? `${(vr.station_mesh.triangles || 0).toLocaleString()} triangles` : size,
                  (p.rpp || p.mppp) ? `rendered with RPP ${p.rpp || p.mppp}` : ''];
     setNote();
     msg('');
@@ -895,8 +1052,11 @@ function step(what, d) {
     for (let i = 1; i <= names.length; i++) { const j = (cur.w + i) % names.length; if (color(names[j])) { cur.w = j; break; } }
     show(); return;
   }
-  if (what === 's') cur.s = (cur.s + d + panos.length) % panos.length;
-  if (what === 'v') cur.v = (cur.v + d + variants(p).length) % Math.max(variants(p).length, 1);
+  if (what === 's') { const wn = viewName(); cur.s = (cur.s + d + panos.length) % panos.length; pick(panos[cur.s], mode, wn); }   // 0.99.40: the terrain mode and the rover kept
+  if (what === 'v') {                                            // 0.99.40: the next terrain mode (V; headset: right grip)
+    const ms = modesOf(p).map(x => x[0]), i = ms.indexOf(mode === 'drive' ? 'full' : mode);
+    pick(p, ms[(i + d + ms.length) % Math.max(ms.length, 1)] || 'stereo', viewName());
+  }
   if (what === 'w') cur.w = (cur.w + d + views(p, cur.v).length) % Math.max(views(p, cur.v).length, 1);
   show();
 }
@@ -918,7 +1078,7 @@ function faceAz(azDeg) {                         // on a screen: look there, lev
 }
 function goHome() {
   const i = panos.findIndex(q => q.welcome);
-  cur.s = i < 0 ? 0 : i; cur.v = 0; cur.w = 0;
+  cur.s = i < 0 ? 0 : i; cur.v = 0; cur.w = 0; mode = 'stereo';
   faceAfterLoad = 270;                           // west
   show();
 }
@@ -927,71 +1087,72 @@ function terrainOnly() {
   // normal or depth map view)" and "let [enhanced local] be viewable as one of the skins that button B shows"): B goes to
   // the terrain-only panorama - no rover, a color view (standard; the color view shown, if it was one); B again steps
   // through its color skins (standard, enhanced local, ...), never the normal or distance map
+  // 0.99.40: in the terrain mode shown (the drive: the full 3D terrain) - the rover hidden, a color view
   const p = panos[cur.s] || {};
-  const i = variants(p).findIndex(q => q.key === 'masked');
-  if (i < 0) return;
-  const names = views(p, i);
-  const cols = names.map((k, j) => j).filter(j => color(names[j]));
-  if (!cols.length) return;
-  if (i === cur.v && color(names[cur.w] || '')) {
-    if (cols.length < 2) return;
-    cur.w = cols[(cols.indexOf(cur.w) + 1) % cols.length];
-  } else {
-    const now = views(p, cur.v)[cur.w] || '';
-    const j = color(now) ? names.indexOf(now) : -1;
-    cur.v = i; cur.w = j < 0 ? (names.indexOf('standard') >= 0 ? names.indexOf('standard') : cols[0]) : j;
+  const now = viewName() || '', was = !roverShown() && color(now);
+  roverOn = false;
+  pick(p, mode === 'drive' ? 'full' : mode, now);
+  const names = views(p, cur.v), cols = names.map((k, j) => j).filter(j => color(names[j]));
+  if (cols.length) {
+    if (was && cols.length > 1) cur.w = cols[(cols.indexOf(cur.w) + 1) % cols.length];
+    else if (!color(names[cur.w] || '')) cur.w = names.indexOf('standard') >= 0 ? names.indexOf('standard') : cols[0];
   }
   show();
 }
 $('home').onclick = goHome;
 
-// 0.99.13: the rover button - terrain only <-> with the rover (the rover variant shown last at this visit, else the
-// 3D rover model, else the projected rover); the color view is kept where the other variant has it
-let lastRoverKey = null;
+// 0.99.13: the rover button.  0.99.40: the rover shown or hidden in the terrain mode shown - in stereo the with-rover
+// panorama (else the terrain-only one), in the 3D modes the 3D rover; the view is kept; the drive always has its rover
 const isRoverVariant = q => !!q && q.key !== 'masked';
 function roverToggle() {
   const p = panos[cur.s] || {}, vs = variants(p);
-  if (!vs.length) return;
-  const now = vs[cur.v], wname = views(p, cur.v)[cur.w];
-  let j;
-  if (isRoverVariant(now)) {
-    lastRoverKey = now.key;
-    j = vs.findIndex(q => q.key === 'masked');
-  } else {
-    for (const k of [lastRoverKey, 'rover3d', 'rover']) { j = vs.findIndex(q => q.key === k); if (j >= 0) break; }
-    if (j < 0) j = vs.findIndex(isRoverVariant);
-  }
-  if (j < 0 || j === cur.v) return;
-  cur.v = j;
-  const names = views(p, j), k = names.indexOf(wname);
-  cur.w = k >= 0 ? k : Math.max(names.indexOf('standard'), 0);
+  if (!vs.length || mode === 'drive') return;
+  roverOn = !roverShown();
+  if (mode === 'stereo') { pick(p, 'stereo', viewName()); show(); return; }
+  for (const m of roverParts) if (m.userData.kind === 'rover') m.visible = roverOn;    // the 3D modes: nothing to load
+  updateNav();
+  if (noteParts) { noteParts[2] = modeLabel(); setNote(); }
+  history.replaceState(null, '', hashOf(p, vs[cur.v]));
+}
+function driveToggle() {                         // 0.99.40: the steering wheel - the drive on the full 3D terrain, or back
+  const p = panos[cur.s] || {};
+  if (mode !== 'drive') roverOn = true;
+  pick(p, mode === 'drive' ? 'full' : 'drive', viewName());
   show();
 }
 function updateNav() {
   const p = panos[cur.s] || {}, vs = variants(p);
   const b = $('roverBtn');
-  b.classList.toggle('on', isRoverVariant(vs[cur.v]));
-  b.disabled = !vs.some(isRoverVariant) || !vs.some(q => q.key === 'masked');
+  b.classList.toggle('on', roverShown());
+  b.disabled = mode === 'drive' || (mode === 'stereo' && !(vs.some(q => q.key === 'masked') && vs.some(q => MODE_OF[q.key] === 'stereo' && isRoverVariant(q))));
   b.style.opacity = b.disabled ? 0.4 : 1;
+  const d = $('driveBtn');
+  d.style.display = EXPERIMENTAL && vs.some(q => q.key === 'drive3d') ? 'inline-flex' : 'none';
+  $('driveBeta').style.display = d.style.display === 'none' ? 'none' : 'inline-block';
+  d.classList.toggle('on', mode === 'drive');
 }
 $('prevSt').onclick = () => step('s', -1);
 $('nextSt').onclick = () => step('s', 1);
 $('roverBtn').onclick = roverToggle;
+$('driveBtn').onclick = driveToggle;
 
 function fromHash() {
-  const [sid, vkey, wkey] = decodeURIComponent(location.hash.slice(1)).split('/');
+  const [sid, vkey, wkey, rk] = decodeURIComponent(location.hash.slice(1)).split('/');
   const s = panos.findIndex(p => p.id === sid);
   if (s < 0) return;
   cur.s = s;
   const v = variants(panos[s]).findIndex(q => q.key === vkey);
   cur.v = v < 0 ? 0 : v;
+  const key = (variants(panos[s])[cur.v] || {}).key;              // 0.99.40: the terrain mode and the rover of the link
+  mode = MODE_OF[key] || 'stereo';
+  roverOn = mode === 'stereo' ? key !== 'masked' : rk !== 'no-rover';
   const w = views(panos[s], cur.v).findIndex(k => k === wkey || viewLabel(k) === wkey);
   cur.w = w < 0 ? 0 : w;
 }
 
 const blurAfter = e => { if (e && e.target && e.target.blur) e.target.blur(); };   // 0.99.37: the keys back to the page
 $('station').onchange = e => { cur.s = +e.target.value; show(); blurAfter(e); };
-$('variant').onchange = e => { cur.v = +e.target.value; show(); blurAfter(e); };
+$('variant').onchange = e => { pick(panos[cur.s] || {}, e.target.value, viewName()); show(); blurAfter(e); };   // 0.99.40: a terrain mode
 $('view').onchange = e => { cur.w = +e.target.value; show(); blurAfter(e); };
 $('eye').onchange = e => { setEye(e.target.value); blurAfter(e); };
 window.addEventListener('hashchange', () => { fromHash(); show(); });
@@ -1025,14 +1186,15 @@ let yaw = 0, pitch = 0, drag = null;
 // moves a little, so the 3D rover and terrain shift against what is behind them -
 //   * it sits NECK_M in front of the point the view turns about (as the eyes are in front of the neck);
 //   * it follows the pointer by up to HOVER_M, eased (a mouse, no button needed);
-//   * left alone for SWAY_AFTER_S it circles slowly, SWAY_M wide (not when the system asks for reduced motion).
+//   * (0.99.32-0.99.37: left alone for 3 s it circled slowly, 3 cm wide.)
 // P turns it off and on; ?still=1 opens with it off.  Only where there is a 3D surface to see it on.
-const NECK_M = 0.15, HOVER_M = 0.05, SWAY_M = 0.03, SWAY_PERIOD_S = 6, SWAY_AFTER_S = 3;
+// 0.99.38 (Christian, 19 Nov 2026: "remove the swaying"): no sway.  0.99.39 (Christian: "the curser should move 5 cm"):
+// the pointer moves the eye by up to 5 cm again (2 cm in 0.99.38)
+const NECK_M = 0.15, HOVER_M = 0.05;
 let motionOn = new URLSearchParams(location.search).get('still') !== '1';
-const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const hover = new THREE.Vector2(), hoverNow = new THREE.Vector2(), eyeMove = new THREE.Vector3();
 const eyeFwd = new THREE.Vector3(), eyeRight = new THREE.Vector3(), eyeUp = new THREE.Vector3();
-let lastInput = performance.now(), swayGain = 0;
+let lastInput = performance.now();
 const touched = () => { lastInput = performance.now(); };
 for (const ev of ['pointerdown', 'wheel', 'keydown']) window.addEventListener(ev, touched, { passive: true });
 window.addEventListener('pointermove', e => {
@@ -1047,10 +1209,7 @@ function screenEye3(dt) {                                        // -> eyeMove: 
   camera.matrixWorld.extractBasis(eyeRight, eyeUp, eyeFwd);       // the camera's x, y and z (it looks along -z)
   const k = 1 - Math.exp(-dt / 0.25);
   hoverNow.lerp(hover, k);
-  const idle = (performance.now() - lastInput) / 1000;
-  swayGain += ((!calm && idle > SWAY_AFTER_S ? 1 : 0) - swayGain) * (1 - Math.exp(-dt / 0.8));
-  const ph = 2 * Math.PI * performance.now() / 1000 / SWAY_PERIOD_S;
-  const sx = HOVER_M * hoverNow.x + SWAY_M * swayGain * Math.cos(ph), sy = HOVER_M * hoverNow.y + 0.5 * SWAY_M * swayGain * Math.sin(ph);
+  const sx = HOVER_M * hoverNow.x, sy = HOVER_M * hoverNow.y;
   return eyeMove.addScaledVector(eyeFwd, -NECK_M).addScaledVector(eyeRight, sx).addScaledVector(eyeUp, sy);
 }
 function look() {
@@ -1090,11 +1249,12 @@ function roverForward(p) {
   return null;
 }
 const FACE_AZ = { N: 0, E: 90, S: 180, W: 270 };
+const O_PITCH_DEG = -30;     // 0.99.38 (Christian, 19 Nov 2026: "on the 2d viewer, the o button should point the view 30 below the horizon")
 function face(k) {
   if (renderer.xr.isPresenting) return;
   const azDeg = k === 'O' ? (roverFrontAz != null ? roverFrontAz : startAz(panos[cur.s] || {})) : FACE_AZ[k];
   yaw = THREE.MathUtils.degToRad(azDeg) - world.rotation.y;
-  pitch = 0;
+  pitch = k === 'O' ? THREE.MathUtils.degToRad(O_PITCH_DEG) : 0;    // 0.99.38: O looks down along the rover's +x
   look();
 }
 for (const k of 'NESWO') $('face' + k).onclick = () => face(k);
@@ -1116,7 +1276,8 @@ for (let i = 0; i < 2; i++) {
   const c = renderer.xr.getController(i);
   c.addEventListener('selectstart', e => step('s', e.data && e.data.handedness === 'left' ? -1 : 1));   // right trigger: next
   //                                                                                       station; left trigger: the one before
-  c.addEventListener('squeezestart', () => step('v', 1));        // grip: variant
+  // 0.99.40: right grip - the next terrain mode; left grip - the rover shown or hidden (grip: the next variant before)
+  c.addEventListener('squeezestart', e => { if (e.data && e.data.handedness === 'left') roverToggle(); else step('v', 1); });
   scene.add(c);
 }
 const held = new Map();                         // per controller and button: pressed in the last frame
@@ -1137,11 +1298,14 @@ function buttons(dt) {                           // xr-standard: button 4 is A (
     const left = src.handedness === 'left';
     if (pressed(src, 4)) { if (left) toggleInfo(); else step('w', 1); }       // 0.98.13: X (left): info; A (right): the next view
     if (pressed(src, 5)) { if (left) goHome(); else terrainOnly(); }          // 0.98.28: Y (left): home, facing west; B (right): terrain only (0.98.30: color views; again, the next one)
+    // 0.99.40 (Christian, 19 Nov 2026: "In VR mode, enter driving/ steering mode with a click on the joystick. Left and
+    // right still rotate the view and forward and back on the left and right controler works in like skid steering"):
+    // a thumbstick click (xr-standard button 3) starts the drive where the station has it, and ends it
+    if (pressed(src, 3) && (mode === 'drive' || variants(panos[cur.s] || {}).some(q => q.key === 'drive3d'))) driveToggle();
     if (DRIVE.on) {                                              // 0.99.33: a stick's forward / back axis is its side's track
       const y = -(gp.axes.length >= 4 ? gp.axes[3] : (gp.axes[1] || 0));
       const t = Math.abs(y) > STICK_DEAD ? Math.sign(y) * (Math.abs(y) - STICK_DEAD) / (1 - STICK_DEAD) : 0;
       if (left) stickL = t; else stickR = t;
-      continue;
     }
     const x = gp.axes.length >= 4 ? gp.axes[2] : (gp.axes[0] || 0);                          // thumbstick left / right
     if (Math.abs(x) > STICK_DEAD) {                                                          // right: the view turns to the right
@@ -1225,6 +1389,7 @@ function diagnostics() {
   window.rppDiagnostics = d;
   // 0.98.28: what the page shows, for checks (read only): station, variant, view, and the azimuth / elevation looked at on a screen
   window.rpvState = () => ({ id: (panos[cur.s] || {}).id, variant: ((variants(panos[cur.s] || {})[cur.v]) || {}).key, view: cur.w,
+    mode, rover: roverShown(),
     lookAzDeg: (THREE.MathUtils.radToDeg(yaw + world.rotation.y) % 360 + 360) % 360, lookElDeg: THREE.MathUtils.radToDeg(pitch),
     roverFrontAz });
 }

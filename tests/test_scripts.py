@@ -535,7 +535,8 @@ def test_sync_code_runs_from_a_copy_the_merge_cannot_touch():
     these conflicts don't keep happening"): sync_code.bat replaces claude_sync.bat - a bundle or GitHub, one
     fast-forward, the quick tests one file per process, the freeze checkout updated through the driver (which refuses
     while a run is alive), nothing started, no push (Christian pushes).  It hands over to a copy in %TEMP% before
-    anything else (without "call") and takes its folder from the copy's second argument."""
+    anything else (0.99.38: with "call", then exit /b in the same block) and takes its folder from the copy's second
+    argument."""
     b = (ROOT / "scripts" / "windows" / "sync_code.bat").read_bytes()
     assert b.count(b"\n") == b.count(b"\r\n")
     t = b.decode("ascii")
@@ -543,7 +544,12 @@ def test_sync_code_runs_from_a_copy_the_merge_cannot_touch():
     hand = t.index('"%TEMP%\\rpp_sync_code_run.bat" --from-copy "%~dp0" %*')
     first_git = re.search(r"\n\s*git ", t).start()                        # the first git command (not the comments)
     assert t.index('if /i not "%~1"=="--from-copy"') < hand < t.index("setlocal") < first_git
-    assert 'call "%TEMP%' not in t                                          # a transfer, not a call
+    # 0.99.38: CALLed inside the block, then exit /b in the same block (cmd reads the whole block before it runs it, so
+    # the merge cannot move it); a transfer without CALL ended a batch file that had CALLed sync_code.bat
+    block = t[t.index('if /i not "%~1"=="--from-copy" ('):t.index("setlocal")]
+    assert 'call "%TEMP%\\rpp_sync_code_run.bat" --from-copy' in block
+    assert block.index("call \"%TEMP%") < block.index("exit /b\r\n") < block.rindex(")")
+    assert not any(c in l for l in block.splitlines()[1:-2] if l.strip().upper().startswith("REM") for c in "()")
     assert 'set "HERE=%~2"' in t and t.index('set "HERE=%~2"') < t.index("shift")
     commands = "\n".join(l for l in t.splitlines() if not l.strip().upper().startswith("REM"))
     assert "git stash pop" in commands and "git push" not in commands.split("echo next:")[0]   # no push by the script

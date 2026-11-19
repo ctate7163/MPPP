@@ -57,6 +57,8 @@ def test_cmods_dir_is_the_default_camera_folder(monkeypatch, tmp_path):
     from rpp.sfm.project import NAVCAM_PACKAGE_CONSENSUS_DIR, navcam_consensus_dir, zcam_focus_model_path
     monkeypatch.delenv("RPP_CMODS", raising=False)
     monkeypatch.delenv("MPPP_CMODS", raising=False)          # 0.99.14: the old name is read too (the PC has it set)
+    from rpp import paths as _P                                # 0.99.38: and not the tree's scripts/windows/rpp_cmods.txt
+    monkeypatch.setattr(_P, "source_root", lambda: tmp_path)  # (the PC's points at D:\scapes\cmods: the sync's one failure)
     # v0p50: one camera-model folder in the package data; params/ is gone
     assert cmods_dir() == package_cmods_dir() == data_dir() / "cmods" == NAVCAM_PACKAGE_CONSENSUS_DIR
     assert navcam_consensus_dir() == cmods_dir()
@@ -81,7 +83,7 @@ def test_cmods_dir_is_the_default_camera_folder(monkeypatch, tmp_path):
 
 def test_version():
     import rpp
-    assert rpp.__version__ == "0.99.37" and rpp.VERSION_TAG == "v0p99"
+    assert rpp.__version__ == "0.99.40" and rpp.VERSION_TAG == "v0p99"
     cff = (ROOT / "CITATION.cff").read_text()
     assert f"version: {rpp.__version__}" in cff
     assert f"## {rpp.__version__}" in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -170,9 +172,9 @@ def test_pypi_packaging():
     assert "release:" in wf and "twine check --strict" in wf
     readme = (root / "README.md").read_text(encoding="utf-8")
     import re
-    assert 'pip install -e ".[mask,sfm,plots]"' in readme and "conda create -n rpp" in readme   # 0.99.37: a conda env, the clone
+    assert 'pip install -e ".[mask,sfm,plots]"' in readme and "conda create -n rpp" in readme   # 0.99.38: a conda env, the clone
     for block in re.findall(r"```bash\n(.*?)```", readme[readme.index("## Install"):readme.index("## Example data")], re.S):
-        assert "#" not in block, block                    # 0.99.37: no comments in the commands (cmd passes them to pip)
+        assert "#" not in block, block                    # 0.99.38: no comments in the commands (cmd passes them to pip)
     import re
     assert not re.findall(r"\]\((?!https?://|#|mailto:)[^)]+\)", readme)       # relative links break on PyPI
     r = subprocess.run([sys.executable, "-m", "rpp", "--version"], capture_output=True, text=True, timeout=120)

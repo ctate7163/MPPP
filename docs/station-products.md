@@ -83,7 +83,11 @@ is used, so a fault seen there is in the mesh, the plane, the rover model or the
 color, normal map and distance map; the page shows standard as "standard color" and enhanced local as "enhanced color". The normal
 map shows only the surface meshed from the cloud and the rover model: the fill under the rover, the apron to the
 ground plane's reach, the deck floors and the plane are black (a mesh made before 0.98.30 needs the mesh step again
-for this). The eyes are rendered at 16384 x 8192 (`rpp ods --width`); publishing reduces them to 8192.
+for this). The eyes are rendered at 16384 x 8192 or 8192 x 4096 (`rpp ods --width`); publishing reduces them to 8192.
+Without `--width` (0.99.40) the width comes from the station's own frames: 16384 for a Mastcam-Z station and where
+the median of their pixel angles (1 / focal length in pixels, at the scale they are read) is finer than 0.5 mrad -
+full-resolution Navcam (0.33 mrad) - and 8192 otherwise: 2x-binned Navcam (0.65 mrad) is resolved by an
+8192-wide panorama (0.77 mrad a pixel). `ods.json` records the rule under `width_rule`.
 
 `run_single_site_ibr.bat <station>` publishes and uploads each station when it is done (0.97.24: by default;
 `--no-upload` skips it; `--publish-only` does it without rendering; `--all` takes the experimental stations too).
@@ -117,7 +121,7 @@ range) and 0.5 degrees (normal) on smooth surfaces, and worse at edges; for phot
 
 ## The panorama
 
-Each eye is an equirectangular image, **8192 x 4096** by default (`--width 16384` for 16K: 16384 x 8192 per eye): the left edge looks north and the
+Each eye is an equirectangular image, 8192 x 4096 or 16384 x 8192 (see above; `--width` to choose): the left edge looks north and the
 azimuth grows eastward, so it reads N, E, S, W from left to right; the top row is the zenith. Every pixel's ray is
 cast into the mesh and colored from the station frames that see that point best, blended in two frequency bands.
 
@@ -162,9 +166,9 @@ the place alone (`dense_S003D2046`), and `--station` takes either form.
 | `<prefix>_360_3DTD.png`, `.jpg` | both eyes in one square, **the left eye on top** (8-bit) |
 | `<prefix>_360_3DTD_16.png` | the same in 16-bit linear radiance units: the record for color work |
 | `<prefix>_enh_360_3DTD.jpg`, `_enhlocal_360_3DTD.jpg` | contrast-enhanced views, made from the 16-bit panoramas (terrain stretched; the sky smoothed; nothing clips): `_enhlocal` is the viewer's "enhanced color" |
-| `<prefix>_raw_360_3DTD.jpg` | raw color (0.99.37): the standard view of the 16-bit values with the white balance divided out (`ods.json` linear16.white_balance) - the color of the RAD products |
+| `<prefix>_raw_360_3DTD.jpg` | raw color (0.99.37; RPV calls it "original color" from 0.99.39): the standard view of the 16-bit values with the white balance divided out (`ods.json` linear16.white_balance) - the color of the RAD products |
 | `<prefix>_enhtone_360_3DTD.jpg` | enhanced tone (0.99.37): base / detail tone mapping - the local brightness (a guided filter, 1 deg) compressed, the detail x 1.8, each pixel's color ratios kept |
-| `<prefix>_dcs_360_3DTD.jpg` | dcs color (0.99.37): a decorrelation stretch fitted to the sunlit terrain; the sky white, the rover and its shadow black, the nadir disc as in the standard view |
+| `<prefix>_dcs_360_3DTD.jpg` | dcs color (0.99.37; RPV calls it "decorrelation stretch" from 0.99.39): a decorrelation stretch fitted to the sunlit terrain; the sky white, the rover and its shadow black, the nadir disc as in the standard view |
 | `<prefix>_color_products.json` | the parameters of the three (`rpp.ibr.color_products`; one set per station, from the left eye, in `tone_levels.json`) |
 | `<prefix>_ods_sky_weight.png` | small map of the sky above the skyline: where the enhanced views smooth |
 | `<prefix>_ods_left`, `_right` `.png` / `_16.png` | the eyes apart (`--eyes left right center` adds the view from the pivot, a third more time) |
@@ -257,12 +261,29 @@ synthetic station; nothing of 0.99.32-0.99.33 has been tried in a headset yet. T
 
 ### The viewing modes
 
-| mode (menu) | key | what is drawn | parallax |
+0.99.40: the page's menu chooses the terrain and the rover button (R; in a headset the left grip) shows or hides the
+rover; `panos.json` keeps the variants below, and the two choices pick one of them:
+
+| terrain (menu) | rover hidden | rover shown |
+|---|---|---|
+| terrain stereo | `masked` | `rover` (the with-rover pair; `rover3d` where a station has no `rover`) |
+| terrain local 3D | `terrain3d`, its 3D rover hidden | `terrain3d` |
+| terrain full 3D | `scape3d`, its 3D rover hidden | `scape3d` |
+
+The full 3D terrain loads no panorama (its texture holds the whole view from the pivot): its views are its texture
+(standard color) and the normal map. The drive (`drive3d`, the full 3D terrain and the rover) is the steering wheel
+above the rover button, shown only with `?experimental=1`. A link to a 3D mode with the rover hidden ends in
+`/no-rover`; the wheel carries a "Beta" tag, and in a headset a thumbstick click starts and ends the drive (the sticks'
+forward / back: the tracks; left / right still turn the view). The directions in the sky show in the welcome view and
+with the info page (I, X). V (headset: the right grip) steps through the terrain modes; a station change keeps the terrain and the
+rover where the next station has them (else the full 3D terrain falls back to the local, and that to stereo).
+
+| variant (before 0.99.40, the menu) | key | what is drawn | parallax |
 |---|---|---|---|
 | terrain only | `masked` | the rover-masked stereo pair on two spheres | binocular only (the ODS pair), none for head motion |
 | terrain with rover (projected) | `rover` | the with-rover pair | as above |
 | terrain with rover (3D model) | `rover3d` | the terrain-only pair + the textured Perseverance model | head motion on the rover |
-| 3D terrain and rover | `terrain3d` | the terrain-only pair beyond 10 m + the station mesh (terrain within 10 m, rover) | head motion within 10 m |
+| 3D terrain and rover | `terrain3d` | the terrain-only pair beyond 20 m + the station mesh (terrain within 20 m, rover; 10 m until 0.99.39) | head motion within 20 m |
 | 3D terrain to the horizon and rover | `scape3d` | one surface from under the rover to the far field and a sky dome at 3 km, no panorama | head motion everywhere; true to the far field |
 | Drive the rover (simulation) | `drive3d` | the `scape3d` file, the rover moved over the terrain | as `scape3d` |
 
@@ -273,19 +294,24 @@ ground gets the most texels per square meter. Triangles that point cannot see ge
 colored from the frames that see them. The rover has its own 4096 x 4096 texture (the triangles seen from within 1 m
 of the pivot; the rest the rover gray). In the fifth mode the same kind of texture runs on past the horizontal: the
 terrain up to the skyline (at least 10 deg above the horizontal) fills 90 % of the disc's radius, the sky the rest. The
-near terrain fades out between 8 and 10 m from the mast axis (in the fourth mode into the panorama, in the fifth into
-the surface beyond).
+near terrain fades out between 18 and 20 m from the mast axis (in the fourth mode into the panorama, in the fifth into
+the surface beyond; 0.99.39 - 8 to 10 m before, and the terrain simplified to 500,000 triangles, 300,000 before).
+Stations made before 0.99.39 keep their 10 m mesh until they are rendered again.
 
 On a screen the eye moves a little where a 3D surface is shown (0.99.32): it sits 0.15 m in front of the point the
-view turns about (as eyes are in front of the neck), follows the mouse by up to 5 cm, and when left alone for 3 s
-circles slowly (3 cm; not when the system asks for reduced motion). P turns it off; `?still=1` opens without it. In
+view turns about (as eyes are in front of the neck) and follows the mouse by up to 5 cm (2 cm in 0.99.38; a slow sway
+when left alone until 0.99.37). P turns it off; `?still=1` opens without it. In the 3D modes the normal-map view draws
+the surfaces with their own normals, so the shading moves with the eye, and the rover is the projected rover surface
+of the third mode (the pivot's panorama at its full resolution; the station mesh's own rover texture is 4096 texels a
+side for the whole model) - its parts the pivot does not see are gray (0.99.38). In
 the panorama-only modes (terrain only, terrain with the projected rover) the picture is a sphere around the eye, so
 there is nothing for the eye to move against and the movement is off.
 
 The sixth mode is a simulation: each thumbstick's forward / back axis is the track on that side (skid steering: speed =
 their mean x 0.25 m/s, turn rate = their difference / 2.3 m; on a screen the arrow keys). The viewer rides at the mast
 head: the ground is moved and turned under the rover, which takes the height, pitch and roll of the plane through the
-terrain under its six wheels. It stops 6 m from where the rover stood (the textured terrain ends at 10 m). In a
+terrain under its six wheels. It stops 15 m from where the rover stood (the textured terrain ends at 20 m; 6 m and
+10 m until 0.99.39). In a
 headset the rover is hidden while the head is more than 1 m from its pivot. The ground under the real rover is
 interpolated (no frame saw it), and its shadow is in the texture.
 
@@ -295,6 +321,12 @@ The 0-4 m zone is a height field seen from the mast (one median height per 1.5 c
 gaps closed), not a Poisson surface: it cannot fold over a hole's rim. The holes left (under and behind the rover) are
 filled by a smooth sheet hung from the low side of the surface around them, 5 mm under it, so it meets a hole's rim
 from below. The normal panorama shows that fill in its own normal's color at 45 % brightness.
+
+0.99.38: a cell's height is the median of at least 3 points (a cell of two took the higher one: needles of 1-4 m at
+2-4 m from the mast); a cell of fewer than 8 points more than 10 cm from the median of the 4x coarser grid is dropped;
+empty cells take the heights of the 2x, 4x and 8x grids where those have points, so the thinner cloud beyond 2-3 m
+leaves fewer holes to the fill; and where neighboring cells differ by more than 6 cm - the face of a rock, which a
+height field can only draw as a wall - the cells about it are meshed by Poisson from the same points.
 
 ### Color for display (a study, 0.99.33)
 
