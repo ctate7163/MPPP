@@ -375,7 +375,7 @@ def test_sky_texels_keep_the_far_hills():
     assert "surfState.drive !== !!(sm.drive && sm.whole)" in (__import__("pathlib").Path(SM.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
 
 
-def test_zcam_companions_follow_their_navcam_station_and_block_cameras(tmp_path):
+def test_zcam_companions_follow_their_navcam_station_and_block_cameras(tmp_path, monkeypatch):
     """0.99.43 (Christian, 19 Nov 2026: "for stations with Z34 present ... render those z34 versions right after the ncam
     versions" - "for every site from which we have a z34 360"; "the whole block depth should use all the ecams, low to
     high res and fuse them together in one mesh")."""
@@ -386,19 +386,43 @@ def test_zcam_companions_follow_their_navcam_station_and_block_cameras(tmp_path)
     z = [f"ZL0_0466_07083{i:05d}_000RAD_N0260630ZCAM08500_0340LMJ01.png" for i in range(40)]
     z += [f"ZL0_0470_07090{i:05d}_000RAD_N0260630ZCAM08501_0340LMJ01.png" for i in range(10)]      # too few: no 360
     z += [f"ZL0_0466_07083{i:05d}_000RAD_N0260850ZCAM08500_1100LMJ01.png" for i in range(50)]      # 110 mm: not 34
+    monkeypatch.setattr(SS, "block_aligned", lambda w: "pico" not in str(w))
     pairs = SS.zcam_companions(cfg, tmp_path, names_of=lambda work: z if "rockytop" in str(work) else [])
+    assert "Sol1308_S061D1678" in cfg["_zcam_pending"]            # 0.99.44: its Mastcam-Z block is not aligned yet
     zlab = "Sol0466_S026D0630_Z34"
     assert pairs[lab] == zlab and pairs["Sol0686_S032D1184"] == "Sol0690_S032D1184_Z34"           # the config's own pair
     assert "Sol0474_S026D0850" not in pairs
     st = cfg["stations"][zlab]
     assert SS.is_zcam_station(st) and st["work"].endswith("rockytop_zcam") and st["ods_args"][:4] == ["--cameras", "Z", "--sols", "466"]
     assert "N?F_*_N0260630NCAM*.png" in st["context"] and SS.viewer_name(st, zlab).endswith("(zcam)")
-    runs = SS.plan(cfg, tmp_path, labels=[lab, "Sol0474_S026D0850"], companions=pairs, block_cameras="NFR", terrain="block")
+    runs = SS.plan(cfg, tmp_path, labels=[lab, "Sol0474_S026D0850"], companions=pairs, block_cameras="NF", terrain="block")
     assert [r["label"] for r in runs] == [lab, zlab, "Sol0474_S026D0850"]
     dense = next(c["argv"] for c in runs[0]["commands"] if c["step"] == "dense")
     mesh = next(c["argv"] for c in runs[0]["commands"] if c["step"] == "mesh")
-    assert dense[dense.index("--block-cameras") + 1] == "NFR" and "--block-images" not in dense      # --terrain block: not the named set
-    assert mesh[mesh.index("--points") + 1].endswith(str(__import__("pathlib").Path("colmap") / "dense_block_FNR" / "fused.ply"))
+    assert dense[dense.index("--block-cameras") + 1] == "NF" and "--block-images" not in dense      # --terrain block: not the named set
+    assert mesh[mesh.index("--points") + 1].endswith(str(__import__("pathlib").Path("colmap") / "dense_block_FN" / "fused.ply"))
     plain = SS.plan(cfg, tmp_path, labels=[lab])
     d0 = next(c["argv"] for c in plain[0]["commands"] if c["step"] == "dense")
     assert "--block-cameras" not in d0 and "--block-name" in d0                                     # the config's own, unchanged
+
+
+def test_wait_for_blocks_runs_what_comes_in_and_stops(tmp_path, monkeypatch):
+    """0.99.44 (Christian, 19 Nov 2026: "run only on aligned blocks. Skip a bock if it doesn't exist and come back to it
+    later. When there are no more stations to run, then stop")."""
+    from types import SimpleNamespace as NS
+    from rpp.ibr import single_sites as SS
+    calls = []
+
+    def one(a):
+        calls.append(set(a._skip))
+        n = len(calls)
+        a._ran = ["A"] if n == 1 else ["B"] if n == 3 else []
+        a._late = ["B"] if n < 3 else []
+        return 0
+    monkeypatch.setattr(SS, "_single_sites_pass", one)
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    out = SS.cmd_single_sites(NS(wait_for_blocks=36.0, poll_min=15.0, dry_run=False, any_block=False))
+    assert out == 0 and calls == [set(), {"A"}, {"A"}]
+    calls.clear()
+    monkeypatch.setattr(SS, "_single_sites_pass", lambda a: (calls.append(1), setattr(a, "_ran", []), setattr(a, "_late", ["B"]), 0)[-1])
+    assert SS.cmd_single_sites(NS(wait_for_blocks=0.0, poll_min=15.0, dry_run=False, any_block=False)) == 0 and len(calls) == 1

@@ -150,7 +150,7 @@ def zcam_companions(cfg: Dict[str, Any], root: PathLike, names_of=None) -> Dict[
     pairs: Dict[str, str] = {}
     cache: Dict[str, List[str]] = {}
     for lab, st in list(cfg["stations"].items()):
-        if is_zcam_station(st) or not st.get("site") or st["site"] not in table:
+        if is_zcam_station(st):
             continue
         key = station_key(lab).upper()
         if key in have:
@@ -159,7 +159,20 @@ def zcam_companions(cfg: Dict[str, Any], root: PathLike, names_of=None) -> Dict[
         m = re.match(r"^S(\d+)D(\d+)$", key)
         if not m:
             continue
-        zwork = Path(work_folder(Path(root), st["site"], True, table[st["site"]]["sols"]))
+        # 0.99.44: the station's own block when that is the Mastcam-Z block ("work": ..._zcam - most stations since the
+        # freeze blocks), else its site's Mastcam-Z block, else <its block>_zcam
+        own = block_folder(st, root) if (st.get("work") or st.get("site") in table) else None
+        if own is not None and own.name.endswith("_zcam"):
+            zwork = own
+        elif st.get("site") in table:
+            zwork = Path(work_folder(Path(root), st["site"], True, table[st["site"]]["sols"]))
+        elif own is not None:
+            zwork = own.with_name(own.name + "_zcam")
+        else:
+            continue
+        if not block_aligned(zwork):                             # not there or not aligned yet: looked at again later
+            cfg.setdefault("_zcam_pending", {})[lab] = str(zwork)
+            continue
         if str(zwork) not in cache:
             try:
                 cache[str(zwork)] = list(names_of(zwork))
@@ -718,6 +731,11 @@ def add_parser(sub) -> None:
     p.add_argument("--no-zcam", dest="zcam_companions", action="store_false", default=True,
                    help="0.99.43: without the Mastcam-Z 34 mm versions of the stations that have a Z34 360 (default, in a "
                         "run of the whole list - no station named, or --all: each is made right after its Navcam station)")
+    p.add_argument("--wait-for-blocks", type=float, nargs="?", const=36.0, default=None, metavar="HOURS",
+                   help="0.99.44: after the stations whose block is aligned, wait for the others' blocks and run them as "
+                        "they come in (looked at every --poll-min minutes); stops when no station is left, or when no "
+                        "block has come in for HOURS (default 36)")
+    p.add_argument("--poll-min", type=float, default=15.0, help="--wait-for-blocks: minutes between looks (default 15)")
     p.add_argument("--any-block", action="store_true",
                    help="0.99.28: run stations whose block has not finished its alignment too (default: skipped)")
     p.add_argument("--list", action="store_true", help="the stations of the config")
@@ -726,6 +744,35 @@ def add_parser(sub) -> None:
 
 
 def cmd_single_sites(a: argparse.Namespace) -> int:
+    """0.99.44 (Christian, 19 Nov 2026: "run only on aligned blocks. Skip a bock if it doesn't exist and come back to it
+    later. When there are no more stations to run, then stop"): with ``--wait-for-blocks`` the run is repeated for the
+    stations whose block was not aligned yet (and the Mastcam-Z versions whose block was not), every ``--poll-min``
+    minutes, until none is left - or no block has come in for ``--wait-for-blocks`` hours."""
+    wait_h = getattr(a, "wait_for_blocks", None)
+    if wait_h is None or a.dry_run or getattr(a, "any_block", False):
+        return _single_sites_pass(a)
+    import time
+    done: set = set()
+    rc, last = 0, time.time()
+    while True:
+        a._skip = set(done)
+        r = _single_sites_pass(a)
+        rc = rc or r
+        ran, late = list(getattr(a, "_ran", [])), list(getattr(a, "_late", []))
+        done |= set(ran)
+        if ran:
+            last = time.time()
+        if not late:
+            print(f"single-sites: no station left to run ({len(done)} done)", flush=True)
+            return rc
+        if time.time() - last > float(wait_h) * 3600.0:
+            print(f"single-sites: no block came in for {float(wait_h):g} h - stopped with {len(late)} left: {', '.join(late)}", flush=True)
+            return rc
+        print(f"single-sites: {len(done)} done, waiting for the blocks of {len(late)}: {', '.join(late)}", flush=True)
+        time.sleep(max(1.0, float(getattr(a, "poll_min", 15.0))) * 60.0)
+
+
+def _single_sites_pass(a: argparse.Namespace) -> int:
     if a.install:
         print(f"written: {install(a.install)}")
         return 0
@@ -763,6 +810,13 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
         runs = [r for r in runs if r not in late]
         if late:
             print(f"single-sites: {len(runs)} station(s) to run, {len(late)} skipped for blocks not aligned yet")
+        a._late = [r["label"] for r in late] + [f"{k} (Z34?)" for k in (cfg.get("_zcam_pending") or {}) if pairs is not None]
+    skip = getattr(a, "_skip", None)
+    if skip is not None:                                         # 0.99.44: a later pass of --wait-for-blocks
+        runs = [r for r in runs if r["label"] not in skip]
+        a._ran = [r["label"] for r in runs]
+        if not runs:
+            return 0
     if a.dry_run:
         for r in runs:
             print(f"{r['label']}: {r['work']} -> {r['out']}")

@@ -327,8 +327,9 @@ interpolated (no frame saw it), and its shadow is in the texture.
 The slow part - the multi-view stereo and its fusion - is done once per block: `rpp dense --whole-block` makes one cloud
 (`colmap/dense_block_<families>`) that the block's stations share, and each station's mesh, hole filling,
 simplification, panoramas and 3D textures start from it. `--block-cameras NFR` (`rpp single-sites --block-cameras
-NFR`) takes the frames of every engineering camera - Navcam, front and rear Hazcam, every size; the default is the
-Navcam frames. In a run of the whole station list, a Navcam station whose site has a Mastcam-Z 34 mm 360 at it (36
+NF`) takes the Navcam and front Hazcam frames of every size (the freeze-3 station run; the rear Hazcam frames are
+left out of the dense step); the default is the Navcam frames. `--wait-for-blocks` runs the stations of the blocks
+that are aligned and comes back for the others as their blocks come in (0.99.44). In a run of the whole station list, a Navcam station whose site has a Mastcam-Z 34 mm 360 at it (36
 left-eye frames of one sol or more) is followed by its Mastcam-Z version, `Sol<sol>_<station>_Z34`.
 
 ### The mesh near the mast (0.99.32)

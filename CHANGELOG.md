@@ -3,6 +3,21 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.44 — 2026-11-19 (branch `rpp`)
+
+Christian, 14:46: "don't use rear hazcams for the dense step. check the code one more time. run only on aligned blocks.
+Skip a bock if it doesn't exist and come back to it later. When there are no more stations to run, then stop."
+
+- The freeze-3 station run takes the block's cloud from the Navcam and front Hazcam frames (`--block-cameras NF`,
+  workspace `dense_block_FN`); no rear Hazcam frame goes into the dense step.
+- `rpp single-sites --wait-for-blocks [HOURS]` (`--poll-min`): the stations whose block is aligned run; the others -
+  a block that is not there or has no `colmap/run_done.json` yet - are looked at again every 15 minutes and run as
+  their blocks come in, the Mastcam-Z versions too; the run stops when no station is left, or when no block has come
+  in for HOURS (default 36). A pass with nothing to run publishes nothing.
+- Found in the second review, fixed: `zcam_companions` passed over every station that names its block by "work" and
+  not by "site" - most of the list since the freeze blocks, whose "work" is the Mastcam-Z block itself. A station's own
+  block is now its Mastcam-Z block when it ends in `_zcam`; else its site's; else `<block>_zcam`.
+
 ## 0.99.43 — 2026-11-19 (branch `rpp`)
 
 Christian, 14:32: "do this for every site from which we have a z34 360. The ncam stations are already in the single
