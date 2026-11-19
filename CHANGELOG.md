@@ -3,6 +3,14 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.45 — 2026-11-19 (branch `rpp`)
+
+- `rpp single-sites`: every log line of the publishing was printed twice (the rpp logger's console handler and a
+  second one that `logging.basicConfig` put on the root logger); the second is added only when the rpp logger has
+  none (`_console_log`).
+- `recolor_rpv.bat` no longer stops to ask about the older recolor logs (Christian, 15:11: "why does this pause
+  requiring a 'press any key'").
+
 ## 0.99.44 — 2026-11-19 (branch `rpp`)
 
 Christian, 14:46: "don't use rear hazcams for the dense step. check the code one more time. run only on aligned blocks.

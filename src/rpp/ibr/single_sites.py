@@ -743,6 +743,13 @@ def add_parser(sub) -> None:
     p.add_argument("--install", metavar="DIR", default=None, help=f"write {BAT_NAME} (and make_square.bat) into DIR and stop")
 
 
+def _console_log() -> None:
+    """0.99.45: the console for the publishing's log lines - only when the rpp logger has no handler of its own (under
+    ``python -m rpp`` it has one, and a second one on the root logger printed every line twice)."""
+    if not logging.getLogger("rpp").handlers:
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+
 def cmd_single_sites(a: argparse.Namespace) -> int:
     """0.99.44 (Christian, 19 Nov 2026: "run only on aligned blocks. Skip a bock if it doesn't exist and come back to it
     later. When there are no more stations to run, then stop"): with ``--wait-for-blocks`` the run is repeated for the
@@ -835,7 +842,7 @@ def _single_sites_pass(a: argparse.Namespace) -> int:
         """The rover surfaces (--rover-surface), the publishing and the upload of these stations; a line saying what happened."""
         if getattr(a, "rover_surface", False) and not a.squares_only:      # experimental: never fails the run
             from . import rover_surface as _rs
-            logging.basicConfig(level=logging.INFO, format="%(message)s")
+            _console_log()
             for r in runs:
                 if r["label"] in labels:
                     try:
@@ -844,7 +851,7 @@ def _single_sites_pass(a: argparse.Namespace) -> int:
                         print(f"rover surface of {r['label']}: failed ({e})")
         if getattr(a, "station_mesh", False) and not a.squares_only:      # 0.99.26: never fails the run
             from . import station_mesh as _sm
-            logging.basicConfig(level=logging.INFO, format="%(message)s")
+            _console_log()
             for r in runs:
                 if r["label"] in labels:
                     try:
@@ -855,7 +862,7 @@ def _single_sites_pass(a: argparse.Namespace) -> int:
         if not a.publish:
             return "not published"
         from . import web
-        logging.basicConfig(level=logging.INFO, format="%(message)s")
+        _console_log()
         titles = {k: {"title": v.get("title") or viewer_name(v, k),   # 0.98.19: the page puts "Sol 0xxx" before it
                       "site_name": viewer_name(v, k),     # 0.99.36: before the mark's name (made with the panorama)
                       "sols": viewer_sols(v, k),          # 0.99.36: a Mastcam-Z station's first sol only
