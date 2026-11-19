@@ -227,6 +227,15 @@ def test_fifth_mode_surface_to_the_horizon_one_texture(tmp_path):
     pano.mkdir()
     sc5 = web.station_scape(tmp_path / "st", tmp_path, pano)
     assert sc5["whole"] and sc5["file"] == "panos/S1_station_scape.glb" and sc5["dome_m"] == SM.DOME_M and web.SCAPE_3D[0] == "scape3d"
+    # 0.99.33 (Christian, 18 Nov 2026: "Build a simple skid steering option. Call it a sixth mode. It will be ride along")
+    assert sc5["parts"] == ["terrain", "rover"] and web.DRIVE_3D == ("drive3d", "Drive the rover (simulation)")
+    dv = web.drive_settings()
+    assert dv["track_m"] == 2.3 and dv["speed_m_s"] == 0.25 and dv["limit_m"] == 6.0 and len(dv["wheels_fwd_m"]) == 3
+    assert abs(dv["pivot_fwd_right_m"][0] - 0.80) < 0.01 and abs(dv["pivot_fwd_right_m"][1] - 0.56) < 0.01      # the mast: ahead and right of the center
+    import pathlib
+    page = (pathlib.Path(web.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    for s in ("function driveStep", "(vr - vl) * DRIVE.speed / DRIVE.track", "length() <= 1.0", "rs.drive && rs.whole", "driveKeys"):
+        assert s in page, s
 
 
 def test_viewer_has_the_screen_eye_movement_the_fade_and_every_mesh():

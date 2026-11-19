@@ -3,6 +3,17 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.33 — 2026-11-18 (branch `rpp`)
+
+- **Sixth viewer mode, "Drive the rover (simulation)"** (Christian, 22:26: "Build a simple skid steering option. Call it
+  a sixth mode. It will be ride along so that the rover and pivot move with each other. Head motion or walking moves
+  away from the rover and the rover disappears after the viewer is one meter from the rover pivot"): the fifth mode's
+  file; each thumbstick's forward / back axis is the track on its side (speed = their mean x 0.25 m/s, turn rate = their
+  difference / 2.3 m); on a screen the arrow keys. The viewer rides at the mast head: the ground is moved and turned
+  under the rover. Height, pitch and roll from the plane through the terrain under the six wheels (a 0.1 m height grid
+  of the near terrain). The pivot stays within 6 m of where it stood. In a headset the rover is hidden when the head
+  is more than 1 m from the pivot. `web.DRIVE_3D`, `web.drive_settings()`. Not tested in a browser or a headset.
+
 ## 0.99.32 — 2026-11-18 (branch `rpp`)
 
 Christian, 21:18: "Build it ... Add the off pivot motion, swaying, and the cursor directed motion. Add fading at the end

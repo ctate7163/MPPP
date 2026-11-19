@@ -124,6 +124,22 @@ def rover_surface(folder: Path, web: Path, pano_dir: Optional[Path] = None) -> O
 SCAPE_3D = ("scape3d", "3D terrain to the horizon and rover")
 
 
+# 0.99.33 (Christian, 18 Nov 2026: "Build a simple skid steering option. Call it a sixth mode. It will be ride along"):
+# the fifth mode's file with the rover moved over the terrain by the page - a simulation, not a drive on Mars
+DRIVE_3D = ("drive3d", "Drive the rover (simulation)")
+DRIVE = {"track_m": 2.3,                    # between the left and the right wheels (about)
+         "wheels_fwd_m": [1.10, 0.0, -1.07],    # the three axles ahead of the rover's center (about; ROVER_NAV x)
+         "speed_m_s": 0.25,                 # both sticks full ahead (the rover's own top speed is about 0.04 m/s)
+         "limit_m": 6.0}                    # the pivot stays within this of where it stood (the near terrain ends at 10 m)
+
+
+def drive_settings() -> Dict[str, Any]:
+    """The sixth mode's numbers for the page: :data:`DRIVE` and the pivot in the rover's frame (forward, right; m) -
+    the mast axis of the fitted mast chain (:data:`rpp.ibr.rover_model.MAST_P_XY_RNAV_M`)."""
+    from .rover_model import MAST_P_XY_RNAV_M
+    return dict(DRIVE, pivot_fwd_right_m=[round(float(MAST_P_XY_RNAV_M[0]), 4), round(float(MAST_P_XY_RNAV_M[1]), 4)])
+
+
 def station_scape(folder: Path, web: Path, pano_dir: Optional[Path] = None) -> Optional[Dict[str, Any]]:
     """0.99.32: the fifth mode's file of a terrain-only folder (``*_station_scape.glb``) copied into ``web/panos`` -
     {"file", "triangles", "move_limit_m", "fade_m", "dome_m", "whole": True} for the page.  None when it has none."""
@@ -139,7 +155,7 @@ def station_scape(folder: Path, web: Path, pano_dir: Optional[Path] = None) -> O
         rec = {}
     lim = ((rec.get("parts") or {}).get("rover") or {}).get("view_radius_m", 1.0)
     return {"file": "panos/" + glb.name, "triangles": rec.get("triangles"), "move_limit_m": lim, "fade_m": rec.get("fade_m") or [8.0, 10.0],
-            "dome_m": rec.get("dome_m") or 3000.0, "whole": True, "experimental": True}
+            "dome_m": rec.get("dome_m") or 3000.0, "whole": True, "experimental": True, "parts": list(rec.get("parts") or [])}
 
 
 def station_mesh(folder: Path, web: Path, pano_dir: Optional[Path] = None) -> Optional[Dict[str, Any]]:
@@ -570,7 +586,7 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
     for d in sorted(p for p in out_root.iterdir() if p.is_dir() and not p.name.startswith("_")):   # 0.99.3: not _hf_stage
         if stations and d.name not in stations:
             continue
-        third = fourth = fifth = None
+        third = fourth = fifth = sixth = None
         entry: Dict[str, Any] = {"id": d.name, "title": d.name, "variants": [], "mppp": __version__,
                                  "published": time.strftime("%Y-%m-%d")}
         entry.update({k: v for k, v in ((titles or {}).get(d.name) or {}).items() if v is not None})
@@ -604,6 +620,8 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
                     sc = station_scape(d / sub if sub else d, web, pano_dir)       # 0.99.32: the fifth mode
                     if sc:
                         fifth = dict(var, key=SCAPE_3D[0], label=SCAPE_3D[1], station_mesh=sc)
+                        if "rover" in (sc.get("parts") or []):    # 0.99.33: the sixth mode needs the rover in the file
+                            sixth = dict(var, key=DRIVE_3D[0], label=DRIVE_3D[1], station_mesh=dict(sc, drive=drive_settings()))
         # 0.98.4 (Christian, 14 Nov 2026: "always at ground level even when the rover is displayed"): with the rover in
         # the picture the mark was put at the deck's depth under the mast; the page's disc lies on the terrain in both
         # variants - the terrain-only variant's depth, the disc as wide there as it looks in the panorama
@@ -624,6 +642,8 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
             entry["variants"].append(fourth)
         if fifth is not None:
             entry["variants"].append(fifth)
+        if sixth is not None:
+            entry["variants"].append(sixth)
         xy = traverse and station_on_map(d.name, wp)
         if xy:
             entry["map"] = xy

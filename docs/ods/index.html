@@ -38,6 +38,8 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
   the horizon and rover).  0.99.32: the fifth - one textured surface from under the rover to the far field and the sky
   (no panorama behind it); the near terrain fades out at its rim; on a screen the eye moves a little (in front of the
   turning point, with the pointer, and a slow sway when left alone; P turns that off).
+  0.99.33: a sixth, "Drive the rover (simulation)" - the fifth mode's surface with the rover moved over it by the two
+  thumbsticks (forward / back: the track on that side; on a screen the arrow keys); the viewer rides at the mast.
   0.99.26: 3D terrain and rover - the terrain within 10 m and the rover as textured surfaces (true parallax), the
   terrain-only panorama beyond; the head may move 1 m from where the mode started, then the surface comes along.
 -->
@@ -289,11 +291,121 @@ const MESH_FRAG = `
   uniform sampler2D map; uniform vec2 fade;
   void main() { gl_FragColor = vec4(texture2D(map, vUv).rgb, fade.y > fade.x ? 1.0 - smoothstep(fade.x, fade.y, vR) : 1.0); }`;
 let meshFade = null, fadeBase = null, wholeScene = false;      // the terrain's fade uniform; its values at the anchor
+// 0.99.33: the ground (terrain, horizon) and the rover hang in groups of their own, so the sixth mode can move one
+// against the other
+const groundGroup = new THREE.Group(), roverGroup = new THREE.Group();
+fixed.add(groundGroup); fixed.add(roverGroup);
+
+// ---------------------------------------------------------------- the sixth mode: driving the rover (0.99.33)
+// Christian, 18 Nov 2026: "What if we could slowly control the rover's motion over the terrain. The forward and back axes
+// of the joysticks could move the rover up and back and around like it is on tank tracks" ... "Build a simple skid
+// steering option. Call it a sixth mode. It will be ride along so that the rover and pivot move with each other. Head
+// motion or walking moves away from the rover and the rover disappears after the viewer is one meter from the rover
+// pivot."  A SIMULATION: the model is moved over the measured terrain; nothing here was driven on Mars.
+//   * skid steering: each stick's forward / back axis is the speed of the track on its side; the rover's speed is
+//     their mean, its turn rate their difference over the track width.  On a screen: the arrow keys.
+//   * ride along: the viewer stays at the mast head, so it is the ground that is moved and turned under the rover;
+//   * the rover's height, pitch and roll: the plane through the terrain's heights under its six wheels;
+//   * it stops DRIVE.limit_m from where it stood (the textured terrain ends at 10 m).
+const DRIVE = { on: false, grid: null, az0: 0, az: 0, e: 0, n: 0, pf: 0.8, pr: 0.56, track: 2.3, wheels: [1.1, 0.0, -1.07],
+                speed: 0.25, limit: 6.0, fit0: null, tilt: new THREE.Quaternion(), hm: 2.0 };
+const driveKeys = new Set();
+function heightGrid(geoms) {                                     // the terrain's height (page y) on a 0.1 m grid about the pivot
+  const cell = 0.1, half = 10.5, N = Math.round(2 * half / cell), sum = new Float32Array(N * N), cnt = new Uint16Array(N * N);
+  for (const g of geoms) {
+    const p = g.getAttribute('position').array;
+    for (let i = 0; i < p.length; i += 3) {
+      const ix = Math.floor((p[i] + half) / cell), iz = Math.floor((p[i + 2] + half) / cell);
+      if (ix < 0 || iz < 0 || ix >= N || iz >= N) continue;
+      sum[iz * N + ix] += p[i + 1]; cnt[iz * N + ix]++;
+    }
+  }
+  const h = new Float32Array(N * N).fill(NaN);
+  for (let i = 0; i < N * N; i++) if (cnt[i]) h[i] = sum[i] / cnt[i];
+  for (let pass = 0; pass < 40; pass++) {                        // the empty cells from their neighbors
+    let left = 0; const add = [];
+    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
+      const i = z * N + x;
+      if (!Number.isNaN(h[i])) continue;
+      let s = 0, c = 0;
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const xx = x + dx, zz = z + dz;
+        if (xx >= 0 && zz >= 0 && xx < N && zz < N && !Number.isNaN(h[zz * N + xx])) { s += h[zz * N + xx]; c++; }
+      }
+      if (c) add.push(i, s / c); else left++;
+    }
+    for (let k = 0; k < add.length; k += 2) h[add[k]] = add[k + 1];
+    if (!left) break;
+  }
+  return { h, N, cell, half, at(e, n) {                          // bilinear; east, north (m) about the pivot
+    const fx = Math.min(N - 1.001, Math.max(0, (e + half) / cell - 0.5)), fz = Math.min(N - 1.001, Math.max(0, (-n + half) / cell - 0.5));
+    const x0 = Math.floor(fx), z0 = Math.floor(fz), a = fx - x0, b = fz - z0;
+    const v = (x, z) => { const q = h[z * N + x]; return Number.isNaN(q) ? -DRIVE.hm : q; };
+    return (v(x0, z0) * (1 - a) + v(x0 + 1, z0) * a) * (1 - b) + (v(x0, z0 + 1) * (1 - a) + v(x0 + 1, z0 + 1) * a) * b;
+  } };
+}
+function driveFit() {                                            // the plane under the six wheels: height at the pivot, slopes fore and to the right
+  const s = Math.sin(DRIVE.az), c = Math.cos(DRIVE.az);
+  let n = 0, sf = 0, sr = 0, sh = 0, sff = 0, srr = 0, sfh = 0, srh = 0;
+  for (const f of DRIVE.wheels) for (const r of [-DRIVE.track / 2, DRIVE.track / 2]) {
+    const hgt = DRIVE.grid.at(DRIVE.e + f * s + r * c, DRIVE.n + f * c - r * s);
+    n++; sf += f; sr += r; sh += hgt; sff += f * f; srr += r * r; sfh += f * hgt; srh += r * hgt;
+  }
+  const mf = sf / n, mh = sh / n;                                 // the wheels are placed evenly left and right: sr = 0
+  const b = (sfh - sf * mh) / Math.max(sff - sf * mf, 1e-9), cc = srh / Math.max(srr, 1e-9), a = mh - b * mf;
+  return { h: a + b * DRIVE.pf + cc * DRIVE.pr, b, c: cc };
+}
+function driveStart(dv) {                                        // dv: the entry's "drive" (web.DRIVE_3D); the rover as it stood
+  const terr = roverParts.filter(m => m.userData.kind === 'terrain').map(m => m.geometry);
+  if (!terr.length) return;
+  Object.assign(DRIVE, { pf: dv.pivot_fwd_right_m[0], pr: dv.pivot_fwd_right_m[1], track: dv.track_m, wheels: dv.wheels_fwd_m,
+                         speed: dv.speed_m_s, limit: dv.limit_m });
+  DRIVE.grid = heightGrid(terr);
+  DRIVE.hm = -DRIVE.grid.at(0, 0);
+  const front = roverForward(panos[cur.s] || {});                // the rover's +x, east of north (the ground mark's)
+  DRIVE.az0 = DRIVE.az = THREE.MathUtils.degToRad(front == null ? 0 : front);
+  const s = Math.sin(DRIVE.az), c = Math.cos(DRIVE.az);
+  DRIVE.e = -(DRIVE.pf * s + DRIVE.pr * c); DRIVE.n = -(DRIVE.pf * c - DRIVE.pr * s);     // the rover's center; the pivot is at 0, 0
+  DRIVE.fit0 = driveFit();
+  DRIVE.tilt.identity();
+  DRIVE.on = true;
+}
+function driveStop() {
+  DRIVE.on = false; DRIVE.grid = null; driveKeys.clear();
+  groundGroup.position.set(0, 0, 0); groundGroup.rotation.set(0, 0, 0);
+  roverGroup.position.set(0, 0, 0); roverGroup.quaternion.identity();
+}
+const _dq = new THREE.Quaternion(), _dv = new THREE.Vector3(), _da = new THREE.Vector3();
+function driveStep(dt, vl, vr) {                                 // vl, vr: the tracks, -1 ... 1
+  if (!DRIVE.on) return;
+  const v = 0.5 * (vl + vr) * DRIVE.speed, w = (vr - vl) * DRIVE.speed / DRIVE.track;     // w > 0: to the left
+  if (v || w) {
+    const az = DRIVE.az - w * dt, e = DRIVE.e + v * dt * Math.sin(az), n = DRIVE.n + v * dt * Math.cos(az);
+    const pe = e + DRIVE.pf * Math.sin(az) + DRIVE.pr * Math.cos(az), pn = n + DRIVE.pf * Math.cos(az) - DRIVE.pr * Math.sin(az);
+    if (Math.hypot(pe, pn) <= DRIVE.limit || Math.hypot(pe, pn) < Math.hypot(DRIVE.e + DRIVE.pf * Math.sin(DRIVE.az) + DRIVE.pr * Math.cos(DRIVE.az),
+                                                                                DRIVE.n + DRIVE.pf * Math.cos(DRIVE.az) - DRIVE.pr * Math.sin(DRIVE.az))) {
+      DRIVE.az = az; DRIVE.e = e; DRIVE.n = n;
+    }
+  }
+  const s = Math.sin(DRIVE.az), c = Math.cos(DRIVE.az), fit = driveFit();
+  const pe = DRIVE.e + DRIVE.pf * s + DRIVE.pr * c, pn = DRIVE.n + DRIVE.pf * c - DRIVE.pr * s;
+  const d = DRIVE.az - DRIVE.az0, dx = pe, dy = fit.h - DRIVE.fit0.h, dz = -pn, cd = Math.cos(d), sd = Math.sin(d);
+  groundGroup.rotation.y = d;                                    // the ground turned and moved under the rover and the viewer
+  groundGroup.position.set(-(dx * cd + dz * sd), -dy, -(-dx * sd + dz * cd));
+  const s0 = Math.sin(DRIVE.az0), c0 = Math.cos(DRIVE.az0);      // the rover's tilt against how it stood, about the ground under the pivot
+  _dq.setFromAxisAngle(_da.set(c0, 0, s0), Math.atan(fit.b) - Math.atan(DRIVE.fit0.b));
+  _dq.multiply(new THREE.Quaternion().setFromAxisAngle(_da.set(s0, 0, -c0), -(Math.atan(fit.c) - Math.atan(DRIVE.fit0.c))));
+  DRIVE.tilt.slerp(_dq, 1 - Math.exp(-dt / 0.3));
+  roverGroup.quaternion.copy(DRIVE.tilt);
+  _dv.set(0, -DRIVE.hm, 0);
+  roverGroup.position.copy(_dv).sub(_dv.clone().applyQuaternion(DRIVE.tilt));
+}
 function dropRover() {
   meshFade = fadeBase = null;
+  driveStop();
   if (wholeScene) { wholeScene = false; for (const k in spheres) spheres[k].visible = true; }
   for (const m of roverParts) {
-    fixed.remove(m); m.geometry.dispose();
+    if (m.parent) m.parent.remove(m); m.geometry.dispose();
     for (const o of (m.userData.textures || [])) { o.dispose(); if (o.image && o.image.close) o.image.close(); }
     m.material.dispose();
   }
@@ -367,7 +479,8 @@ async function showRover(rs) {
     }
     if (id !== roverId) { for (const m of made) { m.geometry.dispose(); for (const o of m.userData.textures) o.dispose(); m.material.dispose(); } return; }
     roverParts = made;
-    for (const m of made) fixed.add(m);
+    for (const m of made) (m.userData.kind === 'rover' ? roverGroup : groundGroup).add(m);
+    if (rs.drive && rs.whole) driveStart(rs.drive);              // 0.99.33: the sixth mode
     meshFade = fadeU; fadeBase = fadeU ? fadeU.clone() : null;
     wholeScene = !!rs.whole && made.some(m => m.userData.kind === 'horizon');     // the fifth mode: no panorama behind
     if (wholeScene) for (const k in spheres) spheres[k].visible = false;
@@ -782,12 +895,13 @@ $('view').onchange = e => { cur.w = +e.target.value; show(); };
 $('eye').onchange = e => { setEye(e.target.value); };
 window.addEventListener('hashchange', () => { fromHash(); show(); });
 const lookKeys = new Set();                     // 0.98.19: W A S D held - look up, left, down, right
-window.addEventListener('keyup', e => { lookKeys.delete(e.key.toLowerCase()); });
-window.addEventListener('blur', () => lookKeys.clear());
+window.addEventListener('keyup', e => { lookKeys.delete(e.key.toLowerCase()); driveKeys.delete(e.key); });
+window.addEventListener('blur', () => { lookKeys.clear(); driveKeys.clear(); });
 window.addEventListener('keydown', e => {
   const k = e.key.length === 1 ? e.key.toUpperCase() : e.key;
   if ((e.shiftKey && 'NESWO'.includes(k) && k.length === 1) || (!e.shiftKey && (k === 'N' || k === 'O'))) { face(k); return; }
   if (!e.shiftKey && 'wasd'.includes(e.key) && e.key.length === 1) { lookKeys.add(e.key); return; }
+  if (DRIVE.on && e.key.startsWith('Arrow')) { driveKeys.add(e.key); e.preventDefault(); return; }   // 0.99.33: the arrows drive
   if (e.key === 'ArrowRight') step('s', 1); else if (e.key === 'ArrowLeft') step('s', -1);
   else if (e.key === 'v' || e.key === 'V') step('v', 1); else if (e.key === 'e' || e.key === 'E') step('w', 1);
   else if (e.key === 'l' || e.key === 'L') setEye(screenEye === 'left' ? 'right' : 'left');
@@ -909,6 +1023,7 @@ function pressed(src, i) {                       // button i of this controller 
   held.set(key, is);
   return is && !was;
 }
+let stickL = 0, stickR = 0;
 function buttons(dt) {                           // xr-standard: button 4 is A (right) / X (left), button 5 is B (right) / Y (left)
   const session = renderer.xr.getSession();
   if (!session) return;
@@ -918,6 +1033,12 @@ function buttons(dt) {                           // xr-standard: button 4 is A (
     const left = src.handedness === 'left';
     if (pressed(src, 4)) { if (left) toggleInfo(); else step('w', 1); }       // 0.98.13: X (left): info; A (right): the next view
     if (pressed(src, 5)) { if (left) goHome(); else terrainOnly(); }          // 0.98.28: Y (left): home, facing west; B (right): terrain only (0.98.30: color views; again, the next one)
+    if (DRIVE.on) {                                              // 0.99.33: a stick's forward / back axis is its side's track
+      const y = -(gp.axes.length >= 4 ? gp.axes[3] : (gp.axes[1] || 0));
+      const t = Math.abs(y) > STICK_DEAD ? Math.sign(y) * (Math.abs(y) - STICK_DEAD) / (1 - STICK_DEAD) : 0;
+      if (left) stickL = t; else stickR = t;
+      continue;
+    }
     const x = gp.axes.length >= 4 ? gp.axes[2] : (gp.axes[0] || 0);                          // thumbstick left / right
     if (Math.abs(x) > STICK_DEAD) {                                                          // right: the view turns to the right
       turn += THREE.MathUtils.degToRad(TURN_DEG_S) * dt * Math.sign(x) * (Math.abs(x) - STICK_DEAD) / (1 - STICK_DEAD);
@@ -960,17 +1081,26 @@ renderer.setAnimationLoop(() => {
     renderer.xr.getCamera().getWorldPosition(head);              // stereo pair has no parallax to give for head movement
     world.position.copy(head);
     if (!anchored) { fixed.position.copy(head); anchored = true; }   // the rover surface stays there: it has parallax
-    holdNearPivot();
+    if (DRIVE.on) {                                              // 0.99.33: the viewer may step away; the rover is shown
+      const near = offHead.subVectors(head, fixed.position).length() <= 1.0;      // within 1 m of its pivot
+      for (const m of roverParts) if (m.userData.kind === 'rover') m.visible = roverOn && near;
+    } else holdNearPivot();
     if (meshFade) {                                              // 0.99.32: with the head off the anchor the panorama behind the
       const off = wholeScene ? 0 : offHead.subVectors(head, fixed.position).length();   // fourth mode's terrain no longer
       meshFade.set(Math.max(3, fadeBase.x - 5 * off), Math.max(4.5, fadeBase.y - 4 * off));   // fits its rim: the fade starts nearer
     }
+    stickL = stickR = 0;
     buttons(dt);
+    driveStep(dt, stickL, stickR);
   } else {                                                       // on a screen: ?head=x,y,z (m: east, up, south) moves the eye off
     camera.updateMatrixWorld();
     camera.position.copy(headOffset).add(screenEye3(dt));        // the pivot (0.98.14) and the screen's eye movement (0.99.32)
     world.position.copy(camera.position); fixed.position.set(0, 0, 0);
     if (meshFade) meshFade.copy(fadeBase);
+    if (DRIVE.on) {                                              // the arrow keys: up / down both tracks, left / right one against the other
+      const f = (driveKeys.has('ArrowUp') ? 1 : 0) - (driveKeys.has('ArrowDown') ? 1 : 0), t = (driveKeys.has('ArrowLeft') ? 1 : 0) - (driveKeys.has('ArrowRight') ? 1 : 0);
+      driveStep(dt, Math.max(-1, Math.min(1, f - 0.5 * t)), Math.max(-1, Math.min(1, f + 0.5 * t)));
+    }
   }
   fixed.rotation.y = world.rotation.y;
   renderer.render(scene, camera);
