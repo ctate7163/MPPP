@@ -143,7 +143,7 @@ def test_render_station_part_web_entry_and_plan(tmp_path, monkeypatch):
     assert web.TERRAIN_3D == ("terrain3d", "3D terrain and rover")
     src = (SS.__file__)
     page = (__import__("pathlib").Path(src).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
-    assert "showRover(vr.station_mesh, { normals: nmView, rover: vr.rover_surface })" in page and "holdNearPivot" in page
+    assert "showRover(sm, { normals: nmView, distance: dView," in page and "holdNearPivot" in page
 
 
 def test_single_sites_skips_stations_whose_block_is_not_aligned(tmp_path, capsys):
@@ -199,21 +199,24 @@ def test_fifth_mode_surface_to_the_horizon_one_texture(tmp_path):
     assert np.isclose(r.max(), SM.DOME_M) and (r > 0.99 * SM.DOME_M).sum() > 100           # the sky, at the dome
     hd = np.hypot(*(sh["V"][:, :2] - np.asarray(st.pivot)[:2]).T)
     assert hd[sh["F"]].max(axis=1).min() >= SM.SHELL_FROM_M - 1e-3                           # nothing of it under the rover
-    assert 99.9 < np.degrees(sh["knee"]) < 102.0                                             # flat ground: 10 deg above the horizontal at least
+    assert 94.9 < np.degrees(sh["knee"]) < 97.0                                              # flat ground: 5 deg above the horizontal at least (0.99.41; 10 before)
     first, last = sh["V"][sh["F"][:10]].reshape(-1, 3), sh["V"][sh["F"][-10:]].reshape(-1, 3)
     assert np.linalg.norm(first - C, axis=1).min() > 0.99 * SM.DOME_M and np.linalg.norm(last - C, axis=1).max() < 20   # the far rings first
     tp = SM.terrain_part(sc, src, st, size=1024, target=8000, full=True)
     rr = tp["record"]
-    assert rr["full"] and rr["horizon_frac"] == 0.9 and rr["shell"]["triangles"] == len(tp["shell"]["F"]) and rr["fade_m"] == [18.0, 20.0]
+    assert rr["full"] and rr["horizon_frac"] == 0.97 and rr["shell"]["triangles"] == len(tp["shell"]["F"]) and rr["fade_m"] == [18.0, 20.0]
     rpx = 1024 / 2 - SM.GUTTER_PX - 2
     rho = np.hypot(tp["shell"]["uv"][:, 0] - 0.5, tp["shell"]["uv"][:, 1] - 0.5) * 1024
-    assert rho.max() <= rpx + 1e-3 and (rho > 0.9 * rpx + 1).any()                           # the sky beyond the 90 % circle
+    assert rho.max() <= rpx + 1e-3 and (rho > 0.97 * rpx + 1).any()                          # the sky beyond the 97 % circle
     ground = np.linalg.norm(tp["shell"]["V"] - C, axis=1) < 0.5 * SM.DOME_M
-    assert rho[ground].max() <= 0.9 * rpx + 1e-3                                             # the terrain inside it
+    assert rho[ground].max() <= 0.97 * rpx + 1e-3                                            # the terrain inside it
     rho_in = np.hypot(tp["uv"][:, 0] - 0.5, tp["uv"][:, 1] - 0.5) * 1024
     assert np.isfinite(tp["texture"]).all() and tp["texture"].shape == (1024, 1024, 3)
+    # 0.99.41: the sky, the zone beyond the skyline's circle and the unused texels white; the ground not
+    w = tp["white"]
+    assert w.shape == (1024, 1024) and w[0, 0] and w[512, 1023] and not w[512, 512] and rr["white_texels"] == int(w.sum())
     # the map and its inverse agree across the knee
-    knee = (np.radians(rr["skyline_deg"] + 90.0), 0.9)
+    knee = (np.radians(rr["skyline_deg"] + 90.0), 0.97)
     rows, cols = np.array([100, 512, 900, 30]), np.array([512, 300, 700, 512])
     d, _ = SM.disc_dirs(rows, cols, 1024, rpx, np.pi, st.up, st.north, st.east, knee=knee)
     uv = SM.disc_uv(C + 5 * d, C, 1024, rpx, np.pi, st.up, st.north, st.east, knee=knee)
@@ -273,10 +276,79 @@ def test_viewer_terrain_modes_rover_button_and_hidden_drive():
               "right grip: terrain   |   left grip: rover", 'id="driveBeta"', "if (pressed(src, 3) &&",
               "outlineWidth: 0.14, spacing: 0.12", "az, 24, 40, 10.5", "const on = welcome.visible || infoPanel.visible;",
               "#title { font-weight: 600; margin-right: 6px; color: #fff; }", "#bar button#home, #compass button#faceO { color: #ff9500; }",
-              "const MAP_ORANGE = '#ff9500';"):
+              "const MAP_ORANGE = '#ff9500';", "#nav button#roverBtn { color: #ff9500; }", "#nav button#roverBtn.on { color: #fff; border-color: #555; }",
+              "q.key === 'scape3d' && q.station_mesh", "noHorizon: true", "skipHorizon: isMain && !!rs.noHorizon",
+              "function stereoOrFull()", "const DIST_FRAG", "canSwap(sm, skinUrl) ? swapSkin(skinUrl)", "sk[k] || /^normal/.test(k) || k === 'range log'",
+              "B: stereo / full 3D"):
         assert s in page, s
     nav = page[page.index('<div id="nav">'):page.index('<div id="msg">')]
     assert nav.index('id="driveBtn"') < nav.index('id="roverBtn"') and "#nav button#driveBtn { position: absolute;" in page
     assert "lastRoverKey" not in page and "grip: rover on, off, 3D, 3D terrain" not in page
     drive = page[page.index("if (pressed(src, 3) &&"):page.index("const x = gp.axes.length >= 4")]
     assert "continue;" not in drive                               # in the drive the sticks still turn the view
+
+
+def test_station_mesh_textures_kept_in_16_bits_and_retoned_as_the_panoramas(tmp_path):
+    """0.99.40 (Christian, 19 Nov 2026: "the ...mesh_terrain.jpg and full 3D texture should be made projected as 16-bit
+    images and converted to 8-bit the same way as the ods"): the 16-bit texture beside the .jpg, and the .jpg made
+    again from it by the panoramas' conversion."""
+    from types import SimpleNamespace as NS
+    import cv2
+    from rpp.ibr import station_mesh as SM
+    from rpp.ibr.linear16 import tone_pipeline
+    rng = np.random.default_rng(0)
+    tex = (rng.random((64, 64, 3)) * 300.0).astype(np.float32)          # linear, 8-bit units
+    k16 = 64.0 * 0.8
+    to16 = lambda rgb: np.clip(np.rint(rgb * k16), 0, 65535).astype(np.uint16)                       # noqa: E731
+    to8 = lambda rgb: np.clip(np.rint(tone_pipeline(np.clip(np.rint(rgb * k16), 0, 65535) / k16)), 0, 255).astype(np.uint8)   # noqa: E731
+    part = {"texture": tex, "V": np.zeros((3, 3)), "F": np.array([[0, 1, 2]]), "uv": np.zeros((3, 2)), "record": {}}
+    st = NS(pivot=(0, 0, 0), east=(1, 0, 0), up=(0, 0, 1), north=(0, 1, 0))
+    rec = SM.write_part(tmp_path, "S", "terrain", part, st, to8, to16)
+    f16 = tmp_path / "S_station_mesh_terrain_16.png"
+    assert f16.is_file() and "S_station_mesh_terrain_16.png" in rec["files"]
+    a = cv2.imread(str(f16), cv2.IMREAD_UNCHANGED)
+    assert a.dtype == np.uint16 and np.array_equal(a[..., ::-1], to16(tex))
+    before = cv2.imread(str(tmp_path / "S_station_mesh_terrain.jpg"))
+    (tmp_path / "S_station_mesh_terrain.jpg").unlink()
+    done = SM.retone_textures(tmp_path, lambda b: np.rint(tone_pipeline(b / k16)).astype(np.uint8))
+    after = cv2.imread(str(tmp_path / "S_station_mesh_terrain.jpg"))
+    assert done == ["S_station_mesh_terrain.jpg"] and np.abs(after.astype(int) - before.astype(int)).mean() < 1.0
+    assert SM.write_part(tmp_path, "T", "scape", dict(part, shell=None), st, to8)["files"] == ["T_station_scape_terrain.npz", "T_station_scape_terrain.jpg"]
+    import inspect
+    from rpp.ibr import linear16
+    assert "retone_textures(out" in inspect.getsource(linear16.retone)
+
+
+def test_full_3d_texture_color_skins_and_their_listing(tmp_path):
+    """0.99.41 (Christian, 19 Nov 2026: "The different color skins for the terrain should be visible in both modes.
+    this means they should be rendered as in the full 3d projection too"): the skins of the 16-bit full 3D texture
+    with the station's parameters, white kept white; web.station_scape lists them."""
+    import cv2
+    import json as _json
+    from rpp.ibr import station_mesh as SM, web
+    rng = np.random.default_rng(1)
+    a = (rng.random((256, 256, 3)) * 9000 + 1000).astype(np.uint16)
+    a[:20] = 65535                                                  # the white sky
+    stem = "S_station_scape_terrain"
+    cv2.imwrite(str(tmp_path / (stem + "_16.png")), a)
+    cv2.imwrite(str(tmp_path / (stem + ".jpg")), (a // 257).astype(np.uint8))
+    (tmp_path / (stem + ".json")).write_text(_json.dumps({"texels_per_deg": 10.0}))
+    (tmp_path / "ods.json").write_text(_json.dumps({"linear16": {"exposure16": 1.0, "white_balance": [1.1, 1.0, 1.4]}}))
+    lv = tmp_path / "tone_levels.json"
+    lv.write_text(_json.dumps({"enhanced_gamma_stretch_s_levels": [150.0, 20.0, 200.0, 100.0],
+                               "color_products_parameters_v2": {"white_linear_8bit_units": 255.0,
+                                   "tone": {"base_median_log": -1.0, "base_compression": 0.5, "display_median": 0.3},
+                                   "dcs": {"mean_bgr": [0.5, 0.5, 0.5], "matrix_bgr": np.eye(3).tolist()}}}))
+    got = SM.write_skins(tmp_path, lv)
+    assert set(got) == {"enhanced local", "enhanced tone", "raw color", "dcs color"}
+    for f in got.values():
+        v = cv2.imread(str(tmp_path / f))
+        assert v.shape == (256, 256, 3) and v[:12].min() >= 245 and v[40:].std() > 1      # white stays white (JPEG)
+    (tmp_path / "S_station_scape.glb").write_bytes(b"glTF")
+    (tmp_path / "S_station_scape.json").write_text(_json.dumps({"triangles": 3, "fade_m": [18, 20]}))
+    pano = tmp_path / "panos"
+    pano.mkdir()
+    sc = web.station_scape(tmp_path, tmp_path, pano)
+    assert sc["skins"]["dcs color"] == "panos/S_station_scape_terrain_dcs.jpg" and (pano / "S_station_scape_terrain_dcs.jpg").is_file()
+    lv.write_text("{}")                                             # no parameters yet: the original color only
+    assert set(SM.write_skins(tmp_path, lv)) == {"raw color"}

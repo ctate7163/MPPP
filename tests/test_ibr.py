@@ -1495,10 +1495,17 @@ def test_ods_16bit_keeps_what_8bit_clips(tmp_path):
     sq = cv2.imread(str(out / "Sol0091_S003D0010_360_3DTD_16.png"), cv2.IMREAD_UNCHANGED)
     assert sq.dtype == np.uint16 and sq.shape == (256, 256, 3) and np.array_equal(sq[:128], L16[..., ::-1])
     assert (out / "Sol0091_S003D0010_360_3DTD.jpg").is_file()
-    # a frame without its 16-bit image: the 8-bit panorama, and the record says so
+    # 0.99.41 (Christian: "the texture and ods projections should only be made from projections of the 16-bit images"):
+    # a frame without its 16-bit image is left out and the panorama stays 16-bit; without any, the 8-bit panorama
     (d16 / st.images[1]).unlink()
     r8 = O.render_station(proj, rec, st, scene, tmp_path / "o8", width=128, scale=0.5, rows_per_chunk=32, bits=16, gains=False)
-    assert r8["bits"] == 8 and r8["linear16"]["missing"] and not (tmp_path / "o8" / "Sol0091_S003D0010_ods_left_16.png").is_file()
+    assert r8["bits"] == 16 and r8["linear16"]["left_out_without_16bit"] == [st.images[1]] and not r8["linear16"]["missing"]
+    assert st.images[1] not in r8["sources"] and (tmp_path / "o8" / "Sol0091_S003D0010_ods_left_16.png").is_file()
+    for n in st.images:
+        if (d16 / n).is_file():
+            (d16 / n).unlink()
+    r8 = O.render_station(proj, rec, st, scene, tmp_path / "o8b", width=128, scale=0.5, rows_per_chunk=32, bits=16, gains=False)
+    assert r8["bits"] == 8 and r8["linear16"]["missing"] and not (tmp_path / "o8b" / "Sol0091_S003D0010_ods_left_16.png").is_file()
 
 
 def test_ground_fill_and_levels():
@@ -3201,7 +3208,7 @@ def test_o_looks_along_the_rover_x_and_y_b_home_buttons(tmp_path):
     assert "#compass { position: fixed; right: 12px; top: 8px;" in page and "-Math.PI / 4" not in page
     assert "TEXT_FROM_FORWARD_DEG = 135" in page and "rover_forward_azimuth_deg" in page
     assert 'id="home"' in page and "goHome" in page and "faceAfterLoad = 270" in page
-    assert "pressed(src, 5)" in page and "if (left) goHome(); else terrainOnly();" in page
+    assert "pressed(src, 5)" in page and "if (left) goHome(); else stereoOrFull();" in page     # 0.99.41: B stereo / full 3D
     assert "q.key === 'masked'" in page and "#VRButton.rpv-big" in page and "isSessionSupported('immersive-vr')" in page
     assert "`Sol ${sols[0]}`" in page and "`sol ${" not in page
 

@@ -162,8 +162,18 @@ def station_scape(folder: Path, web: Path, pano_dir: Optional[Path] = None) -> O
     except (OSError, ValueError):
         rec = {}
     lim = ((rec.get("parts") or {}).get("rover") or {}).get("view_radius_m", 1.0)
-    return {"file": "panos/" + glb.name, "triangles": rec.get("triangles"), "move_limit_m": lim, "fade_m": rec.get("fade_m") or [8.0, 10.0],
-            "dome_m": rec.get("dome_m") or 3000.0, "whole": True, "experimental": True, "parts": list(rec.get("parts") or [])}
+    skins = {}
+    from .station_mesh import skin_files                         # 0.99.41: the color skins of its texture
+    for key, f in skin_files(folder).items():
+        dst_s = (Path(pano_dir) if pano_dir else web / "panos") / f.name
+        if not (dst_s.is_file() and dst_s.stat().st_mtime >= f.stat().st_mtime):
+            shutil.copy2(f, dst_s)
+        skins[key] = "panos/" + f.name
+    out = {"file": "panos/" + glb.name, "triangles": rec.get("triangles"), "move_limit_m": lim, "fade_m": rec.get("fade_m") or [8.0, 10.0],
+           "dome_m": rec.get("dome_m") or 3000.0, "whole": True, "experimental": True, "parts": list(rec.get("parts") or [])}
+    if skins:
+        out["skins"] = skins
+    return out
 
 
 def station_mesh(folder: Path, web: Path, pano_dir: Optional[Path] = None) -> Optional[Dict[str, Any]]:

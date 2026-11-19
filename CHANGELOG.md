@@ -3,6 +3,52 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.41 — 2026-11-19 (branch `rpp`)
+
+- RPV: the local 3D terrain is the full 3D file's terrain - the same 20 m mesh and texture, its shell to the horizon
+  left out, the panorama behind it - where the station has the full 3D file (Christian, 13:31: "the 3d terrain should
+  preferably use the same texture as the full 3d texture"); else the station mesh as before. Its texture has about
+  25 % fewer texels per degree on the near ground (the full 3D texture maps the terrain up to the skyline onto 90 % of
+  its radius: about 37 texels a degree, against 49 for the 20 m station mesh's own).
+- **Station mesh textures in 16 bits** (Christian, 13:29: "the ...mesh_terrain.jpg and full 3D texture should be made
+  projected as 16-bit images and converted to 8-bit the same way as the ods"): they were already projected from the
+  16-bit linear frames and converted with the panoramas' exposure and curve; now each part also keeps its texture in
+  the 16-bit panoramas' encoding (`<stem>_16.png`), and `rpp ods --retone` (`linear16.retone` ->
+  `station_mesh.retone_textures`) makes the .jpg again from it as it does the panoramas, so a retone reaches the 3D
+  modes too (single-sites then puts the .glb files together again). Stations rendered before 0.99.41 have no 16-bit
+  texture: their 3D textures keep the tone they were rendered with.
+- **RPV B and the color skins in 3D** (Christian, 13:54: "we need a way to change between ods and full 3d mode in VR.
+  Maybe that should be B. The different color skins for the terrain should be visible in both modes. this means they
+  should be rendered as in the full 3d projection too. As with the ods, the normal and distance textures can be
+  renered at half resolution as the terrain projection"; 14:00: "is there a way to speed up switching skins colors
+  while in full 3d mode?"):
+  - B (headset and keyboard) switches terrain stereo <-> terrain full 3D (the local 3D where a station has no full),
+    keeping the view; the rover is hidden with the rover button, R or the left grip (B was terrain only until 0.99.40).
+  - The full 3D texture gets the color skins - enhanced color, enhanced tone, original color, decorrelation stretch -
+    from its 16-bit texture with the station's own parameters (`color_products.texture_products`,
+    `station_mesh.write_skins`: `<stem>_<tag>.jpg`; made by `rpp ods` after the panoramas' color products and again by
+    a retone), listed by `web.station_scape` as "skins"; the page puts a skin on the terrain and its shell in the full
+    and the local 3D terrain.
+  - The normal and distance maps of the 3D modes are drawn from the surfaces (the distance from the eye, turbo over
+    log10 0.5-200 m as the distance panoramas; the sky white): no texture at any resolution, and they follow the eye.
+  - A change of color view on the surfaces already up only swaps the picture (the file's own texture kept for the way
+    back, one skin at a time): no file loaded again and no rover made again. In a headset it also brings the surfaces
+    back with their pivot at the eyes, the heading unchanged (14:06).
+- **16-bit sources only** (`rpp ods --bits 16`; Christian, 13:40: "the texture and ods projections should only be made
+  from projections of the 16-bit images in the eod sequences and the specially identified context images which are
+  usually the penultimate mid drive imaging"): a station frame without a 16-bit image is left out of the panorama and
+  its textures (`ods.json` linear16.left_out_without_16bit), as fill and context frames already were; before, one such
+  frame put the whole panorama in 8 bits (still the case when none of the station's frames has one). The frames
+  themselves are as before: the station's end-of-drive frames of `single_sites.json`, its named context frames, and
+  the front Hazcam fill frames taken within 2 h of them.
+- RPV: the rover button's icon is orange while the rover is hidden and white while it is shown (13:30, 13:36).
+- **The full 3D texture** (`station_mesh`; Christian, 13:34: "the full 3d texture can cut out some sky to make more
+  room for center detail", "assuming the black area does not map to the mesh, make it white"; 13:37: "the sky still
+  has too many blemishes. That can be solid white"): the sky texels, the zone beyond the skyline's circle and the
+  texels no triangle uses are white (`SKY_WHITE`; 65535 in the 16-bit texture, kept white by a retone); the terrain up
+  to the skyline takes 97 % of the disc's radius (90 %) and the skyline is at least 5 deg above the horizontal (10):
+  about 13 % more texels a degree on the ground.
+
 ## 0.99.40 — 2026-11-19 (branch `rpp`)
 
 Christian, 13:00: "change the mode banner to be just for the terrain. the terrain can be terrain stereo, terrain local

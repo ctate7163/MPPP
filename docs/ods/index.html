@@ -37,8 +37,8 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
   X = info page on the left hand (site, sol, map), A = the next view (0.99.37: standard color, raw color, enhanced color,
   enhanced tone, dcs color, normal map, distance map),
   right grip = terrain, left grip = the rover (0.99.40; grip = variant before)   (0.98.13: A and X swapped)
-  0.98.28: Y = home (the welcome view, facing west), B = terrain only; on a screen the house button or H, and B.
-  0.98.30: B = terrain only (no rover) in a color view; B again = its next color skin (standard, enhanced local).
+  0.98.28: Y = home (the welcome view, facing west); on a screen the house button or H.  0.99.41: B = terrain stereo <->
+  terrain full 3D (the color skins are in both; before, B was terrain only and again the next color skin).
   The 3D rover is set again at the eyes' center whenever the station, the variant or the view changes and when R
   shows it.
   O = straight ahead of the rover (its +x, level); the N E S W O cross is at the upper right.
@@ -86,7 +86,11 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
   #nav button { width: 44px; height: 40px; background: #222c; color: #eee; border: 1px solid #555; border-radius: 6px;
                 display: inline-flex; align-items: center; justify-content: center; padding: 0; cursor: pointer; }
   #nav button:hover { background: #444; }
-  #nav button#roverBtn.on, #nav button#driveBtn.on { border-color: #f90; color: #fc6; }
+  #nav button#driveBtn.on { border-color: #f90; color: #fc6; }
+  /* 0.99.41 (Christian, 19 Nov 2026: "make the home and rover icon orange too"; "the rover icon should be the way it is
+     now, orange when there is no rover and white when there is"): the rover hidden - orange; shown - white */
+  #nav button#roverBtn { color: #ff9500; }
+  #nav button#roverBtn.on { color: #fff; border-color: #555; }
   /* 0.99.40 (Christian, 19 Nov 2026: "Move drive mode to a steering wheel icon above the rover show/hide button. That is
      experimental and should be hidden"): shown only with ?experimental=1, where the station has the drive */
   #roverWrap { position: relative; display: inline-flex; }
@@ -340,6 +344,30 @@ const NORMAL_FRAG = `
     vec3 c = length(vP) > 1500.0 ? vec3(0.0) : 0.5 * (1.0 + vec3(n.x, -n.z, n.y));
     gl_FragColor = vec4(c, fade.y > fade.x ? 1.0 - smoothstep(fade.x, fade.y, vR) : 1.0);
   }`;
+// 0.99.41 (Christian, 19 Nov 2026: "The different color skins for the terrain should be visible in both modes ... the
+// normal and distance textures can be renered at half resolution"): the distance map of a 3D mode is drawn from the
+// surfaces themselves - the distance from the eye, turbo over log10 of 0.5-200 m as the distance panoramas
+// (raycast.depth_rgb), the sky white; like the normal map it needs no texture and follows the eye
+const DIST_VERT = `
+  varying vec3 vP; varying float vR; varying float vD;
+  void main() { vP = position; vR = length(position.xz); vec4 e = modelViewMatrix * vec4(position, 1.0); vD = length(e.xyz);
+                gl_Position = projectionMatrix * e; }`;
+const DIST_FRAG = `
+  precision highp float;
+  varying vec3 vP; varying float vR; varying float vD;
+  uniform vec2 fade;
+  vec3 turbo(float x) {                                       // the turbo colormap (Mikhailov's polynomial)
+    x = clamp(x, 0.0, 1.0);
+    vec4 v4 = vec4(1.0, x, x * x, x * x * x); vec2 v2 = v4.zw * v4.z;
+    return vec3(dot(v4, vec4(0.13572138, 4.61539260, -42.66032258, 132.13108234)) + dot(v2, vec2(-152.94239396, 59.28637943)),
+                dot(v4, vec4(0.09140261, 2.19418839, 4.84296658, -14.18503333)) + dot(v2, vec2(4.27729857, 2.82956604)),
+                dot(v4, vec4(0.10667330, 12.64194608, -60.58204836, 110.36276771)) + dot(v2, vec2(-89.90310912, 27.34824973)));
+  }
+  void main() {
+    float t = (log(clamp(vD, 0.5, 200.0)) / log(10.0) - log(0.5) / log(10.0)) / (log(200.0) / log(10.0) - log(0.5) / log(10.0));
+    vec3 c = length(vP) > 1500.0 ? vec3(1.0) : turbo(t);
+    gl_FragColor = vec4(c, fade.y > fade.x ? 1.0 - smoothstep(fade.x, fade.y, vR) : 1.0);
+  }`;
 let meshFade = null, fadeBase = null, wholeScene = false;      // the terrain's fade uniform; its values at the anchor
 // 0.99.33: the ground (terrain, horizon) and the rover hang in groups of their own, so the sixth mode can move one
 // against the other
@@ -454,8 +482,39 @@ function driveStep(dt, vl, vr) {                                 // vl, vr: the 
   _dv.set(0, -DRIVE.hm, 0);
   roverGroup.position.copy(_dv).sub(_dv.clone().applyQuaternion(DRIVE.tilt));
 }
+// 0.99.41 (Christian, 19 Nov 2026: "is there a way to speed up switching skins colors while in full 3d mode? presently it
+// takes a few seconds to load a new set of models"): a change of color view on the surfaces already up only puts the
+// other picture on the terrain and its shell - no file loaded again, no rover made again; the file's own texture is kept
+// for the way back, and one skin at a time
+let surfState = null, skinTex = { url: null, t: null };
+function canSwap(sm, url) {
+  if (!surfState || surfState.shader !== 'c' || !sm || surfState.file !== sm.file || surfState.noHorizon !== !!sm.noHorizon) return false;
+  return !!url || roverParts.some(m => m.userData.baseTex);
+}
+async function swapSkin(url) {
+  let t = null;
+  if (url) {
+    t = skinTex.url === url ? skinTex.t : null;
+    if (!t) {
+      const bmp = await createImageBitmap(await (await fetch(url)).blob());
+      t = new THREE.Texture(bmp);
+      t.flipY = false; t.wrapS = THREE.RepeatWrapping; t.generateMipmaps = true; t.colorSpace = THREE.NoColorSpace;
+      t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+      t.needsUpdate = true;
+      if (skinTex.t) { skinTex.t.dispose(); if (skinTex.t.image && skinTex.t.image.close) skinTex.t.image.close(); }
+      skinTex = { url, t };
+    }
+  }
+  for (const m of roverParts) if ((m.userData.kind === 'terrain' || m.userData.kind === 'horizon') && m.material.uniforms && m.material.uniforms.map) {
+    const b = t || m.userData.baseTex;
+    if (b) m.material.uniforms.map.value = b;
+  }
+  if (surfState) surfState.skin = url;
+}
 function dropRover() {
   meshFade = fadeBase = null;
+  surfState = null;
+  if (skinTex.t) { skinTex.t.dispose(); if (skinTex.t.image && skinTex.t.image.close) skinTex.t.image.close(); skinTex = { url: null, t: null }; }
   driveStop();
   if (wholeScene) { wholeScene = false; for (const k in spheres) spheres[k].visible = true; }
   for (const m of roverParts) {
@@ -477,7 +536,9 @@ async function showRover(rs, opt = {}) {
   try {
     let fadeU = null;
     for (const [file, isMain] of [[rs, true]].concat(opt.rover && opt.rover.file && rs.triangles != null ? [[opt.rover, false]] : [])) {
-      const got = await loadSurface(file, { normals: !!opt.normals, skipRover: isMain && !!opt.rover && rs.triangles != null });
+      const got = await loadSurface(file, { normals: !!opt.normals, distance: !!opt.distance,
+                                            skipRover: isMain && !!opt.rover && rs.triangles != null,
+                                            skipHorizon: isMain && !!rs.noHorizon, skin: isMain ? opt.skin : null });
       if (got.fade) fadeU = got.fade;
       made.push(...got.made);
       if (id !== roverId) break;
@@ -488,6 +549,7 @@ async function showRover(rs, opt = {}) {
     if (rs.drive && rs.whole) driveStart(rs.drive);              // 0.99.33: the sixth mode
     meshFade = fadeU; fadeBase = fadeU ? fadeU.clone() : null;
     wholeScene = !!rs.whole && made.some(m => m.userData.kind === 'horizon');     // the fifth mode: no panorama behind
+    surfState = { file: rs.file, noHorizon: !!rs.noHorizon, shader: opt.normals ? 'n' : opt.distance ? 'd' : 'c', skin: opt.skin || null };
     if (wholeScene) for (const k in spheres) spheres[k].visible = false;
     anchored = false;
   } catch (e) { console.warn('rover surface', e); }
@@ -504,16 +566,17 @@ async function loadSurface(rs, opt) {                            // -> {made: [m
     const pr = doc.asset && doc.asset.extras && doc.asset.extras.projection;
     const made = [], shared = new Map();
     let fadeU = null;
-    if (opt.normals) {                                           // 0.99.38: the surfaces' own normals, no textures
+    if (opt.normals || opt.distance) {                           // 0.99.38: the surfaces' own normals, no textures (0.99.41: or their distance)
       for (const me of doc.meshes) for (const prim of me.primitives) {
         const kind = pr ? 'rover' : (me.name || 'rover');
         if (opt.skipRover && kind === 'rover') continue;
+        if (opt.skipHorizon && kind === 'horizon') continue;       // 0.99.40: the local 3D terrain from the full 3D file
         const g = new THREE.BufferGeometry();
         g.setAttribute('position', new THREE.BufferAttribute(arr(prim.attributes.POSITION, Float32Array, 3), 3));
         g.setIndex(new THREE.BufferAttribute(arr(prim.indices, Uint32Array, 1), 1));
         const terrain = kind === 'terrain', horizon = kind === 'horizon', fade = new THREE.Vector2(0, 0);
         if (terrain && rs.fade_m) { fade.set(rs.fade_m[0], rs.fade_m[1]); fadeU = fade; }
-        const mat = new THREE.ShaderMaterial({ vertexShader: NORMAL_VERT, fragmentShader: NORMAL_FRAG, side: THREE.DoubleSide,
+        const mat = new THREE.ShaderMaterial({ vertexShader: opt.distance ? DIST_VERT : NORMAL_VERT, fragmentShader: opt.distance ? DIST_FRAG : NORMAL_FRAG, side: THREE.DoubleSide,
           uniforms: { fade: { value: fade } }, transparent: terrain && !!rs.fade_m, depthTest: !horizon, depthWrite: !horizon });
         const m = new THREE.Mesh(g, mat);
         m.userData.textures = []; m.userData.kind = kind;
@@ -526,10 +589,11 @@ async function loadSurface(rs, opt) {                            // -> {made: [m
     // 0.99.32: every mesh of the file (until now the first alone: a station mesh's rover part was never drawn)
     for (const me of doc.meshes) for (const prim of me.primitives) {
       if (opt.skipRover && !pr && (me.name || 'rover') === 'rover') continue;   // 0.99.38: the rover from its own file
+      if (opt.skipHorizon && !pr && me.name === 'horizon') continue;           // 0.99.40: its shell left out
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(arr(prim.attributes.POSITION, Float32Array, 3), 3));
       g.setIndex(new THREE.BufferAttribute(arr(prim.indices, Uint32Array, 1), 1));
-      let mat, textures;
+      let mat, textures, baseTex = null;
       if (pr) {                                                  // 0.98.14: the model, colored from the pivot
         const col = new THREE.Texture(await image(0));
         col.flipY = false; col.colorSpace = THREE.NoColorSpace; col.wrapS = THREE.RepeatWrapping; col.generateMipmaps = true;
@@ -549,16 +613,20 @@ async function loadSurface(rs, opt) {                            // -> {made: [m
       } else {                                                   // a file of before 0.98.14
         g.setAttribute('uv', new THREE.BufferAttribute(arr(prim.attributes.TEXCOORD_0, Float32Array, 2), 2));
         const src = doc.textures[doc.materials[prim.material].pbrMetallicRoughness.baseColorTexture.index].source;
-        let t = shared.get(src);
+        // 0.99.41: a color skin of the full 3D texture (opt.skin, a picture beside the file) on the terrain and its shell
+        const useSkin = !!opt.skin && (me.name === 'terrain' || me.name === 'horizon');
+        const key = useSkin ? 'skin' : src;
+        let t = shared.get(key);
         textures = [];
         if (!t) {
-          t = new THREE.Texture(await image(src));
+          t = new THREE.Texture(useSkin ? await createImageBitmap(await (await fetch(opt.skin)).blob()) : await image(src));
           t.flipY = false; t.wrapS = THREE.RepeatWrapping; t.generateMipmaps = true;
           t.colorSpace = rs.triangles != null ? THREE.NoColorSpace : THREE.SRGBColorSpace;
           t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
           t.needsUpdate = true;
-          shared.set(src, t); textures = [t];
+          shared.set(key, t); textures = [t];
         }
+        baseTex = useSkin ? null : t;                            // 0.99.41: the file's own texture, for a skin change
         if (rs.triangles != null) {                              // a station mesh file (0.99.26) or the fifth mode's (0.99.32)
           const terrain = me.name === 'terrain', horizon = me.name === 'horizon';
           const fade = new THREE.Vector2(0, 0);
@@ -571,6 +639,7 @@ async function loadSurface(rs, opt) {                            // -> {made: [m
       const m = new THREE.Mesh(g, mat);
       m.userData.textures = textures;
       m.userData.kind = pr ? 'rover' : (me.name || 'rover');
+      if (!pr && baseTex && (m.userData.kind === 'terrain' || m.userData.kind === 'horizon')) m.userData.baseTex = baseTex;
       m.renderOrder = m.userData.kind === 'horizon' ? 0.5 : 1; m.frustumCulled = false;
       m.visible = roverOn || m.userData.kind !== 'rover';
       made.push(m);
@@ -643,7 +712,7 @@ const VIEWER_NAME = 'Rover Photogrammetry Viewer (RPV)';
 // 0.99.36 (Christian, 19 Nov 2026: "please put the rpp-rpv viewer version number on the lower left above the site name,
 // images size, and version on which the site was rendered"): the page's own version (the RPP release that wrote it;
 // tests/test_station_mesh.py keeps it equal to rpp.__version__), above the station's line
-const RPV_VERSION = '0.99.40';
+const RPV_VERSION = '0.99.41';
 $('ver').textContent = `RPV viewer ${RPV_VERSION}`;
 const CREDIT = 'Created by Christian Tate at MSSS';   // 0.99.14 (Christian, 17 Nov 2026: 'remove the "for research purposes" phrase')
 // 0.99.39 (Christian, 19 Nov 2026: "remove the code: ... text from the welcome screen"): the credit alone, no link to
@@ -687,14 +756,14 @@ function showWelcome(on) {
                                  { text: 'Mars 2020 Perseverance rover', px: 120, weight: 700 }]), WELCOME_AZ_DEG, 14, 5, 4.2));
     ctlHeadset = place(textPanel([{ text: 'trigger: next site   |   left trigger: back   |   stick: turn', px: 84, weight: 600 },
                                  { text: 'X: info and map   |   Y: home   |   A: view', px: 84, weight: 600 },
-                                 { text: 'B: terrain only (again: color skin)   |   right grip: terrain   |   left grip: rover', px: 84, weight: 600 },
+                                 { text: 'B: stereo / full 3D   |   right grip: terrain   |   left grip: rover', px: 84, weight: 600 },
                                  { text: 'stick click: drive the rover (beta)   |   in the drive: sticks forward / back', px: 84, weight: 600 }],
                                 { back: 'rgba(0,0,0,0.35)', uniform: true }), WELCOME_AZ_DEG, -6, 5, 3.6);   // 0.99.14: one size
     // 0.99.37 (Christian, 19 Nov 2026: "In the browser 2d version. Show a differ set of controls, including using the
     // space bar to change the color map"): on a screen the keys and the mouse instead
     ctlScreen = place(textPanel([{ text: '\u2190 \u2192: site   |   space: color map   |   R: rover on / off   |   V: terrain', px: 84, weight: 600 },
                                  { text: 'drag or W A S D: look   |   wheel: zoom   |   N E S W O: face   |   L: eye', px: 84, weight: 600 },
-                                 { text: 'I: info and map   |   H: home   |   B: terrain only   |   P: motion on / off', px: 84, weight: 600 }],
+                                 { text: 'I: info and map   |   H: home   |   B: stereo / full 3D   |   P: motion on / off', px: 84, weight: 600 }],
                                 { back: 'rgba(0,0,0,0.35)', uniform: true }), WELCOME_AZ_DEG, -6, 5, 3.6);
     welcome.add(ctlHeadset, ctlScreen);
   }
@@ -854,7 +923,8 @@ const isWhole = q => !!(q && q.station_mesh && q.station_mesh.whole);
 function views(p, v) {
   const q = variants(p)[v] || {}, ks = Object.keys(q.views || {});
   if (!isWhole(q)) return ks;
-  const w = ks.filter(k => k === 'standard' || /^normal/.test(k));
+  const sk = (q.station_mesh && q.station_mesh.skins) || {};     // 0.99.41: the color skins of the full 3D texture
+  const w = ks.filter(k => k === 'standard' || sk[k] || /^normal/.test(k) || k === 'range log');
   return w.length ? w : ks.slice(0, 1);
 }
 // 0.98.30 (Christian, 16 Nov 2026: 'Change "normal" to "normal map" and "range log" to "distance map"'): the names of
@@ -999,6 +1069,9 @@ async function show() {
   if (!file) { msg('no image for this choice'); return; }
   history.replaceState(null, '', hashOf(p, vr));
   anchored = false;                                             // 0.98.30: the 3D rover set again at the eyes' center
+  // 0.99.41 (Christian, 19 Nov 2026: "when switching skins in vr mode, bring the view back to the pivot without changing
+  // the look direction"): so a change of view - a skin too, which loads nothing - puts the 3D surfaces back with their
+  // pivot at the eyes in a headset, the heading as it was (only the position is set: see the render loop)
   const id = ++loadId, url = new URL(file, base).href, whole = isWhole(vr);
   msg(`loading ${p.title || p.id} ...`);
   setEye(wantEye);                                               // 0.99.36: center where this choice has one, else the left eye
@@ -1019,7 +1092,17 @@ async function show() {
     // 0.99.38: in the normal-map view a 3D mode draws its surfaces with their own normals; the station mesh's rover is
     // the third mode's projected rover surface where the station has one
     const nmView = /^normal/.test(names[cur.w] || '');
-    const surf = vr.station_mesh && (color(names[cur.w]) || nmView) ? showRover(vr.station_mesh, { normals: nmView, rover: vr.rover_surface })
+    // 0.99.40 (Christian, 19 Nov 2026: "the 3d terrain should preferably use the same texture as the full 3d texture"):
+    // the local 3D terrain is the full 3D file's terrain - the same 20 m mesh and its texture, its shell to the horizon
+    // left out, the panorama behind it - where the station has the full 3D file; else the station mesh
+    const scape = mode === 'local' ? variants(p).find(q => q.key === 'scape3d' && q.station_mesh) : null;
+    const sm = scape ? Object.assign({}, scape.station_mesh, { whole: false, drive: undefined, noHorizon: true }) : vr.station_mesh;
+    const dView = /^(distance|range)/.test(names[cur.w] || '');   // 0.99.41: a 3D mode's distance map from its surfaces
+    const skinFile = sm && sm.skins && sm.skins[names[cur.w]];      // 0.99.41: the color skin of the full 3D texture
+    const skinUrl = skinFile ? new URL(skinFile, base).href : null;
+    const surf = sm && color(names[cur.w]) && canSwap(sm, skinUrl) ? swapSkin(skinUrl)       // 0.99.41: the picture alone
+      : sm && (color(names[cur.w]) || nmView || dView) ? showRover(sm, { normals: nmView, distance: dView,
+        skin: skinUrl, rover: vr.rover_surface || scape && scape.rover_surface })
       : showRover(color(names[cur.w]) || (nmView && vr.rover_surface) ? vr.rover_surface : null, { normals: nmView });
     if (whole) { await surf; if (id !== loadId) return; }        // 0.99.40: the 3D file is the picture: "loading" until it is in
     // 0.99.15 (Christian, 17 Nov 2026: "the north direction should be preserved when moving from site to site. I noticed
@@ -1082,21 +1165,15 @@ function goHome() {
   faceAfterLoad = 270;                           // west
   show();
 }
-function terrainOnly() {
-  // 0.98.30 (Christian, 16 Nov 2026: "The B button should both hide the rover and return the terrain only view (not the
-  // normal or depth map view)" and "let [enhanced local] be viewable as one of the skins that button B shows"): B goes to
-  // the terrain-only panorama - no rover, a color view (standard; the color view shown, if it was one); B again steps
-  // through its color skins (standard, enhanced local, ...), never the normal or distance map
-  // 0.99.40: in the terrain mode shown (the drive: the full 3D terrain) - the rover hidden, a color view
+// 0.99.41 (Christian, 19 Nov 2026: "we need a way to change between ods and full 3d mode in VR. Maybe that should be
+// B"): B (headset and keyboard) - terrain stereo <-> terrain full 3D (the local 3D where a station has no full); the
+// view is kept by its name (the color skins are in both).  Terrain only with the rover hidden was B until 0.99.40:
+// the rover button, R or the left grip hides the rover now
+function stereoOrFull() {
   const p = panos[cur.s] || {};
-  const now = viewName() || '', was = !roverShown() && color(now);
-  roverOn = false;
-  pick(p, mode === 'drive' ? 'full' : mode, now);
-  const names = views(p, cur.v), cols = names.map((k, j) => j).filter(j => color(names[j]));
-  if (cols.length) {
-    if (was && cols.length > 1) cur.w = cols[(cols.indexOf(cur.w) + 1) % cols.length];
-    else if (!color(names[cur.w] || '')) cur.w = names.indexOf('standard') >= 0 ? names.indexOf('standard') : cols[0];
-  }
+  const ms = modesOf(p).map(x => x[0]);
+  const to = mode === 'stereo' ? (ms.includes('full') ? 'full' : ms.includes('local') ? 'local' : 'stereo') : 'stereo';
+  pick(p, to, viewName());
   show();
 }
 $('home').onclick = goHome;
@@ -1175,7 +1252,7 @@ window.addEventListener('keydown', e => {
   else if (e.key === 'p' || e.key === 'P') { motionOn = !motionOn; }     // 0.99.32: the screen's eye movement on / off
   else if (e.key === 'i' || e.key === 'I') toggleInfo();
   else if (e.key === 'h' || e.key === 'H') goHome();                     // 0.98.28: as the headset's Y
-  else if (e.key === 'b' || e.key === 'B') terrainOnly();                // 0.98.28: as the headset's B
+  else if (e.key === 'b' || e.key === 'B') stereoOrFull();               // 0.98.28: as the headset's B (0.99.41: stereo / full 3D)
 });
 
 // ---------------------------------------------------------------- looking around on a screen
@@ -1297,7 +1374,7 @@ function buttons(dt) {                           // xr-standard: button 4 is A (
     if (!gp) continue;
     const left = src.handedness === 'left';
     if (pressed(src, 4)) { if (left) toggleInfo(); else step('w', 1); }       // 0.98.13: X (left): info; A (right): the next view
-    if (pressed(src, 5)) { if (left) goHome(); else terrainOnly(); }          // 0.98.28: Y (left): home, facing west; B (right): terrain only (0.98.30: color views; again, the next one)
+    if (pressed(src, 5)) { if (left) goHome(); else stereoOrFull(); }         // 0.98.28: Y (left): home, facing west; B (right): 0.99.41 stereo / full 3D
     // 0.99.40 (Christian, 19 Nov 2026: "In VR mode, enter driving/ steering mode with a click on the joystick. Left and
     // right still rotate the view and forward and back on the left and right controler works in like skid steering"):
     // a thumbstick click (xr-standard button 3) starts the drive where the station has it, and ends it

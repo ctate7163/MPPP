@@ -81,10 +81,18 @@ PART = {"terrain": "station_mesh_terrain", "rover": "station_mesh_rover", "scape
 # horizon circle, the uv ... goes to the sky"): the fifth mode's surface - see :func:`horizon_shell`
 SCAPE = True                    # the masked run also makes the fifth mode's terrain (a second 8k texture)
 SCAPE_SUFFIX = "station_scape.glb"
-HORIZON_FRAC = 0.90             # the skyline's circle: this share of the texture's inscribed circle
+HORIZON_FRAC = 0.97             # the skyline's circle: this share of the texture's inscribed circle (0.99.41, Christian,
+#                                 19 Nov 2026: "the full 3d texture can cut out some sky to make more room for center
+#                                 detail" - and the sky is solid white now: 0.90 before)
 SKYLINE_MARGIN_DEG = 1.5        # the full-density zone ends this far above the highest mesh seen from C ...
-SKYLINE_MIN_DEG = 10.0          # ... and at least this far above the horizontal: the scene's far surface (beyond the
+SKYLINE_MIN_DEG = 5.0           # ... and at least this far above the horizontal: the scene's far surface (beyond the
 #                                 mesh) does not tell far hills from the sky, and hills seldom stand higher than this
+#                                 (10 deg until 0.99.41: with HORIZON_FRAC the terrain gets about 13 % more texels a
+#                                 degree)
+SKY_WHITE = True                # 0.99.41 (Christian, 19 Nov 2026: "the sky still has too many blemishes. That can be
+#                                 solid white"; "assuming the black area does not map to the mesh, make it white"): in
+#                                 the fifth mode's texture the sky texels, the zone beyond the skyline's circle and the
+#                                 texels no triangle uses are white
 SHELL_FROM_M = 17.0             # the shell starts this far from the mast axis (the near mesh fades out over FADE_M; 7 m
 #                                 until 0.99.39)
 FADE_M = (18.0, 20.0)           # the near terrain's opacity: 1 at the first, 0 at the second (horizontal m from the axis;
@@ -554,6 +562,17 @@ def terrain_part(scene, sources, station, pool=None, size: int = TEXTURE_PX, rad
         del ground
     else:
         filled = push_pull(rgb, have & in_disc, in_disc)
+    white = None
+    if full and SKY_WHITE:                                       # 0.99.41: the sky white, and what no triangle uses
+        white = ~in_disc
+        for (x, y), (w, h) in zip(cells["pos"], cells["wh"]):
+            g = GUTTER_PX
+            white[max(0, int(y) - g):int(y + h) + g, max(0, int(x) - g):int(x + w) + g] = False
+        if sky is not None:
+            white |= sky & in_disc
+        ax = (np.arange(size, dtype=np.float32) + 0.5 - size / 2.0) ** 2
+        white |= (ax[None, :] + ax[:, None]) > np.float32((knee[1] * rpx + 1.0) ** 2)   # beyond the skyline's circle: sky
+        del ax
     sky = None
     med = np.median(rgb[seen_disc][::97], axis=0) if seen_disc.any() else np.full(3, 128.0)
     cell_filled = fill_cells(rgb, have, cells, med)
@@ -587,7 +606,9 @@ def terrain_part(scene, sources, station, pool=None, size: int = TEXTURE_PX, rad
     log.info("station mesh: terrain %d triangles (%d from the center, %d in cells at %s mm), texture %d px, %.1f %% of the "
              "disc colored by the frames (%.0f s)", len(Fo), int(vis.sum()), len(hid), rec["cell_texel_mm"], size,
              100 * rec["disc_texels_colored"], rec["seconds"])
-    return {"V": Vo[keep], "F": remap[Fo], "uv": UVo[keep], "texture": rgb, "record": rec, "shell": out_shell}
+    if white is not None:
+        rec.update(white_texels=int(white.sum()))
+    return {"V": Vo[keep], "F": remap[Fo], "uv": UVo[keep], "texture": rgb, "record": rec, "shell": out_shell, "white": white}
 
 
 def viewpoints(pivot, radius_m: float = VIEW_RADIUS_M, n: int = VIEWPOINTS) -> np.ndarray:
@@ -685,12 +706,29 @@ def rover_part(scene, sources, station, pool=None, size: int = ROVER_TEXTURE_PX,
     return {"V": Vo, "F": Fo, "uv": UVo, "texture": rgb, "record": rec}
 
 
-def write_part(out_dir: PathLike, prefix: str, kind: str, part: Dict[str, Any], station, to8) -> Dict[str, Any]:
-    """``<prefix>_<PART[kind]>.npz`` (V in the viewer's frame, F, uv), ``.jpg`` (the texture, 8-bit by ``to8``), ``.json``."""
+def write_part(out_dir: PathLike, prefix: str, kind: str, part: Dict[str, Any], station, to8, to16=None) -> Dict[str, Any]:
+    """``<prefix>_<PART[kind]>.npz`` (V in the viewer's frame, F, uv), ``.jpg`` (the texture, 8-bit by ``to8``), ``.json``.
+
+    0.99.40 (Christian, 19 Nov 2026: "the ...mesh_terrain.jpg and full 3D texture should be made projected as 16-bit
+    images and converted to 8-bit the same way as the ods"): the texture is projected from the 16-bit linear frames
+    when the panoramas are (it was), and ``to16`` (the panoramas' 16-bit encoding: the linear value x 64 x exposure16)
+    keeps it as ``<stem>_16.png`` beside the .jpg, so that ``rpp ods --retone`` (:func:`retone_textures`) makes the
+    .jpg again from it with the panoramas' own 8-bit conversion."""
     import cv2
     out = Path(out_dir)
     stem = f"{prefix + '_' if prefix else ''}{PART[kind]}"
+    white = part.get("white")                                    # 0.99.41: the fifth mode's sky and unused texels
+    t16 = to16(part["texture"]) if to16 is not None else None
+    files16 = []
+    if t16 is not None:
+        if white is not None:
+            t16[white] = 65535
+        cv2.imwrite(str(out / (stem + TEXTURE16_SUFFIX)), np.ascontiguousarray(t16[..., ::-1]))
+        files16 = [stem + TEXTURE16_SUFFIX]
+        del t16
     tex8 = to8(part["texture"])
+    if white is not None:
+        tex8[white] = 255
     ok, enc = cv2.imencode(".jpg", np.ascontiguousarray(tex8[..., ::-1]), [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
     if not ok:
         raise RuntimeError("station mesh: the texture could not be encoded")
@@ -702,9 +740,82 @@ def write_part(out_dir: PathLike, prefix: str, kind: str, part: Dict[str, Any], 
         extra = {"shell_V": page_frame(sh["V"], station.pivot, station.east, station.up, station.north),
                  "shell_F": np.asarray(sh["F"], np.uint32), "shell_uv": np.asarray(sh["uv"], np.float32)}
     np.savez_compressed(out / (stem + ".npz"), V=Vp, F=np.asarray(part["F"], np.uint32), uv=np.asarray(part["uv"], np.float32), **extra)
-    rec = dict(part["record"], kind=kind, files=[stem + ".npz", stem + ".jpg"], vertices=int(len(Vp)), mesh_triangles=int(len(part["F"])))
+    rec = dict(part["record"], kind=kind, files=[stem + ".npz", stem + ".jpg"] + files16, vertices=int(len(Vp)), mesh_triangles=int(len(part["F"])))
     (out / (stem + ".json")).write_text(json.dumps(rec, indent=1), encoding="utf-8")
     return rec
+
+
+TEXTURE16_SUFFIX = "_16.png"     # 0.99.40: a part's texture in the 16-bit panoramas' encoding
+
+
+def retone_textures(folder: PathLike, tone8) -> List[str]:
+    """0.99.40: the .jpg of every station mesh part in ``folder`` that has its 16-bit texture, made again by ``tone8``
+    (a (h, w, 3) float array in the 16-bit units divided by 64 x exposure16 -> uint8: the panoramas' conversion,
+    :func:`rpp.ibr.linear16.retone`).  The .glb files are put together again by the caller (:func:`assemble`)."""
+    import cv2
+    done = []
+    for f in sorted(set(Path(folder).glob("*station_mesh_*" + TEXTURE16_SUFFIX)) | set(Path(folder).glob("*station_scape_*" + TEXTURE16_SUFFIX))):
+        a = cv2.imread(str(f), cv2.IMREAD_UNCHANGED)
+        if a is None or a.dtype != np.uint16:
+            continue
+        v = tone8(a[..., :3].astype(np.float32))                 # BGR in, BGR out
+        v[(a[..., :3] == 65535).all(axis=-1)] = 255              # 0.99.41: the white sky and unused texels stay white
+        dst = f.with_name(f.name[:-len(TEXTURE16_SUFFIX)] + ".jpg")
+        ok, enc = cv2.imencode(".jpg", np.ascontiguousarray(v), [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+        if ok:
+            dst.write_bytes(enc.tobytes())
+            done.append(dst.name)
+        del a, v
+    return done
+
+
+SKIN_JPEG_QUALITY = 90
+
+
+def write_skins(folder: PathLike, levels_file: Optional[PathLike] = None) -> Dict[str, Any]:
+    """0.99.41: the color skins of the fifth mode's texture in ``folder`` - ``<stem>_<tag>.jpg`` beside
+    ``<stem>.jpg`` for the tags of :data:`rpp.ibr.color_products.SKIN_TAGS` (enhanced color, enhanced tone, original
+    color, decorrelation stretch), from its 16-bit texture with the station's own parameters
+    (:func:`rpp.ibr.color_products.texture_products`).  The viewer puts a skin on the terrain and its shell in place of
+    the file's texture, in the full 3D and the local 3D terrain.  {} when the folder has no 16-bit full 3D texture."""
+    import cv2
+    from .color_products import SKIN_TAGS, texture_products
+    from .linear16 import UNITS_PER_8BIT, _exposure16
+    d = Path(folder)
+    done: Dict[str, Any] = {}
+    for f in sorted(d.glob("*" + PART["scape"] + TEXTURE16_SUFFIX)):
+        a = cv2.imread(str(f), cv2.IMREAD_UNCHANGED)
+        if a is None or a.dtype != np.uint16:
+            continue
+        stem = f.name[:-len(TEXTURE16_SUFFIX)]
+        try:
+            rec = json.loads((d / (stem + ".json")).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            rec = {}
+        tpd = rec.get("texels_per_deg") or (a.shape[1] / 2.0 * HORIZON_FRAC / 95.0)
+        views = texture_products(a[..., :3], UNITS_PER_8BIT * _exposure16(d), d, levels_file, float(tpd))
+        for tag, v in views.items():
+            ok, enc = cv2.imencode(".jpg", np.ascontiguousarray(v), [cv2.IMWRITE_JPEG_QUALITY, SKIN_JPEG_QUALITY])
+            if ok:
+                (d / f"{stem}_{tag}.jpg").write_bytes(enc.tobytes())
+                done[SKIN_TAGS[tag]] = f"{stem}_{tag}.jpg"
+        del a, views
+    if done:
+        log.info("station mesh: the full 3D texture's color skins %s", ", ".join(done.values()))
+    return done
+
+
+def skin_files(folder: PathLike) -> Dict[str, Path]:
+    """0.99.41: {view key: file} of the color skins of the fifth mode's texture in ``folder`` (:func:`write_skins`)."""
+    from .color_products import SKIN_TAGS
+    d = Path(folder)
+    out = {}
+    for tex in sorted(d.glob("*" + PART["scape"] + ".jpg")):
+        for tag, key in SKIN_TAGS.items():
+            f = tex.with_name(tex.name[:-4] + f"_{tag}.jpg")
+            if f.is_file():
+                out[key] = f
+    return out
 
 
 # ------------------------------------------------------------------------------------------- the file

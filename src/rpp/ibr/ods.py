@@ -2140,6 +2140,22 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             fill_names = [n for n in fill_names if n not in lost]
             for n in lost:
                 lin_rep["missing"].pop(n, None)
+        # 0.99.41 (Christian, 19 Nov 2026: "the texture and ods projections should only be made from projections of the
+        # 16-bit images in the eod sequences and the specially identified context images"): a station frame without a
+        # 16-bit image is left out too - the panorama and its textures are never rendered from 8-bit frames (before: one
+        # such frame put the whole panorama in 8 bits); only when no station frame has one is it rendered in 8 bits
+        gone_own = [n for n in want if n in lin_rep["missing"]]
+        if gone_own and len(gone_own) < len(want):
+            for n in gone_own[:5]:
+                log.warning("ods --bits 16: %s: %s", n, lin_rep["missing"][n])
+            log.warning("ods --bits 16: %d of the station's %d frames left out (no 16-bit image): %s", len(gone_own), len(want),
+                        ", ".join(gone_own))
+            want = [n for n in want if n not in set(gone_own)]
+            images = list(want)                          # the station's own frames, explicitly (station_sources)
+            own = [n for n in own if n not in set(gone_own)]
+            for n in gone_own:
+                lin_rep["missing"].pop(n, None)
+            lin_rep["left_out"] = gone_own
         want = want + fill_names
         if lin_rep["missing"]:
             for n, why in list(lin_rep["missing"].items())[:5]:
@@ -2364,14 +2380,21 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             from . import station_mesh as _sm
             pf = prefix if use_masks else (prefix[:-len("_rover")] if prefix and prefix.endswith("_rover") else prefix)
 
-            def to8(rgb):                                # the panorama's own 8-bit view of the blend
-                if not linear:
-                    return np.clip(np.rint(rgb), 0, 255).astype(np.uint8)
-                from .linear16 import shared_levels, shared_value, auto_exposure16, auto_levels, tone_levels, tone_soft, tone_pipeline
+            def k16_of(rgb):                             # the 16-bit panoramas' scale: 64 x exposure16
+                from .linear16 import shared_value, auto_exposure16
                 ex = exposure16
                 if isinstance(ex, str):
                     ex, _ = shared_value(tone_levels_file, "exposure16", lambda: auto_exposure16(rgb, rgb.max(axis=-1) > 0))
-                k16 = 64.0 * float(ex)
+                return 64.0 * float(ex)
+
+            def to16(rgb):                               # 0.99.40: the texture as the 16-bit panoramas are written
+                return np.clip(np.rint(rgb * k16_of(rgb)), 0, 65535).astype(np.uint16) if linear else None
+
+            def to8(rgb):                                # the panorama's own 8-bit view of the blend
+                if not linear:
+                    return np.clip(np.rint(rgb), 0, 255).astype(np.uint8)
+                from .linear16 import shared_levels, auto_levels, tone_levels, tone_soft, tone_pipeline
+                k16 = k16_of(rgb)
                 lin8 = np.clip(np.rint(rgb * k16), 0, 65535).astype(np.float32) / k16
                 if tone == "pipeline":
                     v = tone_pipeline(lin8)
@@ -2388,7 +2411,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                 else:
                     part, kind = _sm.rover_part(scene, sources, station, pool, size=_sm.ROVER_TEXTURE_PX, linear=linear,
                                                    rows_per_chunk=rows_per_chunk), "rover"
-                rec_out["station_mesh"] = _sm.write_part(out, pf, kind, part, station, to8)
+                rec_out["station_mesh"] = _sm.write_part(out, pf, kind, part, station, to8, to16)
                 del part
             except Exception as e:                       # noqa: BLE001 - the panoramas are not lost for it
                 log.warning("ods: the station mesh's part was not made (%s: %s)", type(e).__name__, e)
@@ -2397,7 +2420,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                 try:                                     # 0.99.34: its own record - a failure here is not the station mesh's
                     part = _sm.terrain_part(scene, sources, station, pool, size=_sm.TEXTURE_PX, target=_sm.TARGET_TRIANGLES,
                                             linear=linear, rows_per_chunk=rows_per_chunk, full=True)
-                    rec_out["station_scape"] = _sm.write_part(out, pf, "scape", part, station, to8)
+                    rec_out["station_scape"] = _sm.write_part(out, pf, "scape", part, station, to8, to16)
                     del part
                 except Exception as e:                   # noqa: BLE001
                     log.warning("ods: the fifth mode's terrain was not made (%s: %s)", type(e).__name__, e)
@@ -2447,6 +2470,12 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             except Exception as e:                       # noqa: BLE001 - the panorama stands without them
                 log.warning("ods: no raw / enhanced tone / dcs views (%s)", e)
                 rec_out["color_products"] = {"error": str(e)}
+            if station_mesh and use_masks:               # 0.99.41: the full 3D texture's color skins, with the same parameters
+                try:
+                    from .station_mesh import write_skins
+                    rec_out["station_scape_skins"] = write_skins(out, tone_levels_file)
+                except Exception as e:                   # noqa: BLE001
+                    log.warning("ods: no color skins of the full 3D texture (%s)", e)
     if prefix:                                       # the unprefixed files of before 10 Nov would be stale
         for n in OLD_NAMES:
             if (out / n).is_file():
@@ -2482,6 +2511,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         fr = [v for v in (lin_rep.get("frames") or {}).values() if v]
         rec_out["linear16"] = {
             "rendered": linear, "missing": lin_rep["missing"], "dir": lin_rep["dir"],
+            "left_out_without_16bit": lin_rep.get("left_out", []),        # 0.99.41: station frames left out
             "encoding": "uint16 linear, no gamma: value = radiance x white balance x brightness / zenith scale x "
                         "scale_rad_to_int16 x the frame's gain (gains in this file); value / 64 = the 8-bit panorama "
                         "before its tone curve; 0 = no data",
