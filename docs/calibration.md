@@ -191,6 +191,50 @@ right after the Navcam joint, both promoted if they pass (`run_hazcam.bat` and `
 separate `hazcam_consensus` alignment with the Navcam held, were removed in 0.94.4; `run_sites.py --group
 hazcam_consensus --variant hazcam --set NAVCAM_INTRINSICS=hold` then the commands above do the same).
 
+### Mastcam-Z on the deck fiducials (study, 0.99.34)
+
+Module [`rpp_studies.calibration.zcam_fiducials`](api.md#rpp_studies.calibration.zcam_fiducials). Inside a block a
+Mastcam-Z camera's position along its boresight trades with its focal length: a camera moved forward by d makes a
+point at range r look larger by d / r, and a focal length smaller by d / r cancels it. The terrain is 2-20 m away, so
+the joints cannot tell the two apart (the 18 Nov N+Z34 joint moved the ZR center 3.7 mm forward while its focal length
+fell by about 1000 ppm). The surveyed deck targets are 0.8-2.4 m away, so the deck pans separate them.
+
+The study carries each Mastcam-Z eye on the deck_joint mast chain as the chain carries the Navcam. For every frame
+with resolver angles (az, el), R = Rot(d) Rot(Q_e) Ry(el)^T Rz(az)^T Rot(W) and C = [P_x, P_y, 0] + Rot(G) Rz(az)
+(h + Ry(-el) c_e), with the eye's camera from the zoom's focus law at the frame's focus count. It fits per eye the
+center c_e in the head frame (m) and the rotation Q_e, a per-frame pointing change d (prior 1.5 mrad) and, with
+`--focal free`, a focal scale s_e at the deck focus. It reports c_e, its component along the boresight, the baseline
+and the ZR center in the ZL frame, beside the joints' values. On synthetic deck pans the along-boresight center
+comes out to 0.06 mm with the focal law held and to 0.35 mm with s_e free (s_e and the position then correlate at
+-0.98): the deck tells 15.0 mm from 18.7 mm either way.
+
+```bash
+python -m rpp_studies.calibration.zcam_fiducials --pds D:\data\m2020\zcam --out D:\rover_blocks\camera_analysis\zcam34_fiducials --zoom 34
+```
+
+It reads the PDS labels and images only. The frames are the zoom's RAD products whose label model puts at least two
+of the surveyed targets (and TDF4) in view.
+
+## Curiosity (MSL) blocks: `rpp_studies.msl.block`
+
+Module `rpp_studies.msl.block` (0.99.15). It runs one Curiosity block from the PDS (Navcam and front Hazcam, both
+sides): fetch, prepare (the label cameras or the promoted `MSL_*.json` models, the mask CNN, pairs), align, then the
+stages (free images, stereo rigs, a check with free principal points, temperature bins), the scale from the Navcam
+rigs' label baseline, the frames more than 3 m from their label position taken out, a verdict per family and side,
+and `promote`. The verdict needs, per camera, 75 % of the frames registered (and 100 at least), a median residual of
+0.6 px at most, no rise of the residual toward the edge of more than 15 % of the rms, and three temperature bins.
+Since 0.99.34 a side whose frames span 10 degC at most passes with fewer bins, and its law is held flat: the
+parameters are at the frames' mean temperature, the slopes are 0, and the range is recorded. Per rig, it needs 50
+pairs; for the block, the rigs may cost at most 10 % of reprojection, free principal points may gain at most 3 %, the
+baselines must agree within 0.5 % and at most 10 % of the frames may be misplaced. The radius check is one-sided
+since 0.99.34: a residual that falls toward the edge (the near ground in the middle of a Hazcam frame) is no
+distortion misfit.
+
+```bash
+python -m rpp_studies.msl.block all --preset yellowknife --promote-if-ok
+python -m rpp_studies.msl.block promote --promote-families F --dry-run
+```
+
 ## Promotion: `rpp cmods`
 
 A candidate becomes the model in use when it is promoted, either by `--promote-if-ok` above (only when every check

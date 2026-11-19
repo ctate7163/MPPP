@@ -1027,9 +1027,36 @@ def camera_residuals(rec, man: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     return out
 
 
+# 0.99.34 (Christian, 19 Nov 2026: "Promote what we can from msl"): two refinements of the verdict, both about what a
+# check is for -
+#   * the residual's change with radius is judged one way: a distortion that does not fit shows as residuals that GROW
+#     toward the edge.  The Yellowknife front Hazcams have the opposite (0.62 px in the center, 0.48 px at the edge: the
+#     near ground under the rover, in the middle of the frame), which says nothing against the model.  The check is
+#     the rise of the outer bins (r >= 0.6) over the inner ones (r < 0.6), as a share of the rms (:func:`radial_rise`);
+#     the two-sided spread is still reported;
+#   * a side whose frames span at most NARROW_T_DEGC needs no temperature law: with fewer than three bins it passes
+#     the bins check as "one temperature range", and :func:`promote` writes its files with the law held flat (the
+#     parameters at the frames' mean temperature, the slopes 0, the range recorded: :func:`flat_law`).
+NARROW_T_DEGC = 10.0
 LIMITS = {"registered_share": 0.75, "registered_frames": 100, "median_px": 0.6, "radial_spread": 0.15, "rig_pairs": 50,
           "rig_cost_rise": 0.10, "pp_gain": 0.03, "baseline_agreement": 0.005, "thermal_bins": 3,
           "misplaced_share": 0.10}                             # 0.99.24: of the registered frames, taken out as misplaced
+
+
+def radial_rise(by_radius: Sequence[Dict[str, Any]], rms: Optional[float] = None, split: float = 0.6) -> Optional[float]:
+    """0.99.34: how much the residual grows toward the edge - the share-weighted rms of the bins from ``split`` of the
+    half-diagonal out, less that of the bins inside it, over ``rms`` (default: the bins' own).  Negative when the edge
+    fits better.  None without a measured bin on each side."""
+    def pooled(bins):
+        w = sum(float(b["share"]) for b in bins)
+        return float(np.sqrt(sum(float(b["share"]) * float(b["rms_px"]) ** 2 for b in bins) / w)) if w > 0 else None
+    have = [b for b in by_radius or [] if b.get("rms_px") is not None and b.get("share")]
+    inner = pooled([b for b in have if float(b["r"][1]) <= split + 1e-9])
+    outer = pooled([b for b in have if float(b["r"][0]) >= split - 1e-9])
+    if inner is None or outer is None:
+        return None
+    ref = float(rms) if rms else pooled(have)
+    return round((outer - inner) / ref, 3) if ref else None
 
 
 def verdict(rep: Dict[str, Any], man: Dict[str, Any], family: str = "N") -> Dict[str, Any]:
@@ -1053,12 +1080,20 @@ def verdict(rep: Dict[str, Any], man: Dict[str, Any], family: str = "N") -> Dict
         tc = ((rep.get("thermal") or {}).get("cameras") or {}).get(g)
         if rep.get("thermal"):                                 # 0.99.17: a temperature law needs three bins for its error
             nb = len((tc or {}).get("bins") or [])
-            add(f"{g} temperature bins", nb, f">= {LIMITS['thermal_bins']}", nb >= LIMITS["thermal_bins"], g[2])
+            tr = (tc or {}).get("T_range_degC") or []
+            span = float(tr[1]) - float(tr[0]) if len(tr) == 2 else None
+            narrow = nb < LIMITS["thermal_bins"] and nb >= 1 and span is not None and span <= NARROW_T_DEGC
+            add(f"{g} temperature bins", nb, f">= {LIMITS['thermal_bins']}" + f" (or one range of <= {NARROW_T_DEGC:g} degC: law flat)",
+                nb >= LIMITS["thermal_bins"] or narrow, g[2])
+            if narrow:
+                checks[-1]["flat_law"] = True
+                checks[-1]["T_range_degC"] = [float(tr[0]), float(tr[1])]
         r = (rep.get("residuals") or {}).get(g) or {}
         add(f"{g} median residual px", r.get("median_px"), f"<= {LIMITS['median_px']}",
             r.get("median_px") is not None and r["median_px"] <= LIMITS["median_px"], g[2])
-        add(f"{g} residual spread with radius", r.get("radial_spread"), f"<= {LIMITS['radial_spread']}",
-            r.get("radial_spread") is not None and r["radial_spread"] <= LIMITS["radial_spread"], g[2])
+        rr = radial_rise(r.get("by_radius") or [], r.get("rms_px"))           # 0.99.34: one-sided (see NARROW_T_DEGC)
+        add(f"{g} residual rise toward the edge", rr, f"<= {LIMITS['radial_spread']} (spread {r.get('radial_spread')})",
+            rr is not None and rr <= LIMITS["radial_spread"], g[2])
     rigs = {k: v for k, v in (rep.get("rigs") or {}).items() if k[0] == family}
     sides = {g[2] for g in cams}
     for sd in sorted(sides):
@@ -1084,7 +1119,54 @@ def verdict(rep: Dict[str, Any], man: Dict[str, Any], family: str = "N") -> Dict
         sh = mp["frames"] / mp["of"]
         add("misplaced frames share", round(sh, 3), f"<= {LIMITS['misplaced_share']}", sh <= LIMITS["misplaced_share"])
     by_side = {sd: all(c["ok"] for c in checks if c["side"] in (None, sd)) for sd in sorted(sides)}
-    return {"ok": all(c["ok"] for c in checks), "family": family, "sides": by_side, "checks": checks}
+    flat = sorted({c["side"] for c in checks if c.get("flat_law") and c["side"]})
+    return {"ok": all(c["ok"] for c in checks), "family": family, "sides": by_side, "checks": checks, "flat_law_sides": flat}
+
+
+def _rotvec_matrix(v) -> np.ndarray:
+    v = np.asarray(v, float)
+    a = float(np.linalg.norm(v))
+    if a < 1e-15:
+        return np.eye(3)
+    k = v / a
+    K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
+    return np.eye(3) + np.sin(a) * K + (1 - np.cos(a)) * K @ K
+
+
+def flat_law(d: Dict[str, Any], rep: Dict[str, Any]) -> Dict[str, Any]:
+    """0.99.34: a model file (camera ``MSL_<g>.json`` or rig ``MSL_<k>_rig.json``) with its temperature law held flat:
+    the parameters at the frames' mean temperature ``Tm`` (camera: fx, fy times 1 + slope (Tm - T0); rig: the
+    rotation turned by rate (Tm - T0)), the slopes 0, and the range it was measured over recorded - for a side whose
+    frames cover one narrow temperature range (:data:`NARROW_T_DEGC`), where two bins cannot give a slope."""
+    d = json.loads(json.dumps(d))
+    th = d.get("thermal") or {}
+    T0 = float(th.get("T0_degC", T0_DEGC))
+    th_rep = rep.get("thermal") or {}
+    if "ref" in d:                                             # a rig
+        tr = (th_rep.get("rigs") or {}).get(d["family"] + d["side"]) or {}
+        bins = tr.get("bins") or []
+        w = [float(b.get("pairs", 1)) for b in bins]
+        Tm = float(np.average([b["T_degC"] for b in bins], weights=w)) if bins else T0
+        rate = np.radians(1e-3 * np.array([th.get("pitch_mdeg_per_degC", 0.0), th.get("yaw_mdeg_per_degC", 0.0),
+                                           th.get("roll_mdeg_per_degC", 0.0)], float))
+        R = _rotvec_matrix(rate * (Tm - T0)) @ np.asarray(d["R_sensor_from_ref"], float)
+        d["R_sensor_from_ref"] = R.tolist()
+        th.update(pitch_mdeg_per_degC=0.0, yaw_mdeg_per_degC=0.0, roll_mdeg_per_degC=0.0)
+    else:                                                      # a camera
+        g = d["family"] + d["eye"] + d["side"]
+        tc = (th_rep.get("cameras") or {}).get(g) or {}
+        bins = tc.get("bins") or []
+        w = [float(b.get("frames", 1)) for b in bins]
+        Tm = float(np.average([b["T_degC"] for b in bins], weights=w)) if bins else T0
+        k = 1.0 + 1e-6 * float(th.get("f_ppm_per_degC") or 0.0) * (Tm - T0)
+        d["params"] = [float(d["params"][0]) * k, float(d["params"][1]) * k] + [float(x) for x in d["params"][2:]]
+        th["f_ppm_per_degC"] = 0.0
+    th.update(flat=True, flat_at_degC=round(Tm, 2),
+              note_flat=f"0.99.34: one temperature range ({th.get('T_range_degC')} degC, {th.get('bins')} bins): no slope is "
+                        f"measured, so the law is held flat at the frames' mean temperature {Tm:.1f} degC")
+    d["thermal"] = th
+    d["source"] = (str(d.get("source", "")) + "; law held flat (one temperature range)")[:400]
+    return d
 
 
 # ------------------------------------------------------------------------------------------------- significance (0.99.17)
@@ -1339,6 +1421,11 @@ def promote(work: Path, force: bool = False, dry_run: bool = False, families: st
     verdicts = dict(rep.get("verdicts") or {})
     if rep.get("verdict"):
         verdicts.setdefault("N", rep["verdict"])
+    try:                                                       # 0.99.34: the verdict by the current rules
+        man = json.loads((work / "manifest.json").read_text(encoding="utf-8"))
+        verdicts = {fam: verdict(rep, man, fam) for fam in families}
+    except (OSError, ValueError, KeyError):
+        pass
     use, how, why, sides = [], [], [], {}
     for fam in families:
         mine = [f for f in files if f.stem.split("_")[1][0] == fam]
@@ -1360,6 +1447,21 @@ def promote(work: Path, force: bool = False, dry_run: bool = False, families: st
             why.append(f"{fam}: " + "; ".join(bad))
     if not use:
         return {"promoted": False, "reason": "the cameras do not pass - " + " | ".join(why)}
+    flat = {(fam, sd) for fam in families for sd in ((verdicts.get(fam) or {}).get("flat_law_sides") or [])}
+    if flat:                                                   # 0.99.34: those sides' files with the law held flat
+        fd = work / "cmods_candidate_flat"
+        fd.mkdir(exist_ok=True)
+        out = []
+        for f in use:
+            d = json.loads(Path(f).read_text(encoding="utf-8"))
+            if (d.get("family"), d.get("side")) in flat:
+                q = fd / Path(f).name
+                q.write_text(json.dumps(flat_law(d, rep), indent=1), encoding="utf-8")
+                out.append(q)
+            else:
+                out.append(f)
+        use = out
+        how.append("law held flat on " + ", ".join(f"{a}{b}" for a, b in sorted(flat)))
     note = f"MSL block {work.name}: {'; '.join(how)}, reprojection {rep.get('reprojection_px', float('nan')):.3f} px"
     res = M.promote(use, note=note[:400], dry_run=dry_run)
     return {"promoted": not dry_run, "dry_run": dry_run, "sides": sides, "not_promoted": why, **res}

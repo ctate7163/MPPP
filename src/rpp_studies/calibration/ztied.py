@@ -110,7 +110,7 @@ MIN_SEQ_IMAGES = forms.MIN_SEQ_IMAGES
 MIN_SEQ_OBS = forms.MIN_SEQ_OBS
 # 0.94.5 (Christian, 27 Oct): per block, the Mastcam-Z aspect (fy / fx of the diagnostic pass, the line with the
 # most observations) against the Navcam's per-block dfy - dfx (the Navcam diagnostic pass over the same blocks)
-BLOCK_ASPECT_MIN_OBS = 1000                # the same cut as the lines (MIN_BIN_OBSERVATIONS)
+BLOCK_ASPECT_MIN_OBS = 1000                # the same cut as the lines (MIN_BIN_OBSERVATIONS; per zoom since 0.99.34)
 # 0.95.1: the start offset of a freed fixed term in the "free (vs the fixed values)" test: from the exactly tied
 # solution with the bins at the fixed value the adjustment did not move it at all (k2 0.5 -> 0.5000013, synthetic
 # 0.3 -> 0.3 with the truth at 0.40); the bins' data then pull the law to the free optimum
@@ -1859,7 +1859,7 @@ def sequence_scales(d: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def block_aspect_rows(res: Dict[str, Any], nav: Dict[str, Dict[str, Any]],
-                      min_obs: int = BLOCK_ASPECT_MIN_OBS) -> Dict[str, Any]:
+                      min_obs: Optional[int] = None) -> Dict[str, Any]:
     """0.94.5 (Christian, 27 Oct): per block and eye, the Mastcam-Z fy - fx of the diagnostic pass (the state line
     with the most observations, at the reference focus) about the joint's (ppm of fx and px) against the Navcam's
     per-block dfy - dfx (``nav``, :func:`navcam_block_aspect`).  Rows with fewer than ``min_obs`` observations are
@@ -1868,7 +1868,10 @@ def block_aspect_rows(res: Dict[str, Any], nav: Dict[str, Dict[str, Any]],
     beside it (``per_bin_ppm``, ``per_bin_diff_ppm``, ``per_bin_state``); a block with several visits
     (:func:`visits_of`) gets one row per visit as well (``visit``, report only: not judged); ``sequences`` lists the
     :data:`POOL_SEQUENCES_REPORTED` pools with the largest |dfy - dfx|.  Returns {"rows", "slope" (Mastcam-Z on
-    Navcam ppm over the judged rows), "max_diff_ppm", "source", "sequences"}."""
+    Navcam ppm over the judged rows), "max_diff_ppm", "source", "sequences"}.  0.99.34: ``min_obs`` defaults to the
+    zoom's cut for the lines (``res["min_bin_observations"]``: 100 at 26 and 100 mm), not always 1000."""
+    if min_obs is None:
+        min_obs = int(res.get("min_bin_observations") or BLOCK_ASPECT_MIN_OBS)
     d = res.get("diagnostics") or {}
     per_bin: Dict[Tuple[str, str], Dict[str, Any]] = {}
     for b in d.get("blocks") or []:

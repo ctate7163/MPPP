@@ -16,6 +16,8 @@ old repository exists and the new one does not, so that it never creates a secon
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import sys
 import tempfile
 import warnings
@@ -23,7 +25,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from rpp import ondisk
-from rpp.mask.hub import HF_REPO, _download, cached_model, canonical_name, export_safetensors, load_registry, sha256_file
+from rpp.mask.hub import (HF_REPO, _download, cached_model, canonical_name, export_safetensors, load_registry,
+                          registry_path, sha256_file)
 from rpp.paths import checkpoints_dir
 
 PathLike = Union[str, Path]
@@ -34,6 +37,23 @@ def _default_card_file() -> Optional[Path]:
     d = docs_dir()
     p = d / "hf_model_card.md" if d is not None else None                     # the checkout's docs/
     return p if p is not None and p.is_file() else None
+
+
+_CARD_FIELD = re.compile(r"\{\{(sha256|bytes):([A-Za-z0-9_.-]+)\}\}")
+
+
+def fill_card(text: str, reg: Dict[str, Any]) -> str:
+    """0.99.34: the model card with ``{{sha256:NAME}}`` and ``{{bytes:NAME}}`` replaced by the registry's values (the
+    bytes with thousands separators), so the card of a model exported in the same run states its real SHA-256.  A
+    field of a model without the value is refused: the card would publish a placeholder."""
+    def one(m):
+        field, nm = m.group(1), m.group(2)
+        v = ((reg.get("models") or {}).get(nm) or {}).get(field)
+        if v in (None, ""):
+            raise ValueError(f"the card asks for {field} of {nm}, which the registry does not have: export it first "
+                             f"(python -m rpp.mask.hub export <checkpoint> --name {nm} --update-registry)")
+        return f"{int(v):,}" if field == "bytes" else str(v)
+    return _CARD_FIELD.sub(one, text)
 
 
 def upload_model(name: Optional[str] = None, repo_id: Optional[str] = None, card: Optional[PathLike] = None,
@@ -65,10 +85,15 @@ def upload_model(name: Optional[str] = None, repo_id: Optional[str] = None, card
         print(f"[rpp] exporting {src.name} -> {path.name}", flush=True)
         export_safetensors(src, out=path, name=name)
     got, want = sha256_file(path), entry.get("sha256")
-    if want and got != want:
+    if not want:                                         # 0.99.34: a model the registry has no SHA-256 for
+        raise ValueError(f"the registry has no SHA-256 for {name}: export it with --update-registry first "
+                         f"(python -m rpp.mask.hub export <checkpoint> --name {name} --update-registry)")
+    if got != want:
         raise ValueError(f"{path} has SHA-256 {got}, the registry {want}: not uploading.  Export it again "
                          f"(its .json card must be next to the .pt), or update the registry with "
                          f"export --update-registry and commit models.json.")
+    card = Path(card) if card else _default_card_file()
+    card_text = fill_card(card.read_text(encoding="utf-8"), reg) if card is not None else None   # before any upload
     api = HfApi()
     if repo_id == HF_REPO and not api.repo_exists(repo_id) and api.repo_exists(ondisk.MASK_OLD_HF_REPO):
         raise RuntimeError(f"{repo_id} does not exist but {ondisk.MASK_OLD_HF_REPO} does: rename it first "
@@ -78,10 +103,9 @@ def upload_model(name: Optional[str] = None, repo_id: Optional[str] = None, card
     print(f"[rpp] uploading {path.name} ({path.stat().st_size / 2**20:.0f} MB) to {repo_id}", flush=True)
     api.upload_file(path_or_fileobj=str(path), path_in_repo=entry["file"], repo_id=repo_id, repo_type="model",
                     commit_message=f"{name}: {entry['file']} (SHA-256 {got[:12]})")
-    card = Path(card) if card else _default_card_file()
-    if card is not None:
-        api.upload_file(path_or_fileobj=str(card), path_in_repo="README.md", repo_id=repo_id, repo_type="model",
-                        commit_message=f"model card ({name})")
+    if card_text is not None:                            # 0.99.34: {{sha256:NAME}} and {{bytes:NAME}} filled
+        api.upload_file(path_or_fileobj=card_text.encode("utf-8"), path_in_repo="README.md", repo_id=repo_id,
+                        repo_type="model", commit_message=f"model card ({name})")
     for x in extra or ():                       # 31 Oct: the card's figures (training curves, mask figure)
         x = Path(x)
         api.upload_file(path_or_fileobj=str(x), path_in_repo=f"figures/{x.name}", repo_id=repo_id, repo_type="model",
@@ -89,6 +113,13 @@ def upload_model(name: Optional[str] = None, repo_id: Optional[str] = None, card
     url = f"https://huggingface.co/{repo_id}/resolve/main/{entry['file']}"
     if url not in (entry.get("urls") or []):
         warnings.warn(f"{url} is not in the registry URLs of {name}; add it to src/rpp/data/models.json")
+    if entry.get("released") is False:                  # 0.99.34: uploaded - the registry says so (commit models.json)
+        reg = load_registry()
+        e = reg["models"][name]
+        e["released"] = True
+        e.pop("note", None)
+        registry_path().write_text(json.dumps(reg, indent=2) + "\n", encoding="utf-8")
+        print(f"[rpp] {name}: released = true in {registry_path()} (commit it)", flush=True)
     return url
 
 

@@ -3,6 +3,103 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.34 — 2026-11-19 (branch `rpp`)
+
+Christian, 07:10-07:31: "Review for bugs. Clean the documentation. Prepare mask hf upload with new docs"; "Let's use a
+van zyl tiny with just the one site and it's mid drive imaging"; "Z34 needs to be anchor to the fiducials in order to
+fix its position in the mast frame. Prepare that study"; "Promote what we can from msl"; "If you make changes to the
+code, leave them on v0p99".
+
+- **Mask model `rpp_mask_v5` prepared for Hugging Face** (the v5.2 run `convnext_tiny_s4_seg_20261118_v5p2`: Curiosity
+  Navcam and front Hazcam frames in training; 0.977 exclusion IoU on the 90 hand-cleaned frames of `validation_set_v1`
+  against 0.973 for v3, +0.0043 [+0.0003, +0.0088]). Registry entry (`released: false`, the SHA-256 written by the
+  export on the PC); the card (`docs/hf_model_card.md`) has a v5 section with the validation table and its cautions;
+  the card's `{{sha256:NAME}}` and `{{bytes:NAME}}` are filled from the registry by `release_mask_model upload`
+  (`fill_card`), which now refuses a model without a registry SHA-256, fills the card before uploading anything, and
+  sets `released: true` after the upload. `upload_mask_models.bat` (`_transfer`) does rename, export, upload and
+  verify of v5, v4 and v3. The default stays `rpp_mask_v3`. `docs/masks.md` and `RELEASING.md` updated.
+- **MSL verdict, two refinements** (`rpp_studies.msl.block`): the residual's change with radius is judged one way
+  (`radial_rise`: the outer bins over the inner, as a share of the rms; a residual that falls toward the edge - the
+  near ground in the middle of a Hazcam frame - is no distortion misfit); a side whose frames span 10 degC at most
+  (`NARROW_T_DEGC`) passes with fewer than three temperature bins, and `promote` writes its files with the law held
+  flat (`flat_law`: the parameters at the frames' mean temperature, the slopes 0, the range recorded). `promote` judges
+  by the current rules. At Yellowknife Bay this passes the front Hazcams of side A (the FA rig file at -20 degC had
+  been extrapolated 22 degC from two bins: 90 mdeg); side B still fails on FLB's registered share (0.736).
+  `msl_promote_hazcam.bat` (`_transfer`): a dry run, a question, the promotion.
+- **Study: Mastcam-Z on the deck fiducials** (`rpp_studies.calibration.zcam_fiducials`): the zoom's deck frames from
+  the PDS labels, the surveyed targets found in them, and each eye's center in the mast head through the deck_joint
+  chain, along the boresight too (focal law held, or a focal scale free); the ZR center in the ZL frame beside the
+  18 Nov joints' (15.0 / 15.7 / 18.7 mm). On synthetic deck pans: 0.06 mm along the boresight with the law held,
+  0.35 mm with the focal scale free. `zcam_fiducial_anchor.bat` (`_transfer`).
+- **Van Zyl notebook on a tiny block**: sol 52 alone - the station's six Navcam pairs, the front Hazcam pair and the
+  Navcam pair taken mid-drive at S003D2016 (16 frames; the packaged station's sol 33 context is left out); it lists
+  the other sol 52 site 3 Navcam drives the PDS holds. `van_zyl_notebook.bat` brings `D:\code\RPP_ods` up to date
+  itself (`update_rpp_ods.bat`).
+- **Bugs fixed**: a failure of the fifth mode's terrain (`station_scape`) no longer overwrites the station mesh's
+  record in `ods.json` (it has its own); `assemble_scape`'s docstring said the horizon comes first in the file (it
+  comes after the terrain, whose texture it shares; the viewer draws it first by render order); the Mastcam-Z block
+  aspect check took the 1000-observation cut at every zoom (now the zoom's line cut: 100 at 26 and 100 mm); the
+  color study's sky rim was 23 px at any panorama width (now 1 degree).
+- Docs: `calibration.md` gains the deck-fiducial study and the Curiosity blocks; `api.md` the study module; stale
+  MPPP paths in `RELEASING.md`; README and quickstart for the tiny Van Zyl block; the mask-training notebook names the
+  current models and no longer promotes by default.
+
+## 0.99.33 — 2026-11-18 (branch `rpp`)
+
+- **Sixth viewer mode, "Drive the rover (simulation)"** (Christian, 22:26: "Build a simple skid steering option. Call it
+  a sixth mode. It will be ride along so that the rover and pivot move with each other. Head motion or walking moves
+  away from the rover and the rover disappears after the viewer is one meter from the rover pivot"): the fifth mode's
+  file; each thumbstick's forward / back axis is the track on its side (speed = their mean x 0.25 m/s, turn rate = their
+  difference / 2.3 m); on a screen the arrow keys. The viewer rides at the mast head: the ground is moved and turned
+  under the rover. Height, pitch and roll from the plane through the terrain under the six wheels (a 0.1 m height grid
+  of the near terrain). The pivot stays within 6 m of where it stood. In a headset the rover is hidden when the head
+  is more than 1 m from the pivot. `web.DRIVE_3D`, `web.drive_settings()`. The nadir mark is hidden once the rover
+  moves. Loaded in a headless Chrome (SwiftShader WebGL) on a synthetic station: the fourth, fifth and sixth modes
+  draw, the arrow keys drive, no page errors; not yet tried in a headset.
+- **Color for display, a study** (`rpp_studies.misc.color_enhance`; Christian: "Prepare examples of each three color
+  maps made from the highest res 16 bit images"; "The decorrelation stretch should exclude the sky and rover"): A
+  base/detail (guided filter on log luminance, color ratios kept), B Mantiuk 2006, C decorrelation stretch over the
+  terrain only (sky: beyond the mesh, brighter than halfway between the terrain and the high sky, connected to the
+  zenith; rover: the rover run's center-depth "rover" layer grown 3 deg); one parameter set per station in a JSON.
+  Examples of sol 461 in `Claude outputs/color_enhance_2026-11-18`.
+- **`notebooks/van_zyl_ods_example.ipynb`** (written by `scripts/make_van_zyl_notebook.py`; Christian: "Make a notebook
+  that downloads van zyl ecam frames and build the ods and models through the whole pipeline. Use this as an example
+  to illustrate the process and RPP design features"): the PDS download of Sol0052_S003D2046's frames and context,
+  the mask and camera models, process, align, health, `rpp single-sites` (dense, mesh, depth maps, both panoramas, the
+  3D models, the local viewer), the color study, the exports. Not yet run end to end.
+- Tests: `test_validation` brought up to date for 0.99.28 (Rockytop one block in the Mastcam-Z groups); the full suite
+  passes (1043 passed, 6 skipped).
+- Docs: `station-products.md` (the six modes, the screen eye movement, the mesh near the mast, the color study), the
+  README and the quickstart; `pipeline_example.ipynb` points to the new notebook for the station steps.
+
+## 0.99.32 — 2026-11-18 (branch `rpp`)
+
+Christian, 21:18: "Build it ... Add the off pivot motion, swaying, and the cursor directed motion. Add fading at the end
+of the terrain mesh ... Mesh the 0–4 m zone as a height field ... Stitch the fill to the hole edges ... Draw fill in the
+normal map with its real normal, dimmed ... Build this as a fifth viewing mode."
+
+- **Fifth viewer mode, "3D terrain to the horizon and rover"** (`rpp.ibr.station_mesh`: `terrain_part(full=True)`,
+  `horizon_shell`, `assemble_scape`; `web.SCAPE_3D`, `web.station_scape`): one surface from under the rover to the far
+  field and the sky, no panorama behind it. `<station>_station_scape.glb` holds three meshes - "terrain" (the 10 m
+  terrain of the fourth mode), "horizon" (a sheet sampled from the scene on rings of equal angle from the projection
+  center: 0.5 deg x 0.25 deg up to the skyline, 8 rings of sky at 3 km) and "rover" (its own 4k texture). Terrain and
+  horizon share one 8k texture: straight down at the center, the skyline (the highest terrain seen, + 1.5 deg) on a
+  circle at 90 % of the inscribed radius, the sky to the zenith on the outer 10 %, the hidden triangles' cells in the
+  corners. The masked run makes this texture besides the fourth mode's (`station_mesh.SCAPE`).
+- **The near terrain fades out at its rim** (8 -> 10 m from the mast axis; in the fourth mode into the panorama, in the
+  fifth into the horizon sheet). In a headset the fourth mode's fade starts nearer as the head leaves the anchor.
+- **On a screen the eye moves** (`docs/ods/index.html`): 0.15 m in front of the turning point, +-0.05 m with the pointer,
+  a 0.03 m sway after 3 s without input (not with prefers-reduced-motion). P turns it off; `?still=1`.
+- **Fixed: the fourth mode drew the terrain only.** The page read the first mesh of a station mesh file, so the rover
+  part (in the file since 0.99.26) was never shown. R now hides the rover alone.
+- **Mesh, 0-4 m: a height field** (`mesh.height_field_arrays`; the terrain-only cloud): one median height per 1.5 cm
+  cell (coarser for a thin cloud), small gaps closed, larger ones left to the fill. No Poisson rim can curl there.
+- **The fill hangs under the measured surface** (`FILL_RIM_PERCENTILE` 5, `FILL_TUCK_M` 5 mm): a covered cell gives the
+  fill its low side, not its median, so the sheet meets a hole's rim from below and no longer shows through its
+  neighbors. (The sheet still spans the cells around a hole; it is not sewn to the mesh's boundary edges.)
+- **Normal panorama: the fill in its own normal's color x 0.45** (`ods.NORMAL_FILL_DIM`), not black.
+- Tests of 0.99.30's sol 116 station in `test_ibr` (two expectations had not been updated).
+
 ## 0.99.31 — 2026-11-18 (branch `rpp`)
 
 - **26 and 100 mm bins need 100 observations, not 1000, to be tied to the lines** (Christian, 15:17: "lower the

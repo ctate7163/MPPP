@@ -385,9 +385,68 @@ def poisson_arrays(points: np.ndarray, normals: Optional[np.ndarray] = None, dep
                   "normals": nsrc}
 
 
+# 0.99.32 (Christian, 18 Nov 2026: "Mesh the 0-4 m zone as a height field seen from the mast, which cannot curl or leave
+# patches"): the innermost zone is one height per cell of a horizontal grid - no surface can fold over a hole's rim
+HEIGHT_FIELD_TO_M = 4.0           # the zones that end within this of the mast axis are height fields (0: Poisson)
+HEIGHT_FIELD_CELL_M = 0.015       # the grid's cell (the cloud has a point every 6 mm or so there)
+HEIGHT_FIELD_MIN_POINTS = 2       # a cell with fewer points has no height of its own
+HEIGHT_FIELD_CLOSE = 2            # passes that give an empty cell with >= 5 of 8 neighbors their mean
+
+
+def height_field_arrays(points: np.ndarray, pivot: Sequence[float], up: Sequence[float], radius_m: float,
+                        cell_m: Optional[float] = None, min_points: int = HEIGHT_FIELD_MIN_POINTS,
+                        close: int = HEIGHT_FIELD_CLOSE) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
+    """(V, F, record): the points within ``radius_m`` of the mast axis as a height field - a square grid across the
+    vertical (``up``), a vertex at each cell with points (its center, at the points' median height), two triangles
+    where four neighboring cells have one, one where three do.  Small gaps are closed (``close``); a larger one stays
+    open for :func:`fill_terrain`.  The triangles' normals point up."""
+    P = np.asarray(pivot, float)
+    e, n, u = _horizontal_axes(up)
+    d = np.asarray(points, float) - P
+    x, y, z = d @ e, d @ n, d @ u
+    if cell_m is None:                                          # about four points to a cell, HEIGHT_FIELD_CELL_M at least
+        n_in = int((np.hypot(x, y) <= radius_m).sum())
+        cell_m = max(HEIGHT_FIELD_CELL_M, float(np.sqrt(4.0 * np.pi * float(radius_m) ** 2 / max(n_in, 1))))
+    N = int(np.ceil(float(radius_m) / cell_m))
+    ix, iy = np.floor(x / cell_m).astype(np.int64) + N, np.floor(y / cell_m).astype(np.int64) + N
+    ok = (ix >= 0) & (ix < 2 * N) & (iy >= 0) & (iy < 2 * N) & (np.hypot(x, y) <= radius_m)
+    H = np.full((2 * N, 2 * N), np.nan)
+    if ok.any():
+        key = iy[ok] * (2 * N) + ix[ok]
+        order = np.lexsort((z[ok], key))
+        ks, zs = key[order], z[ok][order]
+        st = np.flatnonzero(np.r_[True, ks[1:] != ks[:-1]])
+        cnt = np.diff(np.r_[st, len(ks)])
+        good = cnt >= int(min_points)
+        H.ravel()[ks[st[good]]] = zs[st[good] + cnt[good] // 2]
+    measured = int(np.isfinite(H).sum())
+    for _ in range(int(close)):
+        have = np.isfinite(H)
+        Hp = np.pad(np.where(have, H, 0.0), 1)
+        Wp = np.pad(have.astype(float), 1)
+        s = sum(Hp[1 + a:1 + a + 2 * N, 1 + b:1 + b + 2 * N] for a in (-1, 0, 1) for b in (-1, 0, 1) if (a, b) != (0, 0))
+        w = sum(Wp[1 + a:1 + a + 2 * N, 1 + b:1 + b + 2 * N] for a in (-1, 0, 1) for b in (-1, 0, 1) if (a, b) != (0, 0))
+        add = ~have & (w >= 5)
+        H[add] = s[add] / w[add]
+    have = np.isfinite(H)
+    vid = np.full(H.shape, -1, np.int64)
+    vid[have] = np.arange(int(have.sum()))
+    jj, ii = np.nonzero(have)                                   # rows are y, columns x
+    V = P + ((ii - N + 0.5) * cell_m)[:, None] * e + ((jj - N + 0.5) * cell_m)[:, None] * n + H[have][:, None] * u
+    a_, b_, c_, d_ = vid[:-1, :-1], vid[:-1, 1:], vid[1:, 1:], vid[1:, :-1]     # (x, y), (x+1, y), (x+1, y+1), (x, y+1)
+    m4 = (a_ >= 0) & (b_ >= 0) & (c_ >= 0) & (d_ >= 0)
+    tris = [np.stack([a_[m4], b_[m4], c_[m4]], 1), np.stack([a_[m4], c_[m4], d_[m4]], 1)]
+    for miss, tri in (((a_ < 0), (b_, c_, d_)), ((b_ < 0), (a_, c_, d_)), ((c_ < 0), (a_, b_, d_)), ((d_ < 0), (a_, b_, c_))):
+        m3 = miss & (tri[0] >= 0) & (tri[1] >= 0) & (tri[2] >= 0)
+        tris.append(np.stack([tri[0][m3], tri[1][m3], tri[2][m3]], 1))
+    F = np.vstack(tris).astype(np.int64) if len(V) else np.zeros((0, 3), np.int64)
+    return V, F, {"method": "height field", "cell_m": float(cell_m), "cells_measured": measured,
+                  "cells_closed": int(have.sum()) - measured, "triangles": int(len(F))}
+
+
 def zoned_poisson(points: np.ndarray, normals: Optional[np.ndarray], pivot: Sequence[float], up: Sequence[float],
                   radius_m: float, zones=MESH_ZONES, overlap_m: float = ZONE_OVERLAP_M,
-                  clean: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any], Dict[str, Any]]:
+                  clean: Optional[Dict[str, Any]] = None, height_field: bool = True) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any], Dict[str, Any]]:
     """Poisson per zone of horizontal distance from the axis (see MESH_ZONES), each part cleaned (``clean`` =
     clean_arrays' keywords) and clipped to its zone +- ``overlap_m``, the parts joined.  Returns (V, F, surface
     report, cleanup report)."""
@@ -405,16 +464,20 @@ def zoned_poisson(points: np.ndarray, normals: Optional[np.ndarray], pivot: Sequ
         if sel.sum() < 500:
             parts.append({"zone_m": [lo, outer], "points": int(sel.sum()), "triangles": 0})
             continue
-        V, F, how = poisson_arrays(points[sel], None if normals is None else normals[sel], depth=depth, viewpoint=P)
         last = hi is None or float(hi) >= float(radius_m)          # the outermost zone ends at the mesh radius itself
-        V, F, crep = clean_arrays(V, F, P, points=points[sel], up=up, radius_m=outer if last else outer + overlap_m,
-                                  **(clean or {}))
+        if height_field and lo == 0 and HEIGHT_FIELD_TO_M and outer <= HEIGHT_FIELD_TO_M and not last:      # 0.99.32
+            V, F, how = height_field_arrays(points[sel], P, up, outer + overlap_m)
+            crep = {"triangles_in": int(len(F)), "steps": [{"step": "height field", "removed": 0, **how}], "triangles_out": int(len(F))}
+        else:
+            V, F, how = poisson_arrays(points[sel], None if normals is None else normals[sel], depth=depth, viewpoint=P)
+            V, F, crep = clean_arrays(V, F, P, points=points[sel], up=up, radius_m=outer if last else outer + overlap_m,
+                                      **(clean or {}))
         if len(F):
             cen, _, _ = triangle_geometry(V, F)
             keep = horizontal_distance(cen, P, up) >= lo - (overlap_m if lo > 0 else 0.0)
             V, F = keep_triangles(V, F, keep)
         parts.append({"zone_m": [lo, outer], "points": int(sel.sum()), "depth": int(depth), "triangles": int(len(F)),
-                      "normals": how.get("normals")})
+                      "normals": how.get("normals"), "method": how.get("method", "poisson")})
         cleans.append({"zone_m": [lo, outer], **crep})
         Vs.append(V)
         Fs.append(F + base)
@@ -699,6 +762,11 @@ FILL_APRON_TO_M = 200.0               # with FLAT_EXTENSION only
 # FILL_NEAR_DROP_M below the cell heights (deep enough not to cover a hollow beside a rock; a ray through a gap of the
 # mesh ends on it, not on the regional ground plane, which no longer reaches within raycast.PLANE_FROM_M of the axis).
 FILL_NEAR_DROP_M = 0.20
+# 0.99.32 (Christian, 18 Nov 2026: "Stitch the fill to the hole edges instead of overlapping its neighbors"): the fill's
+# sheet is hung from the LOW side of the measured surface around a hole (a covered cell's lowest triangles, not its
+# median) and a little under it, so it meets the hole's rim from below and never lies on top of the cells beside it
+FILL_RIM_PERCENTILE = 5.0         # a covered cell's height for the fill: this percentile of its triangles' heights
+FILL_TUCK_M = 0.005               # ... less this
 FILL_MIN_COVER = 0.6              # a cell counts as covered when its triangles' area is this share of the cell's
 FILL_ROVER_REF_RADIUS_M = 5.0    # rover_keep_m: the ground's height from the triangles within this of the axis, off the footprint
 
@@ -782,7 +850,7 @@ def fill_terrain(V: np.ndarray, F: np.ndarray, pivot: Sequence[float], up: Seque
         en = np.r_[st[1:], len(ks)]
         med = np.full((nr, na), np.nan)
         for a_, b_ in zip(st, en):
-            med[ks[a_] // na, ks[a_] % na] = np.median(hs[a_:b_])
+            med[ks[a_] // na, ks[a_] % na] = np.percentile(hs[a_:b_], FILL_RIM_PERCENTILE) - FILL_TUCK_M
             hits[ks[a_] // na, ks[a_] % na] = b_ - a_
     else:
         med = np.full((nr, na), np.nan)
@@ -983,7 +1051,10 @@ def build_station_mesh(points: np.ndarray, pivot: Sequence[float], out_dir: Path
         V, F, clean = clean_arrays(V, F, pivot, points=points, radius_m=radius_m, up=up)
     else:
         zones = tuple((lo, hi, int(poisson_depth)) for lo, hi, _ in MESH_ZONES)
-        V, F, how, clean = zoned_poisson(points, normals, pivot, up, radius_m, zones=zones)
+        # 0.99.32: the height field near the mast when the cloud is the terrain alone (a rover in the cloud - the deck
+        # over the ground - is no height field)
+        V, F, how, clean = zoned_poisson(points, normals, pivot, up, radius_m, zones=zones,
+                                         height_field=bool(terrain_only))
     V, F, dec = decimate_and_smooth(V, F, target_triangles=target_triangles)
     if remove_floating and len(F):
         bad = unsupported(V, pivot, up, plane, grid)            # a surface the mesher drew away from the kept points

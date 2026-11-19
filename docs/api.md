@@ -14,6 +14,8 @@ roles (for example `:func:`), which appear here as written.
 
 ::: rpp_studies.calibration.hazfit
 
+::: rpp_studies.calibration.zcam_fiducials
+
 ::: rpp.calib.models
 
 ::: rpp.sfm.reconstruction

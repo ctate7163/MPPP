@@ -227,8 +227,56 @@ the device can show (maximum texture size, compressed-texture formats).
   repository's own `docs/ods` holds the page and `vendor/` only: the panoramas and their list live in `ctate7163/rpv`.
 - Another image list: `.../ods/?index=URL` (same origin, or a host that allows cross-origin requests).
 
-Status: a prototype. It has been checked in a desktop browser with a labeled test pair; the stereo in a headset,
-tiled 16K / 32K images and zoom are not done.
+Status: a prototype. The fifth and sixth modes (0.99.32-0.99.33) have been loaded only in a headless Chrome, on a
+synthetic station; nothing of 0.99.32-0.99.33 has been tried in a headset yet. Tiled 16K / 32K images are not done.
+
+### The viewing modes
+
+| mode (menu) | key | what is drawn | parallax |
+|---|---|---|---|
+| terrain only | `masked` | the rover-masked stereo pair on two spheres | binocular only (the ODS pair), none for head motion |
+| terrain with rover (projected) | `rover` | the with-rover pair | as above |
+| terrain with rover (3D model) | `rover3d` | the terrain-only pair + the textured Perseverance model | head motion on the rover |
+| 3D terrain and rover | `terrain3d` | the terrain-only pair beyond 10 m + the station mesh (terrain within 10 m, rover) | head motion within 10 m |
+| 3D terrain to the horizon and rover | `scape3d` | one surface from under the rover to the far field and a sky dome at 3 km, no panorama | head motion everywhere; true to the far field |
+| Drive the rover (simulation) | `drive3d` | the `scape3d` file, the rover moved over the terrain | as `scape3d` |
+
+The station mesh (`rpp.ibr.station_mesh`, made by the `ods` step with `--station-mesh`, the single-sites default) is
+textured from a point 0.5 m above the pivot: one 8192 x 8192 texture whose center is straight down and whose radius
+grows evenly with the angle from straight down, so every texel covers the same angle seen from there and the near
+ground gets the most texels per square meter. Triangles that point cannot see get cells of their own in the corners,
+colored from the frames that see them. The rover has its own 4096 x 4096 texture (the triangles seen from within 1 m
+of the pivot; the rest the rover gray). In the fifth mode the same kind of texture runs on past the horizontal: the
+terrain up to the skyline (at least 10 deg above the horizontal) fills 90 % of the disc's radius, the sky the rest. The
+near terrain fades out between 8 and 10 m from the mast axis (in the fourth mode into the panorama, in the fifth into
+the surface beyond).
+
+On a screen the eye moves a little where a 3D surface is shown (0.99.32): it sits 0.15 m in front of the point the
+view turns about (as eyes are in front of the neck), follows the mouse by up to 5 cm, and when left alone for 3 s
+circles slowly (3 cm; not when the system asks for reduced motion). P turns it off; `?still=1` opens without it.
+
+The sixth mode is a simulation: each thumbstick's forward / back axis is the track on that side (skid steering: speed =
+their mean x 0.25 m/s, turn rate = their difference / 2.3 m; on a screen the arrow keys). The viewer rides at the mast
+head: the ground is moved and turned under the rover, which takes the height, pitch and roll of the plane through the
+terrain under its six wheels. It stops 6 m from where the rover stood (the textured terrain ends at 10 m). In a
+headset the rover is hidden while the head is more than 1 m from its pivot. The ground under the real rover is
+interpolated (no frame saw it), and its shadow is in the texture.
+
+### The mesh near the mast (0.99.32)
+
+The 0-4 m zone is a height field seen from the mast (one median height per 1.5 cm cell of a horizontal grid; small
+gaps closed), not a Poisson surface: it cannot fold over a hole's rim. The holes left (under and behind the rover) are
+filled by a smooth sheet hung from the low side of the surface around them, 5 mm under it, so it meets a hole's rim
+from below. The normal panorama shows that fill in its own normal's color at 45 % brightness.
+
+### Color for display (a study, 0.99.33)
+
+`python -m rpp_studies.misc.color_enhance PANORAMA_16.png OUT NAME --depth CENTER_DEPTH.npz [--rover-depth ...]` makes
+three fixed display transforms of the 16-bit linear panorama, with one parameter set per station written to a JSON:
+A, base/detail (an edge-preserving split of log luminance, the large scale compressed, the detail multiplied, each
+pixel's color ratios kept); B, Mantiuk et al. 2006 (contrast mapped through a model of visible contrast); C, a
+decorrelation stretch of the terrain (the sky and the rover left out and shown as they are). None is in the panorama
+step yet.
 
 ## The rover as a 3D model (0.98.14)
 

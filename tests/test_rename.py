@@ -190,7 +190,7 @@ def test_the_kept_names_are_the_ones_the_code_writes():
 def test_old_mask_names_are_the_same_models():
     from rpp.mask_names import canonical, key_name
     reg = json.loads((ROOT / "src" / "rpp" / "data" / "models.json").read_text(encoding="utf-8"))
-    assert reg["default"] == "rpp_mask_v3" and sorted(reg["models"]) == [f"rpp_mask_v{i}" for i in (1, 2, 3, 4)]
+    assert reg["default"] == "rpp_mask_v3" and sorted(reg["models"]) == [f"rpp_mask_v{i}" for i in (1, 2, 3, 4, 5)]
     for i in (1, 2, 3, 4):
         e = reg["models"][f"rpp_mask_v{i}"]
         assert e["aliases"] == [f"mppp_mask_v{i}"] and e["old_files"] == [f"mppp_mask_convnext_tiny_s4_v{i}.safetensors"]
@@ -200,6 +200,9 @@ def test_old_mask_names_are_the_same_models():
         assert canonical(f"mppp_mask_v{i}") == f"rpp_mask_v{i}" == canonical(f"rpp_mask_v{i}")
         assert key_name(f"rpp_mask_v{i}") == f"mppp_mask_v{i}" == key_name(f"mppp_mask_v{i}")
     assert reg["models"]["rpp_mask_v4"]["released"] is False        # 16 Nov: not on Hugging Face (404)
+    v5 = reg["models"]["rpp_mask_v5"]                                # 0.99.34: released after the rename - no old name
+    assert not v5.get("aliases") and not v5.get("old_files") and key_name("rpp_mask_v5") == "rpp_mask_v5"
+    assert v5["urls"] == [f"https://huggingface.co/ctate7163/rpp-mask/resolve/main/{v5['file']}"]
     assert canonical("checkpoints/mine.pt") == "checkpoints/mine.pt" and canonical(None) is None
 
 

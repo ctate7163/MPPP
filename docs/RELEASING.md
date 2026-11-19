@@ -37,9 +37,9 @@ git push origin --tags
 
 `git log --oneline --decorate` should show fourteen commits, tagged `v0.21.1`, `v0.21.0`, `v0.20.1`, `v0.20.0`, `v0.15.0`, `v0.14.7`, `v0.14.6`, `v0.14.5`, `v0.14.4`, `v0.14.3`, `v0.14.2`, `v0.14.1`, `v0.14.0` and `v0.13.0`. The first push opens a browser window (or asks for a token) to sign in to GitHub.
 
-Then work in `D:\code\MPPP_git`:
+Then work in `D:\code\RPP_git`:
 * `pip install -e .[mask,sfm]` in your main environment.
-* Your old `D:\code\MPPP` stays as it was, with your checkpoints, runs and older notebooks.
+* Your old `D:\code\RPP` stays as it was, with your checkpoints, runs and older notebooks.
 * To keep training into the old checkpoints folder, set `RPP_CHECKPOINTS=D:\code\RPP\checkpoints`, e.g. with `setx RPP_CHECKPOINTS D:\code\RPP\checkpoints` and a new terminal.
 
 Later releases: commit, `git tag vX.Y.Z`, `git push && git push --tags`.
@@ -48,7 +48,7 @@ Later releases: commit, `git tag vX.Y.Z`, `git push && git push --tags`.
 
 A `.pt` checkpoint is a Python pickle, and loading one can run code. A `.safetensors` file holds only tensors, plus text metadata. RPP puts the model card JSON (backbone, canvas, threshold, training history) into that metadata, so the model is a single self-describing file.
 
-From the repository folder (`D:\code\MPPP_git`), with the checkpoint and its `.json` card side by side:
+From the repository folder (`D:\code\RPP_git`), with the checkpoint and its `.json` card side by side:
 
 ```bat
 python -m rpp.mask.hub export D:\code\RPP\checkpoints\convnext_tiny_s4_seg_20260925.pt --name rpp_mask_v2 --update-registry
@@ -150,7 +150,16 @@ python -m rpp.mask.hub list
 Users who want the old model can set `config["masking"]["checkpoint"] = "rpp_mask_v1"`.
 
 `rpp_mask_v4` (31 Oct 2026, the v8 mask set) was prepared this way: the registry entry, its SHA-256
-(`9ecb3dd5…`) and the card are in the repository; the upload is a maintainer step. `rpp_mask_v2` (0.14.7) was released this way; for it the registry entry was created by hand with the file name `rpp_mask_convnext_tiny_s4_v2.safetensors`. `rpp_mask_v1` stays in the registry with its own URLs (`mask-v1`); if you already uploaded it, leave it there.
+(`9ecb3dd5…`) and the card are in the repository; the upload is a maintainer step.
+
+`rpp_mask_v5` (0.99.34, 19 Nov 2026: the v5.2 run `convnext_tiny_s4_seg_20261118_v5p2`) is prepared the same way,
+except that its SHA-256 is written by the export on the PC. The card states it through the fields
+`{{sha256:rpp_mask_v5}}` and `{{bytes:rpp_mask_v5}}`, which `upload` fills from the registry (and refuses to upload
+while they are empty). On the PC, `upload_mask_models.bat` (in `D:\rover_blocks\_transfer`) does every step: it
+brings `D:\code\RPP_ods` to the newest `ods_rpp_v*.bundle`, checks the Hugging Face login, renames
+`ctate7163/mppp-mask` to `ctate7163/rpp-mask` if that was not done yet, exports v5 (and v4, and v3 under its new
+name), uploads each with the card, sets `"released": true` in that checkout's `models.json`, verifies the
+downloads and copies `models.json` back to `_transfer` to be committed. The default stays `rpp_mask_v3`. `rpp_mask_v2` (0.14.7) was released this way; for it the registry entry was created by hand with the file name `rpp_mask_convnext_tiny_s4_v2.safetensors`. `rpp_mask_v1` stays in the registry with its own URLs (`mask-v1`); if you already uploaded it, leave it there.
 
 ## 7. Zenodo DOI and JOSS
 

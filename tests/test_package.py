@@ -81,7 +81,7 @@ def test_cmods_dir_is_the_default_camera_folder(monkeypatch, tmp_path):
 
 def test_version():
     import rpp
-    assert rpp.__version__ == "0.99.31" and rpp.VERSION_TAG == "v0p99"
+    assert rpp.__version__ == "0.99.34" and rpp.VERSION_TAG == "v0p99"
     cff = (ROOT / "CITATION.cff").read_text()
     assert f"version: {rpp.__version__}" in cff
     assert f"## {rpp.__version__}" in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -96,8 +96,8 @@ def test_notebooks_compile_and_have_a_parameters_cell():
     files = sorted((ROOT / "notebooks").glob("*.ipynb")) + sorted((ROOT / "notebooks" / "studies").glob("*.ipynb"))
     # 0.96.0 (Christian, 9 Nov: "clean up the notebooks to have one example of the pipeline and other notebooks
     # for each study"): the pipeline example, then one per study
-    assert [f.name for f in files] == ["pipeline_example.ipynb", "camera_models.ipynb", "error_analysis.ipynb",
-                                       "mask_training.ipynb", "sites_maps.ipynb"]
+    assert [f.name for f in files] == ["pipeline_example.ipynb", "van_zyl_ods_example.ipynb", "camera_models.ipynb",
+                                       "error_analysis.ipynb", "mask_training.ipynb", "sites_maps.ipynb"]   # 0.99.33: Van Zyl
     for f in files:
         nb = json.loads(f.read_text(encoding="utf-8"))
         cells = nb["cells"]
@@ -109,6 +109,13 @@ def test_notebooks_compile_and_have_a_parameters_cell():
             ast.parse("\n".join(ln for ln in src.splitlines() if not re.match(r"\s*(%|!(?!=))", ln)))    # magics
             for bad in ("NOTEBOOK_FOR_RPP", "sync_from_claude", "adopt_claude", "D:/", "D:\\", "C:\\"):
                 assert bad not in src, (f.name, bad)
+    # 0.99.33 (Christian, 18 Nov 2026: "Make a notebook that downloads van zyl ecam frames and build the ods and models
+    # through the whole pipeline"): from the PDS to the viewer; written by scripts/make_van_zyl_notebook.py
+    nb3 = json.loads((ROOT / "notebooks" / "van_zyl_ods_example.ipynb").read_text(encoding="utf-8"))
+    src3 = "".join("".join(c["source"]) for c in nb3["cells"] if c["cell_type"] == "code")
+    for need in ("pds.fetch_products", "process_site", "align(WORK", "health_table", '"single-sites"', "read_glb",
+                 "color_enhance", "write_nerfstudio", "http.server"):
+        assert need in src3, need
     nb2 = json.loads((ROOT / "notebooks" / "pipeline_example.ipynb").read_text(encoding="utf-8"))
     src2 = "".join("".join(c["source"]) for c in nb2["cells"] if c["cell_type"] == "code")
     for need in ("process_site", "from rpp.pipeline import align", "health_table", "plot_camera_shifts", "run_dense",

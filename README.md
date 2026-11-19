@@ -46,7 +46,7 @@ distortion and the stereo rig to about 0.2 px, so the blocks across the mission 
 no single sol can provide. RPP versions those refined models, checks them across blocks, and feeds them back as
 the default cameras for the next run.
 
-Version **0.99.31** (`v0p99`): the core (`rpp`, the pipeline) and the research studies (`rpp_studies`) apart, the
+Version **0.99.33** (`v0p99`): the core (`rpp`, the pipeline) and the research studies (`rpp_studies`) apart, the
 freeze run as a driver of its own, and the products of one rover station past the block - a cleaned mesh with a
 model of the rover, per-image depth and photometric maps, and a stereoscopic 360 degree panorama with a web
 viewer (below). The paper's freeze release is 0.95 (`paper/paper.md`). Versions before 1.0 are
@@ -110,8 +110,13 @@ The same functions are importable (`rpp.pipeline.Settings`, `process_site`, `ali
 `notebooks/pipeline_example.ipynb` calls them on the example data (Rockytop, sols 461-464) and shows the results,
 start to finish: processing, the alignment and its health, the dense cloud, the station mesh, the depth and
 photometric maps, the stereoscopic panorama, the exports.  The research studies have a notebook each under
-`notebooks/studies/` (`camera_models`, `error_analysis`, `mask_training`, `sites_maps`).  Reruns reuse processed
-images, features and matches; a changed setting or a promoted camera model changes the run key and realigns.
+`notebooks/studies/` (`camera_models`, `error_analysis`, `mask_training`, `sites_maps`).
+`notebooks/van_zyl_ods_example.ipynb` (0.99.33; a tiny block since 0.99.34) starts from nothing: it downloads one
+station's frames (Van Zyl Overlook, sol 52: the six Navcam pairs of the end-of-drive panorama, the front Hazcam pair
+and the Navcam pair taken mid-drive - 16 frames) from the PDS Imaging Node and takes them through the whole pipeline
+to the stereo panoramas, the 3D station models and a local copy of the viewer, explaining the design as it goes.
+Reruns reuse processed images, features and matches; a changed setting or a promoted camera model changes the run key
+and realigns.
 
 Outputs of `process`: `images_png16/<PDS stem>.png` (the mask in the alpha channel), `references.txt` for
 Metashape *Import Reference*, `colmap/sparse_prior/` (cameras, poses, rig), `mppp_manifest_<version>.json` and
@@ -182,7 +187,7 @@ time exceeds the per-block budget. `rpp align --gui` writes the files that open 
 | `src/rpp/` | the pipeline: `pipeline` and `cli` (the workflow), `process` and `image` (PDS → images), `mask` (inference, the model files), `calib` (camera-model forms, the promoted models, their constraint to an image or block), `sfm` (COLMAP project, features, matching, the adjustment, exports, dense), `ibr` (the station products: mesh, rover model, depth and photometric maps, the stereoscopic panorama, its publication for the web viewer), `waypoints` |
 | `src/rpp_studies/` | the studies (installed with the package, importing it, never imported by it): `calibration` (the camera-model solvers, their gates and promotion, the deck and fiducial studies, the chain driver of a freeze run), `error` (the reconstruction-error model), `mask_training` (training, audit, release of the mask model), `sites` (the site-map figures), `paper`, `misc` (what did not clearly belong anywhere) |
 | `src/rpp/data/` | site definitions, waypoint snapshot, optical-depth table, the camera models in use (`cmods/`), the mask-model registry, the rover model (`rover/`), the single-station list (`single_sites.json`) |
-| `notebooks/` | `pipeline_example.ipynb` (the pipeline end to end on the example data) and `studies/` (one notebook per study) |
+| `notebooks/` | `pipeline_example.ipynb` (the pipeline end to end on the example data), `van_zyl_ods_example.ipynb` (PDS download to panoramas, 3D models and the viewer) and `studies/` (one notebook per study) |
 | `scripts/` | the batch runs of the pipeline (`run_sites.py`, `process_sites.py`, `align_scape.py`, `stop_runs.py`, `check_sites.py`, `check_env.py`, `waypoint_check.py`), `build_rover_model.py` and `export_rover_glb.py`; `windows/` the .bat wrappers |
 | `tests/` | pytest, one file per module; `tests/data/m20/` holds two public PDS products and the stored regression fixtures |
 | `docs/` | `methods.md` (conventions, equations, flagged assumptions), `calibration.md`, `exports.md`, `station-products.md`, `rover-model.md`, `masks.md`, `roadmap.md`, `ods/` (the panorama viewer and its images), `rover/` (the rover model as glTF), `RELEASING.md`, `history/` (older changelogs and working notes) |
