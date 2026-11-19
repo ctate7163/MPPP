@@ -23,7 +23,8 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
   rpp single-sites --upload installs there; this file in the pipeline's docs/ods sends visitors there.
   Link to one view:   https://ctate7163.github.io/rpv/#<station>/<variant>/<view>      e.g.  #Sol0052_S003D2046/rover/enhanced
   Another image list: .../rpv/?index=https://<same origin or CORS-enabled host>/panos.json
-  Keys: left / right arrows = station, V = variant, E = view, I = info, L = the other eye (on a screen), drag = look, wheel = zoom;
+  Keys: left / right arrows = station (in the sixth mode the arrows drive the rover), V = variant, E = view, I = info,
+  L = the other eye (on a screen), P = the screen's eye movement on / off (0.99.32), drag = look, wheel = zoom;
   0.98.19: W A S D held = look up / left / down / right, Shift+N / E / S / W = face that way, N = north, O = the front of the
   rover, level (0.98.28: its +x; 45 degrees down before); also the N E S W O cross at the upper right of the screen.
   Headset (0.98.4): right trigger = next station, left trigger = the one before, thumbstick left / right = turn,
@@ -369,6 +370,9 @@ function driveStart(dv) {                                        // dv: the entr
   DRIVE.fit0 = driveFit();
   DRIVE.tilt.identity();
   DRIVE.on = true;
+  const hint = 'a simulation: the arrow keys drive the rover (in a headset the two thumbsticks, forward / back: the track on that side)';
+  msg(hint);
+  setTimeout(() => { if ($('msg').textContent === hint) msg(''); }, 8000);     // for a while, then out of the way
 }
 function driveStop() {
   DRIVE.on = false; DRIVE.grid = null; driveKeys.clear();
@@ -382,6 +386,7 @@ function driveStep(dt, vl, vr) {                                 // vl, vr: the 
   if (v || w) {
     const az = DRIVE.az - w * dt, e = DRIVE.e + v * dt * Math.sin(az), n = DRIVE.n + v * dt * Math.cos(az);
     const pe = e + DRIVE.pf * Math.sin(az) + DRIVE.pr * Math.cos(az), pn = n + DRIVE.pf * Math.cos(az) - DRIVE.pr * Math.sin(az);
+    markDisc.visible = false;                                    // the nadir mark marks where the rover stood: not under it now
     if (Math.hypot(pe, pn) <= DRIVE.limit || Math.hypot(pe, pn) < Math.hypot(DRIVE.e + DRIVE.pf * Math.sin(DRIVE.az) + DRIVE.pr * Math.cos(DRIVE.az),
                                                                                 DRIVE.n + DRIVE.pf * Math.cos(DRIVE.az) - DRIVE.pr * Math.sin(DRIVE.az))) {
       DRIVE.az = az; DRIVE.e = e; DRIVE.n = n;

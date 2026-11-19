@@ -95,5 +95,7 @@ report = run_site("rockytop_example", s)
 print(report["verdict"])
 ```
 
-`notebooks/pipeline_example.ipynb` calls the same functions on the example data and shows the results; the
+`notebooks/pipeline_example.ipynb` calls the same functions on the example data and shows the results;
+`notebooks/van_zyl_ods_example.ipynb` downloads one station from the PDS and goes on to the panoramas, the 3D models
+and the viewer; the
 studies (`rpp_studies`) have a notebook each under `notebooks/studies/`.

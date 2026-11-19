@@ -47,6 +47,8 @@ them as the default cameras for the next run (see [Camera models and calibration
 - [Quick start](quickstart.md): fetch the Rockytop example data and run one block.
 - [Pipeline](pipeline.md): the stages and their outputs.
 - [Downstream exports](exports.md): dense reconstruction, Metashape, Nerfstudio.
+- `notebooks/van_zyl_ods_example.ipynb`: one station from the PDS download to the panoramas, the 3D models and the
+  viewer, with the design explained along the way.
 - [Station products and viewer](station-products.md): the station mesh, depth and photometric maps, the stereo
   panorama and the web viewer.
 - [Rover model](rover-model.md): the Perseverance model used in the station mesh, its source and its changes.

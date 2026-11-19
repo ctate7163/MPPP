@@ -50,8 +50,8 @@ def test_workspace_station_warns_and_sites_of_0p97():
     for z in ("chal_rocks_large", "seitah_overlook"):                    # 26 and 100 mm
         assert s[z]["zcam"] == [26, 34, 48, 63, 79, 100, 110]
     assert s["seitah_overlook"]["settings"]["EXCLUDE"] == ["*ZCAM08122_034*"]
-    for g in ("zcam_consensus", "zcam34_consensus", "zcam79_consensus", "zcam110_consensus"):
-        assert "rockytop" not in t["groups"][g] and "wildcat_ridge" in t["groups"][g] and "skinner_ridge" in t["groups"][g]
+    for g in ("zcam_consensus", "zcam34_consensus", "zcam79_consensus", "zcam110_consensus"):   # 0.99.28 (18 Nov 2026):
+        assert "rockytop" in t["groups"][g] and "wildcat_ridge" not in t["groups"][g] and "skinner_ridge" not in t["groups"][g]   # one block again
     assert "rockytop_skinner" not in t["groups"]["zcam_consensus"]
     assert s["overlook_mountain"]["sols"] == [[1145, 1157]] and s["overlook_mountain"]["zcam"] == [48, 63, 79, 110]
     assert s["hippo_pools"]["zcam"] == [34, 48, 63, 110]

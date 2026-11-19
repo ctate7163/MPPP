@@ -12,7 +12,24 @@ The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p9
   difference / 2.3 m); on a screen the arrow keys. The viewer rides at the mast head: the ground is moved and turned
   under the rover. Height, pitch and roll from the plane through the terrain under the six wheels (a 0.1 m height grid
   of the near terrain). The pivot stays within 6 m of where it stood. In a headset the rover is hidden when the head
-  is more than 1 m from the pivot. `web.DRIVE_3D`, `web.drive_settings()`. Not tested in a browser or a headset.
+  is more than 1 m from the pivot. `web.DRIVE_3D`, `web.drive_settings()`. The nadir mark is hidden once the rover
+  moves. Loaded in a headless Chrome (SwiftShader WebGL) on a synthetic station: the fourth, fifth and sixth modes
+  draw, the arrow keys drive, no page errors; not yet tried in a headset.
+- **Color for display, a study** (`rpp_studies.misc.color_enhance`; Christian: "Prepare examples of each three color
+  maps made from the highest res 16 bit images"; "The decorrelation stretch should exclude the sky and rover"): A
+  base/detail (guided filter on log luminance, color ratios kept), B Mantiuk 2006, C decorrelation stretch over the
+  terrain only (sky: beyond the mesh, brighter than halfway between the terrain and the high sky, connected to the
+  zenith; rover: the rover run's center-depth "rover" layer grown 3 deg); one parameter set per station in a JSON.
+  Examples of sol 461 in `Claude outputs/color_enhance_2026-11-18`.
+- **`notebooks/van_zyl_ods_example.ipynb`** (written by `scripts/make_van_zyl_notebook.py`; Christian: "Make a notebook
+  that downloads van zyl ecam frames and build the ods and models through the whole pipeline. Use this as an example
+  to illustrate the process and RPP design features"): the PDS download of Sol0052_S003D2046's frames and context,
+  the mask and camera models, process, align, health, `rpp single-sites` (dense, mesh, depth maps, both panoramas, the
+  3D models, the local viewer), the color study, the exports. Not yet run end to end.
+- Tests: `test_validation` brought up to date for 0.99.28 (Rockytop one block in the Mastcam-Z groups); the full suite
+  passes (1043 passed, 6 skipped).
+- Docs: `station-products.md` (the six modes, the screen eye movement, the mesh near the mast, the color study), the
+  README and the quickstart; `pipeline_example.ipynb` points to the new notebook for the station steps.
 
 ## 0.99.32 — 2026-11-18 (branch `rpp`)
 
