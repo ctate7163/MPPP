@@ -605,9 +605,9 @@ def add_parser(sub) -> None:
                         "stacked panoramas, the pivot's 16-bit depth, ods.json, station.json; about 0.35 GB a station)")
     p.add_argument("--publish-width", type=int, default=8192, metavar="PX", help="wider images are reduced to this (default 8192)")
     p.add_argument("--publish-views", nargs="+", default=None, metavar="VIEW",
-                   help="standard, 'enhanced local', 'normal map', 'distance map', enhanced, ... (default: "
-                        "rpp.ibr.web.DEFAULT_VIEWS - 0.98.30: standard, enhanced local, normal map, distance map; the old "
-                        "names normal and 'range log' are read too)")
+                   help="standard, 'raw color', 'enhanced local', 'enhanced tone', 'dcs color', 'normal map', 'distance "
+                        "map', enhanced, ... (default: rpp.ibr.web.DEFAULT_VIEWS - 0.99.37: all of these but enhanced; the "
+                        "page's names 'standard color' and 'enhanced color' and the old normal and 'range log' are read too)")
     p.add_argument("--no-rover-surface", dest="rover_surface", action="store_false",
                    help="0.98.8: without the rover's 3D surface (and the panorama from the pivot it is made from)")
     p.add_argument("--rover-surface", action="store_true", default=True,

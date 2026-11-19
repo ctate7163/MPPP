@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import NLF, ZL0
+from conftest import NLF, ZL0, needs_data
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -75,6 +75,7 @@ def test_mask_list(capsys):
     assert main(["mask", "install"]) == 2
 
 
+@needs_data
 def test_process_dry_run_and_run(tmp_path, capsys, clean_env):
     from rpp.cli import main
     pds = tmp_path / "pds" / "sol0461"

@@ -13,6 +13,10 @@ Imaging Node has them; they are also published as the GitHub release asset `exam
 ## 1. Install
 
 ```bash
+conda create -n rpp -c conda-forge python=3.12 git -y
+conda activate rpp
+git clone --depth 1 https://github.com/ctate7163/rpp.git
+cd rpp
 pip install -e ".[mask,sfm,plots]"
 ```
 
@@ -21,8 +25,10 @@ See [Installation](installation.md) for the dependency groups and the GPU setup.
 ## 2. Fetch the example data
 
 ```bash
-rpp example fetch                 # the 36 products from the PDS Imaging Node into ~/rpp_example
+rpp example fetch
 ```
+
+It downloads the 36 products from the PDS Imaging Node into `~/rpp_example`.
 
 `--dest DIR` puts them somewhere else. Files already there are not downloaded again. If the PDS cannot be reached,
 the release zip (`example-data-v1`) is used instead; `--source release` asks for it directly.

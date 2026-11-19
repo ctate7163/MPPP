@@ -10,12 +10,17 @@ Apache-2.0.
 **Development setup**
 
 ```bash
+conda create -n rpp -c conda-forge python=3.12 git -y
+conda activate rpp
 git clone https://github.com/ctate7163/rpp.git
-cd RPP
+cd rpp
 pip install -e ".[all]"
-pytest -q                       # ~470 tests on the two PDS products in tests/data/m20 (about 10 minutes)
+pytest -q
 python -m flake8 --select F src/rpp scripts
 ```
+
+The test suite takes about 10 minutes. Set `RPP_TEST_FETCH=1` once so that the two PDS products some tests read are
+downloaded from the PDS into the user cache (they are not in the repository; without them those tests are skipped).
 
 **Pull requests**: one change per request, with a test in the module's test file (`tests/test_<module>.py`) and a
 line in `CHANGELOG.md`. Library code logs through `logging.getLogger("rpp.<module>")`, never `print`; no

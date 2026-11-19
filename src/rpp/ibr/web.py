@@ -26,10 +26,16 @@ log = logging.getLogger(__name__)
 
 STACK = "_360_3DTD.jpg"
 VIEWS = {"standard": "", "enhanced": "_enh", "enhanced local": "_enhlocal",      # view name -> file name part
+         "raw color": "_raw", "enhanced tone": "_enhtone", "dcs color": "_dcs",        # 0.99.37 (rpp.ibr.color_products)
          "distance map": "_range_log", "distance map linear": "_range_linear", "normal map": "_normal"}   # 0.97.20: the model's
 # 0.98.30 (Christian, 16 Nov 2026: 'Change "normal" to "normal map" and "range log" to "distance map"'): the names the
 # viewer shows; panos.json entries published before keep their old names, which the page shows by the new ones
-OLD_VIEW_NAMES = {"normal": "normal map", "range log": "distance map", "range linear": "distance map linear"}
+OLD_VIEW_NAMES = {"normal": "normal map", "range log": "distance map", "range linear": "distance map linear",
+                  "standard color": "standard", "enhanced color": "enhanced local"}     # 0.99.37: the page's names
+# 0.99.37 (Christian, 19 Nov 2026: "Replace the enhanced local with just enhanced"; the views "standard color, raw color,
+# enhanced color, enhanced tone, dcs color, normal map, distance map"): the page shows "standard" as "standard color"
+# and "enhanced local" as "enhanced color" (VIEW_LABEL in docs/ods/index.html); the keys stay, so links and the
+# entries published before keep working
 GEOMETRY_PARTS = ("_range_log", "_range_linear", "_normal")
 VARIANTS = (("masked", "", "terrain only"), ("rover", "with_rover", "terrain with rover (projected)"))   # key, sub-folder, label.  0.98.5
 #   (Christian, 14 Nov 2026: "a third mode after the terrain only, terrain with rover, and terrain with 3D rover"): this
@@ -38,7 +44,7 @@ ROVER_3D = ("rover3d", "terrain with rover (3D model)")
 # 0.99.26 (Christian, 18 Nov 2026: "Add this as a fourth mode in rpv as 3D terrain and rover. It should include the 3D
 # rover"): the terrain-only panorama as the backdrop, with the station mesh (rpp.ibr.station_mesh) in front of it
 TERRAIN_3D = ("terrain3d", "3D terrain and rover")     # 0.98.8 (Christian: "terrain only, terrain with rover proj, terrain with rover model")
-DEFAULT_VIEWS = ("standard", "enhanced local", "normal map", "distance map")   # 0.98.30 (Christian, 16 Nov 2026: "Include the
+DEFAULT_VIEWS = ("standard", "raw color", "enhanced local", "enhanced tone", "dcs color", "normal map", "distance map")   # 0.99.37; 0.98.30 (Christian, 16 Nov 2026: "Include the
 #   enhlocal image versions in the upload and let it be viewable as one of the skins that button B shows"); 0.98.12 (Christian, 15 Nov 2026: "Uploaded the range map too in log scale"); ("standard", "normal") from 0.98.5 (Christian: "Uploaded the normal maps too"); ("standard",) since 0.97.18 (Christian, 13 Nov 2026: "don't upload the enhanced version to github");
 #                                      ("standard", "enhanced") before; rpp single-sites --publish-views brings it back
 GEOMETRY_WIDTH = 4096              # 0.98.12: the range and normal views are published at most this wide (the color ones at width)
@@ -47,7 +53,8 @@ DEFAULT_WIDTH = 8192               # the square's side: 8192 x 8192 holds two 81
 
 
 def station_files(folder: PathLike) -> Dict[str, Path]:
-    """{view name: file} of the top-down stereo JPEGs in one variant's folder (``<prefix>[_enh|_enhlocal]_360_3DTD.jpg``)."""
+    """{view name: file} of the top-down stereo JPEGs in one variant's folder (``<prefix>[_enh|_enhlocal|_raw|_enhtone|_dcs|
+    _normal|_range_log|_range_linear]_360_3DTD.jpg``)."""
     out: Dict[str, Path] = {}
     for f in sorted(Path(folder).glob("*" + STACK)):
         stem = f.name[:-len(STACK)]

@@ -23,12 +23,14 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
   rpp single-sites --upload installs there; this file in the pipeline's docs/ods sends visitors there.
   Link to one view:   https://ctate7163.github.io/rpv/#<station>/<variant>/<view>      e.g.  #Sol0052_S003D2046/rover/enhanced
   Another image list: .../rpv/?index=https://<same origin or CORS-enabled host>/panos.json
-  Keys: left / right arrows = station (in the sixth mode the arrows drive the rover), V = variant, E = view, I = info,
+  Keys: left / right arrows = station (in the sixth mode the arrows drive the rover), V = variant, E or space = view
+  (0.99.37: space, Shift+space back), R = the rover on / off as the rover button (0.99.37), I = info,
   L = the next eye (on a screen: left, right, and the center where the station has it), P = the screen's eye movement on / off (0.99.32), drag = look, wheel = zoom;
   0.98.19: W A S D held = look up / left / down / right, Shift+N / E / S / W = face that way, N = north, O = the front of the
   rover, level (0.98.28: its +x; 45 degrees down before); also the N E S W O cross at the upper right of the screen.
   Headset (0.98.4): right trigger = next station, left trigger = the one before, thumbstick left / right = turn,
-  X = info page on the left hand (site, sol, map), A = the next view (standard, enhanced local, normal map, distance map),
+  X = info page on the left hand (site, sol, map), A = the next view (0.99.37: standard color, raw color, enhanced color,
+  enhanced tone, dcs color, normal map, distance map),
   grip = variant   (0.98.13: A and X swapped)
   0.98.28: Y = home (the welcome view, facing west), B = terrain only; on a screen the house button or H, and B.
   0.98.30: B = terrain only (no rover) in a color view; B again = its next color skin (standard, enhanced local).
@@ -46,7 +48,7 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
 -->
 <style>
   html, body { margin: 0; height: 100%; background: #000; color: #eee; font: 14px/1.4 system-ui, sans-serif; overflow: hidden; }
-  #bar { position: fixed; left: 0; right: 0; top: 0; padding: 8px 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  #bar { position: fixed; left: 0; right: 0; top: 0; padding: 8px 156px 8px 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
          background: linear-gradient(#000c, #0000); z-index: 2; }
   #bar select, #bar button { background: #222; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; font: inherit; }
   #title { font-weight: 600; margin-right: 6px; }
@@ -62,7 +64,9 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
           display: flex; flex-direction: column; gap: 2px; pointer-events: none; }
   #ver { color: #999; }
   #diag { position: fixed; right: 170px; bottom: 10px; color: #888; font-size: 11px; z-index: 2; text-shadow: 0 0 4px #000; text-align: right; }
-  #compass { position: fixed; right: 12px; top: 52px; z-index: 2; display: grid;     /* 0.98.28: upper right (was mid-right) */
+  /* 0.99.37 (Christian, 19 Nov 2026: "Move the NEWSo buttons up a little so that the top of N box is level with the top left
+     bar"): the N button's top at the bar's buttons' top (8 px; 52 px before); the bar keeps clear of the cross */
+  #compass { position: fixed; right: 12px; top: 8px; z-index: 3; display: grid;     /* 0.98.28: upper right (was mid-right) */
              grid-template-columns: repeat(3, 40px); grid-template-rows: repeat(3, 40px); gap: 4px; }
   #compass button { background: #222c; color: #eee; border: 1px solid #555; border-radius: 6px; font: inherit; font-weight: 700; }
   #compass button:hover { background: #444; }
@@ -564,7 +568,7 @@ const VIEWER_NAME = 'Rover Photogrammetry Viewer (RPV)';
 // 0.99.36 (Christian, 19 Nov 2026: "please put the rpp-rpv viewer version number on the lower left above the site name,
 // images size, and version on which the site was rendered"): the page's own version (the RPP release that wrote it;
 // tests/test_station_mesh.py keeps it equal to rpp.__version__), above the station's line
-const RPV_VERSION = '0.99.36';
+const RPV_VERSION = '0.99.37';
 $('ver').textContent = `RPV viewer ${RPV_VERSION}`;
 const CREDIT = 'Created by Christian Tate at MSSS';   // 0.99.14 (Christian, 17 Nov 2026: 'remove the "for research purposes" phrase')
 const CODE_URL = 'https://github.com/ctate7163/rpp';   // 0.98.29: the repository renamed MPPP -> RPP
@@ -578,6 +582,7 @@ const welcome = new THREE.Group();
 welcome.visible = false;
 world.add(welcome);
 let welcomeBuilt = false;
+let ctlHeadset = null, ctlScreen = null;     // 0.99.37: the welcome view's two sets of controls
 function showWelcome(on) {
   if (on && !welcomeBuilt) {
     welcomeBuilt = true;
@@ -589,14 +594,29 @@ function showWelcome(on) {
                                  { text: CREDIT, px: 56, weight: 400, color: '#000', plain: true },   // 0.99.1: smaller (80 px), solid black
                                  { text: 'Code: ' + CODE_URL.replace(/^https:\/\//, ''), px: 56, weight: 400, color: '#000', plain: true },
                                  { text: 'Mars 2020 Perseverance rover', px: 120, weight: 700 }]), WELCOME_AZ_DEG, 14, 5, 4.2));
-    welcome.add(place(textPanel([{ text: 'trigger: next site   |   left trigger: back   |   stick: turn', px: 84, weight: 600 },
+    ctlHeadset = place(textPanel([{ text: 'trigger: next site   |   left trigger: back   |   stick: turn', px: 84, weight: 600 },
                                  { text: 'X: info and map   |   Y: home   |   A: view', px: 84, weight: 600 },
                                  { text: 'B: terrain only (again: color skin)   |   grip: rover on, off, 3D, 3D terrain', px: 84, weight: 600 }],
-                                { back: 'rgba(0,0,0,0.35)', uniform: true }), WELCOME_AZ_DEG, -6, 5, 3.6));   // 0.99.14: one size
+                                { back: 'rgba(0,0,0,0.35)', uniform: true }), WELCOME_AZ_DEG, -6, 5, 3.6);   // 0.99.14: one size
+    // 0.99.37 (Christian, 19 Nov 2026: "In the browser 2d version. Show a differ set of controls, including using the
+    // space bar to change the color map"): on a screen the keys and the mouse instead
+    ctlScreen = place(textPanel([{ text: '\u2190 \u2192: site   |   space: color map   |   R: rover on / off   |   V: mode', px: 84, weight: 600 },
+                                 { text: 'drag or W A S D: look   |   wheel: zoom   |   N E S W O: face   |   L: eye', px: 84, weight: 600 },
+                                 { text: 'I: info and map   |   H: home   |   B: terrain only   |   P: motion on / off', px: 84, weight: 600 }],
+                                { back: 'rgba(0,0,0,0.35)', uniform: true }), WELCOME_AZ_DEG, -6, 5, 3.6);
+    welcome.add(ctlHeadset, ctlScreen);
   }
   welcome.visible = !!on;
+  controlsFor();
   $('credit').style.display = on ? '' : 'none';
 }
+function controlsFor() {                          // 0.99.37: the welcome view's controls - the headset's in a session
+  const xr = renderer.xr.isPresenting;
+  if (ctlHeadset) ctlHeadset.visible = xr;
+  if (ctlScreen) ctlScreen.visible = !xr;
+}
+renderer.xr.addEventListener('sessionstart', controlsFor);
+renderer.xr.addEventListener('sessionend', controlsFor);
 
 // X (key I): a small page with the site, the sol and a map of the traverse (over a low-resolution orbital picture,
 // 0.98.14) with an x at this station.  In a headset
@@ -716,7 +736,8 @@ function toggleInfo() {
     cam.getWorldDirection(fwd);
     cam.getWorldPosition(infoPanel.position);
     const hlen = Math.hypot(fwd.x, fwd.z) || 1;                  // level with the eyes' heading, a little below the gaze line
-    const el = Math.max(-0.6, Math.min(0.5, Math.atan2(fwd.y, hlen))) - 0.12;
+    // 0.99.37 (Christian, 19 Nov 2026: "Bring the info windows up a little"): on a screen 2 deg below the gaze line (7 before)
+    const el = Math.max(-0.6, Math.min(0.5, Math.atan2(fwd.y, hlen))) - (renderer.xr.isPresenting ? 0.12 : 0.035);
     const at = infoPanel.position.clone();
     infoPanel.position.x += 2 * Math.cos(el) * fwd.x / hlen; infoPanel.position.z += 2 * Math.cos(el) * fwd.z / hlen;
     infoPanel.position.y += 2 * Math.sin(el);
@@ -735,7 +756,10 @@ function variants(p) { return p.variants || []; }
 function views(p, v) { return Object.keys((variants(p)[v] || {}).views || {}); }
 // 0.98.30 (Christian, 16 Nov 2026: 'Change "normal" to "normal map" and "range log" to "distance map"'): the names of
 // entries published before, shown (and accepted in a link) by the new ones
-const VIEW_LABEL = { 'normal': 'normal map', 'range log': 'distance map', 'range linear': 'distance map linear' };
+// 0.99.37 (Christian, 19 Nov 2026: "Replace the enhanced local with just enhanced"; the views "standard color, raw
+// color, enhanced color, enhanced tone, dcs color, normal map, distance map"): the keys of panos.json stay
+const VIEW_LABEL = { 'normal': 'normal map', 'range log': 'distance map', 'range linear': 'distance map linear',
+                     'standard': 'standard color', 'enhanced local': 'enhanced color', 'enhanced': 'enhanced (global)' };
 const viewLabel = k => VIEW_LABEL[k] || k;
 
 function fill() {
@@ -837,10 +861,10 @@ async function show() {
     if (texture) { texture.dispose(); if (texture.image && texture.image.close) texture.image.close(); }
     texture = t;
     material.map = t; material.color.set(0xffffff); material.needsUpdate = true;
-    showMark(/^(standard|enhanced)/.test(names[cur.w]) ? vr.ground_mark : null);   // not over the range and normal views
+    showMark(color(names[cur.w]) ? vr.ground_mark : null);        // not over the range and normal views
     // 0.99.26: the fourth mode, "3D terrain and rover" - the station mesh (terrain within 10 m and the rover,
     // textured: rpp.ibr.station_mesh) in front of the terrain-only panorama, its backdrop beyond 10 m
-    showRover(/^(standard|enhanced)/.test(names[cur.w]) ? (vr.station_mesh || vr.rover_surface) : null);
+    showRover(color(names[cur.w]) ? (vr.station_mesh || vr.rover_surface) : null);
     // 0.99.15 (Christian, 17 Nov 2026: "the north direction should be preserved when moving from site to site. I noticed
     // this looks rotated for the welcome screen compared to the van zyl site"): until now every panorama set its own start
     // heading (west for the welcome view, yaw_deg or north for a station), so a change of station turned the world under
@@ -863,7 +887,7 @@ async function show() {
   } catch (e) { if (id === loadId) msg(`could not load ${url}: ${e.message || e}`); }
 }
 
-const color = k => /^(standard|enhanced)/.test(k);
+function color(k) { return !/^(normal|distance|range)/.test(k || ''); }   // 0.99.37: raw, enhanced tone, dcs too
 function step(what, d) {
   const p = panos[cur.s];
   if (what === 'c') {                                            // X: the next color view (not the range or normal views)
@@ -965,15 +989,19 @@ function fromHash() {
   cur.w = w < 0 ? 0 : w;
 }
 
-$('station').onchange = e => { cur.s = +e.target.value; show(); };
-$('variant').onchange = e => { cur.v = +e.target.value; show(); };
-$('view').onchange = e => { cur.w = +e.target.value; show(); };
-$('eye').onchange = e => { setEye(e.target.value); };
+const blurAfter = e => { if (e && e.target && e.target.blur) e.target.blur(); };   // 0.99.37: the keys back to the page
+$('station').onchange = e => { cur.s = +e.target.value; show(); blurAfter(e); };
+$('variant').onchange = e => { cur.v = +e.target.value; show(); blurAfter(e); };
+$('view').onchange = e => { cur.w = +e.target.value; show(); blurAfter(e); };
+$('eye').onchange = e => { setEye(e.target.value); blurAfter(e); };
 window.addEventListener('hashchange', () => { fromHash(); show(); });
 const lookKeys = new Set();                     // 0.98.19: W A S D held - look up, left, down, right
 window.addEventListener('keyup', e => { lookKeys.delete(e.key.toLowerCase()); driveKeys.delete(e.key); });
 window.addEventListener('blur', () => { lookKeys.clear(); driveKeys.clear(); });
 window.addEventListener('keydown', e => {
+  // 0.99.37 (Christian, 19 Nov 2026: "using the space bar to change the color map"): space = the next view, Shift+space
+  // the one before (the menus give the keys back after a choice: see blurAfter)
+  if (e.key === ' ' || e.code === 'Space') { e.preventDefault(); step('w', e.shiftKey ? -1 : 1); return; }
   const k = e.key.length === 1 ? e.key.toUpperCase() : e.key;
   if ((e.shiftKey && 'NESWO'.includes(k) && k.length === 1) || (!e.shiftKey && (k === 'N' || k === 'O'))) { face(k); return; }
   if (!e.shiftKey && 'wasd'.includes(e.key) && e.key.length === 1) { lookKeys.add(e.key); return; }
@@ -982,7 +1010,7 @@ window.addEventListener('keydown', e => {
   else if (e.key === 'v' || e.key === 'V') step('v', 1); else if (e.key === 'e' || e.key === 'E') step('w', 1);
   else if (e.key === 'l' || e.key === 'L') setEye(screenEye === 'left' ? 'right' : screenEye === 'right' && centerOk ? 'center' : 'left');   // 0.99.36: and the center
   else if (e.key === 'm' || e.key === 'M') { markOn = !markOn; markDisc.visible = markOn && !!markMaterial.map; }
-  else if (e.key === 'r' || e.key === 'R') { roverOn = !roverOn; for (const m of roverParts) if (m.userData.kind === 'rover') m.visible = roverOn; if (roverOn) anchored = false; }   // 0.99.32: the rover alone, not the terrain of a station mesh
+  else if (e.key === 'r' || e.key === 'R') roverToggle();             // 0.99.37 (Christian: "The r button should be the same as the Rover icon")
   else if (e.key === 'p' || e.key === 'P') { motionOn = !motionOn; }     // 0.99.32: the screen's eye movement on / off
   else if (e.key === 'i' || e.key === 'I') toggleInfo();
   else if (e.key === 'h' || e.key === 'H') goHome();                     // 0.98.28: as the headset's Y

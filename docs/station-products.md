@@ -79,7 +79,8 @@ the normal is in the station's frame, RGB = 127.5 (1 + [east, north, up]), so le
 is used, so a fault seen there is in the mesh, the plane, the rover model or the far field and not in the blending.
 `rpp ods --no-geometry` leaves them out. The viewer lists them as "distance map" (log), "distance map linear" and
 "normal map" (0.98.30; "range log", "range linear" and "normal" before - those names still work in
-`--publish-views`). The upload's default views are standard, enhanced local, normal map and distance map. The normal
+`--publish-views`). The upload's default views (0.99.37) are standard, raw color, enhanced local, enhanced tone, dcs
+color, normal map and distance map; the page shows standard as "standard color" and enhanced local as "enhanced color". The normal
 map shows only the surface meshed from the cloud and the rover model: the fill under the rover, the apron to the
 ground plane's reach, the deck floors and the plane are black (a mesh made before 0.98.30 needs the mesh step again
 for this). The eyes are rendered at 16384 x 8192 (`rpp ods --width`); publishing reduces them to 8192.
@@ -160,7 +161,11 @@ the place alone (`dense_S003D2046`), and `--station` takes either form.
 |---|---|
 | `<prefix>_360_3DTD.png`, `.jpg` | both eyes in one square, **the left eye on top** (8-bit) |
 | `<prefix>_360_3DTD_16.png` | the same in 16-bit linear radiance units: the record for color work |
-| `<prefix>_enh_360_3DTD.jpg`, `_enhlocal_360_3DTD.jpg` | contrast-enhanced views, made from the 16-bit panoramas (terrain stretched; the sky smoothed; sky and deck may clip) |
+| `<prefix>_enh_360_3DTD.jpg`, `_enhlocal_360_3DTD.jpg` | contrast-enhanced views, made from the 16-bit panoramas (terrain stretched; the sky smoothed; nothing clips): `_enhlocal` is the viewer's "enhanced color" |
+| `<prefix>_raw_360_3DTD.jpg` | raw color (0.99.37): the standard view of the 16-bit values with the white balance divided out (`ods.json` linear16.white_balance) - the color of the RAD products |
+| `<prefix>_enhtone_360_3DTD.jpg` | enhanced tone (0.99.37): base / detail tone mapping - the local brightness (a guided filter, 1 deg) compressed, the detail x 1.8, each pixel's color ratios kept |
+| `<prefix>_dcs_360_3DTD.jpg` | dcs color (0.99.37): a decorrelation stretch fitted to the sunlit terrain; the sky white, the rover and its shadow black, the nadir disc as in the standard view |
+| `<prefix>_color_products.json` | the parameters of the three (`rpp.ibr.color_products`; one set per station, from the left eye, in `tone_levels.json`) |
 | `<prefix>_ods_sky_weight.png` | small map of the sky above the skyline: where the enhanced views smooth |
 | `<prefix>_ods_left`, `_right` `.png` / `_16.png` | the eyes apart (`--eyes left right center` adds the view from the pivot, a third more time) |
 | `<prefix>_ods_centre_depth.npz`, `_depth_16.png`, `_depth_*.jpg` | the range from the pivot for every pixel; from rays alone, seconds |
@@ -215,9 +220,11 @@ between a station's two variants.
 
 `docs/ods/index.html` is one static page (three.js, WebXR): it shows the `_360_3DTD` squares on a sphere per eye,
 with menus for station, variant and view, a link per view (`#<station>/<variant>/<view>`), drag and wheel on a
-screen and a choice of the eye shown there (left, right, or the center where there is one; the L key), and in a headset: right / left trigger = next / previous station, grip = variant,
+screen and a choice of the eye shown there (left, right, or the center where there is one; the L key), the space bar for
+the next view (0.99.37; Shift+space back), R for the rover on and off (as the rover button, 0.99.37), and in a headset: right / left trigger = next / previous station, grip = variant,
 A = view, X = info and map, Y = home (the welcome view, facing west), B = terrain only, thumbstick = turn (0.98.28). On a screen: the house
-button or H = home, B = terrain only, and the N E S W O cross at the upper right (O = level along the rover's +x). A line at the bottom reports what
+button or H = home, B = terrain only, and the N E S W O cross at the upper right, level with the bar (O = level along
+the rover's +x). On a screen the welcome view lists the keys (in a headset, the controller's buttons). A line at the bottom reports what
 the device can show (maximum texture size, compressed-texture formats).
 
 - On the documentation site: [https://ctate7163.github.io/rpv/](https://ctate7163.github.io/rpv/){target="_blank" rel="noopener"}

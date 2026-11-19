@@ -1,4 +1,4 @@
-"""Tests on the two real M2020 PDS products in tests/data/m20 (0.91: Rockytop, sols 461 and 464; skipped when absent)."""
+"""Tests on the two real M2020 PDS products (0.91: Rockytop, sols 461 and 464; 0.99.37: fetched from the PDS, see conftest; skipped when absent)."""
 import json
 
 import cv2

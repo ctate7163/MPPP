@@ -1409,6 +1409,9 @@ def test_floating_surface_removed_and_deep_faces_cut(tmp_path):
 
 # ----------------------------------------------------------------------------- 10 Nov: the 16-bit linear panorama
 def test_linear16_of_a_real_product_and_the_archive_lookup(tmp_path):
+    from conftest import NLF as _nlf
+    if not _nlf.is_file():
+        pytest.skip("the PDS test product is not here (RPP_TEST_FETCH=1, see conftest)")
     import cv2
     import shutil
     from types import SimpleNamespace
@@ -2039,7 +2042,7 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
     xy = web.station_on_map("Sol0052_S003D2046", wp)
     assert xy and min(abs(xy[0] - a) + abs(xy[1] - b) for a, b in tr["xy"]) < 30 and web.station_on_map("nothing", wp) is None
     assert cv2.imread(str(w / "panos" / "S1_360_3DTD.jpg")).shape == (128, 128, 3)
-    assert not (w / "panos" / "S1_enh_360_3DTD.jpg").exists() and web.DEFAULT_VIEWS == ("standard", "enhanced local", "normal map", "distance map")
+    assert not (w / "panos" / "S1_enh_360_3DTD.jpg").exists() and web.DEFAULT_VIEWS == ("standard", "raw color", "enhanced local", "enhanced tone", "dcs color", "normal map", "distance map")
     # 0.98.12: the range and normal views at most GEOMETRY_WIDTH wide, whatever the color width
     for nm in ("S1_normal_360_3DTD.jpg", "S1_range_log_360_3DTD.jpg"):
         cv2.imwrite(str(r / "S1" / nm), np.full((256, 256, 3), 90, np.uint8))
@@ -3183,7 +3186,7 @@ def test_o_looks_along_the_rover_x_and_y_b_home_buttons(tmp_path):
     assert web.rover_forward_azimuth({"rover_forward_azimuth_deg": 370.0, "text_centre_azimuth_deg": 1.0}) == 10.0
     assert web.rover_forward_azimuth({}) is None
     page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
-    assert "#compass { position: fixed; right: 12px; top: 52px;" in page and "-Math.PI / 4" not in page
+    assert "#compass { position: fixed; right: 12px; top: 8px;" in page and "-Math.PI / 4" not in page
     assert "TEXT_FROM_FORWARD_DEG = 135" in page and "rover_forward_azimuth_deg" in page
     assert 'id="home"' in page and "goHome" in page and "faceAfterLoad = 270" in page
     assert "pressed(src, 5)" in page and "if (left) goHome(); else terrainOnly();" in page
@@ -3382,7 +3385,7 @@ def test_viewer_keeps_north_across_stations_and_its_name_in_the_bar():
     a station change leaves the world's rotation alone; the bar and tab carry the viewer's name, which a list title of the
     viewer's own names does not replace."""
     page = (Path(__file__).resolve().parents[1] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
-    show = page[page.index("async function show()"):page.index("const color = k =>")]
+    show = page[page.index("async function show()"):page.index("function color(k)")]
     assert "if (!headingSet) {" in show and "headingSet = true;" in show
     assert show.count("world.rotation.y = yaw0 + turn;") == 1                       # inside the once-only block
     assert show.index("if (!headingSet) {") < show.index("world.rotation.y = yaw0 + turn;")
@@ -3535,3 +3538,55 @@ def test_viewer_names_three_forks_and_zcam():
     assert ss.viewer_sols(cfg["stations"]["Sol0686_S032D1184"], "Sol0686_S032D1184") is None
     assert ss.mark_name(cfg["stations"]["Sol0690_S032D1184_Z34"]) == "Three Forks North"       # the disc: no tag (0.99.13)
     assert "web.py" in ss.NOT_IN_CODE_KEY and "hf.py" in ss.NOT_IN_CODE_KEY and "ods.py" not in ss.NOT_IN_CODE_KEY
+
+
+def test_color_products_raw_tone_dcs(tmp_path):
+    """0.99.37 (Christian, 19 Nov 2026): raw color (the white balance divided out), enhanced tone (base / detail) and
+    dcs color (sunlit terrain stretched; the sky white, the rover and its shadow black) from the 16-bit eyes."""
+    import cv2
+    from rpp.ibr import color_products as CP, linear16 as L
+    H, W = 128, 256
+    el = 90.0 - (np.arange(H) + 0.5) * 180.0 / H
+    rng = np.random.default_rng(1)
+    x = np.zeros((H, W, 3), np.float32)                          # BGR, 8-bit linear units
+    x[el > 0] = (120.0, 150.0, 170.0)                            # the sky, bright
+    ter = el <= 0
+    x[ter] = np.clip(rng.normal((40.0, 60.0, 90.0), 6.0, (int(ter.sum()), W, 3)), 1, None)
+    rov = np.zeros((H, W), np.uint8)
+    rov[96:112, 100:140] = 1                                     # the rover below the horizon
+    x[rov > 0] = (200.0, 200.0, 200.0)
+    x[100:112, 140:170] *= 0.25                                  # its shadow beside it
+    mark_row = 122
+    x[mark_row:] = (220.0, 200.0, 150.0)
+    lab = np.where(el[:, None] > 0, 2, 1).astype(np.uint8) * np.ones((1, W), np.uint8)
+    np.savez_compressed(tmp_path / "S1_ods_centre_depth.npz", range=np.ones((H, W), np.float32), label=lab, rover=rov)
+    (tmp_path / "ods.json").write_text(json.dumps({"linear16": {"exposure16": 1.0, "white_balance": [1.0, 1.224, 1.569]},
+                                                   "nadir_mark": {"first_row": mark_row}}))
+    for eye in ("left", "right"):
+        cv2.imwrite(str(tmp_path / f"S1_ods_{eye}_16.png"), np.clip(x * 64, 0, 65535).astype(np.uint16))
+        cv2.imwrite(str(tmp_path / f"S1_ods_{eye}.png"), np.rint(L.tone_pipeline(x)).astype(np.uint8))
+    f = tmp_path / "levels.json"
+    r = CP.write_color_products(tmp_path, "S1", levels_file=f)
+    raw, tone, dcs = (cv2.imread(r["files"][t]) for t in ("raw", "enhtone", "dcs"))
+    std = cv2.imread(str(tmp_path / "S1_ods_left.png"))
+    assert raw.shape == (2 * H, W, 3) and tone.shape == raw.shape and dcs.shape == raw.shape
+    t = ter.copy(); t[mark_row:] = False
+    rel_std = std[t].mean(axis=(0, 1)); rel_raw = raw[:H][t].mean(axis=(0, 1))
+    assert rel_raw[0] / rel_raw[2] < 0.8 * rel_std[0] / rel_std[2]     # less blue to red: the balance divided out
+    assert (dcs[:H][:40] > 250).all()                                   # the sky white
+    assert dcs[:H][100:110, 105:135].mean() < 4 and dcs[:H][100:110, 105:135].max() < 25    # the rover black (JPEG)
+    assert dcs[:H][103:110, 145:165].mean() < 4 and dcs[:H][103:110, 145:165].max() < 25    # and its shadow
+    P = r["parameters"]
+    band = (el > -30) & (el < -5)
+    g = np.clip(x[band][:, :90].reshape(-1, 3) / P["white_linear_8bit_units"], 0, 1) ** (1 / 2.2)
+    y = (g - np.asarray(P["dcs"]["mean_bgr"])) @ np.asarray(P["dcs"]["matrix_bgr"]).T
+    assert np.allclose(np.cov(y.T), CP.DCS_SIGMA ** 2 * np.eye(3), atol=0.25 * CP.DCS_SIGMA ** 2)   # equal, uncorrelated
+    assert np.abs(dcs[:H][mark_row + 2:].astype(int) - std[mark_row + 2:].astype(int)).mean() < 4   # the disc as standard
+    assert 0 < tone[:H][t].mean() < 255 and r["parameters_from"] == "computed"
+    assert "color_products_parameters" in json.loads(f.read_text())
+    r2 = CP.write_color_products(tmp_path, "S1", levels_file=f)
+    assert r2["parameters_from"] == "file"
+    from rpp.ibr import web
+    files = web.station_files(tmp_path)
+    assert {"raw color", "enhanced tone", "dcs color"} <= set(files) and files["raw color"].name == "S1_raw_360_3DTD.jpg"
+    assert web.DEFAULT_VIEWS == ("standard", "raw color", "enhanced local", "enhanced tone", "dcs color", "normal map", "distance map")

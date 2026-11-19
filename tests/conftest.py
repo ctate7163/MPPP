@@ -11,12 +11,43 @@ sys.path.insert(0, str(ROOT / "src"))
 from rpp import env as rpp_env  # noqa: E402
 from rpp.paths import checkpoints_dir  # noqa: E402
 
-DATA = ROOT / "tests" / "data" / "m20"                                     # two public PDS products (0.91: Rockytop)
 # 0.91: Rockytop, the waypoint of sols 461-464 (site 26 drive 630) - a quarter-resolution frame of the sol-461 Navcam
-# 360 and a full 34 mm Mastcam-Z frame of ZCAM03381 (sol 464); the example data set of the same place is a release
-# asset (rpp fetch example)
-NLF = DATA / "NLF_0461_0707870987_044RAD_N0260630NCAM03461_0A0195J02.IMG"
-ZL0 = DATA / "ZL0_0464_0708130229_159RAD_N0260630ZCAM03381_0340LMA01.IMG"
+# 360 and a full 34 mm Mastcam-Z frame of ZCAM03381 (sol 464).
+# 0.99.37 (Christian, 19 Nov 2026: "Does that include any PDS data? we should remove that now. That data should be
+# fetched from the PDS when needed"): the two products are no longer in the repository.  They are looked for in
+# RPP_TEST_DATA, tests/data/m20 (a copy put there by hand) and the user cache (<cache>/test_data/m20); with
+# RPP_TEST_FETCH=1 they are downloaded from the PDS Imaging Node into the cache first (rpp.pds, 11 MB).  Without them
+# the tests that need them are skipped.
+NLF_NAME = "NLF_0461_0707870987_044RAD_N0260630NCAM03461_0A0195J02.IMG"
+ZL0_NAME = "ZL0_0464_0708130229_159RAD_N0260630ZCAM03381_0340LMA01.IMG"
+
+
+def _test_data_dir() -> Path:
+    from rpp.paths import cache_dir
+    names = (NLF_NAME, ZL0_NAME)
+    cache = cache_dir(create=False) / "test_data" / "m20"
+    env = rpp_env.get("RPP_TEST_DATA")
+    cands = ([Path(env)] if env else []) + [ROOT / "tests" / "data" / "m20", cache]
+    for d in cands:
+        if all((d / n).is_file() for n in names):
+            return d
+    if str(rpp_env.get("RPP_TEST_FETCH") or "").lower() in ("1", "true", "yes"):
+        import shutil
+        from rpp.pds import fetch_products
+        arch = cache.parent / "pds"
+        rep = fetch_products(names, arch, labels=True)
+        cache.mkdir(parents=True, exist_ok=True)
+        for f in rep.get("files", []):
+            if Path(f).suffix.upper() == ".IMG" or Path(f).suffix.lower() == ".xml":
+                shutil.copyfile(f, cache / Path(f).name)
+        if rep.get("failed"):
+            print(f"conftest: could not fetch {rep['failed']}", file=sys.stderr)
+    return cache if all((cache / n).is_file() for n in names) else cands[0]
+
+
+DATA = _test_data_dir()
+NLF = DATA / NLF_NAME
+ZL0 = DATA / ZL0_NAME
 
 
 def _find_ckpt():

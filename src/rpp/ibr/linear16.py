@@ -646,10 +646,16 @@ def retone(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quality: int 
     cv2.imwrite(str(out / f"{pre}{STACK_NAME}.jpg"), sq, [cv2.IMWRITE_JPEG_QUALITY, int(jpeg_quality)])
     drop_old_stacks(out, pre[:-1] if pre.endswith("_") else pre)
     enh = write_enhanced(out, prefix, top=top, jpeg_quality=jpeg_quality, levels_file=levels_file)
+    try:                                                                    # 0.99.37: raw color, enhanced tone, dcs color
+        from .color_products import write_color_products
+        more = write_color_products(out, prefix, top=top, jpeg_quality=jpeg_quality, levels_file=levels_file)
+    except Exception as e:                                                  # noqa: BLE001 - the others stand
+        log.warning("retone: no raw / enhanced tone / dcs views (%s)", e)
+        more = {"error": str(e)}
     try:                                                                    # 0.97.4: the new files carry the XMP again
         from .xmp import tag_folder
         tag_folder(out)
     except Exception:                                                       # noqa: BLE001
         pass
     return {"levels_16bit_units": [float(v) for v in levels], "square": str(out / f"{pre}{STACK_NAME}.jpg"), "top": top,
-            "enhanced": enh}
+            "enhanced": enh, "color_products": {k: v for k, v in more.items() if k in ("files", "notes", "error")}}

@@ -3,6 +3,48 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.37 — 2026-11-19 (branch `rpp`)
+
+Christian, 10:22: "regenerate the color products from the 16-bit images. regenerate and include the different color
+products. In the browser 2d version. Show a differ set of controls, including using the space bar to change the color
+map. Replace the enhanced local with just enhanced. The r button should be the same as the Rover icon to turn on and
+off the rover. Bring the info windows up a little. Move the NEWSo buttons up a little so that the top of N box is level
+with the top left bar. The color channels should be: standard color, raw color (with the standard white balanced
+revered to show what the raw images look like), enhanced color (enhancement with local brightness correction), enhanced
+tone (ton enhanced color with local brightness correction), dcs color (decorrelation stretch on just the sunlit terrain
+with the sky white and the rover/shadow black), normal map, distance map".
+
+- **`rpp.ibr.color_products`** (new; run by `rpp ods` after the enhanced views and by `--retone`, so
+  `rpp single-sites --retone` makes them from the 16-bit eyes with nothing rendered): `_raw_360_3DTD.jpg` (the
+  standard tone of linear / white balance), `_enhtone_360_3DTD.jpg` (base / detail tone mapping, the fast guided
+  filter at 4096 wide applied at full size) and `_dcs_360_3DTD.jpg` (decorrelation stretch from the sunlit terrain;
+  sky white, rover and its shadow black; masks from the center depth - the station's or its with_rover folder's - the
+  sky weight and the luminance). One parameter set per station (`color_products_parameters` in `tone_levels.json`),
+  recorded in `<prefix>_color_products.json`; the nadir disc copied from the standard view.
+- **Views**: `web.DEFAULT_VIEWS` = standard, raw color, enhanced local, enhanced tone, dcs color, normal map, distance
+  map. The page names standard "standard color" and enhanced local "enhanced color" (`VIEW_LABEL`; the keys stay, so
+  links and earlier entries work); every view but the normal and distance maps is a color view (the disc, the 3D
+  surfaces, B's color skins).
+- **Page on a screen**: space = next view (Shift+space back; the menus hand the keys back after a choice); R = the rover
+  button (it hid the 3D rover inside a 3D mode before); the welcome view lists the screen's keys instead of the
+  headset's buttons (those in a session); the info page 2 deg below the gaze line (7 before); the N E S W O cross at
+  8 px from the top, level with the bar, which keeps clear of it.
+- **dcs color** (10:52: "the dcs does not need to show the terrain's original colors underneath. It can be a colorful
+  splotchy mess for now"): each principal component stretched to sd 0.20 about mid gray (`DCS_SIGMA`, `DCS_MID`;
+  0.075 about the terrain's mean in the 18 Nov study).
+- **Install** (10:42-10:43: 'It has error: invalid requirement: "#". you should probably remove the comments from the
+  install instructions. It also looks like the Pypi link does not work. The download is too large. Does that include
+  any PDS data? we should remove that now'; "the install instructions should probably install into a dedicated conda
+  environment"): README, `docs/installation.md`, `docs/quickstart.md` and `CONTRIBUTING.md` install into a conda
+  environment of its own, from a shallow clone (`git clone --depth 1`: the files, about 40 MB, not the history), with
+  no comments inside the command blocks (a Windows prompt passed `#` to pip; a test keeps them out); PyPI is named as
+  not published yet (the page did not exist); `cd rpp`, not `cd RPP`.
+- **No PDS data in the repository**: the two test products (`tests/data/m20`, 11 MB) are removed. `tests/conftest.py`
+  looks for them in `RPP_TEST_DATA`, `tests/data/m20` and the user cache, and downloads them from the PDS Imaging Node
+  into the cache with `RPP_TEST_FETCH=1` (`rpp.pds.fetch_products`); without them the tests that read them are
+  skipped. The example set was already fetched from the PDS (`rpp example fetch`). Older commits still hold the
+  products; a shallow clone does not download them.
+
 ## 0.99.36 — 2026-11-19 (branch `rpp`)
 
 Christian, 09:47-09:57: "is the new RPV version live"; "for the rpv browser layer, include center with the left and
