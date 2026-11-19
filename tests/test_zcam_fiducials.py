@@ -52,18 +52,27 @@ def test_the_deck_fixes_the_mastcam_z_centers_along_the_boresight():
              "R": (np.asarray(p["c_R_m"]) + [0.006, 0.092, 0.002], np.asarray(p["Q_R_rotvec_rad"]))}
     frames, obs = _frames(rng, ch, zm, truth)
     assert len(frames) > 30 and len(obs) > 80
+    from rpp_studies.calibration.zcam_mast_head import Mast
+    mast = Mast(ch)
+    lvl = {e: ZF.pose(ch, c, q, 0.0, mast.el_level) for e, (c, q) in truth.items()}
+    true_right = 1e3 * lvl["L"][0] @ (lvl["R"][1] - lvl["L"][1])
+    assert true_right[0] > 200                                          # ZR is to the right of ZL in ZL's frame
     for how in ("law", "free"):
         f = ZF.fit(frames, obs, ch, zm, focal=how)
         assert f["rms_px"] < 0.6
         for e, (c, q) in truth.items():
             v = f["eyes"]["Z" + e]
-            bore = ZF._RV(q).T @ np.array([0.0, 0.0, 1.0])
-            err = 1e3 * (np.asarray(v["c_m"]) - c)
-            assert abs(err @ bore) < max(1.0, 4 * v["c_along_boresight_sd_mm"]), (how, e, err, v)
-            assert np.all(np.abs(err) < 2.0), (how, e, err)
+            assert np.all(np.abs(1e3 * (np.asarray(v["c_m"]) - c)) < 2.0), (how, e)
+            R, C = lvl[e]
+            cm = 1e3 * mast.F @ (C - mast.O)                            # the level mast frame (0.99.35)
+            assert np.allclose(v["c_mast_mm"], cm, atol=2.0), (how, e, v["c_mast_mm"], cm)
+            along = cm @ (mast.F @ R[2])
+            assert abs(v["c_along_boresight_mm"] - along) < max(1.0, 4 * v["c_along_boresight_sd_mm"]), (how, e)
             if how == "free":
                 assert abs(v["s_ppm"]) < max(800.0, 4 * v["s_sd_ppm"])
-        true_b = 1e3 * np.linalg.norm(truth["R"][0] - truth["L"][0])
+        r, rs = np.asarray(f["pair"]["right_center_in_left_mm"]), np.asarray(f["pair"]["right_center_in_left_sd_mm"])
+        assert np.all(np.abs(r - true_right) < np.maximum(1.0, 4 * rs)), (how, r, true_right, rs)
+        true_b = 1e3 * np.linalg.norm(lvl["R"][1] - lvl["L"][1])
         assert f["pair"]["baseline_mm"] == pytest.approx(true_b, abs=1.0)
     lines = ZF.describe({"law": f}, 34)
     assert any("ZR center in the ZL frame" in ln for ln in lines) and any("N+Z34 joint" in ln for ln in lines)

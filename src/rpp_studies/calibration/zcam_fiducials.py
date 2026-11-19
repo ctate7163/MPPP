@@ -26,9 +26,12 @@ resolver angles (az_i, el_i) of its label,
   K_e   the eye's camera from the zoom's focus law at the frame's focus count (rpp.calib.constrain.zcam_camera_at)
   W, G, P, h   the chain's, held
 
-The fit gives c_ZL, c_ZR (and their sd, from the Jacobian with the rms scaled in), the baseline |c_ZR - c_ZL|, and
-the right center in the left camera's frame, Rot(Q_ZL) (c_ZR - c_ZL), to set against the rig files and the joints'
-"right_centre_m" (the 18 Nov joints: z 14.96 mm at the start, 15.73 Mastcam-Z only, 18.70 with the Navcam free).
+The chain carries c_e in its position frame and Q_e in its orientation frame, which differ (Ry(-el) against
+Ry(el)), so the results are read from the poses at the level head (az 0, the Navcam's level elevation; 0.99.35): each
+center in the level mast frame (x forward, y right, z down), its component along the boresight, the baseline, and
+the ZR center in the ZL camera frame, R_L (C_R - C_L), to set against the rig files and the joints' "right_centre_m"
+(the 18 Nov joints: z 14.96 mm at the start, 15.73 Mastcam-Z only, 18.70 with the Navcam free); the sd propagate the
+fit's covariance (the rms scaled in).
 Run it twice, with the focal law held and with ``s_e`` free: if c_e along the boresight does not move between the
 two (and s_e comes out small), the deck separates position and focal length as intended.
 
@@ -349,37 +352,72 @@ def fit(frames: Sequence[Dict[str, Any]], obs: Sequence[Dict[str, Any]], chain: 
                            "rms_px": float(np.sqrt(np.mean(np.sum(res ** 2, axis=1)))) if len(res) else None,
                            "variance_factor": s2, "eyes": {}}
     kept_eye = np.array([by[obs[j]["stem"]]["eye"] for j in range(len(obs)) if keep[j]])
+    # 0.99.35: what the results are read in.  The chain carries a center in its position frame (through Ry(-el)) and
+    # a rotation in its orientation frame (through Ry(el)): c and Q are not in one frame, so neither c . (Q^T z) nor
+    # Rot(Q_L) (c_R - c_L) means anything (0.99.34 reported both: the ZR center came out at x -241 mm).  The results
+    # are now the poses themselves at the level head (az 0, the Navcam's level elevation): each center in the level
+    # mast frame (x forward along the level boresight, y right, z down; mm from the elevation axis on the azimuth
+    # axis), its boresight there, and the ZR center in the ZL camera frame R_L (C_R - C_L); their sd by propagating the
+    # fit's covariance (a numerical Jacobian).
+    from .zcam_mast_head import Mast
+    mast = Mast(chain)
+    el0 = float(mast.el_level)
+
+    def at_level(xx, e):
+        c, q = xx[ix[e]:ix[e] + 3], xx[ix[e] + 3:ix[e] + 6]
+        R, C = pose(chain, c, q, 0.0, el0)
+        return R, C
+
+    def mast_center(xx, e):
+        _, C = at_level(xx, e)
+        return 1e3 * mast.F @ (C - mast.O)
+
+    def propagate(g):
+        y0 = np.asarray(g(x), float)
+        Jg = np.zeros((y0.size, len(x)))
+        for k in range(len(x)):
+            if not np.any(cov[k]):
+                continue
+            h = 1e-7 if k < len(eyes) * ne else 1e-6
+            xp = x.copy()
+            xp[k] += h
+            Jg[:, k] = (np.asarray(g(xp), float) - y0) / h
+        Cy = Jg @ cov @ Jg.T
+        return y0, np.sqrt(np.clip(np.diag(Cy), 0, None)), Cy
+
     for e in eyes:
         i = ix[e]
-        c, q = x[i:i + 3], x[i + 3:i + 6]
-        Ce = cov[i:i + 3, i:i + 3]
-        bore = _RV(q).T @ np.array([0.0, 0.0, 1.0])                # the optical axis in the head frame
+        R0, _ = at_level(x, e)
+        bore = mast.F @ R0[2]                                     # the optical axis in the level mast frame
+        cm, cm_sd, Cm = propagate(lambda xx, e=e: mast_center(xx, e))
+        al, al_sd, _ = propagate(lambda xx, e=e: [mast_center(xx, e) @ (mast.F @ at_level(xx, e)[0][2])])
         m = kept_eye == e
-        var_a = max(float(bore @ Ce @ bore), 0.0)
+        var_s = max(cov[i + 6, i + 6], 0.0) if free_s else 0.0
         out["eyes"]["Z" + e] = {
-            "c_m": c.tolist(), "c_sd_mm": (1e3 * np.sqrt(np.clip(np.diag(Ce), 0, None))).tolist(),
-            "q_rotvec": q.tolist(), "boresight_head": bore.tolist(),
-            "c_along_boresight_mm": float(1e3 * c @ bore), "c_along_boresight_sd_mm": float(1e3 * np.sqrt(var_a)),
+            "c_m": x[i:i + 3].tolist(), "q_rotvec": x[i + 3:i + 6].tolist(),
+            "c_mast_mm": cm.tolist(), "c_mast_sd_mm": cm_sd.tolist(), "boresight_mast": bore.tolist(),
+            "c_along_boresight_mm": float(al[0]), "c_along_boresight_sd_mm": float(al_sd[0]),
             "start_c_m": np.asarray(start[e][0]).tolist(),
             "s_ppm": float(1e6 * x[i + 6]) if free_s else 0.0,
-            "s_sd_ppm": float(1e6 * np.sqrt(max(cov[i + 6, i + 6], 0.0))) if free_s else None,
-            "corr_s_along": (float((cov[i:i + 3, i + 6] @ bore) / np.sqrt(max(var_a, 1e-30) * max(cov[i + 6, i + 6], 1e-30)))
-                             if free_s else None),
+            "s_sd_ppm": float(1e6 * np.sqrt(var_s)) if free_s else None,
+            "corr_s_along": None,
             "frames": len({by[s]["stem"] for s in stems if by[s]["eye"] == e}),
             "targets": int(m.sum()), "rms_px": float(np.sqrt(np.mean(np.sum(res[m] ** 2, axis=1)))) if m.any() else None}
+        if free_s:
+            _, _, Cas = propagate(lambda xx, e=e: [mast_center(xx, e) @ (mast.F @ at_level(xx, e)[0][2]), 1e6 * xx[ix[e] + 6]])
+            out["eyes"]["Z" + e]["corr_s_along"] = float(Cas[0, 1] / np.sqrt(max(Cas[0, 0] * Cas[1, 1], 1e-30)))
     if {"L", "R"} <= set(eyes):
-        iL, iR = ix["L"], ix["R"]
-        cL, cR, qL = x[iL:iL + 3], x[iR:iR + 3], x[iL + 3:iL + 6]
-        D = np.zeros((3, len(x)))
-        D[:, iR:iR + 3], D[:, iL:iL + 3] = np.eye(3), -np.eye(3)
-        Cd = D @ cov @ D.T
-        RL = _RV(qL)
-        b = cR - cL
-        u = b / np.linalg.norm(b)
-        Cr = RL @ Cd @ RL.T
-        out["pair"] = {"baseline_mm": float(1e3 * np.linalg.norm(b)), "baseline_sd_mm": float(1e3 * np.sqrt(max(u @ Cd @ u, 0.0))),
-                       "right_center_in_left_mm": (1e3 * RL @ b).tolist(),
-                       "right_center_in_left_sd_mm": (1e3 * np.sqrt(np.clip(np.diag(Cr), 0, None))).tolist(),
+        def right_in_left(xx):
+            RL, CL = at_level(xx, "L")
+            _, CR = at_level(xx, "R")
+            return 1e3 * RL @ (CR - CL)
+
+        def baseline(xx):
+            return [1e3 * np.linalg.norm(at_level(xx, "R")[1] - at_level(xx, "L")[1])]
+        r, r_sd, _ = propagate(right_in_left)
+        b, b_sd, _ = propagate(baseline)
+        out["pair"] = {"baseline_mm": float(b[0]), "baseline_sd_mm": float(b_sd[0]),
+                       "right_center_in_left_mm": r.tolist(), "right_center_in_left_sd_mm": r_sd.tolist(),
                        "joints_mm": {k: list(v) for k, v in JOINT_RIGHT_CENTER_MM.items()}}
     return out
 
@@ -389,11 +427,11 @@ def describe(fits: Dict[str, Dict[str, Any]], zoom: int = 34) -> List[str]:
     for how, f in fits.items():
         lines += [f"## focal {how}: {f['frames']} frames, {f['observations']} targets ({f['rejected']} dropped), "
                   f"rms {f['rms_px']:.2f} px", ""]
-        lines.append("| eye | c (head frame, mm) | sd (mm) | along the boresight (mm) | focal scale (ppm) | frames | rms (px) |")
+        lines.append("| eye | center, level mast frame (mm; x fwd, y right, z down) | sd (mm) | along the boresight (mm) | focal scale (ppm) | frames | rms (px) |")
         lines.append("|---|---|---|---|---|---:|---:|")
         for e, v in f["eyes"].items():
-            c = ", ".join(f"{1e3 * a:.1f}" for a in v["c_m"])
-            sd = ", ".join(f"{a:.2f}" for a in v["c_sd_mm"])
+            c = ", ".join(f"{a:.1f}" for a in v["c_mast_mm"])
+            sd = ", ".join(f"{a:.2f}" for a in v["c_mast_sd_mm"])
             sc = "held" if v["s_sd_ppm"] is None else f"{v['s_ppm']:+.0f} +- {v['s_sd_ppm']:.0f} (corr with along {v['corr_s_along']:+.2f})"
             lines.append(f"| {e} | {c} | {sd} | {v['c_along_boresight_mm']:.2f} +- {v['c_along_boresight_sd_mm']:.2f} | {sc} | "
                          f"{v['frames']} | {v['rms_px']:.2f} |")

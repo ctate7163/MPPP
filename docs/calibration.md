@@ -203,10 +203,17 @@ The study carries each Mastcam-Z eye on the deck_joint mast chain as the chain c
 with resolver angles (az, el), R = Rot(d) Rot(Q_e) Ry(el)^T Rz(az)^T Rot(W) and C = [P_x, P_y, 0] + Rot(G) Rz(az)
 (h + Ry(-el) c_e), with the eye's camera from the zoom's focus law at the frame's focus count. It fits per eye the
 center c_e in the head frame (m) and the rotation Q_e, a per-frame pointing change d (prior 1.5 mrad) and, with
-`--focal free`, a focal scale s_e at the deck focus. It reports c_e, its component along the boresight, the baseline
-and the ZR center in the ZL frame, beside the joints' values. On synthetic deck pans the along-boresight center
-comes out to 0.06 mm with the focal law held and to 0.35 mm with s_e free (s_e and the position then correlate at
--0.98): the deck tells 15.0 mm from 18.7 mm either way.
+`--focal free`, a focal scale s_e at the deck focus. It reports each center in the level mast frame (x forward along
+the level boresight, y right, z down), its component along the boresight, the baseline and the ZR center in the ZL
+camera frame at the level head, beside the joints' values, with sd propagated from the fit.
+
+First run (19 Nov 2026, 41 deck frames of 24 sols, 85 targets, mostly RPFA1, RPFA2 and TDF1-3): with the focal law
+held, the ZR center in the ZL frame is (240.2, 7.2, 15.0) +- (1.6, 2.0, 1.3) mm. Along the boresight it agrees with
+the rig in use (15.0 mm) and the Mastcam-Z joint (15.7 mm), and is 2.8 sd from the N+Z joint (18.7 mm); with a
+pointing prior of 0.5 mrad it is 13.9 +- 0.5 mm. With the focal scale free the deck cannot separate the two: about
+two targets per frame, so the scale and the position correlate at -0.99. The held fit uses the focal law at the deck
+focus (about -600 counts), which is below the terrain's focus range (222-1230), so the law is extrapolated there.
+The vicarious fiducials (5-10 more points a frame) are the way to a free-focal answer.
 
 ```bash
 python -m rpp_studies.calibration.zcam_fiducials --pds D:\data\m2020\zcam --out D:\rover_blocks\camera_analysis\zcam34_fiducials --zoom 34
