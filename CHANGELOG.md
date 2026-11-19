@@ -3,6 +3,23 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.42 — 2026-11-19 (branch `rpp`)
+
+A review of 0.99.38-0.99.41 (Christian, 14:18: "Look over the code and make sure it made the necessary changes and did
+not introduce more bugs"). Four faults of 0.99.40-0.99.41, fixed:
+
+- **The white sky took the far hills with it.** The texture's "sky" texels were every ray that met neither the mesh nor
+  the ground plane - the sky and the hills beyond the 75 m mesh - and all were whitened, as was everything beyond the
+  skyline's circle. Now (`station_mesh.sky_texels`) a far texel is sky when it is brighter than midway (log) between
+  the sky above 15 deg and the mesh's ground, or uncolored, and joined through such texels to the zenith; darker far
+  texels keep their colors, beyond the circle too.
+- RPV: the full 3D terrain had no distance map at stations published since 0.98.30 (their key is "distance map"; the
+  page looked for "range log").
+- RPV: full 3D <-> the drive on the standard view took the new skin path, so the drive did not start (or end); a
+  change into or out of the drive loads the surfaces again.
+- RPV: a skin still loading when another station (or skin) was chosen could land on the new surfaces; the later
+  choice wins.
+
 ## 0.99.41 — 2026-11-19 (branch `rpp`)
 
 - RPV: the local 3D terrain is the full 3D file's terrain - the same 20 m mesh and texture, its shell to the horizon

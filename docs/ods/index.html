@@ -488,15 +488,19 @@ function driveStep(dt, vl, vr) {                                 // vl, vr: the 
 // for the way back, and one skin at a time
 let surfState = null, skinTex = { url: null, t: null };
 function canSwap(sm, url) {
-  if (!surfState || surfState.shader !== 'c' || !sm || surfState.file !== sm.file || surfState.noHorizon !== !!sm.noHorizon) return false;
+  if (!surfState || surfState.shader !== 'c' || !sm || surfState.file !== sm.file || surfState.noHorizon !== !!sm.noHorizon ||
+      surfState.drive !== !!(sm.drive && sm.whole)) return false;   // 0.99.42: into or out of the drive loads again (it starts / ends there)
   return !!url || roverParts.some(m => m.userData.baseTex);
 }
+let swapId = 0;
 async function swapSkin(url) {
   let t = null;
+  const id = ++swapId, rid = roverId;              // a later choice (another skin, another station) wins
   if (url) {
     t = skinTex.url === url ? skinTex.t : null;
     if (!t) {
       const bmp = await createImageBitmap(await (await fetch(url)).blob());
+      if (id !== swapId || rid !== roverId) { bmp.close(); return; }
       t = new THREE.Texture(bmp);
       t.flipY = false; t.wrapS = THREE.RepeatWrapping; t.generateMipmaps = true; t.colorSpace = THREE.NoColorSpace;
       t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
@@ -549,7 +553,7 @@ async function showRover(rs, opt = {}) {
     if (rs.drive && rs.whole) driveStart(rs.drive);              // 0.99.33: the sixth mode
     meshFade = fadeU; fadeBase = fadeU ? fadeU.clone() : null;
     wholeScene = !!rs.whole && made.some(m => m.userData.kind === 'horizon');     // the fifth mode: no panorama behind
-    surfState = { file: rs.file, noHorizon: !!rs.noHorizon, shader: opt.normals ? 'n' : opt.distance ? 'd' : 'c', skin: opt.skin || null };
+    surfState = { file: rs.file, noHorizon: !!rs.noHorizon, drive: !!(rs.drive && rs.whole), shader: opt.normals ? 'n' : opt.distance ? 'd' : 'c', skin: opt.skin || null };
     if (wholeScene) for (const k in spheres) spheres[k].visible = false;
     anchored = false;
   } catch (e) { console.warn('rover surface', e); }
@@ -712,7 +716,7 @@ const VIEWER_NAME = 'Rover Photogrammetry Viewer (RPV)';
 // 0.99.36 (Christian, 19 Nov 2026: "please put the rpp-rpv viewer version number on the lower left above the site name,
 // images size, and version on which the site was rendered"): the page's own version (the RPP release that wrote it;
 // tests/test_station_mesh.py keeps it equal to rpp.__version__), above the station's line
-const RPV_VERSION = '0.99.41';
+const RPV_VERSION = '0.99.42';
 $('ver').textContent = `RPV viewer ${RPV_VERSION}`;
 const CREDIT = 'Created by Christian Tate at MSSS';   // 0.99.14 (Christian, 17 Nov 2026: 'remove the "for research purposes" phrase')
 // 0.99.39 (Christian, 19 Nov 2026: "remove the code: ... text from the welcome screen"): the credit alone, no link to
@@ -924,7 +928,7 @@ function views(p, v) {
   const q = variants(p)[v] || {}, ks = Object.keys(q.views || {});
   if (!isWhole(q)) return ks;
   const sk = (q.station_mesh && q.station_mesh.skins) || {};     // 0.99.41: the color skins of the full 3D texture
-  const w = ks.filter(k => k === 'standard' || sk[k] || /^normal/.test(k) || k === 'range log');
+  const w = ks.filter(k => k === 'standard' || sk[k] || /^normal/.test(k) || k === 'range log' || k === 'distance map');
   return w.length ? w : ks.slice(0, 1);
 }
 // 0.98.30 (Christian, 16 Nov 2026: 'Change "normal" to "normal map" and "range log" to "distance map"'): the names of

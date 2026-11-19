@@ -212,9 +212,9 @@ def test_fifth_mode_surface_to_the_horizon_one_texture(tmp_path):
     assert rho[ground].max() <= 0.97 * rpx + 1e-3                                            # the terrain inside it
     rho_in = np.hypot(tp["uv"][:, 0] - 0.5, tp["uv"][:, 1] - 0.5) * 1024
     assert np.isfinite(tp["texture"]).all() and tp["texture"].shape == (1024, 1024, 3)
-    # 0.99.41: the sky, the zone beyond the skyline's circle and the unused texels white; the ground not
+    # 0.99.41: the sky and the unused texels white; the ground not
     w = tp["white"]
-    assert w.shape == (1024, 1024) and w[0, 0] and w[512, 1023] and not w[512, 512] and rr["white_texels"] == int(w.sum())
+    assert w.shape == (1024, 1024) and w[512, 1023] and not w[512, 512] and rr["white_texels"] == int(w.sum()) > 0
     # the map and its inverse agree across the knee
     knee = (np.radians(rr["skyline_deg"] + 90.0), 0.97)
     rows, cols = np.array([100, 512, 900, 30]), np.array([512, 300, 700, 512])
@@ -278,7 +278,7 @@ def test_viewer_terrain_modes_rover_button_and_hidden_drive():
               "#title { font-weight: 600; margin-right: 6px; color: #fff; }", "#bar button#home, #compass button#faceO { color: #ff9500; }",
               "const MAP_ORANGE = '#ff9500';", "#nav button#roverBtn { color: #ff9500; }", "#nav button#roverBtn.on { color: #fff; border-color: #555; }",
               "q.key === 'scape3d' && q.station_mesh", "noHorizon: true", "skipHorizon: isMain && !!rs.noHorizon",
-              "function stereoOrFull()", "const DIST_FRAG", "canSwap(sm, skinUrl) ? swapSkin(skinUrl)", "sk[k] || /^normal/.test(k) || k === 'range log'",
+              "function stereoOrFull()", "const DIST_FRAG", "canSwap(sm, skinUrl) ? swapSkin(skinUrl)", "sk[k] || /^normal/.test(k) || k === 'range log' || k === 'distance map'", "if (id !== swapId || rid !== roverId) { bmp.close(); return; }",
               "B: stereo / full 3D"):
         assert s in page, s
     nav = page[page.index('<div id="nav">'):page.index('<div id="msg">')]
@@ -352,3 +352,24 @@ def test_full_3d_texture_color_skins_and_their_listing(tmp_path):
     assert sc["skins"]["dcs color"] == "panos/S_station_scape_terrain_dcs.jpg" and (pano / "S_station_scape_terrain_dcs.jpg").is_file()
     lv.write_text("{}")                                             # no parameters yet: the original color only
     assert set(SM.write_skins(tmp_path, lv)) == {"raw color"}
+
+
+def test_sky_texels_keep_the_far_hills():
+    """0.99.42: the far texels are the sky and the hills beyond the mesh - only the bright ones joined to the zenith
+    are sky."""
+    from rpp.ibr import station_mesh as SM
+    S, rpx, knee = 512, 250.0, (np.radians(95.0), 0.97)
+    ax = np.arange(S) + 0.5 - S / 2
+    rho = np.hypot(ax[None, :], ax[:, None])
+    in_disc = rho <= rpx
+    far = in_disc & (rho > 200)
+    rgb = np.full((S, S, 3), 60.0, np.float32)                     # the ground
+    rgb[far] = 240.0                                               # the sky ...
+    hill = far & (rho < 215) & (ax[None, :] > 0)                   # ... and a dark hill on the east half, beyond the mesh
+    rgb[hill] = 70.0
+    have = in_disc.copy()
+    have[far & ~hill & (ax[:, None] > 150)] = False                # a part of the sky no frame colored
+    sky = SM.sky_texels(rgb, far, have, in_disc, S, rpx, knee)
+    assert not sky[hill].any() and not sky[in_disc & ~far].any()
+    assert sky[far & ~hill].mean() > 0.999
+    assert "surfState.drive !== !!(sm.drive && sm.whole)" in (__import__("pathlib").Path(SM.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")

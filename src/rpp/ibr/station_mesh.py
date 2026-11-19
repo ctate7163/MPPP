@@ -91,8 +91,9 @@ SKYLINE_MIN_DEG = 5.0           # ... and at least this far above the horizontal
 #                                 degree)
 SKY_WHITE = True                # 0.99.41 (Christian, 19 Nov 2026: "the sky still has too many blemishes. That can be
 #                                 solid white"; "assuming the black area does not map to the mesh, make it white"): in
-#                                 the fifth mode's texture the sky texels, the zone beyond the skyline's circle and the
-#                                 texels no triangle uses are white
+#                                 the fifth mode's texture the sky's texels (:func:`sky_texels`: the bright far texels
+#                                 joined to the zenith - not the hills beyond the mesh) and the texels no triangle
+#                                 uses are white
 SHELL_FROM_M = 17.0             # the shell starts this far from the mast axis (the near mesh fades out over FADE_M; 7 m
 #                                 until 0.99.39)
 FADE_M = (18.0, 20.0)           # the near terrain's opacity: 1 at the first, 0 at the second (horizontal m from the axis;
@@ -404,6 +405,34 @@ def render_texture(scene, sources: Sequence[Any], args: Dict[str, Any], pool=Non
     return {"rgb": rgb, "source": src, "sky": sky}
 
 
+SKY_REF_EL_DEG = 15.0           # the sky's brightness: the far texels the frames colored above this elevation
+
+
+def sky_texels(rgb: np.ndarray, far: np.ndarray, have: np.ndarray, in_disc: np.ndarray, size: int, rpx: float, knee) -> np.ndarray:
+    """0.99.41: the texels of the fifth mode's texture that are sky.  ``far`` (the rays that met neither the mesh nor
+    the ground plane) holds the sky AND the hills beyond the mesh, so it is not whitened whole: a far texel is sky
+    when it is brighter than midway (in log) between the sky above SKY_REF_EL_DEG and the mesh's ground - or no frame
+    colored it - and is joined through such texels to the zenith (the disc's rim).  Darker far texels (distant hills,
+    a crater rim) keep their colors.  Without enough sky above SKY_REF_EL_DEG to measure: the far texels beyond the
+    skyline's circle."""
+    import cv2
+    ax = (np.arange(size, dtype=np.float32) + 0.5 - size / 2.0) ** 2
+    rho2 = ax[None, :] + ax[:, None]
+    lum = rgb.mean(axis=2)
+    r_ref = float(_rho_of_theta(np.array([np.pi / 2 + np.radians(SKY_REF_EL_DEG)]), rpx, np.pi, knee)[0])
+    hi = far & have & (rho2 > np.float32(r_ref ** 2))
+    ground = in_disc & have & ~far
+    if hi.sum() < 100 or ground.sum() < 100:
+        return far & (rho2 > np.float32((knee[1] * rpx + 1.0) ** 2))
+    cut = float(np.exp(0.5 * (np.log(max(float(np.median(lum[hi][::17])), 1e-6)) + np.log(max(float(np.median(lum[ground][::97])), 1e-6)))))
+    like = (far & (~have | (lum > cut))).astype(np.uint8)
+    del lum
+    _, comp = cv2.connectedComponents(like, connectivity=8)
+    ring = (rho2 > np.float32((rpx - 4.0) ** 2)) & (like > 0)      # the zenith: the disc's last texels
+    ids = np.unique(comp[ring])
+    return np.isin(comp, ids[ids > 0])
+
+
 def push_pull(rgb: np.ndarray, have: np.ndarray, region: np.ndarray) -> np.ndarray:
     """The texels of ``region`` that are not ``have`` filled from the ones that are, coarse to fine (a pull-push
     pyramid); ``rgb`` float (H, W, 3) changed in place.  Returns the texels filled."""
@@ -569,10 +598,7 @@ def terrain_part(scene, sources, station, pool=None, size: int = TEXTURE_PX, rad
             g = GUTTER_PX
             white[max(0, int(y) - g):int(y + h) + g, max(0, int(x) - g):int(x + w) + g] = False
         if sky is not None:
-            white |= sky & in_disc
-        ax = (np.arange(size, dtype=np.float32) + 0.5 - size / 2.0) ** 2
-        white |= (ax[None, :] + ax[:, None]) > np.float32((knee[1] * rpx + 1.0) ** 2)   # beyond the skyline's circle: sky
-        del ax
+            white |= sky_texels(rgb, sky & in_disc, have, in_disc, size, rpx, knee)
     sky = None
     med = np.median(rgb[seen_disc][::97], axis=0) if seen_disc.any() else np.full(3, 128.0)
     cell_filled = fill_cells(rgb, have, cells, med)
