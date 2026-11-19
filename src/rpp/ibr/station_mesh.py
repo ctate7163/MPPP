@@ -1,4 +1,4 @@
-"""The station as a textured 3D surface: the terrain within 10 m and the rover (0.99.26).
+"""The station as a textured 3D surface: the terrain within 20 m (10 m until 0.99.39) and the rover (0.99.26).
 
 Christian, 18 Nov 2026: "I do want a simplified medium poly mesh of the 10m radius area to be textured. The texture
 should be 8kx8k and projected onto the terrain largely from the perspective of the viewer so that the near terrain
@@ -18,7 +18,7 @@ held within 1 m of the pivot.
   vertex.  So every texel covers the same angle seen from C, and the near terrain gets the most texels per square
   meter.  A vertex's texture coordinates are its direction from C, so the disc has no seam;
 * the triangles C does not see (behind a rock, an overhang) or sees almost edge on are given cells of their own in the
-  texture's corners (outside the disc: a shelf packing at one texel size, the largest that fits), each colored from
+  texture's corners (0.99.39: those within ``CELL_RADIUS_M``; farther ones take the disc) (outside the disc: a shelf packing at one texel size, the largest that fits), each colored from
   the frames that see it;
 * every texel is colored by the panorama's blend (:func:`rpp.ibr.ods.shade_rays`): a disc texel along its ray from C,
   a cell texel along the surface normal onto its point.  What no frame colored is filled from the texels around it.
@@ -53,15 +53,19 @@ import numpy as np
 PathLike = Union[str, Path]
 log = logging.getLogger("rpp.ibr")
 
-RADIUS_M = 10.0                 # the terrain within this horizontal distance of the mast axis
+RADIUS_M = 20.0                 # the terrain within this horizontal distance of the mast axis (0.99.39, Christian, 19 Nov
+#                                 2026: "the 3d terrain should go out to 20 m instead of 10 m"; 10 m before)
 CENTER_ABOVE_M = 0.5            # the terrain texture's projection center above the pivot
-TARGET_TRIANGLES = 300_000      # the simplified terrain ("medium poly")
+TARGET_TRIANGLES = 500_000      # the simplified terrain ("medium poly"; 300,000 within 10 m until 0.99.39)
 TEXTURE_PX = 8192               # the terrain texture's side
 ROVER_TEXTURE_PX = 4096         # the rover texture's side
 VIEW_RADIUS_M = 1.0             # the rover is textured where it can be seen from within this distance of the pivot
 VIEWPOINTS = 32                 # directions of the viewpoints on each sphere (0.5 m and VIEW_RADIUS_M)
 ROVER_FAMILIES = "N"            # the frames that color the rover ("viewed by the ncams")
 GRAZING_COS = 0.12              # a terrain triangle C sees at more than about 83 deg from its normal gets a cell
+CELL_RADIUS_M = 10.0            # 0.99.39: ... and one C does not see, only within this of the mast axis; beyond, every
+#                                 triangle takes the disc (flat ground is edge on from about 20 m, and the cells share
+#                                 one texel size: 10-20 m of hidden ground would make every cell about 3x coarser)
 GUTTER_PX = 2                   # texels around every cell and the disc, colored as if the surface went on
 MAX_CELL_PX = 384               # a cell's longest side; a larger triangle is given coarser texels
 TERRAIN_OFFSET_M = 0.05         # a cell texel's ray starts this far off the simplified surface (it may lie below
@@ -81,8 +85,10 @@ HORIZON_FRAC = 0.90             # the skyline's circle: this share of the textur
 SKYLINE_MARGIN_DEG = 1.5        # the full-density zone ends this far above the highest mesh seen from C ...
 SKYLINE_MIN_DEG = 10.0          # ... and at least this far above the horizontal: the scene's far surface (beyond the
 #                                 mesh) does not tell far hills from the sky, and hills seldom stand higher than this
-SHELL_FROM_M = 7.0              # the shell starts this far from the mast axis (the near mesh fades out over FADE_M)
-FADE_M = (8.0, 10.0)            # the near terrain's opacity: 1 at the first, 0 at the second (horizontal m from the axis)
+SHELL_FROM_M = 17.0             # the shell starts this far from the mast axis (the near mesh fades out over FADE_M; 7 m
+#                                 until 0.99.39)
+FADE_M = (18.0, 20.0)           # the near terrain's opacity: 1 at the first, 0 at the second (horizontal m from the axis;
+#                                 8-10 m until 0.99.39)
 SHELL_AZ_STEP_DEG = 0.5
 SHELL_STEP_DEG = 0.25           # the shell's rings below the skyline
 SHELL_SKY_RINGS = 8             # ... and above it, to the zenith
@@ -511,7 +517,8 @@ def terrain_part(scene, sources, station, pool=None, size: int = TEXTURE_PX, rad
     view = pts[:, 0] - C
     view /= np.maximum(np.linalg.norm(view, axis=1), 1e-12)[:, None]
     grazing = np.abs((nrm * view).sum(1)) < GRAZING_COS
-    vis = seen & ~grazing
+    from .mesh import horizontal_distance
+    vis = (seen & ~grazing) | (horizontal_distance(pts[:, 0], P, up) > CELL_RADIUS_M)
     used = np.unique(F[vis])
     th = np.arccos(np.clip(((V[used] - C) / np.linalg.norm(V[used] - C, axis=1)[:, None]) @ -up, -1, 1))
     theta_max = float(min(np.pi * 0.995, th.max() + np.radians(0.5)))
@@ -825,7 +832,7 @@ def assemble(folder: PathLike, rover_folder: Optional[PathLike] = None, out: Opt
                                "radius_m": recs["terrain"].get("radius_m"), "fade_m": list(FADE_M), "view_radius_m": (recs.get("rover") or {}).get("view_radius_m", VIEW_RADIUS_M)}}
     glb.write_bytes(glb_bytes(parts, extras))
     rec = {"file": glb.name, "bytes": glb.stat().st_size, "parts": recs,
-           "triangles": int(sum(len(p[2]) for p in parts))}
+           "triangles": int(sum(len(p[2]) for p in parts)), "fade_m": list(FADE_M)}
     glb.with_suffix(".json").write_text(json.dumps(rec, indent=1), encoding="utf-8")
     log.info("station mesh: %s - %s, %d triangles, %.1f MB", glb.name, " + ".join(recs), rec["triangles"], rec["bytes"] / 1e6)
     return rec

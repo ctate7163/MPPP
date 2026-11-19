@@ -98,7 +98,7 @@ def test_rover_textured_where_seen_within_1m_and_the_glb(tmp_path):
     img = cv2.imdecode(np.frombuffer(binary[v["byteOffset"]:v["byteOffset"] + v["byteLength"]], np.uint8), cv2.IMREAD_COLOR)
     assert img.shape == (512, 512, 3)
     acc = doc["accessors"][doc["meshes"][0]["primitives"][0]["attributes"]["POSITION"]]
-    assert acc["max"][1] < 0 and -10.5 < acc["min"][0] and acc["max"][0] < 10.5     # y up: the ground below the eyes
+    assert acc["max"][1] < 0 and -20.5 < acc["min"][0] and acc["max"][0] < 20.5     # y up: the ground below the eyes (20 m: 0.99.39)
 
 
 def test_texture_on_render_processes_is_the_same(tmp_path):
@@ -133,6 +133,13 @@ def test_render_station_part_web_entry_and_plan(tmp_path, monkeypatch):
     pano.mkdir()
     sm = web.station_mesh(out, tmp_path, pano)
     assert sm["file"] == "panos/Sol0091_S003D0010_station_mesh.glb" and sm["move_limit_m"] == 1.0 and (pano / "Sol0091_S003D0010_station_mesh.glb").is_file()
+    # 0.99.39 (Christian, 19 Nov 2026: "the 3d terrain should go out to 20 m instead of 10 m"): the file's own fade
+    assert SM.RADIUS_M == 20.0 and SM.FADE_M == (18.0, 20.0) and SM.SHELL_FROM_M == 17.0 and sm["fade_m"] == [18.0, 20.0]
+    import json as _json
+    rec_ = _json.loads((out / "Sol0091_S003D0010_station_mesh.json").read_text())
+    rec_.pop("fade_m")
+    (out / "Sol0091_S003D0010_station_mesh.json").write_text(_json.dumps(rec_))
+    assert web.station_mesh(out, tmp_path, pano)["fade_m"] == [8.0, 10.0]      # a file of before 0.99.39: its 10 m mesh
     assert web.TERRAIN_3D == ("terrain3d", "3D terrain and rover")
     src = (SS.__file__)
     page = (__import__("pathlib").Path(src).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
@@ -191,13 +198,13 @@ def test_fifth_mode_surface_to_the_horizon_one_texture(tmp_path):
     r = np.linalg.norm(sh["V"] - C, axis=1)
     assert np.isclose(r.max(), SM.DOME_M) and (r > 0.99 * SM.DOME_M).sum() > 100           # the sky, at the dome
     hd = np.hypot(*(sh["V"][:, :2] - np.asarray(st.pivot)[:2]).T)
-    assert hd[sh["F"]].max(axis=1).min() >= SM.SHELL_FROM_M                                  # nothing of it under the rover
+    assert hd[sh["F"]].max(axis=1).min() >= SM.SHELL_FROM_M - 1e-3                           # nothing of it under the rover
     assert 99.9 < np.degrees(sh["knee"]) < 102.0                                             # flat ground: 10 deg above the horizontal at least
     first, last = sh["V"][sh["F"][:10]].reshape(-1, 3), sh["V"][sh["F"][-10:]].reshape(-1, 3)
     assert np.linalg.norm(first - C, axis=1).min() > 0.99 * SM.DOME_M and np.linalg.norm(last - C, axis=1).max() < 20   # the far rings first
     tp = SM.terrain_part(sc, src, st, size=1024, target=8000, full=True)
     rr = tp["record"]
-    assert rr["full"] and rr["horizon_frac"] == 0.9 and rr["shell"]["triangles"] == len(tp["shell"]["F"]) and rr["fade_m"] == [8.0, 10.0]
+    assert rr["full"] and rr["horizon_frac"] == 0.9 and rr["shell"]["triangles"] == len(tp["shell"]["F"]) and rr["fade_m"] == [18.0, 20.0]
     rpx = 1024 / 2 - SM.GUTTER_PX - 2
     rho = np.hypot(tp["shell"]["uv"][:, 0] - 0.5, tp["shell"]["uv"][:, 1] - 0.5) * 1024
     assert rho.max() <= rpx + 1e-3 and (rho > 0.9 * rpx + 1).any()                           # the sky beyond the 90 % circle
@@ -222,7 +229,7 @@ def test_fifth_mode_surface_to_the_horizon_one_texture(tmp_path):
     assert [m["name"] for m in doc["meshes"]] == ["terrain", "horizon", "rover"] and len(doc["images"]) == 2
     tex = [doc["materials"][m["primitives"][0]["material"]]["pbrMetallicRoughness"]["baseColorTexture"]["index"] for m in doc["meshes"]]
     assert tex[0] == tex[1] != tex[2]                                 # terrain and horizon on one texture, the rover on its own
-    assert doc["asset"]["extras"]["station_scape"]["fade_m"] == [8.0, 10.0]
+    assert doc["asset"]["extras"]["station_scape"]["fade_m"] == [18.0, 20.0]   # 0.99.39 (8-10 m before)
     pano = tmp_path / "panos"
     pano.mkdir()
     sc5 = web.station_scape(tmp_path / "st", tmp_path, pano)
@@ -230,7 +237,7 @@ def test_fifth_mode_surface_to_the_horizon_one_texture(tmp_path):
     # 0.99.33 (Christian, 18 Nov 2026: "Build a simple skid steering option. Call it a sixth mode. It will be ride along")
     assert sc5["parts"] == ["terrain", "rover"] and web.DRIVE_3D == ("drive3d", "Drive the rover (simulation)")
     dv = web.drive_settings()
-    assert dv["track_m"] == 2.3 and dv["speed_m_s"] == 0.25 and dv["limit_m"] == 6.0 and len(dv["wheels_fwd_m"]) == 3
+    assert dv["track_m"] == 2.3 and dv["speed_m_s"] == 0.25 and dv["limit_m"] == 15.0 and len(dv["wheels_fwd_m"]) == 3
     assert abs(dv["pivot_fwd_right_m"][0] - 0.80) < 0.01 and abs(dv["pivot_fwd_right_m"][1] - 0.56) < 0.01      # the mast: ahead and right of the center
     import pathlib
     page = (pathlib.Path(web.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
@@ -244,9 +251,9 @@ def test_viewer_has_the_screen_eye_movement_the_fade_and_every_mesh():
     import pathlib
     from rpp.ibr import single_sites as SS
     page = (pathlib.Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
-    # 0.99.38 (Christian: "remove the swaying", and a smaller pointer move): 2 cm, no sway
+    # 0.99.38 (Christian: "remove the swaying"): no sway; 0.99.39 (Christian: "the curser should move 5 cm")
     assert "SWAY_M" not in page and "swayGain" not in page
-    for s in ("NECK_M = 0.15", "HOVER_M = 0.02", "smoothstep(fade.x, fade.y, vR)", "NORMAL_FRAG", "skipRover", "O_PITCH_DEG = -30",
+    for s in ("NECK_M = 0.15", "HOVER_M = 0.05", "half = 20.5", "limit: 15.0,", "'dcs color': 'decorrelation stretch'", "smoothstep(fade.x, fade.y, vR)", "NORMAL_FRAG", "skipRover", "O_PITCH_DEG = -30",
               "for (const me of doc.meshes)", "wholeScene", "m.userData.kind === 'rover'"):
         assert s in page, s
     assert "doc.meshes[0].primitives" not in page

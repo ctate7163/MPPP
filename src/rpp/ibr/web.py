@@ -137,7 +137,8 @@ DRIVE_3D = ("drive3d", "Drive the rover (simulation)")
 DRIVE = {"track_m": 2.3,                    # between the left and the right wheels (about)
          "wheels_fwd_m": [1.10, 0.0, -1.07],    # the three axles ahead of the rover's center (about; ROVER_NAV x)
          "speed_m_s": 0.25,                 # both sticks full ahead (the rover's own top speed is about 0.04 m/s)
-         "limit_m": 6.0}                    # the pivot stays within this of where it stood (the near terrain ends at 10 m)
+         "limit_m": 15.0}                   # the pivot stays within this of where it stood (0.99.39: the near terrain ends at
+#                                             20 m, 10 m before - 6 m then)
 
 
 def drive_settings() -> Dict[str, Any]:
@@ -179,7 +180,8 @@ def station_mesh(folder: Path, web: Path, pano_dir: Optional[Path] = None) -> Op
     except (OSError, ValueError):
         rec = {}
     lim = ((rec.get("parts") or {}).get("rover") or {}).get("view_radius_m", 1.0)
-    return {"file": "panos/" + glb.name, "triangles": rec.get("triangles"), "move_limit_m": lim, "fade_m": [8.0, 10.0], "experimental": True}
+    return {"file": "panos/" + glb.name, "triangles": rec.get("triangles"), "move_limit_m": lim,
+            "fade_m": rec.get("fade_m") or [8.0, 10.0], "experimental": True}      # 0.99.39: the file's own (8-10 m before)
 
 
 WELCOME_ID = "welcome"

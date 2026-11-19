@@ -43,7 +43,7 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
   turning point, with the pointer, and a slow sway when left alone; P turns that off).
   0.99.33: a sixth, "Drive the rover (simulation)" - the fifth mode's surface with the rover moved over it by the two
   thumbsticks (forward / back: the track on that side; on a screen the arrow keys); the viewer rides at the mast.
-  0.99.26: 3D terrain and rover - the terrain within 10 m and the rover as textured surfaces (true parallax), the
+  0.99.26: 3D terrain and rover - the terrain within 10 m (20 m from 0.99.39) and the rover as textured surfaces (true parallax), the
   terrain-only panorama beyond; the head may move 1 m from where the mode started, then the surface comes along.
 -->
 <style>
@@ -55,7 +55,7 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
   #bar button#home { display: inline-flex; align-items: center; padding: 3px 7px; }
   #VRButton.rpv-big { width: 160px !important; left: calc(50% - 80px) !important; padding: 16px 8px !important;
                       font: bold 18px sans-serif !important; }   /* 0.98.28: larger where VR is supported */
-  /* 0.99.1 (Christian, 16 Nov 2026: "make the made by and code text solid black. The Rover Pho Viewer font should
+  /* 0.99.1 (Christian, 16 Nov 2026: "make the made by and code text solid black (0.99.39: the code line removed). The Rover Pho Viewer font should
      have blue fill and orange outsides, the same colors as used in the blue circle and the orange on the maps"):
      the credit black, 9 px (11 px, gray until 0.98.29); the title in the welcome view light blue in orange */
   #credit { position: fixed; left: 10px; bottom: 44px; color: #000; font-size: 9px; font-weight: 400; z-index: 2; }
@@ -85,7 +85,7 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
 <body>
 <div id="bar">
   <button id="home" title="welcome view, facing west (H; headset: Y)" aria-label="home"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 9.5V20h5v-6h3v6h5V9.5"/></svg></button>
-  <span id="title">Rover Photogrammetry Viewer (RPV)</span>
+  <span id="title">RPV</span>
   <select id="station" title="station"></select>
   <select id="variant" title="variant"></select>
   <select id="view" title="view"></select>
@@ -338,12 +338,12 @@ fixed.add(groundGroup); fixed.add(roverGroup);
 //     their mean, its turn rate their difference over the track width.  On a screen: the arrow keys.
 //   * ride along: the viewer stays at the mast head, so it is the ground that is moved and turned under the rover;
 //   * the rover's height, pitch and roll: the plane through the terrain's heights under its six wheels;
-//   * it stops DRIVE.limit_m from where it stood (the textured terrain ends at 10 m).
+//   * it stops DRIVE.limit_m from where it stood (the textured terrain ends at 20 m; 10 m until 0.99.39).
 const DRIVE = { on: false, grid: null, az0: 0, az: 0, e: 0, n: 0, pf: 0.8, pr: 0.56, track: 2.3, wheels: [1.1, 0.0, -1.07],
-                speed: 0.25, limit: 6.0, fit0: null, tilt: new THREE.Quaternion(), hm: 2.0 };
+                speed: 0.25, limit: 15.0, fit0: null, tilt: new THREE.Quaternion(), hm: 2.0 };
 const driveKeys = new Set();
 function heightGrid(geoms) {                                     // the terrain's height (page y) on a 0.1 m grid about the pivot
-  const cell = 0.1, half = 10.5, N = Math.round(2 * half / cell), sum = new Float32Array(N * N), cnt = new Uint16Array(N * N);
+  const cell = 0.1, half = 20.5, N = Math.round(2 * half / cell), sum = new Float32Array(N * N), cnt = new Uint16Array(N * N);
   for (const g of geoms) {
     const p = g.getAttribute('position').array;
     for (let i = 0; i < p.length; i += 3) {
@@ -613,22 +613,24 @@ function place(m, azDeg, elDeg, dist, width) {                   // in the page'
 const WELCOME_AZ_DEG = 270;                     // 0.98.19: the welcome view opens looking west, its title there
 // 0.98.27 (Christian, 16 Nov 2026: 'the ods welcome page should read Rover Photogrammetry Viewer (RPV) followed by a line
 // about it being created by Christian Tate at MSSS for research purposes with the code available at the github link').
-// CODE_URL: the pipeline's repository (GitHub forwards the old name, MPPP).
+// (0.99.39: the line with the code's link removed.)
 // 0.99.13 (Christian, 17 Nov 2026: 'The title on the rpv website should be "Mars rover panorama viewer (RPV)" instead of
 // the old list title'); 11:10 / 11:38: "rename welcome page name to rover photogrammetry viewer (RPV)" - the bar, the
-// tab and the welcome view all say Rover Photogrammetry Viewer (RPV)
+// tab and the welcome view all say Rover Photogrammetry Viewer (RPV).  0.99.39 (Christian, 19 Nov 2026: 'on the top
+// banner, replace "Rover Photogrammetry Viewer (RPV)" with "RPV"'): the bar says RPV; the tab and the welcome view keep
+// the whole name
 const VIEWER_NAME = 'Rover Photogrammetry Viewer (RPV)';
 // 0.99.36 (Christian, 19 Nov 2026: "please put the rpp-rpv viewer version number on the lower left above the site name,
 // images size, and version on which the site was rendered"): the page's own version (the RPP release that wrote it;
 // tests/test_station_mesh.py keeps it equal to rpp.__version__), above the station's line
-const RPV_VERSION = '0.99.38';
+const RPV_VERSION = '0.99.39';
 $('ver').textContent = `RPV viewer ${RPV_VERSION}`;
 const CREDIT = 'Created by Christian Tate at MSSS';   // 0.99.14 (Christian, 17 Nov 2026: 'remove the "for research purposes" phrase')
-const CODE_URL = 'https://github.com/ctate7163/rpp';   // 0.98.29: the repository renamed MPPP -> RPP
-{                                                 // on a screen the welcome view also gets the credit with a link to click
-  const c = $('credit'), l = document.createElement('a');
-  l.href = CODE_URL; l.target = '_blank'; l.rel = 'noopener'; l.textContent = CODE_URL.replace(/^https:\/\//, '');
-  c.title = 'Malin Space Science Systems, San Diego'; c.append(CREDIT + '. Code: ', l);
+// 0.99.39 (Christian, 19 Nov 2026: "remove the code: ... text from the welcome screen"): the credit alone, no link to
+// the repository (in the welcome view and on a screen)
+{                                                 // on a screen the welcome view also gets the credit
+  const c = $('credit');
+  c.title = 'Malin Space Science Systems, San Diego'; c.append(CREDIT);
   c.style.display = 'none';
 }
 const welcome = new THREE.Group();
@@ -645,7 +647,6 @@ function showWelcome(on) {
     // make west the opening direction'): the title under WEST, which the page opens looking at
     welcome.add(place(textPanel([{ text: VIEWER_NAME, px: 190, weight: 900, color: MARK_BLUE, outline: MAP_ORANGE },
                                  { text: CREDIT, px: 56, weight: 400, color: '#000', plain: true },   // 0.99.1: smaller (80 px), solid black
-                                 { text: 'Code: ' + CODE_URL.replace(/^https:\/\//, ''), px: 56, weight: 400, color: '#000', plain: true },
                                  { text: 'Mars 2020 Perseverance rover', px: 120, weight: 700 }]), WELCOME_AZ_DEG, 14, 5, 4.2));
     ctlHeadset = place(textPanel([{ text: 'trigger: next site   |   left trigger: back   |   stick: turn', px: 84, weight: 600 },
                                  { text: 'X: info and map   |   Y: home   |   A: view', px: 84, weight: 600 },
@@ -811,8 +812,10 @@ function views(p, v) { return Object.keys((variants(p)[v] || {}).views || {}); }
 // entries published before, shown (and accepted in a link) by the new ones
 // 0.99.37 (Christian, 19 Nov 2026: "Replace the enhanced local with just enhanced"; the views "standard color, raw
 // color, enhanced color, enhanced tone, dcs color, normal map, distance map"): the keys of panos.json stay
+// 0.99.39 (Christian, 19 Nov 2026: "change dcs color to decorrelation stretch"): the label; the key stays "dcs color"
 const VIEW_LABEL = { 'normal': 'normal map', 'range log': 'distance map', 'range linear': 'distance map linear',
-                     'standard': 'standard color', 'enhanced local': 'enhanced color', 'enhanced': 'enhanced (global)' };
+                     'standard': 'standard color', 'enhanced local': 'enhanced color', 'enhanced': 'enhanced (global)',
+                     'dcs color': 'decorrelation stretch' };
 const viewLabel = k => VIEW_LABEL[k] || k;
 
 function fill() {
@@ -915,8 +918,8 @@ async function show() {
     texture = t;
     material.map = t; material.color.set(0xffffff); material.needsUpdate = true;
     showMark(color(names[cur.w]) ? vr.ground_mark : null);        // not over the range and normal views
-    // 0.99.26: the fourth mode, "3D terrain and rover" - the station mesh (terrain within 10 m and the rover,
-    // textured: rpp.ibr.station_mesh) in front of the terrain-only panorama, its backdrop beyond 10 m
+    // 0.99.26: the fourth mode, "3D terrain and rover" - the station mesh (terrain within 20 m - 10 m until 0.99.39 -
+    // and the rover, textured: rpp.ibr.station_mesh) in front of the terrain-only panorama, its backdrop beyond
     // 0.99.38: in the normal-map view a 3D mode draws its surfaces with their own normals; the station mesh's rover is
     // the third mode's projected rover surface where the station has one
     const nmView = /^normal/.test(names[cur.w] || '');
@@ -1084,9 +1087,9 @@ let yaw = 0, pitch = 0, drag = null;
 //   * it follows the pointer by up to HOVER_M, eased (a mouse, no button needed);
 //   * (0.99.32-0.99.37: left alone for 3 s it circled slowly, 3 cm wide.)
 // P turns it off and on; ?still=1 opens with it off.  Only where there is a 3D surface to see it on.
-// 0.99.38 (Christian, 19 Nov 2026: "remove the swaying", and a smaller pointer move): no sway; the
-// pointer moves the eye by up to 2 cm (5 cm before)
-const NECK_M = 0.15, HOVER_M = 0.02;
+// 0.99.38 (Christian, 19 Nov 2026: "remove the swaying"): no sway.  0.99.39 (Christian: "the curser should move 5 cm"):
+// the pointer moves the eye by up to 5 cm again (2 cm in 0.99.38)
+const NECK_M = 0.15, HOVER_M = 0.05;
 let motionOn = new URLSearchParams(location.search).get('still') !== '1';
 const hover = new THREE.Vector2(), hoverNow = new THREE.Vector2(), eyeMove = new THREE.Vector3();
 const eyeFwd = new THREE.Vector3(), eyeRight = new THREE.Vector3(), eyeUp = new THREE.Vector3();

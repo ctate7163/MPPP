@@ -3,6 +3,24 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.39 — 2026-11-19 (branch `rpp`)
+
+Christian, 12:27: "the curser should move 5 cm. the 3d terrain should go out to 20 m instead of 10 m".
+
+- RPV on a screen: the pointer moves the eye by up to 5 cm again (`HOVER_M`; 2 cm in 0.99.38; still no sway).
+- The welcome view (and its credit on a screen) without the "Code: github.com/ctate7163/rpp" line (Christian, 12:40:
+  "remove the code: ... text from the welcome screen").
+- The top bar says "RPV" (Christian, 12:41: 'on the top banner, replace "Rover Photogrammetry Viewer (RPV)" with
+  "RPV"'); the browser tab and the welcome view keep the whole name.
+- The view "dcs color" is labeled "decorrelation stretch" (Christian, 12:49); its key in `panos.json` and its files
+  keep the old name.
+- **The station mesh within 20 m** (`station_mesh.RADIUS_M`; 10 m before): the terrain simplified to 500,000 triangles
+  (300,000), fading out between 18 and 20 m (8-10 m; the station mesh's .json now records it and the page reads it, a
+  file made before keeps 8-10 m); the fifth mode's shell from 17 m (7 m); cells of their own only for the hidden or
+  edge-on triangles within 10 m (`CELL_RADIUS_M`; flat ground is edge on from C at about 20 m, and the cells share one
+  texel size); the sixth mode's drive limit 15 m (6 m) and its height grid +-20.5 m (+-10.5 m). A station shows it
+  once it is rendered again (`recolor_rpv_0p99p39.bat`: the four Rockytop stations and Sol 690 Z34).
+
 ## 0.99.38 — 2026-11-19 (branch `rpp`)
 
 Christian, 11:41-11:53: "the rockytop mesh has some spiky artifacts. remove the spikes. the dark normal patches are image

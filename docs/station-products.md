@@ -164,7 +164,7 @@ the place alone (`dense_S003D2046`), and `--station` takes either form.
 | `<prefix>_enh_360_3DTD.jpg`, `_enhlocal_360_3DTD.jpg` | contrast-enhanced views, made from the 16-bit panoramas (terrain stretched; the sky smoothed; nothing clips): `_enhlocal` is the viewer's "enhanced color" |
 | `<prefix>_raw_360_3DTD.jpg` | raw color (0.99.37): the standard view of the 16-bit values with the white balance divided out (`ods.json` linear16.white_balance) - the color of the RAD products |
 | `<prefix>_enhtone_360_3DTD.jpg` | enhanced tone (0.99.37): base / detail tone mapping - the local brightness (a guided filter, 1 deg) compressed, the detail x 1.8, each pixel's color ratios kept |
-| `<prefix>_dcs_360_3DTD.jpg` | dcs color (0.99.37): a decorrelation stretch fitted to the sunlit terrain; the sky white, the rover and its shadow black, the nadir disc as in the standard view |
+| `<prefix>_dcs_360_3DTD.jpg` | dcs color (0.99.37; RPV calls it "decorrelation stretch" from 0.99.39): a decorrelation stretch fitted to the sunlit terrain; the sky white, the rover and its shadow black, the nadir disc as in the standard view |
 | `<prefix>_color_products.json` | the parameters of the three (`rpp.ibr.color_products`; one set per station, from the left eye, in `tone_levels.json`) |
 | `<prefix>_ods_sky_weight.png` | small map of the sky above the skyline: where the enhanced views smooth |
 | `<prefix>_ods_left`, `_right` `.png` / `_16.png` | the eyes apart (`--eyes left right center` adds the view from the pivot, a third more time) |
@@ -262,7 +262,7 @@ synthetic station; nothing of 0.99.32-0.99.33 has been tried in a headset yet. T
 | terrain only | `masked` | the rover-masked stereo pair on two spheres | binocular only (the ODS pair), none for head motion |
 | terrain with rover (projected) | `rover` | the with-rover pair | as above |
 | terrain with rover (3D model) | `rover3d` | the terrain-only pair + the textured Perseverance model | head motion on the rover |
-| 3D terrain and rover | `terrain3d` | the terrain-only pair beyond 10 m + the station mesh (terrain within 10 m, rover) | head motion within 10 m |
+| 3D terrain and rover | `terrain3d` | the terrain-only pair beyond 20 m + the station mesh (terrain within 20 m, rover; 10 m until 0.99.39) | head motion within 20 m |
 | 3D terrain to the horizon and rover | `scape3d` | one surface from under the rover to the far field and a sky dome at 3 km, no panorama | head motion everywhere; true to the far field |
 | Drive the rover (simulation) | `drive3d` | the `scape3d` file, the rover moved over the terrain | as `scape3d` |
 
@@ -273,12 +273,13 @@ ground gets the most texels per square meter. Triangles that point cannot see ge
 colored from the frames that see them. The rover has its own 4096 x 4096 texture (the triangles seen from within 1 m
 of the pivot; the rest the rover gray). In the fifth mode the same kind of texture runs on past the horizontal: the
 terrain up to the skyline (at least 10 deg above the horizontal) fills 90 % of the disc's radius, the sky the rest. The
-near terrain fades out between 8 and 10 m from the mast axis (in the fourth mode into the panorama, in the fifth into
-the surface beyond).
+near terrain fades out between 18 and 20 m from the mast axis (in the fourth mode into the panorama, in the fifth into
+the surface beyond; 0.99.39 - 8 to 10 m before, and the terrain simplified to 500,000 triangles, 300,000 before).
+Stations made before 0.99.39 keep their 10 m mesh until they are rendered again.
 
 On a screen the eye moves a little where a 3D surface is shown (0.99.32): it sits 0.15 m in front of the point the
-view turns about (as eyes are in front of the neck) and follows the mouse by up to 2 cm (0.99.38; 5 cm, and a slow
-sway when left alone, before). P turns it off; `?still=1` opens without it. In the 3D modes the normal-map view draws
+view turns about (as eyes are in front of the neck) and follows the mouse by up to 5 cm (2 cm in 0.99.38; a slow sway
+when left alone until 0.99.37). P turns it off; `?still=1` opens without it. In the 3D modes the normal-map view draws
 the surfaces with their own normals, so the shading moves with the eye, and the rover is the projected rover surface
 of the third mode (the pivot's panorama at its full resolution; the station mesh's own rover texture is 4096 texels a
 side for the whole model) - its parts the pivot does not see are gray (0.99.38). In
@@ -288,7 +289,8 @@ there is nothing for the eye to move against and the movement is off.
 The sixth mode is a simulation: each thumbstick's forward / back axis is the track on that side (skid steering: speed =
 their mean x 0.25 m/s, turn rate = their difference / 2.3 m; on a screen the arrow keys). The viewer rides at the mast
 head: the ground is moved and turned under the rover, which takes the height, pitch and roll of the plane through the
-terrain under its six wheels. It stops 6 m from where the rover stood (the textured terrain ends at 10 m). In a
+terrain under its six wheels. It stops 15 m from where the rover stood (the textured terrain ends at 20 m; 6 m and
+10 m until 0.99.39). In a
 headset the rover is hidden while the head is more than 1 m from its pivot. The ground under the real rover is
 interpolated (no frame saw it), and its shadow is in the texture.
 

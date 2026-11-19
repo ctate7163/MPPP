@@ -3223,7 +3223,8 @@ def test_viewer_moves_to_its_own_repository(tmp_path, monkeypatch):
     assert "location.replace('https://ctate7163.github.io/rpv/' + location.search + location.hash)" in head
     assert "/^\\/RPV(\\/|$)/.test(location.pathname)" in head      # 0.99.13: a copy still served at /RPV/ sends on too
     assert "location.hostname === 'ctate7163.github.io'" in head and "(RPP|MPPP)" in head
-    assert "const CODE_URL = 'https://github.com/ctate7163/rpp';" in page
+    # 0.99.39 (Christian: "remove the code: ... text from the welcome screen")
+    assert "CODE_URL" not in page and "'Code: '" not in page and ". Code: " not in page
     # installed into another folder (the RPV checkout), the page is the same file - the redirect only fires on /RPP/ods/
     assert web.install_viewer(tmp_path / "RPV") and (tmp_path / "RPV" / "index.html").read_text(encoding="utf-8") == page
 
@@ -3380,7 +3381,7 @@ def test_viewer_station_arrows_rover_button_and_title():
     assert "Curiosity-class rover" in nav and nav.count("<circle") == 3
     assert "$('prevSt').onclick = () => step('s', -1);" in page and "$('nextSt').onclick = () => step('s', 1);" in page
     assert "function roverToggle()" in page and "updateNav();" in page
-    assert "<title>Rover Photogrammetry Viewer (RPV)</title>" in page and '<span id="title">Rover Photogrammetry Viewer (RPV)</span>' in page
+    assert "<title>Rover Photogrammetry Viewer (RPV)</title>" in page and '<span id="title">RPV</span>' in page   # 0.99.39: the bar
     assert "/stereo panoramas|panorama viewer|photogrammetry viewer/i.test(j.title)" in page
     import inspect
     assert inspect.signature(web.publish).parameters["title"].default == "Rover Photogrammetry Viewer (RPV)"
@@ -3402,7 +3403,7 @@ def test_viewer_keeps_north_across_stations_and_its_name_in_the_bar():
     assert show.count("world.rotation.y = yaw0 + turn;") == 1                       # inside the once-only block
     assert show.index("if (!headingSet) {") < show.index("world.rotation.y = yaw0 + turn;")
     assert "<title>Rover Photogrammetry Viewer (RPV)</title>" in page
-    assert '<span id="title">Rover Photogrammetry Viewer (RPV)</span>' in page
+    assert '<span id="title">RPV</span>' in page                                    # 0.99.39 (Christian: the top banner "RPV")
     assert "!/stereo panoramas|panorama viewer|photogrammetry viewer/i.test(j.title)" in page
 
 
