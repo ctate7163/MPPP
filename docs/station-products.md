@@ -322,6 +322,15 @@ terrain under its six wheels. It stops 15 m from where the rover stood (the text
 headset the rover is hidden while the head is more than 1 m from its pivot. The ground under the real rover is
 interpolated (no frame saw it), and its shadow is in the texture.
 
+### The block's terrain and the Mastcam-Z versions (0.99.43)
+
+The slow part - the multi-view stereo and its fusion - is done once per block: `rpp dense --whole-block` makes one cloud
+(`colmap/dense_block_<families>`) that the block's stations share, and each station's mesh, hole filling,
+simplification, panoramas and 3D textures start from it. `--block-cameras NFR` (`rpp single-sites --block-cameras
+NFR`) takes the frames of every engineering camera - Navcam, front and rear Hazcam, every size; the default is the
+Navcam frames. In a run of the whole station list, a Navcam station whose site has a Mastcam-Z 34 mm 360 at it (36
+left-eye frames of one sol or more) is followed by its Mastcam-Z version, `Sol<sol>_<station>_Z34`.
+
 ### The mesh near the mast (0.99.32)
 
 The 0-4 m zone is a height field seen from the mast (one median height per 1.5 cm cell of a horizontal grid; small

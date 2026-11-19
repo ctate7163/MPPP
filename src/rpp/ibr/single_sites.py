@@ -109,9 +109,82 @@ def viewer_sols(st: Dict[str, Any], label: str = "") -> Optional[List[int]]:
     return [int(m.group(1))] if m else None
 
 
-def block_workspace(name: str = "") -> str:
-    """The block cloud's workspace folder: dense_block_N, or dense_block_<name> for a terrain set."""
-    return f"dense_block_{name}" if name else BLOCK_WORKSPACE
+def block_workspace(name: str = "", cameras: Optional[str] = None) -> str:
+    """The block cloud's workspace folder: dense_block_N (0.99.43: dense_block_<families> for ``cameras``, sorted, as
+    rpp dense --block-cameras names it), or dense_block_<name> for a terrain set."""
+    if name:
+        return f"dense_block_{name}"
+    return f"dense_block_{''.join(sorted(set(cameras.upper())))}" if cameras else BLOCK_WORKSPACE
+
+
+ZCAM_360_MIN_FRAMES = 36          # 0.99.43: left-eye 34 mm frames of one sol at a station that make it a "Z34 360"
+_Z34 = __import__("re").compile(r"^ZL\d_(\d{4})_\d+_\w+?_N(\d{3})(\d{4})ZCAM\d{5}_034")
+
+
+def zcam_companions(cfg: Dict[str, Any], root: PathLike, names_of=None) -> Dict[str, str]:
+    """0.99.43 (Christian, 19 Nov 2026: "for stations with Z34 present like Butler Landing wildcat and skinner ridge,
+    render those z34 versions right after the ncam versions" - "do this for every site from which we have a z34 360"):
+    for every Navcam station of the config whose site's Mastcam-Z block holds at least ZCAM_360_MIN_FRAMES left-eye
+    34 mm frames of one sol taken at the station (the site and drive in the frames' names), a Mastcam-Z station is
+    added to ``cfg["stations"]`` - ``Sol<that sol>_<station>_Z34``, as the Three Forks ones: the block is the site's
+    Mastcam-Z block, the panorama from the 34 mm frames of the sol with the most (half size, no gains), the Navcam
+    and front Hazcam frames of the station fill what Mastcam-Z did not see (its own, by pattern, and the Navcam
+    station's context frames), the terrain the block's.  A station that already has a Mastcam-Z entry in the config
+    gets none.  Returns {Navcam label: Mastcam-Z label} for every pair, the config's own included: the order of the
+    runs (:func:`plan` puts a companion right after its Navcam station).  ``names_of(block folder)`` -> the block's
+    image names (default: its project.json)."""
+    import re
+    from .station import station_key
+    from ..waypoints.sites import load_site_table, work_folder
+
+    def default_names(work):
+        from ..sfm.project import SfmProject
+        d = Path(work) / "colmap"
+        return [r["name"] for r in SfmProject.load(d).images] if (d / "project.json").is_file() else []
+    names_of = names_of or default_names
+    table = load_site_table()["sites"]
+    have = {}                                                    # station key -> the config's own Mastcam-Z label
+    for lab, st in cfg["stations"].items():
+        if is_zcam_station(st):
+            have[re.sub(r"_Z\d+$", "", station_key(lab).upper())] = lab
+    pairs: Dict[str, str] = {}
+    cache: Dict[str, List[str]] = {}
+    for lab, st in list(cfg["stations"].items()):
+        if is_zcam_station(st) or not st.get("site") or st["site"] not in table:
+            continue
+        key = station_key(lab).upper()
+        if key in have:
+            pairs[lab] = have[key]
+            continue
+        m = re.match(r"^S(\d+)D(\d+)$", key)
+        if not m:
+            continue
+        zwork = Path(work_folder(Path(root), st["site"], True, table[st["site"]]["sols"]))
+        if str(zwork) not in cache:
+            try:
+                cache[str(zwork)] = list(names_of(zwork))
+            except Exception:                                    # noqa: BLE001 - a block that cannot be read has none
+                cache[str(zwork)] = []
+        sd = (int(m.group(1)), int(m.group(2)))
+        per_sol: Dict[int, int] = {}
+        for n in cache[str(zwork)]:
+            z = _Z34.match(n)
+            if z and (int(z.group(2)), int(z.group(3))) == sd:
+                per_sol[int(z.group(1))] = per_sol.get(int(z.group(1)), 0) + 1
+        if not per_sol or max(per_sol.values()) < int(cfg.get("zcam_360_min_frames", ZCAM_360_MIN_FRAMES)):
+            continue
+        sol = max(per_sol, key=lambda k: (per_sol[k], -k))
+        tok = f"N{sd[0]:03d}{sd[1]:04d}"
+        zlab = f"Sol{sol:04d}_{key}_Z34"
+        cfg["stations"][zlab] = {
+            "name": f"{mark_name(st) or lab} (Z34)", "work": zwork.name, "station": st["station"], "derived_from": lab,
+            "frames": dict(st.get("frames") or {}), "variants": ["masked", "rover"], "terrain": "block",
+            "ods_args": ["--cameras", "Z", "--sols", str(sol), "--zcam-scale", "0.5", "--fill-cameras", "NF", "--no-gains"],
+            "context": [f"N?F_*_{tok}NCAM*.png", f"F?F_*_{tok}FHAZ*.png", *(st.get("context") or [])],
+            "note": f"0.99.43, made by zcam_companions: the {per_sol[sol]} left-eye 34 mm frames of sol {sol} at this station "
+                    f"(the Mastcam-Z block {zwork.name}), after the Navcam station {lab}"}
+        pairs[lab] = zlab
+    return pairs
 DEPTHMAPS_VARIANTS = ("masked",)     # 0.97.14: the per-image maps for the terrain only (config: "depthmaps_variants")
 BAT_NAME = "run_single_site_ibr.bat"          # 0.97.0 (Christian, 12 Nov): was update_and_run_single_sites.bat
 OLD_BAT_NAME = "update_and_run_single_sites.bat"
@@ -244,7 +317,9 @@ def block_aligned(work: PathLike) -> bool:
 
 def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = None, labels: Optional[Sequence[str]] = None,
          steps: Sequence[str] = STEPS, variants: Optional[Sequence[str]] = None, ods_width: Optional[int] = None,
-         rover_surface: bool = False, station_mesh: Union[bool, str] = False) -> List[Dict[str, Any]]:
+         rover_surface: bool = False, station_mesh: Union[bool, str] = False,
+         companions: Optional[Dict[str, str]] = None, block_cameras: Optional[str] = None,
+         terrain: Optional[str] = None) -> List[Dict[str, Any]]:
     """The runs, in order: one entry per station with its block, its output folder and the commands (argv lists of
     ``python -m rpp``), grouped by variant."""
     root = Path(root)
@@ -257,6 +332,17 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
     for lab in (list(labels) if labels else [k for k, v in cfg["stations"].items() if not v.get("experimental")][::-1]):   # 0.98.3 (Christian, 14 Nov 2026: "run in reverse order by default"): the config's last station first
         todo += [lab] if lab in cfg["stations"] else by_key.get(str(lab).upper(), [lab])      # 0.98.2: an "experimental"
         #                                                                                       station runs only when named
+    if companions:                                              # 0.99.43: a Mastcam-Z version right after its Navcam station
+        mine = {companions[t] for t in todo if t in companions}     # the versions whose Navcam station runs too
+        out_: List[str] = []
+        for lab in todo:
+            if lab in mine:
+                continue
+            out_.append(lab)
+            if lab in companions and companions[lab] in cfg["stations"]:
+                out_.append(companions[lab])
+        todo = list(dict.fromkeys(out_))
+    bc = block_cameras or cfg.get("block_cameras")              # 0.99.43: the block's cloud from these families (NFR)
     unknown = [lab for lab in todo if lab not in cfg["stations"]]
     if unknown:
         raise KeyError(f"not in the config: {unknown} (there: {sorted(cfg['stations'])})")
@@ -273,7 +359,7 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
             #                                         chosen by --scale or --sequence can have context frames too)
         fa = fa + [str(x) for x in (cfg.get("dense_args") or []) + (st.get("dense_args") or [])]
         near = st.get("nearby_m", cfg.get("nearby_m"))          # 0.97.0: the neighbors' frames constrain the ground
-        bt = block_terrain(st, cfg)
+        bt = block_terrain(dict(st, terrain=terrain) if terrain else st, cfg)     # 0.99.43: --terrain for the run
         block = bt is not None                                       # 0.98.14 (Christian, 15 Nov 2026: "for rockytop use a
         #   model made from the full ncam block alignment"): the terrain from every Navcam frame of the block - one
         #   cloud (colmap/dense_block_N) shared by the block's stations; the panorama still from the station's frames
@@ -281,6 +367,8 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
             fa = frame_args(frames) + [str(x) for x in (cfg.get("dense_args") or []) + (st.get("dense_args") or [])] + ["--whole-block"]
             if bt[0]:
                 fa += ["--block-name", bt[0], "--block-images", *bt[1]]
+            elif bc:
+                fa += ["--block-cameras", str(bc)]
             near = None
         elif near:
             fa += ["--nearby-m", f"{float(near):g}"]
@@ -322,7 +410,7 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                     if nm:
                         argv += ["--site-name", str(nm)]
                 if step == "mesh" and block:                 # the block's cloud, not an older one of the station alone
-                    argv += ["--points", str(Path(work) / "colmap" / block_workspace(bt[0]) / "fused.ply")]
+                    argv += ["--points", str(Path(work) / "colmap" / block_workspace(bt[0], None if bt[0] else bc) / "fused.ply")]
                 if step == "mesh" and (near or block):
                     argv += ["--keep-under-rover", f"{float(st.get('keep_under_rover_m', cfg.get('keep_under_rover_m', 0.25))):g}"]
                 argv += [str(x) for x in (cfg.get(f"{step}_args") or [])]      # 0.96.1: for every station
@@ -620,6 +708,16 @@ def add_parser(sub) -> None:
     p.add_argument("--station-mesh-only", action="store_true",
                    help="0.99.26: only the station meshes of stations whose panoramas exist (rpp ods --station-mesh-only "
                         "for each variant, then the .glb; with --publish / --upload the fourth mode is published)")
+    p.add_argument("--block-cameras", default=None, metavar="FAMILIES",
+                   help="0.99.43: the block terrain from the frames of these camera families (NFR: every engineering "
+                        "camera of the block, every size, fused into one cloud - rpp dense --block-cameras; default: the "
+                        "config's 'block_cameras', else Navcam alone)")
+    p.add_argument("--terrain", default=None, choices=("block", "own"),
+                   help="0.99.43: the terrain of every station of this run, whatever the config says - block: the whole "
+                        "block's cloud (also for the stations with a named terrain set); own: the station's own frames")
+    p.add_argument("--no-zcam", dest="zcam_companions", action="store_false", default=True,
+                   help="0.99.43: without the Mastcam-Z 34 mm versions of the stations that have a Z34 360 (default, in a "
+                        "run of the whole list - no station named, or --all: each is made right after its Navcam station)")
     p.add_argument("--any-block", action="store_true",
                    help="0.99.28: run stations whose block has not finished its alignment too (default: skipped)")
     p.add_argument("--list", action="store_true", help="the stations of the config")
@@ -638,13 +736,26 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
         for lab, st in cfg["stations"].items():
             print(f"{lab}  {st['station']:>9}  {st.get('site') or st.get('work')}  {st.get('note', '')}")
         return 0
+    given = list(a.labels) if a.labels else None
     if getattr(a, "all", False) and not a.labels:                # 0.99.3: the experimental stations too
         a.labels = list(cfg["stations"])[::-1]
     if getattr(a, "station_mesh_only", False):                   # 0.99.26
         a.steps, a.station_mesh = ["ods"], True
+    pairs = None
+    # only in a run of the whole list (no station named, or --all): a run of named stations is those stations
+    if getattr(a, "zcam_companions", True) and (given is None or getattr(a, "all", False)) \
+            and not (a.squares_only or a.retone or a.publish_only):
+        try:                                                     # 0.99.43: the Z34 versions, where a block has a Z34 360
+            pairs = zcam_companions(cfg, root)
+            new = [z for z in pairs.values() if cfg["stations"][z].get("derived_from")]
+            if new:
+                print(f"single-sites: {len(new)} Mastcam-Z 34 mm station(s) from the blocks: {', '.join(new)}")
+        except Exception as e:                                   # noqa: BLE001 - the Navcam stations run without them
+            print(f"single-sites: no Mastcam-Z companions ({type(e).__name__}: {e})")
     runs = plan(cfg, root, out_root, a.labels, a.steps, a.variants, ods_width=a.width,
                 rover_surface=getattr(a, "rover_surface", False),
-                station_mesh="only" if getattr(a, "station_mesh_only", False) else getattr(a, "station_mesh", False))
+                station_mesh="only" if getattr(a, "station_mesh_only", False) else getattr(a, "station_mesh", False),
+                companions=pairs, block_cameras=getattr(a, "block_cameras", None), terrain=getattr(a, "terrain", None))
     if not getattr(a, "any_block", False):                      # 0.99.28 (Christian, 18 Nov 2026: "The next ods should use
         late = [r for r in runs if not block_aligned(r["work"])]   # the post freeze blocks. Skip an ods site if the block
         for r in late:                                          # has not aligned yet")

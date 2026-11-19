@@ -176,6 +176,10 @@ def build_parser() -> argparse.ArgumentParser:
                         "families (all stations, all sizes) in the workspace dense_block_<cameras>, which the block's "
                         "stations share; with --station, that station's own frames (--scale, --sequence, --images) are "
                         "recorded in dense_<station>_block/mppp_dense.json for the panorama")
+    p.add_argument("--block-cameras", default=None, metavar="FAMILIES",
+                   help="0.99.43: with --whole-block, the block's cloud from the frames of these camera families "
+                        "(NFR: Navcam, front and rear Hazcam - every engineering camera, every size; default: --cameras); "
+                        "the workspace is dense_block_<families>; --cameras still chooses the station's own frames")
     p.add_argument("--block-images", nargs="+", default=None, metavar="NAME",
                    help="0.98.19: with --whole-block, the block's cloud from these frames only (a terrain set of the "
                         "single-sites config), in the workspace dense_block_<--block-name>")
@@ -787,10 +791,10 @@ def cmd_dense(a: argparse.Namespace) -> int:
     subset, ws = None, proj_dir / DENSE_DIR
     stub = None
     if getattr(a, "whole_block", False):                         # 0.98.14: one cloud for the block, shared by its stations
-        fam = set((a.cameras or "N").upper())
+        fam = set((getattr(a, "block_cameras", None) or a.cameras or "N").upper())        # 0.99.43: --block-cameras
         subset = sorted(r["name"] for r in proj.images if str(r.get("camera_group") or r.get("instrument") or "?")[:1] in fam)
         if not subset:
-            print(f"dense --whole-block: no frames of the families {a.cameras!r} in {proj_dir}", file=sys.stderr)
+            print(f"dense --whole-block: no frames of the families {''.join(sorted(fam))!r} in {proj_dir}", file=sys.stderr)
             return 2
         ws = proj_dir / f"{DENSE_DIR}_block_{''.join(sorted(fam))}"
         pick = [n if str(n).lower().endswith(".png") else f"{n}.png" for n in (getattr(a, "block_images", None) or [])]
@@ -810,7 +814,7 @@ def cmd_dense(a: argparse.Namespace) -> int:
                 print(f"dense: no frames for --station {a.station} --cameras {a.cameras} --sequence {a.sequence}", file=sys.stderr)
                 return 2
             stub = (proj_dir / (subset_label(a.station, a.sequence, a.images) + "_block"), own)
-        print(f"dense: the whole block - {len(subset)} frames of {a.cameras} -> {ws}"
+        print(f"dense: the whole block - {len(subset)} frames of {''.join(sorted(fam))} -> {ws}"
               + (f"; {len(stub[1])} of them are the station's own" if stub else ""))
     elif getattr(a, "station", None) or getattr(a, "images", None):
         subset = subset_images(proj, station=a.station, families=a.cameras, sequences=a.sequence, names=a.images,

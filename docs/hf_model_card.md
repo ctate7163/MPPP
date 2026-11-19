@@ -40,7 +40,7 @@ RPP's default is still `rpp_mask_v3` (see *Versions*); select another with `"che
 | SHA-256 | `{{sha256:rpp_mask_v5}}` |
 | architecture | as `rpp_mask_v4`: ConvNeXt-tiny + FPN (256) + light ASPP + stride-4 decoder skip, one logit (31.2 M parameters) |
 | input, output | as `rpp_mask_v4`; sigmoid > 0.5 = include, no dilation of the include region |
-| training data | the v8 mask set as of 18 Nov 2026, with Curiosity (MSL) Navcam and front Hazcam frames added: 4,767 training frames and 479 held-out frames (RPP's frozen test list) |
+| training data | the v8 mask set as of 18 Nov 2026, with Curiosity (MSL) Navcam and front Hazcam frames added: 4,965 training frames (198 of them Curiosity) and 479 held-out frames (RPP's frozen test list) |
 | training | fine-tuned from the v5.1 run, itself fine-tuned from `rpp_mask_v3`; AdamW, lr 1e-5 (cosine, 5 % warm-up), weight decay 5e-3, batch 4, gradient clip 1.0, bf16; BCE + Tversky (α 0.3, β 0.7) with a 2 px band at the label edges left out of the loss; the checkpoint is from the first epoch (its card records one epoch) |
 | augmentation | horizontal flips; a random zoom crop (1–2×) in half of the Navcam and Hazcam samples; a mild photometric change in half of the samples; gray in 10 % |
 | held-out IoU | 0.978 (include class, mean per batch, the frozen test list) |
@@ -51,58 +51,32 @@ stratified by camera; 90 were cleaned by hand and scored. Exclusion class, valid
 
 | camera | frames | `rpp_mask_v3` IoU | `rpp_mask_v5` IoU | `rpp_mask_v5` recall | `rpp_mask_v5` precision |
 |---|---:|---:|---:|---:|---:|
-| Navcam | 25 | 0.972 | 0.976 | 0.989 | 0.987 |
-| Mastcam-Z | 29 | 0.961 | 0.968 | 0.981 | 0.986 |
-| Front Hazcam | 10 | 0.978 | 0.980 | 0.990 | 0.990 |
-| Rear Hazcam | 6 | 0.987 | 0.981 | 0.991 | 0.990 |
-| Curiosity Navcam | 14 | 0.971 | 0.984 | 0.994 | 0.990 |
-| Curiosity front Hazcam | 6 | 0.934 | 0.971 | 0.988 | 0.982 |
-| all | 90 | 0.973 | 0.977 | 0.989 | 0.988 |
+| Navcam | 25 | 0.972 | 0.976 | 0.984 | 0.992 |
+| Mastcam-Z | 29 | 0.961 | 0.962 | 0.984 | 0.977 |
+| Front Hazcam | 10 | 0.978 | 0.972 | 0.980 | 0.991 |
+| Rear Hazcam | 6 | 0.987 | 0.987 | 0.995 | 0.992 |
+| Curiosity Navcam | 14 | 0.971 | 0.983 | 0.989 | 0.993 |
+| Curiosity front Hazcam | 6 | 0.934 | 0.968 | 0.978 | 0.990 |
+| all | 90 | 0.973 | 0.974 | 0.983 | 0.991 |
 
-Over all 90 frames `rpp_mask_v5` is 0.0043 higher than `rpp_mask_v3` (95 % interval +0.0003 to +0.0088, paired by
-frame): a small gain whose interval only just excludes zero. Read it with three cautions:
+Over all 90 frames `rpp_mask_v5` is 0.0017 higher than `rpp_mask_v3` (95 % interval -0.0063 to +0.0091, paired by
+frame): no difference overall. What it adds is the Curiosity cameras, which `rpp_mask_v3` never saw (Navcam 0.983
+against 0.971, front Hazcam 0.968 against 0.934); on the Mars 2020 front Hazcam it is a little lower (0.972 against
+0.978). Read the numbers with three cautions:
 
 - The hand-cleaned masks started from the mean of three other models (v3 and two unreleased runs), so any lean of
   the labels favors those, not v5.
-- It is one training run. A second run of the same recipe scored 0.974, so run-to-run spread is about as large as
-  the gain.
+- It is one training run. An earlier run of the recipe without the Curiosity frames scored 0.977 (its checkpoint was
+  not kept), and runs kept at the end of a full schedule 0.965 to 0.971: run-to-run spread is larger than the
+  difference from v3.
 - Some Curiosity validation frames may share sequences with Curiosity training frames; for those cameras the
   independence is weaker than for the Mars 2020 cameras.
-
-## `rpp_mask_v4` (30 Oct 2026, trained on the v8 mask set)
-
-| | |
-|---|---|
-| file | `rpp_mask_convnext_tiny_s4_v4.safetensors` (124,827,092 bytes) |
-| SHA-256 | `9ecb3dd5fb25fa4f21df0034c575a66d46a8a49b6f500129409bc2cf3ec8a467` |
-| architecture | ConvNeXt-tiny backbone (ImageNet-22k initialization) + FPN (256) + light ASPP + stride-4 decoder skip, one logit (31.2 M parameters) |
-| input | linear 8-bit-equivalent RGB as produced by RPP, letterboxed to a 1664 × 1248 canvas (long side ≤ 1648), ImageNet normalization |
-| output | sigmoid > 0.5 = include; RPP dilates the include region by 3 × 3 |
-| training data | 4,095 hand-edited masks of Mars 2020 frames, sols 9–2022: Navcam 1,925, Mastcam-Z 1,983, Front Hazcam 82, Rear Hazcam 31, SHERLOC WATSON 74. The images come from the standard RPP pipeline only (no brightness-varied copies). |
-| split | 3,685 training / 410 held-out frames, grouped by mask (seed 42) |
-| training | AdamW, lr 5e-5 (cosine, 5 % warm-up), weight decay 5e-3, batch 4, gradient clip 1.0, bf16, BCE + Tversky (α 0.3, β 0.7) loss; 20 epochs, best held-out IoU at epoch 13 (kept) |
-| augmentation | horizontal flips; for the large Navcam and Hazcam frames, a random zoom crop in half of the samples (a crop of 1/z of the frame, z uniform in 1–2) so the model also sees them at closer to native scale |
-| held-out IoU | 0.978 (include class, mean per batch) |
-
-Held-out frames by camera. The scores use valid pixels only, for the **exclusion** class (the error that matters for SfM). Recall is the share of rover pixels the model also excludes.
-
-| camera | held-out frames | IoU | recall | precision |
-|---|---:|---:|---:|---:|
-| Navcam | 186 | 0.976 | 0.985 | 0.990 |
-| Mastcam-Z | 200 | 0.945 | 0.969 | 0.974 |
-| Front Hazcam | 15 | 0.967 | 0.985 | 0.981 |
-| Rear Hazcam | 2 | 0.976 | 0.987 | 0.989 |
-| SHERLOC WATSON | 7 | 0.974 | 0.983 | 0.991 |
-
-![Held-out frames: orange = excluded by the model, blue line = hand-label boundary](figures/figure1_masks.png)
-
-![Training curves](figures/training_curves.png)
 
 ## Versions
 
 | name | file | trained | data | held-out IoU | notes |
 |---|---|---|---|---|---|
-| `rpp_mask_v5` | `rpp_mask_convnext_tiny_s4_v5.safetensors` | 18 Nov 2026, fine-tune of v5.1 (from v3), epoch 1 | v8 set with Curiosity frames, 4,767 training frames | 0.978 | newest; 0.977 on `validation_set_v1` (v3: 0.973) |
+| `rpp_mask_v5` | `rpp_mask_convnext_tiny_s4_v5.safetensors` | 18 Nov 2026, fine-tune of v5.1 (from v3), epoch 1 | v8 set with Curiosity frames, 4,965 training frames | 0.978 | newest; 0.974 on `validation_set_v1` (v3: 0.973); the model for Curiosity frames |
 | `rpp_mask_v4` | `rpp_mask_convnext_tiny_s4_v4.safetensors` | 30 Oct 2026, best of 20 epochs (13) | v8 set, 4,095 masks, pipeline images only, zoom crops | 0.978 | |
 | `rpp_mask_v3` | `rpp_mask_convnext_tiny_s4_v3.safetensors` | 26 Sep 2026, best of 10 epochs (9) | v7 set, 3,931 masks + brightness-varied copies | 0.979 | RPP's default |
 | `rpp_mask_v2` | `rpp_mask_convnext_tiny_s4_v2.safetensors` | 25 Sep 2026, 4 epochs | v7 set | 0.977 | |

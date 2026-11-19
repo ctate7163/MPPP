@@ -152,7 +152,7 @@ Users who want the old model can set `config["masking"]["checkpoint"] = "rpp_mas
 `rpp_mask_v4` (31 Oct 2026, the v8 mask set) was prepared this way: the registry entry, its SHA-256
 (`9ecb3dd5…`) and the card are in the repository; the upload is a maintainer step.
 
-`rpp_mask_v5` (0.99.34, 19 Nov 2026: the v5.2 run `convnext_tiny_s4_seg_20261118_v5p2`) is prepared the same way,
+`rpp_mask_v5` (0.99.43, 19 Nov 2026: the second v5.2 run, `convnext_tiny_s4_seg_20261118_v5p2_2`) is prepared the same way,
 except that its SHA-256 is written by the export on the PC. The card states it through the fields
 `{{sha256:rpp_mask_v5}}` and `{{bytes:rpp_mask_v5}}`, which `upload` fills from the registry (and refuses to upload
 while they are empty). On the PC, `upload_mask_models.bat` (in `D:\rover_blocks\_transfer`) does every step: it

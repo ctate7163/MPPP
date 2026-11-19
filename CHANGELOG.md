@@ -3,6 +3,29 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.43 — 2026-11-19 (branch `rpp`)
+
+Christian, 14:32: "do this for every site from which we have a z34 360. The ncam stations are already in the single
+sites list"; "the whole block depth should use all the ecams, low to high res and fuse them together in one mesh. That
+is the part that takes a long time. The ODS and full 3d pipeline starts from this mesh, fills holes and simplifies
+it"; "v5p2_2 is perfect".
+
+- **Mastcam-Z 34 mm versions** (`single_sites.zcam_companions`): in a run of the whole list (no station named, or
+  `--all`; `--no-zcam` turns it off) every Navcam station whose site's Mastcam-Z block holds at least 36 left-eye
+  34 mm frames of one sol taken at the station gets a Mastcam-Z station `Sol<sol>_<station>_Z34`, made right after it
+  (the config's own Mastcam-Z stations too): the panorama from that sol's 34 mm frames at half size, the station's
+  Navcam and front Hazcam frames and the Navcam station's context frames as fill, the block's terrain.
+- **The block's cloud from every engineering camera** (`rpp dense --whole-block --block-cameras NFR`, workspace
+  `dense_block_FNR`; `rpp single-sites --block-cameras NFR`, or "block_cameras" in the config): Navcam, front and
+  rear Hazcam frames of every size in one cloud per block, shared by its stations. `rpp single-sites --terrain block`
+  gives every station of a run the whole block's cloud, the ones with a named terrain set too. The config is
+  unchanged (Navcam alone, the named sets), so runs in the old root make nothing again; the freeze-3 station run
+  passes both (`rpv_stations_freeze3.bat`). The block terrain has been the config's default since 0.99.20.
+- **`rpp_mask_v5` is the second v5.2 run** (`convnext_tiny_s4_seg_20261118_v5p2_2`): the registry entry, the model
+  card (its own numbers on validation_set_v1: 0.974 against v3's 0.973, +0.0017 [-0.0063, +0.0091]; the Curiosity
+  cameras 0.983 / 0.968 against 0.971 / 0.934; 4,965 training frames, 198 of them Curiosity), docs/masks.md and
+  RELEASING.md; `upload_mask_models.bat` exports that checkpoint.
+
 ## 0.99.42 — 2026-11-19 (branch `rpp`)
 
 A review of 0.99.38-0.99.41 (Christian, 14:18: "Look over the code and make sure it made the necessary changes and did
