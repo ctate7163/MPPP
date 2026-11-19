@@ -83,7 +83,11 @@ is used, so a fault seen there is in the mesh, the plane, the rover model or the
 color, normal map and distance map; the page shows standard as "standard color" and enhanced local as "enhanced color". The normal
 map shows only the surface meshed from the cloud and the rover model: the fill under the rover, the apron to the
 ground plane's reach, the deck floors and the plane are black (a mesh made before 0.98.30 needs the mesh step again
-for this). The eyes are rendered at 16384 x 8192 (`rpp ods --width`); publishing reduces them to 8192.
+for this). The eyes are rendered at 16384 x 8192 or 8192 x 4096 (`rpp ods --width`); publishing reduces them to 8192.
+Without `--width` (0.99.40) the width comes from the station's own frames: 16384 for a Mastcam-Z station and where
+the median of their pixel angles (1 / focal length in pixels, at the scale they are read) is finer than 0.5 mrad -
+full-resolution Navcam (0.33 mrad) - and 8192 otherwise: 2x-binned Navcam (0.65 mrad) is resolved by an
+8192-wide panorama (0.77 mrad a pixel). `ods.json` records the rule under `width_rule`.
 
 `run_single_site_ibr.bat <station>` publishes and uploads each station when it is done (0.97.24: by default;
 `--no-upload` skips it; `--publish-only` does it without rendering; `--all` takes the experimental stations too).
@@ -117,7 +121,7 @@ range) and 0.5 degrees (normal) on smooth surfaces, and worse at edges; for phot
 
 ## The panorama
 
-Each eye is an equirectangular image, **8192 x 4096** by default (`--width 16384` for 16K: 16384 x 8192 per eye): the left edge looks north and the
+Each eye is an equirectangular image, 8192 x 4096 or 16384 x 8192 (see above; `--width` to choose): the left edge looks north and the
 azimuth grows eastward, so it reads N, E, S, W from left to right; the top row is the zenith. Every pixel's ray is
 cast into the mesh and colored from the station frames that see that point best, blended in two frequency bands.
 
@@ -257,7 +261,24 @@ synthetic station; nothing of 0.99.32-0.99.33 has been tried in a headset yet. T
 
 ### The viewing modes
 
-| mode (menu) | key | what is drawn | parallax |
+0.99.40: the page's menu chooses the terrain and the rover button (R; in a headset the left grip) shows or hides the
+rover; `panos.json` keeps the variants below, and the two choices pick one of them:
+
+| terrain (menu) | rover hidden | rover shown |
+|---|---|---|
+| terrain stereo | `masked` | `rover` (the with-rover pair; `rover3d` where a station has no `rover`) |
+| terrain local 3D | `terrain3d`, its 3D rover hidden | `terrain3d` |
+| terrain full 3D | `scape3d`, its 3D rover hidden | `scape3d` |
+
+The full 3D terrain loads no panorama (its texture holds the whole view from the pivot): its views are its texture
+(standard color) and the normal map. The drive (`drive3d`, the full 3D terrain and the rover) is the steering wheel
+above the rover button, shown only with `?experimental=1`. A link to a 3D mode with the rover hidden ends in
+`/no-rover`; the wheel carries a "Beta" tag, and in a headset a thumbstick click starts and ends the drive (the sticks'
+forward / back: the tracks; left / right still turn the view). The directions in the sky show in the welcome view and
+with the info page (I, X). V (headset: the right grip) steps through the terrain modes; a station change keeps the terrain and the
+rover where the next station has them (else the full 3D terrain falls back to the local, and that to stereo).
+
+| variant (before 0.99.40, the menu) | key | what is drawn | parallax |
 |---|---|---|---|
 | terrain only | `masked` | the rover-masked stereo pair on two spheres | binocular only (the ODS pair), none for head motion |
 | terrain with rover (projected) | `rover` | the with-rover pair | as above |

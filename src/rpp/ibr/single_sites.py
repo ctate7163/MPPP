@@ -578,7 +578,8 @@ def add_parser(sub) -> None:
     p.add_argument("--steps", nargs="+", default=list(STEPS), choices=STEPS)
     p.add_argument("--variants", nargs="+", default=None, choices=VARIANTS)
     p.add_argument("--width", type=int, default=None, metavar="PX",
-                   help="0.97.0: the panorama's width for this run (default: the config's, else rpp ods' own, 16384 since 0.98.30; 8192 for 8K) - give "
+                   help="0.97.0: the panorama's width for this run (default: the config's, else rpp ods' own - 0.99.40: 16384 for "
+                        "full-resolution Navcam and Mastcam-Z stations, 8192 for binned Navcam; 8192 for 8K) - give "
                         "--out as well to keep the panoramas already made")
     p.add_argument("--squares-only", action="store_true", help="only stack the eye images already there into "
                    "360_3DTD.jpg / .png")

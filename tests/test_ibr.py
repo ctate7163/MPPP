@@ -3381,7 +3381,7 @@ def test_viewer_station_arrows_rover_button_and_title():
     assert "Curiosity-class rover" in nav and nav.count("<circle") == 3
     assert "$('prevSt').onclick = () => step('s', -1);" in page and "$('nextSt').onclick = () => step('s', 1);" in page
     assert "function roverToggle()" in page and "updateNav();" in page
-    assert "<title>Rover Photogrammetry Viewer (RPV)</title>" in page and '<span id="title">RPV</span>' in page   # 0.99.39: the bar
+    assert "<title>Rover Photogrammetry Viewer (RPV)</title>" in page and '<span id="title">Rover Photogrammetry Viewer</span>' in page   # 0.99.40: the bar
     assert "/stereo panoramas|panorama viewer|photogrammetry viewer/i.test(j.title)" in page
     import inspect
     assert inspect.signature(web.publish).parameters["title"].default == "Rover Photogrammetry Viewer (RPV)"
@@ -3403,7 +3403,7 @@ def test_viewer_keeps_north_across_stations_and_its_name_in_the_bar():
     assert show.count("world.rotation.y = yaw0 + turn;") == 1                       # inside the once-only block
     assert show.index("if (!headingSet) {") < show.index("world.rotation.y = yaw0 + turn;")
     assert "<title>Rover Photogrammetry Viewer (RPV)</title>" in page
-    assert '<span id="title">RPV</span>' in page                                    # 0.99.39 (Christian: the top banner "RPV")
+    assert '<span id="title">Rover Photogrammetry Viewer</span>' in page            # 0.99.40 (Christian: in full, white)
     assert "!/stereo panoramas|panorama viewer|photogrammetry viewer/i.test(j.title)" in page
 
 
@@ -3651,3 +3651,33 @@ def test_height_field_drops_spikes_fills_sparse_cells_and_leaves_rock_faces_to_p
     cen2 = V2[F2].mean(axis=1)
     on_block = (np.abs(cen2[:, 0] + 2.0) < 0.3) & (np.abs(cen2[:, 1]) < 0.2) & (cen2[:, 2] > 0.4)
     assert on_block.sum() > 20                                      # the block's top is there, from Poisson
+
+
+def test_ods_width_from_the_stations_own_frames():
+    """0.99.40 (Christian, 19 Nov 2026: "ncam medium res station can be at 8k. Only ncam highres and z34 sites need to be
+    16k"): without --width, 16384 for a Mastcam-Z station and for frames finer than 0.5 mrad a pixel, else 8192."""
+    from types import SimpleNamespace as NS
+    from rpp.ibr import ods as O
+
+    class Cam:
+        def __init__(self, f):
+            self.f = f
+            self.params = [f]
+
+        def mean_focal_length(self):
+            return self.f
+
+    def rec(fs):
+        return NS(cameras={i: Cam(f) for i, f in enumerate(fs)},
+                  images={i: NS(name=n, camera_id=i) for i, n in enumerate(f"N{i}.png" if f > 0 else f"Z{i}.png" for i, f in enumerate(fs))})
+    full, binned = 3058.0, 1529.0                                # Navcam: 0.33 and 0.65 mrad a pixel
+    assert O.auto_width(rec([full] * 5 + [binned] * 2), [f"N{i}.png" for i in range(7)])[0] == 16384
+    w, r = O.auto_width(rec([binned] * 6), [f"N{i}.png" for i in range(6)])
+    assert w == 8192 and abs(r["median_mrad"] - 0.654) < 0.01 and r["panorama_mrad"] > r["median_mrad"]
+    assert O.auto_width(rec([full] * 4), [f"N{i}.png" for i in range(4)], scale=0.5)[0] == 8192     # read at half size
+    zc = NS(cameras={0: Cam(3570.0)}, images={0: NS(name="ZL0_0690.png", camera_id=0)})             # Mastcam-Z 34 mm
+    assert O.auto_width(zc, ["ZL0_0690.png"], zcam_scale=0.5)[0] == 16384                            # a Mastcam-Z station
+    assert O.auto_width(zc, [])[0] == O.DEFAULT_WIDTH
+    import inspect
+    from rpp.ibr import cli
+    assert 'width=a.width or "auto"' in inspect.getsource(cli)

@@ -257,3 +257,26 @@ def test_viewer_has_the_screen_eye_movement_the_fade_and_every_mesh():
               "for (const me of doc.meshes)", "wholeScene", "m.userData.kind === 'rover'"):
         assert s in page, s
     assert "doc.meshes[0].primitives" not in page
+
+
+def test_viewer_terrain_modes_rover_button_and_hidden_drive():
+    """0.99.40 (Christian, 19 Nov 2026: "change the mode banner to be just for the terrain ... the rover is just visible
+    or not ... Move drive mode to a steering wheel icon above the rover show/hide button. That is experimental and
+    should be hidden ... The full 3d terrain model does not need the ods")."""
+    import pathlib
+    from rpp.ibr import single_sites as SS
+    page = (pathlib.Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    for s in ("['stereo', 'terrain stereo'], ['local', 'terrain local 3D'], ['full', 'terrain full 3D']",
+              "get('experimental') === '1'", 'id="driveBtn"', "$('driveBtn').onclick = driveToggle;",
+              "if (isWhole(vr)) return null;", "if (!whole) {", "rk !== 'no-rover'", "roverOn = false, roverId = 0",
+              "if (e.data && e.data.handedness === 'left') roverToggle(); else step('v', 1);",
+              "right grip: terrain   |   left grip: rover", 'id="driveBeta"', "if (pressed(src, 3) &&",
+              "outlineWidth: 0.14, spacing: 0.12", "az, 24, 40, 10.5", "const on = welcome.visible || infoPanel.visible;",
+              "#title { font-weight: 600; margin-right: 6px; color: #fff; }", "#bar button#home, #compass button#faceO { color: #ff9500; }",
+              "const MAP_ORANGE = '#ff9500';"):
+        assert s in page, s
+    nav = page[page.index('<div id="nav">'):page.index('<div id="msg">')]
+    assert nav.index('id="driveBtn"') < nav.index('id="roverBtn"') and "#nav button#driveBtn { position: absolute;" in page
+    assert "lastRoverKey" not in page and "grip: rover on, off, 3D, 3D terrain" not in page
+    drive = page[page.index("if (pressed(src, 3) &&"):page.index("const x = gp.axes.length >= 4")]
+    assert "continue;" not in drive                               # in the drive the sticks still turn the view

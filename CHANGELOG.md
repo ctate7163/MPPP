@@ -3,6 +3,34 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.40 — 2026-11-19 (branch `rpp`)
+
+Christian, 13:00: "change the mode banner to be just for the terrain. the terrain can be terrain stereo, terrain local
+3D, or terrain full 3D. the rover is just visible or not. In stereo mode its the ods, and full 3D in the others. Move
+drive mode to a steering wheel icon above the rover show/hide button. That is experimental and should be hidden.
+Driver mode uses the full 3D terrain and rover. The full 3d terrain model does not need the ods since the photo sphere
+is built into the 3d model"; 13:01: "ncam medium res station can be at 8k. Only ncam highres and z34 sites need to be
+16k".
+
+- **RPV**: the menu is the terrain (terrain stereo, terrain local 3D, terrain full 3D; V; headset: the right grip); the
+  rover button (R; headset: the left grip) shows or hides the rover - in stereo the with-rover panorama, in the 3D modes
+  the 3D rover, without loading anything again; a station change keeps both. The full 3D terrain loads no panorama
+  (and no center picture): its views are its texture and the normal map, and "loading" stays up until its file is in.
+  The drive is a steering wheel above the rover button, shown only with `?experimental=1`. B: the rover hidden in the
+  terrain mode shown (again: the next color view). The page opens with the rover hidden. `panos.json` is unchanged:
+  every station already published works with it; a link may end in `/no-rover`.
+- RPV (Christian, 13:12): the steering wheel has a "Beta" tag; in a headset a thumbstick click starts and ends the drive
+  (where the station has it, also without `?experimental=1`), and in the drive the sticks' left / right turn the view
+  as elsewhere while forward / back is each side's track. The directions in the sky (NORTH, EAST, SOUTH, WEST) are 75 %
+  as large (10.5 m wide at 40 m), 24 deg up (32), white in a solid orange outline with 0.12 em between the letters,
+  and they show with the info page (I, X) at every station as well as in the welcome view. The home button and the O of
+  the direction cross are in the maps' orange (#ff9500; Christian, 13:17); the bar says "Rover Photogrammetry Viewer"
+  in white again, without "(RPV)" (13:22: "on second thought, leave the Rover Photogrammetry Viewer in white and
+  written out without the abreviation").
+- **`rpp ods` width** (`ods.auto_width`; `ods.json` "width_rule"): without `--width`, 16384 for a Mastcam-Z station
+  and where the median pixel angle of the station's own frames is finer than 0.5 mrad (full-resolution Navcam,
+  0.33 mrad), else 8192 (2x-binned Navcam, 0.65 mrad, against 0.77 mrad a pixel at 8192).
+
 ## 0.99.39 — 2026-11-19 (branch `rpp`)
 
 Christian, 12:27: "the curser should move 5 cm. the 3d terrain should go out to 20 m instead of 10 m".
