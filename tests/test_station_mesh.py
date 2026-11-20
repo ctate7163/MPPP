@@ -498,3 +498,30 @@ def test_stations_in_sol_order_butler_z34_and_rose_river_falls():
     from rpp.waypoints.sites import load_site_table
     g = load_site_table().get("groups") or _json.loads((__import__("pathlib").Path(SS.__file__).resolve().parents[1] / "data" / "sites.json").read_text())["groups"]
     assert "rose_river_falls" in g["zcam_consensus"] and "knob_mountain_large" not in g["zcam_consensus"]
+
+
+def test_fusion_is_reused_after_a_restart(tmp_path):
+    """0.99.47 (Christian, 19 Nov 2026: "Will it need to redo that if I stop it?"): the fused cloud of unchanged stereo
+    maps and options is not made again (a new fused.ply made the station's mesh, maps and panoramas again)."""
+    import os
+    from types import SimpleNamespace as NS
+    from rpp import cli
+    from rpp.sfm.dense import STEREO_RECORD
+    ws = tmp_path / "dense_block_FN"
+    (ws / "stereo").mkdir(parents=True)
+    (ws / "stereo" / STEREO_RECORD).write_text('{"options": {}}')
+    a = NS(keep_rover=False)
+    assert not cli._fusion_cached(ws, {}, {}, 0, a)                 # no cloud
+    (ws / "fused.ply").write_bytes(b"ply\n" + b"0" * 100)
+    assert not cli._fusion_cached(ws, {}, {}, 0, a)                 # a cloud from before 0.99.47 without its run record
+    (ws / "mppp_dense_run.json").write_text('{"steps": {"stereo": {}, "fusion": {"points": 5}}}')
+    assert cli._fusion_cached(ws, {}, {}, 0, a)                     # ... with it: the run fused these maps
+    (ws / "rpp_fusion.json").unlink()
+    cli._fusion_record(ws, {}, {}, 0, a, write=True)
+    assert cli._fusion_cached(ws, {}, {}, 0, a)
+    assert not cli._fusion_cached(ws, {}, {"min_num_pixels": 3}, 0, a)   # other fusion options
+    (ws / "stereo" / STEREO_RECORD).write_text('{"options": {"x": 1}}')
+    assert not cli._fusion_cached(ws, {}, {}, 0, a)                 # other stereo maps
+    (ws / "stereo" / STEREO_RECORD).write_text('{"options": {}}')
+    os.utime(ws / "fused.ply", (1, 1))
+    assert not cli._fusion_cached(ws, {}, {}, 0, a)                 # not the file that fusion wrote

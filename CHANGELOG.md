@@ -3,6 +3,17 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.48 — 2026-11-19 (branch `rpp`)
+
+- **A stopped run loses only the step it was in** (Christian, 16:22: "Will it need to redo that if I stop it?"):
+  `rpp dense` fuses the cloud again only when its stereo maps or options changed. A fusion writes
+  `rpp_fusion.json` next to the cloud; a cloud of 0.99.46 or before is taken when `mppp_dense_run.json` (written
+  after it) records the fusion. Before, every dense call fused again, and the new `fused.ply` (its time is in the
+  mesh step's key) made the station's mesh, per-frame maps and panoramas again - after any restart, and for the
+  block's second station (a Z34 version) in the same run. The stereo maps were already kept image by image.
+- **`rpv_products.bat`** (16:22: "call this rpv_products.bat"): the freeze-3 station run of `recolor_rpv.bat` under
+  its new name (log `D:\rover_blocks_f3\single_sites\rpv_products_log.txt`), with `--skip-done`.
+
 ## 0.99.47 — 2026-11-19 (branch `rpp`)
 
 - **A Mastcam-Z 360 over two sols** (Christian, 16:03: "For both examples, use both sols so that it has a full 360"):

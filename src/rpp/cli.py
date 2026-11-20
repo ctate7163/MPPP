@@ -776,6 +776,60 @@ def cmd_metashape(a: argparse.Namespace) -> int:
     return 0
 
 
+FUSION_RECORD = "rpp_fusion.json"
+
+
+def _fusion_record(ws, so, fo, size, a, write: bool = False):
+    """0.99.47: what a fused cloud was made from - the stereo record's text, the fusion options, rover kept or not, the
+    sky mask setting, and the cloud's size and time once made.  ``write``: written next to the cloud after a fusion;
+    otherwise returned without the cloud's own fields, for :func:`_fusion_cached`."""
+    import hashlib
+    from . import env as rpp_env
+    from .sfm.dense import FUSED_ROVER_PLY, STEREO_RECORD
+    ws = Path(ws)
+    keep = bool(getattr(a, "keep_rover", False))
+    try:
+        stereo = hashlib.sha1((ws / "stereo" / STEREO_RECORD).read_bytes()).hexdigest()
+    except OSError:
+        stereo = None
+    rec = {"stereo_record": stereo, "fusion_options": {k: fo[k] for k in sorted(fo)}, "keep_rover": keep,
+           "sky": str(rpp_env.get("RPP_SKY_MASK") or "1").strip().lower(), "max_image_size": int(size or 0)}
+    ply = ws / (FUSED_ROVER_PLY if keep else "fused.ply")
+    if write and ply.is_file() and stereo:
+        st = ply.stat()
+        (ws / (FUSION_RECORD if not keep else "rpp_fusion_rover.json")).write_text(json.dumps(
+            dict(rec, ply=ply.name, ply_bytes=st.st_size, ply_mtime=int(st.st_mtime)), indent=1, default=str), encoding="utf-8")
+    return rec, ply
+
+
+def _fusion_cached(ws, so, fo, size, a) -> bool:
+    """True when the workspace's fused cloud was made by a fusion of these stereo maps with these options, and is the
+    very file that fusion wrote (size and time).  A cloud without the record (before 0.99.47) is fused once again."""
+    rec, ply = _fusion_record(ws, so, fo, size, a)
+    f = Path(ws) / (FUSION_RECORD if not rec["keep_rover"] else "rpp_fusion_rover.json")
+    try:
+        st = ply.stat()
+    except OSError:
+        return False
+    if not f.is_file():                                          # a cloud of 0.99.46 or before: the run record says
+        from .sfm.dense import STEREO_RECORD                     # it fused these very maps (written after the cloud,
+        run = Path(ws) / "mppp_dense_run.json"                   # the stereo record older than the cloud)
+        try:
+            ok = "fusion" in (json.loads(run.read_text(encoding="utf-8")).get("steps") or {})
+            ok = ok and not rec["keep_rover"] and run.stat().st_mtime >= st.st_mtime >= (Path(ws) / "stereo" / STEREO_RECORD).stat().st_mtime
+        except (OSError, ValueError):
+            return False
+        if ok:
+            _fusion_record(ws, None, dict(rec["fusion_options"]), rec["max_image_size"], a, write=True)
+        return bool(ok)
+    try:
+        old = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    same = {k: old.get(k) for k in rec} == json.loads(json.dumps(rec, default=str))
+    return bool(rec["stereo_record"]) and same and old.get("ply_bytes") == st.st_size and old.get("ply_mtime") == int(st.st_mtime)
+
+
 def cmd_dense(a: argparse.Namespace) -> int:
     """``dense``: :mod:`rpp.sfm.dense` on one block."""
     from .sfm.dense import DENSE_MAX_IMAGE_SIZE, prepare_dense, run_dense, write_dense_bat
@@ -887,6 +941,12 @@ def cmd_dense(a: argparse.Namespace) -> int:
             need_gpu = False
             print("dense: the stereo maps of this workspace are there, made with these options - stereo skipped, "
                   "no wait for the GPU")
+            # 0.99.47 (Christian, 19 Nov 2026: "Will it need to redo that if I stop it?"): the fusion again only when
+            # its maps or options changed - a new fused.ply (its time) made the station's mesh, maps and panoramas
+            # again after every restart, and the block's second station (a Z34 version) fused the same cloud again
+            if "fusion" in steps and _fusion_cached(ws, so, fo, size, a):
+                steps = [s for s in steps if s != "fusion"]
+                print("dense: the fused cloud of these stereo maps and options is there - fusion skipped")
             if not steps:
                 return 0
     if py and ("stereo" in steps or not getattr(pycolmap, "has_cuda", False)):
@@ -900,6 +960,8 @@ def cmd_dense(a: argparse.Namespace) -> int:
                        restereo=bool(getattr(a, "restereo", False)), full_fov=bool(getattr(a, "full_fov", False)))
     for k, v in (res.get("steps") or {}).items():
         print(f"  {k}: {v}")
+    if "fusion" in (res.get("steps") or {}):
+        _fusion_record(ws, so, fo, size, a, write=True)
     return 0
 
 
