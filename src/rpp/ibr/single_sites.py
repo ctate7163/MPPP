@@ -210,7 +210,9 @@ def zcam_companions(cfg: Dict[str, Any], root: PathLike, names_of=None) -> Dict[
             "ods_args": ["--cameras", "Z", "--sols", *[str(x) for x in sols], "--zcam-scale", "0.5", "--fill-cameras", "NF",
                          "--no-gains", "--images", *frames],
             "depthmaps_variants": ["none"],                      # 0.99.46: no per-frame maps (the Navcam station has them)
-            "context": [f"N?F_*_{tok}NCAM*.png", f"F?F_*_{tok}FHAZ*.png", *(st.get("context") or [])],
+            # 1.0 (Christian, 20 Nov 2026: "The sol 0789 z34 projection should also use the ZCAM08826 images for context"):
+            # the Navcam station's "zcam_context" too - context for the Mastcam-Z version only
+            "context": [f"N?F_*_{tok}NCAM*.png", f"F?F_*_{tok}FHAZ*.png", *(st.get("context") or []), *(st.get("zcam_context") or [])],
             "note": f"0.99.43, made by zcam_companions: the {left} left-eye 34 mm frames of sol{'s' if len(sols) > 1 else ''} "
                     f"{' and '.join(str(x) for x in sols)} at this station "
                     f"(the Mastcam-Z block {zwork.name}), after the Navcam station {lab}"}

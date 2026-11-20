@@ -81,6 +81,12 @@ still those of 0.99; 1.0.0 will carry the models of the third freeze run.
   Rockytop, and the 3D assets of the stations of sols 9, 461 and 52, one entry per file at 400 dpi. An entry whose
   input is missing is skipped with one line saying why. The oblique views and renders are ray cast, and the rover
   models are RPP's own model with the arm in its stowed pose from the image labels.
+- **Belva Crater (`belva_crater_large`) starts at sol 770**, with no nearby frames from before it
+  (`NEARBY_FROM_FIRST_SOL`). The freeze-3 block, `mars2020_sol_0768_belva_crater_large_zcam`, held 42 frames of
+  sols 766 and 768. The block made from now on is `mars2020_sol_0770_belva_crater_large_zcam`.
+- The Sol 784 station (`Sol0784_S039D0926`) takes the sol 797 NCAM03795 and NCAM02797 pairs as context, besides
+  the sol 784 NCAM00301 pair. A station's new `zcam_context` list is context for its Mastcam-Z 34 mm version only:
+  `Sol0789_S039D0926_Z34` takes the ZCAM08826 frames (sol 805, 110 frames).
 
 ### Removed
 

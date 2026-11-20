@@ -768,3 +768,25 @@ def test_a_chart_that_folds_over_itself_is_split():
     n2 = np.cross(V2[2] - V2[1], V2[3] - V2[1])
     N2 = np.array([[0, 0, 1.0], n2 / np.linalg.norm(n2) * np.sign(n2[2]), [0, 0, 1.0]])
     assert len(SM.triangle_charts(V2, F, N2, np.array([0.5, 0.3, 0.5]), max_m=5.0)) == 1
+
+
+def test_belva_crater_from_sol_770_and_the_sol_784_context(monkeypatch):
+    """1.0 (Christian, 20 Nov 2026): "belva crater large should not include anything before sol 770"; the Sol 784
+    station's context (sol 784 NCAM00301, sol 797 NCAM03795 and NCAM02797, both eyes) and, for its Z34 version only,
+    the ZCAM08826 frames."""
+    from rpp.ibr import single_sites as SS
+    from rpp.waypoints.sites import load_site_table
+    site = load_site_table()["sites"]["belva_crater_large"]
+    assert site["sols"] == [[770, 821]] and site["settings"].get("NEARBY_FROM_FIRST_SOL") is True
+    cfg = SS.load_config()
+    st = cfg["stations"]["Sol0784_S039D0926"]
+    assert len(st["context"]) == 6 and {n[:3] for n in st["context"]} == {"NLF", "NRF"}
+    assert any("NCAM03795" in n for n in st["context"]) and any("NCAM02797" in n for n in st["context"])
+    names = [f"ZL0_0789_07369{i:05d}_803RAD_N0390926ZCAM08808_0340LMA01.png" for i in range(40)] + \
+            ["ZL0_0805_0738401589_803RAD_N0391170ZCAM08826_0340LMA03.png"]
+    monkeypatch.setattr(SS, "block_aligned", lambda w: True)
+    one = {"stations": {"Sol0784_S039D0926": st}}
+    pairs = SS.zcam_companions(one, "/blocks", names_of=lambda w: names)
+    z = one["stations"][pairs["Sol0784_S039D0926"]]
+    assert pairs["Sol0784_S039D0926"] == "Sol0789_S039D0926_Z34" and "Z?0_*ZCAM08826_034*.png" in z["context"]
+    assert "ZCAM08826" not in str(SS.plan(cfg, "/blocks", labels=["Sol0784_S039D0926"], steps=("ods",))[0]["commands"])

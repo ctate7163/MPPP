@@ -1417,8 +1417,16 @@
    },
    "context": [
     "NLF_0784_0736544401_410RAD_N0390858NCAM00301_0A0295J01.png",
-    "NRF_0784_0736544401_410RAD_N0390858NCAM00301_0A0295J01.png"
-   ]
+    "NRF_0784_0736544401_410RAD_N0390858NCAM00301_0A0295J01.png",
+    "NLF_0797_0737699858_316RAD_N0391170NCAM03795_0A0195J01.png",
+    "NRF_0797_0737699858_316RAD_N0391170NCAM03795_0A0195J01.png",
+    "NLF_0797_0737700489_395RAD_N0391170NCAM02797_0A0195J01.png",
+    "NRF_0797_0737700489_395RAD_N0391170NCAM02797_0A0195J01.png"
+   ],
+   "zcam_context": [
+    "Z?0_*ZCAM08826_034*.png"
+   ],
+   "context_note": "20 Nov 2026 (Christian: \"The Sol 0784 ods and full-3d should use NLF_0784_..._NCAM00301, NLF_0797_..._NCAM03795 and NLF_0797_..._NCAM02797 for context. The sol 0789 z34 projection should also use the ZCAM08826 images for context\"): both eyes of each; zcam_context: the 110 frames of ZCAM08826 (sol 805, S039D1170, 34 mm), in the Z34 version (Sol0789_S039D0926_Z34) only"
   },
   "Sol0816_S039D1418": {
    "site": "belva_crater_large",
