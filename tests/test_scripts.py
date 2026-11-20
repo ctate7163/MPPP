@@ -323,7 +323,8 @@ def test_a_stopped_batch_does_not_go_on_to_the_joints(tmp_path, monkeypatch):
 def test_experiment_scripts_live_in_studies():
     for name in ("lens_model_experiment.py", "lens_terms_experiment.py", "pair_experiment.py",
                  "temperature_bins_experiment.py", "error_sources.py"):
-        assert not (ROOT / "scripts" / name).exists() and (ROOT / "src" / "rpp_studies" / "misc" / "experiments" / name).is_file(), name
+        # 1.0: the experiments are in the git history (the tag pre-v1.0-archive), no longer in the tree
+        assert not (ROOT / "scripts" / name).exists() and not (ROOT / "src" / "rpp_studies" / "misc" / "experiments" / name).exists(), name
 
 
 def test_windows_run_sites_zcam_passes_extra_through():
@@ -332,7 +333,7 @@ def test_windows_run_sites_zcam_passes_extra_through():
 
 
 def test_scripts_and_bat_exist():
-    assert (ROOT / "src" / "rpp_studies" / "misc" / "calibration_old" / "prepare_next_run.py").is_file()   # 0.96: misc
+    assert not (ROOT / "src" / "rpp_studies" / "misc" / "calibration_old" / "prepare_next_run.py").exists()   # 1.0: the tag pre-v1.0-archive has it
     assert not (ROOT / "scripts" / "prepare_next_run.py").exists()
     assert not (ROOT / "scripts" / "windows" / "prepare_next_run.bat").exists()
 
@@ -368,24 +369,17 @@ def test_skip_file_leaves_a_block_out(tmp_path):
 
 
 def test_windows_folder_is_short():
-    """0.94.4 (Christian, 23 Oct): at most 20 files in scripts\\windows, the removed ones gone."""
+    """0.94.4 (Christian, 23 Oct): at most 20 files in scripts\\windows, the removed ones gone.  1.0: 23, each in use."""
     w = ROOT / "scripts" / "windows"
     files = [f for f in w.iterdir() if f.is_file() and not f.name.endswith(".txt")]
-    # 0.95.1: trial_joints_0p95.bat is the trial before the freeze reruns (it goes after them) - not counted;
-    # sites_status.bat back (Christian, 29 Oct): 21; ecam_block.bat (Christian, 30 Oct: "a command that just
-    # generates the ecam colmap alignment with the mppp metashape and nerfstudio commands"): 22
-    # train_masks.bat (Christian, 30 Oct: train on the newest set, the JOSS outputs): 23
-    # zcam_backlash_rerun.bat (Christian, 31 Oct: "one good zcam joint to capture all of the problematic backlash
-    # anomalies"): 24; freeze_chain.bat (Christian, 2 Nov: the freeze run unattended): 25
-    # 0.96.0 (9 Nov): claude_sync.bat and freeze_chain.bat out, sync_code.bat and freeze.bat in: 25
-    # 0.96.1 (Christian, 11 Nov: "Please put that bat file in the MPPP/scripts/windows/ folder"):
-    # run_single_site_ibr.bat, the copy of rpp.ibr.single_sites.BAT: 26
-    # 0.97.0: zcam_joints_097.bat is this version's one run (in place of trial_joints_0p95.bat) - not counted either
-    # 0.99.0, the rename MPPP -> RPP: not counted while the rpp branch lives beside main - mppp_env.bat (the stub of
-    # the old name, it goes with the alias packages), sync_rpp.bat and check_rpp_reuse.bat (the rpp worktree's own)
-    transition = {"mppp_env.bat", "sync_rpp.bat", "check_rpp_reuse.bat"}
-    assert len([f for f in files if not f.name.startswith(("trial_joints_", "zcam_joints_0"))
-                and f.name not in transition]) <= 26, sorted(f.name for f in files)
+    # 1.0 (Christian, 20 Nov 2026: "removing clutter from previous studies"): 24 - the finished studies' batch files
+    # (zcam_joints_097, zcam_backlash_rerun, run_zcam_states), the rename's (mppp_env, sync_rpp, check_rpp_reuse) and
+    # sites_status.bat (check_sites.bat shows the same) are gone; rpv_process.bat (the station run) came in
+    assert len(files) <= 24, sorted(f.name for f in files)
+    for gone in ("zcam_joints_097.bat", "zcam_backlash_rerun.bat", "run_zcam_states.bat", "mppp_env.bat", "sync_rpp.bat",
+                 "check_rpp_reuse.bat", "sites_status.bat"):
+        assert not (w / gone).exists(), gone
+    assert not (ROOT / "scripts" / "check_reuse.py").exists() and not (ROOT / "scripts" / "_make_notebooks_0p96.py").exists()
     from rpp.ibr import single_sites as SS
     assert (w / SS.BAT_NAME).read_bytes() == SS.BAT.replace("\r\n", "\n").replace("\n", "\r\n").encode("ascii")
     tm = (w / "train_masks.bat").read_bytes()
@@ -394,7 +388,7 @@ def test_windows_folder_is_short():
     assert b"--reuse-variable" not in tm and b"--variable" not in tm.split(b"REM ======")[-1]   # images\ only (30 Oct)
     eb = (w / "ecam_block.bat").read_bytes()
     assert eb.count(b"\n") == eb.count(b"\r\n") and b"run %* --root" in eb and b"--metashape --nerfstudio" in eb
-    assert (w / "sites_status.bat").is_file() and (w / "make_paper.bat").is_file()
+    assert (w / "make_paper.bat").is_file()
     for gone in ("run_weekend.bat", "build_example_data.bat", "run_multizoom_test.bat", "run_hazcam.bat",
                  "test_lightglue.bat", "run_sites_zcam34.bat", "zcam_tied_joint.bat", "render_paper.bat"):
         assert not (w / gone).exists(), gone
@@ -516,19 +510,6 @@ def test_tie_point_studies_scaffold(tmp_path, capsys):
     assert "| S2 (" in T.report_all(tmp_path, "S2", {"x": {"variants": vs, "report": "r.md"}}) or "# S2" in T.report_all(tmp_path, "S2", {"x": {"variants": vs, "report": "r.md"}})
 
 
-def test_zcam_joints_097_bat():
-    """0.97.0 (Christian, 12 Nov 2026): the new blocks, the 63 / 79 / 110 mm joints, the 79 mm one-state test and
-    validation test 3; nothing promoted unless RPP_PROMOTE=1; trial_joints_0p95.bat is gone."""
-    b = (ROOT / "scripts" / "windows" / "zcam_joints_097.bat").read_bytes()
-    assert b"\r\n" in b and b.count(b"\n") == b.count(b"\r\n")
-    t = b.decode("ascii")
-    assert "--sites wildcat_ridge skinner_ridge chal_rocks_large seitah_overlook rose_river_falls" in t and "--zcam-hold-ratio 1.006" in t and "for %%Z in (63 79 110)" in t
-    assert "--zcam-hold-ratio 1.0 --no-promote" in t and 'set "PROMOTE=--no-promote"' in t
-    assert "rpp_studies.validation.zpairs" in t and "cmods_freeze2" in t
-    assert "--variant tri010 --set min_tri_angle_deg=0.10" in t and "--zcam-hold-ratio 1.0045" in t
-    assert not (ROOT / "scripts" / "windows" / "trial_joints_0p95.bat").exists()
-
-
 def test_sync_code_runs_from_a_copy_the_merge_cannot_touch():
     """29 Oct: the merge replaced the sync script while cmd.exe was reading it; the script lost its place, started
     over and stopped before the stash pop.  0.96.0 (9 Nov, Christian: "let's clean up the MPPP directory so that
@@ -597,20 +578,9 @@ def test_run_sites_takes_several_groups():
 
 
 
-def test_zcam_backlash_rerun_bat():
-    """0.95.3 (Christian, 31 Oct): the states run of the three blocks, the found list, the blocks again with every
-    zoom, the joints of 34-110 mm with more iterations, nothing promoted; stop_rpp.bat stops the chain."""
-    b = (ROOT / "scripts" / "windows" / "zcam_backlash_rerun.bat").read_bytes()
-    assert b.count(b"\n") == b.count(b"\r\n")
-    t = b.decode()
-    assert 'RPP_RERUN_SITES=chal_rocks seitah_overlook rockytop' in t and 'RPP_JOINT_ITERATIONS=300' in t
-    i_states = t.index("--variant %RPP_STATES_VARIANT% --jobs 2 --force %SETS%")
-    i_apply = t.index("--sites %RPP_RERUN_SITES% --apply")
-    i_blocks = t.index("--sites %RPP_RERUN_SITES% --zcam --jobs 2 --force\r\n")
-    i_joints = t.index('zcam_joints.bat" --no-promote --iterations %RPP_JOINT_ITERATIONS%')
-    assert i_states < i_apply < i_blocks < i_joints
-    assert 'RPP_ZOOMS=34 48 63 79 110' in t and 'RPP_HAZ=none' in t and "zcam_joints.lock" in t
-    assert t.count('if exist "%ROOT%\\mppp_stopped.txt" goto :stopped') == 3
+def test_backlash_rerun_exclusions_and_run_marker():
+    """0.95.3 (Christian, 31 Oct): the backlash rerun's exclusions in sites.json; a chain started by a batch file of
+    that name is still seen as an RPP run by stop_rpp.bat (1.0: the batch file itself is gone)."""
     sys.path.insert(0, str(ROOT / "scripts"))
     from rpp.batch import rpp_processes
     rows = [{"pid": 5, "ppid": 1, "cmd": 'cmd /c call "D:\\code\\MPPP\\scripts\\windows\\zcam_backlash_rerun.bat" --chain'}]
@@ -679,3 +649,25 @@ def test_zcam_mast_head_chain_round_trip():
     R0, _ = zmh.chain_pose(m, "L", 0.0, mast.el_level)
     yaw, pitch = zmh.yaw_pitch(mast.F @ R0[2])
     assert abs(yaw) < 1e-6 and abs(pitch) < 1e-6
+
+
+def test_rpv_process_bat():
+    """1.0 (Christian, 20 Nov 2026: "Start from the rpv_products process of version v0p99p52. in v1p0, call this
+    rpv_process.bat"): rpv_products_0p99p50.bat with update_rpp_rpv.bat and unpublish_station.bat in it - its own
+    checkout brought to this tree's branch, the guard against a second run, Rockytop first then the latest sol back,
+    --recolor without the wait and the skip, --unpublish."""
+    b = (ROOT / "scripts" / "windows" / "rpv_process.bat").read_bytes()
+    assert b.count(b"\n") == b.count(b"\r\n") and b.decode("ascii")
+    t = b.decode("ascii")
+    run = ('single-sites --all --root "%ROOT%" --block-cameras NF --terrain block --first rockytop --reverse '
+           '--instance %SLOT% %MORE% --upload %*')
+    assert run in t and 'set "MORE=--wait-for-blocks 36 --skip-done"' in t and 'if "%MODE%"=="recolor" set "MORE="' in t
+    assert 'set "RPP_RPV_ROOT=D:\\rover_blocks_f3"' in t
+    # 0.99.53: up to four windows, each on the first free checkout; the choice comes before any checkout is touched
+    assert "for %%s in (rpv rpv_b rpv_c rpv_d)" in t and "--instance %%s( |$)" in t and 'set "T=D:\\code\\RPP_%SLOT%"' in t
+    guard, fetch = t.index("--instance %%s( |$)"), t.index('fetch -q "%TREE%" +%BR%:refs/remotes/home/%BR%')
+    assert guard < fetch < t.index('checkout -q -f -B %BR% refs/remotes/home/%BR%')
+    assert "(1, 0)" in t and "rpp.__file__.lower().startswith" in t
+    assert 'single-sites %* --upload' in t.split('if "%MODE%"=="unpublish" (')[1].split(")")[0] + ")"
+    assert t.index('if "%MODE%"=="unpublish" (') < t.index("the viewer page first")
+    assert "rpv_products_log" not in t and "rpv_process_log_%SLOT%.txt" in t

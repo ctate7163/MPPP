@@ -33,7 +33,7 @@ def test_dry_run_walks_every_step_and_writes_the_report(tmp_path):
     st = _status(root)
     assert st["state"] == "done" and st["tag"] == fz.TAG and st["failed"] == []
     assert [s for s in fz.STEPS if st["steps"][s]["state"] == "done"] == list(fz.STEPS)
-    assert st["mask"]["choice"].startswith("keep (rpp_mask_v3") and st["mask"]["set"] is None
+    assert st["mask"]["choice"].startswith("keep (rpp_mask_v5") and st["mask"]["set"] is None
     log = (root / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
     assert "zjoints (dry run)" in log and "-m rpp_studies.calibration.run_pipeline" in log
     assert "--zcam-waive-aspect 63 79 110" in log and "mask_checkpoint=" not in log     # keep: no --set
@@ -87,7 +87,7 @@ def test_mask_auto_takes_the_verdict_and_the_margin(tmp_path, monkeypatch):
     assert fz.trained_checkpoint(home, "v9B") is None
 
     def verdict(new, base):
-        (out / "mask_verdict.json").write_text(json.dumps({"models": {ck.stem: new, "rpp_mask_v3": base},
+        (out / "mask_verdict.json").write_text(json.dumps({"models": {ck.stem: new, "rpp_mask_v5": base},
                                                            "subset": "all"}), encoding="utf-8")
     # a clear win: the new model is used
     verdict(0.985, 0.970)
@@ -252,14 +252,14 @@ def test_train_mask_verdict_from_the_ab_table(tmp_path):
     ab.mkdir()
     ck = tmp_path / "convnext_tiny_s4_seg_20261109_v9A.pt"
     rows = ["subset,camera,frames,model,exclusion_IoU,hardware_recall,hardware_precision",
-            "all,all,40,rpp_mask_v3,0.9700,0.98,0.98", f"all,all,40,{ck.stem},0.9800,0.99,0.98",
-            "all,Mastcam-Z,10,rpp_mask_v3,0.9990,0.99,0.99",
-            "not_seen,all,12,rpp_mask_v3,0.9600,0.97,0.98", f"not_seen,all,12,{ck.stem},0.9750,0.98,0.98"]
+            "all,all,40,rpp_mask_v5,0.9700,0.98,0.98", f"all,all,40,{ck.stem},0.9800,0.99,0.98",
+            "all,Mastcam-Z,10,rpp_mask_v5,0.9990,0.99,0.99",
+            "not_seen,all,12,rpp_mask_v5,0.9600,0.97,0.98", f"not_seen,all,12,{ck.stem},0.9750,0.98,0.98"]
     (ab / "mask_ab.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
-    v = read_verdict_from_ab(ab, new=ck, baseline="rpp_mask_v3")
+    v = read_verdict_from_ab(ab, new=ck, baseline="rpp_mask_v5")
     assert v["subset"] == "not_seen" and v["winner"] == ck.stem and abs(v["margin"] - 0.015) < 1e-9
-    assert v["models"] == {"rpp_mask_v3": 0.96, ck.stem: 0.975} and v["baseline_label"] == DEFAULT_BASELINE
-    assert read_verdict_from_ab(tmp_path / "none", new=ck, baseline="rpp_mask_v3")["winner"] is None
+    assert v["models"] == {"rpp_mask_v5": 0.96, ck.stem: 0.975} and v["baseline_label"] == DEFAULT_BASELINE
+    assert read_verdict_from_ab(tmp_path / "none", new=ck, baseline="rpp_mask_v5")["winner"] is None
     a = parser_for_test().parse_args(["--compare", "--smoke"])
     assert a.compare == [] and a.compare_device == "auto"
     assert parser_for_test().parse_args(["--smoke"]).compare is None
@@ -362,7 +362,7 @@ def test_pc_like_root_auto_with_a_finished_training_and_a_verdict(tmp_path):
     ck = home / "checkpoints" / "convnext_tiny_s4_seg_20261109_v9_v4.4.pt"
     out = home / "Claude outputs" / f"mask_{ck.stem}"
     out.mkdir(parents=True)
-    (out / "mask_verdict.json").write_text(json.dumps({"models": {ck.stem: 0.9842, "rpp_mask_v3": 0.9712}, "subset": "not_seen"}), encoding="utf-8")
+    (out / "mask_verdict.json").write_text(json.dumps({"models": {ck.stem: 0.9842, "rpp_mask_v5": 0.9712}, "subset": "not_seen"}), encoding="utf-8")
     assert _run(root, "--mask-model", "auto", "--mask-home", str(home), "--cmods", str(root / "cmods_freeze2")) == 0
     st = _status(root)
     assert st["mask"]["set"] == str(ck) and st["mask"]["choice"] == f"new {ck.name}"
@@ -375,13 +375,14 @@ def test_pc_like_root_auto_with_a_finished_training_and_a_verdict(tmp_path):
     for v in (7, 8, 9):
         (masks / f"masks_training_set_v{v}" / "masks").mkdir(parents=True)
     assert fz.baseline_training_set(str(masks), "rpp_mask_v3") == str(masks / "masks_training_set_v7")
+    assert fz.baseline_training_set(str(masks), "rpp_mask_v5") == str(masks / "masks_training_set_v8")   # 1.0: the default
     assert fz.baseline_training_set(str(masks), "D:\\ck\\x.pt") is None
     assert _run(root2, "--mask-model", "auto", "--mask-home", str(home), "--mask-root", str(masks),
                 "--cmods", str(root2 / "cmods_freeze2")) == 0
     log2 = (root2 / "mppp_pipeline" / fz.LOG_FILE).read_text(encoding="utf-8")
     assert ("mask_ab (dry run)" in log2 and "-m rpp_studies.mask_training.compare_mask_models" in log2
-            and f"--data {masks / 'masks_training_set_v9'}" in log2 and "--models rpp_mask_v3" in log2
-            and f"--seen {masks / 'masks_training_set_v7'} --seen-split rpp_mask_v3 {masks / 'masks_training_set_v7'}" in log2)
+            and f"--data {masks / 'masks_training_set_v9'}" in log2 and "--models rpp_mask_v5" in log2
+            and f"--seen {masks / 'masks_training_set_v8'} --seen-split rpp_mask_v5 {masks / 'masks_training_set_v8'}" in log2)
 
 
 def test_logon_launcher_carries_the_mask_options(tmp_path, monkeypatch):
@@ -421,7 +422,7 @@ def test_a_restart_after_a_reboot_is_said_and_keeps_the_runs_day(tmp_path, monke
     f.write_text(json.dumps({"state": "running", "started": "2026-11-10T08:29:36", "heartbeat": "2026-11-11T03:10:00", "pid": 4,
                              "tag": fz.TAG, "steps": {"wait": {"state": "done"}, "mask": {"state": "done"},
                                                       "cmods": {"state": "done"}, "zjoints": {"state": "running"}},
-                             "mask": {"state": "done", "choice": "keep (rpp_mask_v3)", "set": None}}), encoding="utf-8")
+                             "mask": {"state": "done", "choice": "keep (rpp_mask_v5)", "set": None}}), encoding="utf-8")
     seen = {}
 
     def pipeline(self, name, *args):

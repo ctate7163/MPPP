@@ -142,7 +142,7 @@ def test_render_station_part_web_entry_and_plan(tmp_path, monkeypatch):
     assert web.station_mesh(out, tmp_path, pano)["fade_m"] == [8.0, 10.0]      # a file of before 0.99.39: its 10 m mesh
     assert web.TERRAIN_3D == ("terrain3d", "3D terrain and rover")
     src = (SS.__file__)
-    page = (__import__("pathlib").Path(src).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    page = (__import__("pathlib").Path(src).resolve().parents[1] / "viewer" / "index.html").read_text(encoding="utf-8")
     assert "showRover(sm, { normals: nmView, distance: dView," in page and "holdNearPivot" in page
 
 
@@ -244,7 +244,7 @@ def test_fifth_mode_surface_to_the_horizon_one_texture(tmp_path):
     assert dv["track_m"] == 2.3 and dv["speed_m_s"] == 0.25 and dv["limit_m"] == 15.0 and len(dv["wheels_fwd_m"]) == 3
     assert abs(dv["pivot_fwd_right_m"][0] - 0.80) < 0.01 and abs(dv["pivot_fwd_right_m"][1] - 0.56) < 0.01      # the mast: ahead and right of the center
     import pathlib
-    page = (pathlib.Path(web.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    page = (pathlib.Path(web.__file__).resolve().parents[1] / "viewer" / "index.html").read_text(encoding="utf-8")
     for s in ("function driveStep", "(vr - vl) * DRIVE.speed / DRIVE.track", "length() <= 1.0", "rs.drive && rs.whole", "driveKeys"):
         assert s in page, s
 
@@ -254,7 +254,7 @@ def test_viewer_has_the_screen_eye_movement_the_fade_and_every_mesh():
     the terrain mesh")."""
     import pathlib
     from rpp.ibr import single_sites as SS
-    page = (pathlib.Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    page = (pathlib.Path(SS.__file__).resolve().parents[1] / "viewer" / "index.html").read_text(encoding="utf-8")
     # 0.99.38 (Christian: "remove the swaying"): no sway; 0.99.39 (Christian: "the curser should move 5 cm")
     assert "SWAY_M" not in page and "swayGain" not in page
     for s in ("NECK_M = 0.15", "HOVER_M = 0.05", "half = 20.5", "limit: 15.0,", "'dcs color': 'decorrelation stretch'", "'raw color': 'original color'", "smoothstep(fade.x, fade.y, vR)", "NORMAL_FRAG", "skipRover", "O_PITCH_DEG = -30",
@@ -269,7 +269,7 @@ def test_viewer_terrain_modes_rover_button_and_hidden_drive():
     should be hidden ... The full 3d terrain model does not need the ods")."""
     import pathlib
     from rpp.ibr import single_sites as SS
-    page = (pathlib.Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    page = (pathlib.Path(SS.__file__).resolve().parents[1] / "viewer" / "index.html").read_text(encoding="utf-8")
     for s in ("['stereo', 'terrain stereo'], ['full', 'terrain 3D']",
               "get('experimental') === '1'", 'id="driveBtn"', "$('driveBtn').onclick = driveToggle;",
               "if (isWhole(vr)) return null;", "if (!whole) {", "rk !== 'no-rover'", "roverOn = false, roverId = 0",
@@ -279,7 +279,7 @@ def test_viewer_terrain_modes_rover_button_and_hidden_drive():
               "#title { font-weight: 600; margin-right: 6px; color: #fff; }", "#bar button#home, #compass button#faceO { color: #ff9500; }",
               "const MAP_ORANGE = '#ff9500';", "#nav button#roverBtn { color: #ff9500; }", "#nav button#roverBtn.on { color: #fff; border-color: #555; }",
               "noHorizon: true", "skipHorizon: isMain && !!rs.noHorizon",
-              "function stereoOrFull()", "const DIST_FRAG", "canSwap(sm, skinUrl) ? swapSkin(skinUrl)", "sk[k] || /^normal/.test(k) || k === 'range log' || k === 'distance map'", "if (id !== swapId || rid !== roverId) { bmp.close(); return; }",
+              "function stereoOrFull()", "pick(p, to, 'standard');", "const DIST_FRAG", "canSwap(sm, skinUrl) ? swapSkin(skinUrl)", "sk[k] || /^normal/.test(k) || k === 'range log' || k === 'distance map'", "if (id !== swapId || rid !== roverId) { bmp.close(); return; }",
               "B: stereo / full 3D"):
         assert s in page, s
     nav = page[page.index('<div id="nav">'):page.index('<div id="msg">')]
@@ -373,7 +373,7 @@ def test_sky_texels_keep_the_far_hills():
     sky = SM.sky_texels(rgb, far, have, in_disc, S, rpx, knee)
     assert not sky[hill].any() and not sky[in_disc & ~far].any()
     assert sky[far & ~hill].mean() > 0.999
-    assert "surfState.drive !== !!(sm.drive && sm.whole)" in (__import__("pathlib").Path(SM.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    assert "surfState.drive !== !!(sm.drive && sm.whole)" in (__import__("pathlib").Path(SM.__file__).resolve().parents[1] / "viewer" / "index.html").read_text(encoding="utf-8")
 
 
 def test_zcam_companions_follow_their_navcam_station_and_block_cameras(tmp_path, monkeypatch):
@@ -529,6 +529,36 @@ def test_fusion_is_reused_after_a_restart(tmp_path):
     assert not cli._fusion_cached(ws, {}, {}, 0, a)                 # not the file that fusion wrote
 
 
+
+def test_fusion_key_is_the_dense_code_and_0p99p52_clouds_are_kept(tmp_path, monkeypatch):
+    """1.0 (the 0.99.52 note: "The fusion is redone on every code change, because the record carries code_key ...
+    limit the fusion's key to sfm/dense.py"): a change to the station steps' code does not fuse again; the clouds of
+    0.99.51 to 0.99.53 (their record holds the station code key) are this code's while sfm/dense.py is the same; another
+    dense.py fuses again."""
+    import json
+    from types import SimpleNamespace as NS
+    from rpp import cli
+    from rpp.ibr import single_sites as SS
+    from rpp.sfm.dense import STEREO_RECORD
+    ws = tmp_path / "dense_block_FN"
+    (ws / "stereo").mkdir(parents=True)
+    (ws / "stereo" / STEREO_RECORD).write_text('{"options": {}}')
+    (ws / "fused.ply").write_bytes(b"ply\n" + b"0" * 100)
+    a = NS(keep_rover=False)
+    cli._fusion_record(ws, {}, {}, 0, a, write=True)
+    rec = json.loads((ws / cli.FUSION_RECORD).read_text())
+    assert rec["code"] == cli.fusion_code() != SS.code_key()
+    assert cli.fusion_code() == cli.DENSE_CODE_0P99                  # 1.0 has 0.99.52's sfm/dense.py
+    for old in cli.FUSION_CODES_0P99:                                # a record written by 0.99.51 or 0.99.52
+        (ws / cli.FUSION_RECORD).write_text(json.dumps(dict(rec, code=old)))
+        assert cli._fusion_cached(ws, {}, {}, 0, a), old
+    (ws / cli.FUSION_RECORD).write_text(json.dumps(dict(rec, code="ffffffffffffffff")))
+    assert not cli._fusion_cached(ws, {}, {}, 0, a)                 # another code
+    (ws / cli.FUSION_RECORD).write_text(json.dumps(dict(rec, code=cli.FUSION_CODES_0P99[-1])))
+    monkeypatch.setattr(cli, "fusion_code", lambda: "0123456789abcdef")
+    assert not cli._fusion_cached(ws, {}, {}, 0, a)                 # 0.99.52's cloud, but dense.py changed since
+
+
 def test_freeze3_root_block_order_busy_and_recolor(tmp_path):
     """0.99.50 (Christian, 20 Nov 2026: "always runs rockytop first and then goes to the end of the mission and runs in
     reverse chronological order skipping any that has ran on v0p99 or newer"; "Add a flag for --recolor"; "run
@@ -662,3 +692,78 @@ def test_two_runs_take_turns_by_station_locks(tmp_path):
     lk.release()
     SS.run_all(runs, tmp_path)
     assert SS.BUSY_SKIPPED == []
+
+
+def _box_mesh(side=0.3, n=6):
+    """A closed box of side ``side`` m, each face an n x n grid of quads (two triangles each), outward normals; the
+    vertices repeated per face (as the rover model repeats them along its hard edges)."""
+    V, F, N = [], [], []
+    h = side / 2.0
+    for axis in range(3):
+        for sign in (-1.0, 1.0):
+            u, v = [(axis + 1) % 3, (axis + 2) % 3]
+            base = len(V)
+            for i in range(n + 1):
+                for j in range(n + 1):
+                    p = np.zeros(3)
+                    p[axis] = sign * h
+                    p[u] = -h + side * i / n
+                    p[v] = -h + side * j / n
+                    V.append(p)
+            for i in range(n):
+                for j in range(n):
+                    a = base + i * (n + 1) + j
+                    b, c, d = a + 1, a + (n + 1), a + (n + 1) + 1
+                    F += [[a, c, b], [b, c, d]]
+                    nn = np.zeros(3)
+                    nn[axis] = sign
+                    N += [nn, nn]
+    return np.asarray(V), np.asarray(F), np.asarray(N)
+
+
+def test_rover_texture_charts_are_whole_faces_and_map_texels_to_their_triangles():
+    """1.0 (Christian, 20 Nov 2026: "the mesh_rover texture should also have larger texture islands if possible"):
+    the triangles of a flat face share one chart; a chart's corners map back to the triangles' vertices exactly; every
+    chart texel's point lies on its triangle's plane; the charts do not overlap."""
+    from rpp.ibr import station_mesh as SM
+    V, F, N = _box_mesh()
+    areas = np.full(len(F), 0.5 * (0.3 / 6) ** 2)
+    cells = SM.layout_charts(V, F, N, areas, 256, reserved=[(0, 0, 4, 64)])
+    assert cells["charts"] == 6 and len(cells["pos"]) == 6                  # one per face (432 triangles)
+    assert len(np.unique(cells["chart_of"])) == 6
+    S = 256
+    for t in range(len(F)):                                                  # the corners map back exactly
+        q = np.concatenate([cells["uv"][t] * S, np.ones((3, 1))], axis=1)
+        assert np.allclose(q @ cells["tri_A"][t].T, V[F[t]], atol=1e-9)
+    tm = cells["tri_map"]
+    yy, xx = np.nonzero(tm >= 0)
+    tt = tm[yy, xx]
+    X = np.einsum("nij,nj->ni", cells["tri_A"][tt], np.stack([xx + 0.5, yy + 0.5, np.ones(len(xx))], 1))
+    d = ((X - V[F[tt, 0]]) * N[tt]).sum(1)
+    assert np.abs(d).max() < 1e-9                                            # on the triangle's own plane
+    assert not (tm[0:64, 0:4] >= 0).any()                                    # the gray strip is left free
+    occ = np.zeros((S, S), int)
+    for (x, y), (w, h) in zip(cells["pos"], cells["wh"]):
+        occ[y:y + h, x:x + w] += 1
+    assert occ.max() == 1                                                    # the charts' rectangles do not overlap
+    one = SM.layout_charts(V, F, N, areas, 256, max_deg=0.0)                 # the angle decides: within a face, 0 deg still joins
+    assert one["charts"] == 6
+    each = SM.layout_charts(V, F, N, areas, 256, max_m=0.01)                 # charts no larger than a triangle: one each
+    assert each["charts"] == len(F)
+    assert cells["texel_m"] < each["texel_m"]                                # fewer gutters: finer texels in the same square
+
+
+def test_a_chart_that_folds_over_itself_is_split():
+    from rpp.ibr import station_mesh as SM
+    V = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0.2, 0.2, 0.05], [-1, 0.5, 0]], float)
+    F = np.array([[0, 1, 2], [1, 2, 3], [0, 2, 4]])
+    n_b = np.cross(V[2] - V[1], V[3] - V[1])
+    n_b = n_b / np.linalg.norm(n_b) * np.sign(n_b[2])
+    N = np.array([[0, 0, 1.0], n_b, [0, 0, 1.0]])
+    ch = SM.triangle_charts(V, F, N, np.array([0.5, 0.3, 0.5]), max_m=5.0)
+    assert len(ch) == 3                                                      # the fold over the first triangle: split
+    V2 = V.copy()
+    V2[3] = [1.0, 1.0, 0.05]                                                 # the same, not folded: one chart
+    n2 = np.cross(V2[2] - V2[1], V2[3] - V2[1])
+    N2 = np.array([[0, 0, 1.0], n2 / np.linalg.norm(n2) * np.sign(n2[2]), [0, 0, 1.0]])
+    assert len(SM.triangle_charts(V2, F, N2, np.array([0.5, 0.3, 0.5]), max_m=5.0)) == 1

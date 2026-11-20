@@ -116,7 +116,7 @@ def card(repo: str) -> str:
     from .. import __version__
     return f"""---
 license: {licence()}
-pretty_name: Rover Photogrammetry Viewer (RPV) panoramas
+pretty_name: Rover Photogrammetry Viewer (RPV) station products
 tags:
 - mars
 - perseverance
@@ -126,18 +126,21 @@ tags:
 - photogrammetry
 ---
 
-# Rover Photogrammetry Viewer (RPV) panoramas
+# Rover Photogrammetry Viewer (RPV) station products
 
-Omnidirectional stereo (ODS) panoramas of Mars 2020 Perseverance rover stations, made with the Rover Photogrammetry
-Pipeline (RPP, https://github.com/ctate7163/rpp) by Christian Tate (Malin Space Science Systems).
+Stereo 360 degree panoramas and 3D station models of Mars 2020 Perseverance rover stations, made with the Rover
+Photogrammetry Pipeline (RPP, https://github.com/ctate7163/rpp) by Christian Tate (Malin Space Science Systems).
 They are shown by the Rover Photogrammetry Viewer: {PAGE_ORIGIN}/rpv/
+
+The products are experimental: see https://ctate7163.github.io/rpp/status/ for what is validated.
 
 **Image credit:** NASA/JPL-Caltech/MSSS (Navcam); NASA/JPL-Caltech/MSSS/ASU (Mastcam-Z).
 
 ## Layout
 
 - `<station>/viewer/`: what the viewer loads - the stereo JPEGs (`*_360_3DTD.jpg`, the left eye on top, 8192 px),
-  the enhanced, normal-map and distance-map views, the nadir mark and the rover model (`*.glb`).
+  the enhanced, normal-map and distance-map views, the nadir mark, and the 3D models of the terrain and the
+  rover (`*.glb`).
 - `<station>/record/` (and `record/with_rover/`): the 16-bit stacked panoramas (`*_360_3DTD_16.png`, linear),
   the 16-bit depth from the pivot (`*_ods_centre_depth_16.png`), `ods.json` and `station.json` (how each was made),
   the provenance picture and the tone levels.

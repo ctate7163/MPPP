@@ -600,4 +600,3 @@ class RPPImage:
 
 
 
-MPPPImage = RPPImage    # the name before 0.99 (old scripts and pickles: mppp.image.MPPPImage)

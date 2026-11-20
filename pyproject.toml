@@ -3,19 +3,20 @@ requires = ["setuptools>=77.0.3"]          # 77: the SPDX license expression and
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rover-photogrammetry"   # 0.99.46 (rover-photogrammetry-pipeline from 0.99.0): the import name is rpp (formerly mppp); "rpp" on PyPI is another project
+name = "rover-photogrammetry"   # the import name and the command are rpp; "rpp" on PyPI is another project
 dynamic = ["version"]      # from rpp.__version__ (the single source)
-description = "Rover Photogrammetry Pipeline and Viewer (RPP, RPV; formerly MPPP): Mars rover PDS images to COLMAP and Metashape, with rover masks, camera models, pose priors and stereo panoramas"
+description = "Mars rover PDS images to true-scale, multi-station 3D: masking, camera models and bundle adjustment for COLMAP, Metashape and Nerfstudio"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Christian Tate", email = "ctate7163@gmail.com" }]
 maintainers = [{ name = "Christian Tate", email = "ctate7163@gmail.com" }]
-keywords = ["Mars 2020", "Perseverance", "photogrammetry", "structure from motion", "COLMAP", "Metashape",
-            "Navcam", "Mastcam-Z", "Hazcam", "PDS", "camera calibration"]
+keywords = ["Mars", "Mars 2020", "Perseverance", "Curiosity", "rover", "photogrammetry", "structure from motion",
+            "bundle adjustment", "camera calibration", "COLMAP", "Metashape", "Planetary Data System", "stereo",
+            "virtual reality", "Navcam", "Mastcam-Z", "Hazcam"]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Science/Research",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
@@ -33,33 +34,36 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-mask    = ["torch", "timm", "safetensors"]                                   # mask inference (the model comes from Hugging Face)
-sfm     = ["pycolmap>=4.2,<4.3", "pyceres>=2.6,<2.7", "torch", "kornia>=0.7"]   # COLMAP pipeline; kornia: SIFT + LightGlue matching
-error   = ["matplotlib", "pillow"]                                            # the error model (under development)
-plots   = ["matplotlib", "pillow"]                                            # health and camera plots
-maps    = ["matplotlib", "scipy", "pillow", "adjustText", "rasterio", "pyproj"]   # the M20 site-map figures (make_maps.bat)
+# What a user installs: pip install "rover-photogrammetry[pipeline]"
+mask     = ["torch", "timm", "safetensors"]                                    # rover masks (the model comes from Hugging Face)
+sfm      = ["pycolmap>=4.2,<4.3", "pyceres>=2.6,<2.7", "torch", "kornia>=0.7"]  # the alignment; kornia: SIFT + LightGlue matching
+plots    = ["matplotlib", "pillow"]                                            # health and camera plots
+pipeline = ["rover-photogrammetry[mask,sfm,plots]"]                            # PDS products to an aligned block: rpp run
+stations = ["open3d>=0.20", "huggingface_hub"]                                 # station products and the viewer: rpp mesh / depthmaps / ods / single-sites
+ibr      = ["rover-photogrammetry[stations]"]                                  # the name of "stations" before 1.0
 notebooks = ["jupyterlab", "matplotlib", "pillow"]
-rover   = ["spiceypy>=6"]                                                     # the rover kernels (studies/rover_frame)
-release = ["huggingface_hub"]                                                 # rpp_studies.mask_training.release_mask_model
-ibr     = ["open3d>=0.20", "huggingface_hub"]                                  # 0.96: rpp mesh / depthmaps / ods (rpp.ibr); 0.99.3: the upload
-docs    = ["mkdocs>=1.6.1,<2", "mkdocs-material>=9.7", "mkdocstrings[python]>=1.0"]     # the documentation site (mkdocs.yml)
-dev     = ["pytest", "flake8", "nbformat", "pillow"]
-all     = ["rover-photogrammetry[mask,sfm,error,plots,maps,notebooks,rover,ibr,dev]"]
+# What the research studies of a source checkout need (src/rpp_studies; not in the wheel)
+error    = ["matplotlib", "pillow"]                                            # the reconstruction-error study
+maps     = ["matplotlib", "scipy", "pillow", "adjustText", "rasterio", "pyproj"]   # the Mars 2020 site-map figures
+rover    = ["spiceypy>=6"]                                                     # the rover-frame study (SPICE kernels)
+release  = ["huggingface_hub"]                                                 # releasing a mask model
+docs     = ["mkdocs>=1.6.1,<2", "mkdocs-material>=9.7", "mkdocstrings[python]>=1.0"]   # the documentation site (mkdocs.yml)
+dev      = ["pytest", "flake8", "nbformat", "pillow"]
+all      = ["rover-photogrammetry[pipeline,stations,notebooks,error,maps,rover,dev]"]
 
 [tool.setuptools.dynamic]
 version = { attr = "rpp.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["rpp*", "mppp*"]     # mppp, mppp_studies: the names before 0.99 (alias packages)
+include = ["rpp", "rpp.*"]      # the wheel is the pipeline; the studies (src/rpp_studies) come with a source checkout
 
 [tool.setuptools.package-data]
-rpp = ["data/*.json", "data/*.csv", "data/*.txt", "data/cmods/*.json", "data/cmods/*.md", "data/rover/*.npz", "data/rover/*.md"]
-rpp_studies = ["validation/*.json", "calibration/data/*.json"]
+rpp = ["data/*.json", "data/*.csv", "data/*.txt", "data/cmods/*.json", "data/cmods/*.md", "data/rover/*.npz", "data/rover/*.md",
+       "viewer/*.html", "viewer/*.md", "viewer/vendor/*"]
 
 [project.scripts]
 rpp = "rpp.cli:main"
-mppp = "mppp:cli_main"          # 0.99 only: the command before the rename, with a note
 
 [project.urls]
 Homepage = "https://github.com/ctate7163/rpp"
@@ -73,5 +77,6 @@ Changelog = "https://github.com/ctate7163/rpp/blob/main/CHANGELOG.md"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
-markers = ["slow: tests that take more than a few seconds (error-model physics, mask training)"]
+markers = ["slow: tests that take more than a few seconds (error-model physics, mask training)",
+           "studies: tests of the research studies (src/rpp_studies; a source checkout)"]
 tmp_path_retention_policy = "failed"     # a full run left ~5.5 GB of temporary folders

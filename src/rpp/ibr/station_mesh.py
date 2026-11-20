@@ -27,8 +27,9 @@ held within 1 m of the pivot.
 
 * a triangle is textured when it can be seen from somewhere within ``VIEW_RADIUS_M`` of the pivot (from the pivot and
   from ``VIEWPOINTS`` points on spheres of 0.5 and 1 m about it, those inside the model left out) - the space the
-  viewer may move in - and the Navcam frames (``ROVER_FAMILIES``) color it; it gets a cell of the ``ROVER_TEXTURE_PX``
-  texture, colored as the terrain's cells are.  In a Mastcam-Z run (0.99.27) the Mastcam-Z frames color it first and
+  viewer may move in - and the Navcam frames (``ROVER_FAMILIES``) color it; it gets a place in a chart of the
+  ``ROVER_TEXTURE_PX`` texture (1.0: connected triangles that face about the same way share one, :func:`layout_charts`;
+  before, every triangle had a cell of its own), colored as the terrain's cells are.  In a Mastcam-Z run (0.99.27) the Mastcam-Z frames color it first and
   the Navcam frames where they do not (:func:`rover_families`); the terrain of such a run is the same: the Mastcam-Z
   frames are its regular sources, the Navcam and front Hazcam frames fill in as the Mastcam-Z frames' weight goes out;
 * the other triangles are the rover gray of the panoramas, shaded a little by their slope.
@@ -82,6 +83,14 @@ ROVER_OFFSET_M = 0.005          # the measured one); the rover model is exact
 INSIDE_HITS = 5                 # a viewpoint whose rays meet the rover model in this many of six directions is inside it
 JPEG_QUALITY = 90
 GRAY_STRIP = (4, 64)            # the rover gray's cell: width, height (the shade by slope down the strip)
+# 1.0 (Christian, 20 Nov 2026: "the mesh_rover texture should also have larger texture islands if possible"): the rover's
+# triangles share charts (:func:`triangle_charts`) in place of a cell each - fewer seams and less of the texture spent
+# on gutters
+CHART_MAX_DEG = 35.0            # a chart's triangles face within this angle of its first (largest) triangle
+CHART_MAX_M = 0.6               # a chart's longest side, in its plane
+MAX_CHART_PX = 1024             # a chart's longest side in texels; a larger chart is given coarser texels
+WELD_M = 1e-4                   # vertices nearer than this are one (the model repeats them along its hard edges)
+CHART_OVERLAP_TOL = 0.03        # a chart whose triangles cover more than its outline by this share folds over itself
 SUFFIX = "station_mesh.glb"
 PART = {"terrain": "station_mesh_terrain", "rover": "station_mesh_rover", "scape": "station_scape_terrain"}
 # 0.99.32 (Christian, 18 Nov 2026: "expanding the mesh to the horizon with a low poly mesh ... continuous from below the
@@ -331,7 +340,16 @@ def layout_cells(lay: Dict[str, np.ndarray], areas: np.ndarray, size: int, disc:
 
 
 def band_cells(cells: Dict[str, Any], normals: np.ndarray, r0: int, r1: int) -> Dict[str, np.ndarray]:
-    """The cells that meet the rows [r0, r1): {"rect" (k, 4) x, y, w, h, "A", "n"}."""
+    """The cells that meet the rows [r0, r1): {"rect" (k, 4) x, y, w, h, "A", "n"}.  1.0: of a chart layout
+    (:func:`layout_charts`, "tri_map"), the band's texels by triangle instead: {"tmap" (r1 - r0, S) the band's own
+    triangle numbers (-1: none), "tA" (k, 3, 3), "tn" (k, 3)}."""
+    if cells.get("tri_map") is not None:
+        rows = np.asarray(cells["tri_map"][r0:r1])
+        ids = np.unique(rows[rows >= 0])
+        tmap = np.full(rows.shape, -1, np.int32)
+        tmap[rows >= 0] = np.searchsorted(ids, rows[rows >= 0])
+        return {"rect": np.zeros((0, 4), np.int64), "A": np.zeros((0, 3, 3)), "n": np.zeros((0, 3)), "tmap": tmap,
+                "tA": np.asarray(cells["tri_A"])[ids], "tn": np.asarray(normals)[ids]}
     if not len(cells["pos"]):
         return {"rect": np.zeros((0, 4), np.int64), "A": np.zeros((0, 3, 3)), "n": np.zeros((0, 3))}
     y, h = cells["pos"][:, 1], cells["wh"][:, 1]
@@ -367,6 +385,16 @@ def texture_rows(scene, sources: Sequence[Any], args: Dict[str, Any], r0: int, r
         flat.append((yy.ravel() - r0) * S + xx.ravel())
         O.append(X + off * np.asarray(n))
         D.append(np.broadcast_to(-np.asarray(n, float), X.shape))
+    tm = bc.get("tmap")
+    if tm is not None and len(bc.get("tA", ())):                # 1.0: a chart texel's point on its own triangle's plane
+        yy, xx = np.nonzero(tm >= 0)
+        tt = tm[yy, xx]
+        q = np.stack([xx + 0.5, yy + r0 + 0.5, np.ones(len(xx))], axis=1)
+        X = np.einsum("nij,nj->ni", np.asarray(bc["tA"])[tt], q)
+        nn = np.asarray(bc["tn"], float)[tt]
+        flat.append(yy * S + xx)
+        O.append(X + off * nn)
+        D.append(-nn)
     linear = bool(args.get("linear"))
     band: Dict[str, Any] = {"rgb": np.zeros((nrow * S, 3), np.float32 if linear else np.uint8),
                             "source": np.full(nrow * S, -1, np.int16), "label": np.zeros(nrow * S, np.uint8),
@@ -497,6 +525,212 @@ def fill_cells(rgb: np.ndarray, have: np.ndarray, cells: Dict[str, Any], default
         blk = rgb[sl]
         blk[~hv] = col
         n += int((~hv).sum())
+    return n
+
+
+# ------------------------------------------------------------------------------------------- charts (1.0)
+def _adjacency(F: np.ndarray, V: np.ndarray, weld_m: float = WELD_M) -> List[List[int]]:
+    """For each triangle, the triangles that share an edge with it (vertices within ``weld_m`` are one)."""
+    q = np.round(np.asarray(V, float) / weld_m).astype(np.int64)
+    _, wid = np.unique(q, axis=0, return_inverse=True)
+    Fw = wid.reshape(-1)[F]
+    e = np.concatenate([Fw[:, [0, 1]], Fw[:, [1, 2]], Fw[:, [2, 0]]])
+    e.sort(axis=1)
+    tri = np.tile(np.arange(len(F)), 3)
+    key = e[:, 0] * (int(Fw.max()) + 1) + e[:, 1]
+    o = np.argsort(key, kind="stable")
+    key, tri = key[o], tri[o]
+    adj: List[List[int]] = [[] for _ in range(len(F))]
+    cut = np.flatnonzero(np.diff(key)) + 1
+    for grp in np.split(tri, cut):
+        if 2 <= len(grp) <= 4:                                  # an edge of two (a seam of a few, at most)
+            for i in grp:
+                adj[int(i)].extend(int(j) for j in grp if j != i)
+    return adj
+
+
+def _plane_basis(n: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    a = np.asarray(n, float) / max(float(np.linalg.norm(n)), 1e-15)
+    h = np.array([1.0, 0.0, 0.0]) if abs(a[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
+    u = np.cross(a, h)
+    u /= np.linalg.norm(u)
+    return u, np.cross(a, u)
+
+
+def triangle_charts(V: np.ndarray, F: np.ndarray, normals: np.ndarray, areas: np.ndarray, max_deg: float = CHART_MAX_DEG,
+                    max_m: float = CHART_MAX_M) -> List[Dict[str, Any]]:
+    """Charts of triangles: grown from the largest triangle not yet in one, over shared edges, while a triangle faces
+    within ``max_deg`` of the first one's ``normals`` (the side that is seen) and the chart, projected along that
+    normal, stays within ``max_m``.  Each chart: {"tris" (list), "axis" (3,), "u", "v" (its plane's axes, the longer
+    side along u)}.  A chart that folds over itself in projection (its triangles cover more than its outline) is
+    split into one chart per triangle."""
+    from collections import deque
+    import cv2
+    m = len(F)
+    if m == 0:
+        return []
+    VF = np.asarray(V, float)[np.asarray(F)]                     # (m, 3, 3)
+    nk = np.asarray(normals, float)
+    adj = _adjacency(np.asarray(F), V)
+    cosmax = float(np.cos(np.radians(max_deg)))
+    owner = np.full(m, -1, np.int64)
+    charts: List[Dict[str, Any]] = []
+    for s in np.argsort(-np.asarray(areas), kind="stable"):
+        s = int(s)
+        if owner[s] >= 0:
+            continue
+        ax = nk[s] / max(float(np.linalg.norm(nk[s])), 1e-15)
+        u, v = _plane_basis(ax)
+        P = VF[s]
+        lo = np.array([float((P @ u).min()), float((P @ v).min())])
+        hi = np.array([float((P @ u).max()), float((P @ v).max())])
+        cid = len(charts)
+        owner[s] = cid
+        tris = [s]
+        todo = deque([s])
+        while todo:
+            t_ = todo.popleft()
+            for nb in adj[t_]:
+                if owner[nb] >= 0 or float(nk[nb] @ ax) < cosmax:
+                    continue
+                Q = VF[nb]
+                qu, qv = Q @ u, Q @ v
+                nlo = np.minimum(lo, (qu.min(), qv.min()))
+                nhi = np.maximum(hi, (qu.max(), qv.max()))
+                if float((nhi - nlo).max()) > max_m:
+                    continue
+                lo, hi = nlo, nhi
+                owner[nb] = cid
+                tris.append(nb)
+                todo.append(nb)
+        charts.append({"tris": tris, "axis": ax, "u": u, "v": v})
+    out: List[Dict[str, Any]] = []
+    for c in charts:
+        tris = np.asarray(c["tris"])
+        P2 = np.stack([VF[tris] @ c["u"], VF[tris] @ c["v"]], axis=-1)        # (k, 3, 2)
+        if len(tris) >= 3:                                                   # the longer side along u
+            X = P2.reshape(-1, 2) - P2.reshape(-1, 2).mean(axis=0)
+            w_, vec = np.linalg.eigh(X.T @ X)
+            d = vec[:, int(np.argmax(w_))]
+            u2 = d[0] * c["u"] + d[1] * c["v"]
+            c["u"], c["v"] = u2, np.cross(c["axis"], u2)
+            P2 = np.stack([VF[tris] @ c["u"], VF[tris] @ c["v"]], axis=-1)
+            lo2 = P2.reshape(-1, 2).min(axis=0)
+            ext = float((P2.reshape(-1, 2).max(axis=0) - lo2).max())
+            px = max(ext / 256.0, 1e-6)
+            sz = (np.ceil((P2.reshape(-1, 2).max(axis=0) - lo2) / px).astype(int) + 3)
+            img = np.zeros((int(sz[1]), int(sz[0])), np.uint8)
+            pts = [np.round(((p - lo2) / px + 1.0) * 16).astype(np.int32) for p in P2]
+            cv2.fillPoly(img, pts, 1, shift=4)
+            e1, e2 = P2[:, 1] - P2[:, 0], P2[:, 2] - P2[:, 0]
+            proj = float(np.abs(e1[:, 0] * e2[:, 1] - e1[:, 1] * e2[:, 0]).sum() / 2.0) / (px * px)
+            if proj > (1.0 + CHART_OVERLAP_TOL) * float(img.sum()) + 4.0:       # folds over itself: one chart per triangle
+                for t_ in tris:
+                    u_, v_ = _plane_basis(nk[t_])
+                    out.append({"tris": [int(t_)], "axis": nk[t_] / max(float(np.linalg.norm(nk[t_])), 1e-15), "u": u_, "v": v_})
+                continue
+        out.append(c)
+    return out
+
+
+def layout_charts(V: np.ndarray, F: np.ndarray, normals: np.ndarray, areas: np.ndarray, size: int,
+                  reserved: Sequence[Tuple[int, int, int, int]] = (), fill: float = 0.8,
+                  max_deg: float = CHART_MAX_DEG, max_m: float = CHART_MAX_M) -> Dict[str, Any]:
+    """The triangles of (V, F) in charts (:func:`triangle_charts`), packed into a ``size`` square at the finest texel
+    size that fits: {"pos", "wh" (the charts' rectangles), "s" (texel m per chart), "texel_m", "uv" (m, 3, 2),
+    "tri_A" (m, 3, 3: a texel center (x + 0.5, y + 0.5, 1) -> the point on the triangle's own plane under it),
+    "tri_map" (size, size) int32 (the triangle each texel of a chart's rectangle takes its point from: the one it is in,
+    else the nearest; -1 outside the charts), "charts" (the number), "chart_of" (m,)}."""
+    import cv2
+    m = len(F)
+    empty = {"pos": np.zeros((0, 2), np.int64), "wh": np.zeros((0, 2), np.int64), "s": np.zeros(0), "texel_m": None,
+             "uv": np.zeros((0, 3, 2)), "tri_A": np.zeros((0, 3, 3)), "tri_map": None, "charts": 0,
+             "chart_of": np.zeros(0, np.int64), "A": np.zeros((0, 3, 3))}
+    if m == 0:
+        return empty
+    VF = np.asarray(V, float)[np.asarray(F)]
+    nk = np.asarray(normals, float)
+    charts = triangle_charts(V, F, nk, areas, max_deg, max_m)
+    P2, lo, ext = [], [], []
+    for c in charts:
+        p = np.stack([VF[c["tris"]] @ c["u"], VF[c["tris"]] @ c["v"]], axis=-1)
+        P2.append(p)
+        lo.append(p.reshape(-1, 2).min(axis=0))
+        ext.append(p.reshape(-1, 2).max(axis=0) - lo[-1])
+    lo, ext = np.asarray(lo), np.asarray(ext)
+    g = GUTTER_PX
+    free = size * size - sum(r[2] * r[3] for r in reserved)
+    t = float(np.sqrt(max(1.3 * float((ext[:, 0] * ext[:, 1]).sum()), 1e-12) / max(fill * free, 1.0)))
+    for _ in range(80):
+        s = np.full(len(charts), t)
+        big = ext.max(axis=1) / s > (MAX_CHART_PX - 2 * g)
+        s[big] = ext[big].max(axis=1) / (MAX_CHART_PX - 2 * g)
+        wh = np.ceil(ext / s[:, None]).astype(np.int64) + 1 + 2 * g
+        pos = shelf_pack(wh, size, None, reserved)
+        if pos is not None:
+            break
+        t *= 1.08
+    else:
+        raise RuntimeError("station mesh: the charts do not fit the texture")
+    uv = np.zeros((m, 3, 2))
+    tri_A = np.zeros((m, 3, 3))
+    chart_of = np.zeros(m, np.int64)
+    tri_map = np.full((size, size), -1, np.int32)
+    for ci, c in enumerate(charts):
+        tris = np.asarray(c["tris"])
+        chart_of[tris] = ci
+        ox = float(pos[ci, 0]) + g - lo[ci, 0] / s[ci]
+        oy = float(pos[ci, 1]) + g - lo[ci, 1] / s[ci]
+        px = ox + P2[ci][..., 0] / s[ci]
+        py = oy + P2[ci][..., 1] / s[ci]
+        uv[tris] = np.stack([px / size, py / size], axis=-1)
+        a, u, v = c["axis"], c["u"], c["v"]
+        n = nk[tris] / np.maximum(np.linalg.norm(nk[tris], axis=1), 1e-15)[:, None]
+        an = np.maximum(n @ a, 1e-6)
+        k0 = (VF[tris, 0] * n).sum(1) / an
+        ku, kv = (n @ u) / an, (n @ v) / an
+        Eu = u[None, :] - a[None, :] * ku[:, None]
+        Ev = v[None, :] - a[None, :] * kv[:, None]
+        tri_A[tris, :, 0] = s[ci] * Eu
+        tri_A[tris, :, 1] = s[ci] * Ev
+        tri_A[tris, :, 2] = -ox * s[ci] * Eu - oy * s[ci] * Ev + a[None, :] * k0[:, None]
+        x0, y0 = int(pos[ci, 0]), int(pos[ci, 1])
+        w, h = int(wh[ci, 0]), int(wh[ci, 1])
+        sub = np.full((h, w), -1.0, np.float32)
+        for j, tt in enumerate(tris):                            # cv2 pixel centers are at whole numbers
+            pts = np.stack([px[j] - x0 - 0.5, py[j] - y0 - 0.5], axis=1)
+            cv2.fillPoly(sub, [np.round(pts * 16).astype(np.int32)], float(tt), shift=4)
+        empty_ = sub < 0
+        if empty_.all():                                         # a sliver smaller than a texel: its first corner's
+            cx = int(np.clip(np.floor(px[0, 0] - x0), 0, w - 1))  # texel stands for it
+            cy = int(np.clip(np.floor(py[0, 0] - y0), 0, h - 1))
+            sub[cy, cx] = float(tris[0])
+            empty_ = sub < 0
+        if empty_.any():                                         # the gutter and the gaps: the nearest triangle's
+            _, lab = cv2.distanceTransformWithLabels(empty_.astype(np.uint8), cv2.DIST_L2, 3, labelType=cv2.DIST_LABEL_PIXEL)
+            lut = np.full(int(lab.max()) + 1, -1.0, np.float32)
+            lut[lab[~empty_]] = sub[~empty_]
+            sub = lut[lab]
+        tri_map[y0:y0 + h, x0:x0 + w] = sub.astype(np.int32)
+    return {"pos": pos, "wh": wh, "s": s, "texel_m": float(t), "uv": uv, "tri_A": tri_A, "tri_map": tri_map,
+            "charts": len(charts), "chart_of": chart_of, "A": np.zeros((0, 3, 3))}
+
+
+def fill_charts(rgb: np.ndarray, have: np.ndarray, cells: Dict[str, Any], default: Sequence[float]) -> int:
+    """A chart's texels no frame colored are filled from its colored ones (pull-push within the chart's rectangle;
+    ``default`` where it has none)."""
+    n = 0
+    for (x, y), (w, h) in zip(cells["pos"], cells["wh"]):
+        sl = (slice(int(y), int(y + h)), slice(int(x), int(x + w)))
+        hv = have[sl]
+        if hv.all():
+            continue
+        blk = rgb[sl]
+        if hv.any():
+            n += int(push_pull(blk, hv, np.ones(hv.shape, bool)).sum())
+        else:
+            blk[...] = np.asarray(default, np.float32)
+            n += int(hv.size)
     return n
 
 
@@ -823,8 +1057,7 @@ def rover_part(scene, sources, station, pool=None, size: int = ROVER_TEXTURE_PX,
     k = np.flatnonzero(seen)
     nk = nrm[k] * np.where(side[k] < 0, -1.0, 1.0)[:, None]    # the side that is seen
     gw, gh = GRAY_STRIP
-    lay = triangle_layout(V, F[k], nk)
-    cells = layout_cells(lay, area[k], size, reserved=[(0, 0, gw, gh)])
+    cells = layout_charts(V, F[k], nk, area[k], size, reserved=[(0, 0, gw, gh)])      # 1.0: charts, not a cell each
     args = {"size": size, "linear": linear, "up": tuple(up), "offset_m": ROVER_OFFSET_M, "families": families,
             "all_cells": cells, "normals": nk}
     tex = render_texture(scene, sources, args, pool, rows_per_chunk)
@@ -837,7 +1070,7 @@ def rover_part(scene, sources, station, pool=None, size: int = ROVER_TEXTURE_PX,
     base = rgb[colored & have]
     g0 = ROVER_GRAY_REL * float(np.mean(base)) if len(base) else ROVER_GRAY_REL * 128.0
     gray = np.full(3, g0, np.float32)
-    cell_filled = fill_cells(rgb, have, cells, gray)
+    cell_filled = fill_charts(rgb, have, cells, gray)
     shade = 1.0 - GRAY_SHADE * (1.0 - (np.arange(gh) + 0.5) / gh)   # row j: |n . up| = (j + 0.5) / gh
     rgb[0:gh, 0:gw] = (gray[None, None, :] * shade[:, None, None])
     un = np.flatnonzero(~seen)
@@ -853,10 +1086,12 @@ def rover_part(scene, sources, station, pool=None, size: int = ROVER_TEXTURE_PX,
            "texel_mm": None if cells["texel_m"] is None else round(1000 * cells["texel_m"], 2),
            "texels_colored": round(float((colored & have).sum() / max(colored.sum(), 1)), 4),
            "cell_texels_filled": int(cell_filled), "gray_rgb": [round(float(x), 1) for x in gray],
+           "charts": int(cells["charts"]), "triangles_per_chart": round(len(k) / max(int(cells["charts"]), 1), 2),
+           "chart_max_deg": CHART_MAX_DEG,
            "seconds": round(time.time() - t0, 1)}
-    log.info("station mesh: rover %d of %d triangles textured (%.0f %% of the area; %d viewpoints within %.1f m), texel "
-             "%s mm, %.0f %% of the texels colored by the frames (%.0f s)", len(k), len(F), 100 * rec["textured_area_share"],
-             len(good), view_radius_m, rec["texel_mm"], 100 * rec["texels_colored"], rec["seconds"])
+    log.info("station mesh: rover %d of %d triangles textured (%.0f %% of the area; %d viewpoints within %.1f m) in %d charts, "
+             "texel %s mm, %.0f %% of the texels colored by the frames (%.0f s)", len(k), len(F), 100 * rec["textured_area_share"],
+             len(good), view_radius_m, rec["charts"], rec["texel_mm"], 100 * rec["texels_colored"], rec["seconds"])
     return {"V": Vo, "F": Fo, "uv": UVo, "texture": rgb, "record": rec}
 
 

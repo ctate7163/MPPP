@@ -14,7 +14,7 @@ GitHub release).  ``fetch_model()`` downloads it once into the user cache
 ``config["masking"]["checkpoint"]``:
 
 1. an existing file path -> that file;
-2. a registry name (default ``"rpp_mask_v3"``) -> the released file from
+2. a registry name (default ``"rpp_mask_v5"``) -> the released file from
    Hugging Face (``ctate7163/rpp-mask``), downloaded once into the cache;
 3. a bare file name -> ``checkpoints_dir()/<name>`` (models you train).
 

@@ -372,7 +372,7 @@ def main(argv=None) -> int:
         if bl.is_file():
             import matplotlib
             matplotlib.use("Agg")
-            from rpp_studies.misc.calibration_old.zcam_lines import plot_block_lines
+            from rpp_studies.calibration.zcam_lines import plot_block_lines
             plot_block_lines(json.loads(bl.read_text(encoding="utf-8")), out / f"zcam_focus_lines_vs_temperature_{tag}.png",
                              dpi=a.dpi)
         zj = zd / "zcam_joint.json"                         # 0.95.1: the efl against focus of a joint folder

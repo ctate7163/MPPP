@@ -79,7 +79,7 @@ _DEFAULTS: Dict[str, Any] = {
         "infer_mask": True,
         # a registry name (the released model, downloaded once into the user cache),
         # a checkpoint path, or a file name in checkpoints_dir() - see rpp.mask.hub
-        "checkpoint": "rpp_mask_v3",
+        "checkpoint": "rpp_mask_v5",
         "device": "auto",                             # auto | cpu | cuda
         # null -> values from the checkpoint's model card
         "threshold": None,

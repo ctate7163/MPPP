@@ -455,8 +455,8 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                     argv += ["--tone-levels", str(base / TONE_FILE)]
                     from .ods import ods_prefix          # 0.97.14: the files carry the station's code of the list
                     argv += ["--prefix", ods_prefix(lab, rover=v == "rover")]
-                    from .nadir import block_name        # 0.97.7: the name for the mark at the nadir; 0.97.17: the
-                    nm = mark_name(st)                   # block's name without its size word
+                    nm = mark_name(st)                   # 0.97.7: the name for the mark at the nadir; 0.97.17: the
+                    #                                      block's name without its size word
                     if nm:
                         argv += ["--site-name", str(nm)]
                 if step == "mesh" and block:                 # the block's cloud, not an older one of the station alone
@@ -924,10 +924,10 @@ def install(dest: PathLike) -> Path:
 
 
 def add_parser(sub) -> None:
-    p = sub.add_parser("single-sites", help="0.96: the single-station test sites of rpp/data/single_sites.json - dense, "
+    p = sub.add_parser("single-sites", help="the single-station test sites of rpp/data/single_sites.json - dense, "
                        "mesh, depthmaps, ods, rover masked and shown (rpp.ibr.single_sites)")
     p.add_argument("labels", nargs="*", help="stations of the config (default: all but the experimental ones)")
-    p.add_argument("--all", action="store_true", help="0.99.3: every station of the config, the experimental ones too "
+    p.add_argument("--all", action="store_true", help="every station of the config, the experimental ones too "
                    "(the Mastcam-Z 34 mm station), the last one first")
     p.add_argument("--config", default=None, help="the config file (default rpp/data/single_sites.json)")
     p.add_argument("--root", default=None, help="the blocks' root (default RPP_SCAPES or D:\\rover_blocks)")
@@ -935,43 +935,43 @@ def add_parser(sub) -> None:
     p.add_argument("--steps", nargs="+", default=list(STEPS), choices=STEPS)
     p.add_argument("--variants", nargs="+", default=None, choices=VARIANTS)
     p.add_argument("--width", type=int, default=None, metavar="PX",
-                   help="0.97.0: the panorama's width for this run (default: the config's, else rpp ods' own - 0.99.40: 16384 for "
+                   help="the panorama's width for this run (default: the config's, else rpp ods' own - 0.99.40: 16384 for "
                         "full-resolution Navcam and Mastcam-Z stations, 8192 for binned Navcam; 8192 for 8K) - give "
                         "--out as well to keep the panoramas already made")
     p.add_argument("--squares-only", action="store_true", help="only stack the eye images already there into "
                    "360_3DTD.jpg / .png")
     p.add_argument("--retone", action="store_true", help="only make the 8-bit panoramas and squares again from the "
                    "16-bit ones already there (no rendering)")
-    p.add_argument("--unpublish", nargs="+", default=None, metavar="LABEL", help="0.99.51: take these stations off "
+    p.add_argument("--unpublish", nargs="+", default=None, metavar="LABEL", help="take these stations off "
                    "the viewer page (panos.json; with --upload pushed) - a later run of a station puts it back")
-    p.add_argument("--recolor", action="store_true", help="0.99.50: no meshing, projection or rendering - the color "
+    p.add_argument("--recolor", action="store_true", help="no meshing, projection or rendering - the color "
                    "processing of every made station again from its 16-bit panoramas and textures (8-bit eyes, enhanced "
                    "and color products, mesh textures, color skins, the .glb files), then published and uploaded")
-    p.add_argument("--reverse", action="store_true", help="0.99.50: the latest sol first (after --first)")
-    p.add_argument("--first", nargs="+", default=[], metavar="NAME", help="0.99.50: the stations whose block folder "
+    p.add_argument("--reverse", action="store_true", help="the latest sol first (after --first)")
+    p.add_argument("--first", nargs="+", default=[], metavar="NAME", help="the stations whose block folder "
                    "holds one of these (e.g. rockytop) before all others")
-    p.add_argument("--instance", default=None, help="0.99.50: the name of this run (its own status file "
+    p.add_argument("--instance", default=None, help="the name of this run (its own status file "
                    "single_sites_status_<name>.json; another run's station is left alone while its log is written)")
-    p.add_argument("--skip-done", action="store_true", help="0.99.47: leave out every station whose panoramas a good run "
+    p.add_argument("--skip-done", action="store_true", help="leave out every station whose panoramas a good run "
                    "already made in the output root, with any code version (recolor_rpv.bat gives it; --force wins)")
-    p.add_argument("--force", action="store_true", help="0.97.2: run every step again (default: a mesh, depthmaps or ods "
+    p.add_argument("--force", action="store_true", help="run every step again (default: a mesh, depthmaps or ods "
                    "step whose command, code, cloud and upstream steps are unchanged since its last good run is skipped)")
     p.add_argument("--publish", metavar="DIR", default=None,
-                   help="0.97.3: after the run, the stations' stereo JPEGs into DIR/panos and DIR/panos.json for the web "
-                        "viewer (docs/ods of the repository; the page is copied into DIR when it is another folder)")
+                   help="after the run, the stations' stereo JPEGs into DIR/panos and DIR/panos.json for the web "
+                        "viewer (the page, rpp.viewer, is copied into DIR)")
     p.add_argument("--publish-only", action="store_true", help="with --publish or --upload: no steps, publish what --out holds")
     p.add_argument("--no-upload", action="store_true",
-                   help="0.97.24: no upload, also when --upload is given (run_single_site_ibr.bat gives it)")
+                   help="no upload, also when --upload is given (run_single_site_ibr.bat gives it)")
     p.add_argument("--upload", action="store_true",
-                   help="0.97.21: after the run, publish (into docs/ods of this checkout unless --publish names a folder), "
+                   help="after the run, publish (into the viewer's checkout, see rpp.ibr.web.viewer_dir, unless --publish names a folder), "
                         "commit the panoramas there and push the branch to origin - the code's commits go with it")
     p.add_argument("--host", choices=("hf", "github"), default="hf",
-                   help="0.99.3: where --upload puts the pictures - hf (default; Christian, 16 Nov 2026: \"v0p99 should upload "
+                   help="where --upload puts the pictures - hf (default; Christian, 16 Nov 2026: \"v0p99 should upload "
                         "rpv products to hugging face\"): the dataset RPP_HF_DATASET (ctate7163/rpp-rpv), one commit per "
                         "station, panos.json on GitHub pointing at it (rpp.ibr.hf); github: the pictures committed into the "
                         "viewer's checkout as before 0.99.3")
     p.add_argument("--no-hf-record", dest="hf_record", action="store_false", default=True,
-                   help="0.99.3: with --host hf, the viewer's pictures only (default: also each station's record - the 16-bit "
+                   help="with --host hf, the viewer's pictures only (default: also each station's record - the 16-bit "
                         "stacked panoramas, the pivot's 16-bit depth, ods.json, station.json; about 0.35 GB a station)")
     p.add_argument("--publish-width", type=int, default=8192, metavar="PX", help="wider images are reduced to this (default 8192)")
     p.add_argument("--publish-views", nargs="+", default=None, metavar="VIEW",
@@ -979,33 +979,33 @@ def add_parser(sub) -> None:
                         "map', enhanced, ... (default: rpp.ibr.web.DEFAULT_VIEWS - 0.99.37: all of these but enhanced; the "
                         "page's names 'standard color' and 'enhanced color' and the old normal and 'range log' are read too)")
     p.add_argument("--no-rover-surface", dest="rover_surface", action="store_false",
-                   help="0.98.8: without the rover's 3D surface (and the panorama from the pivot it is made from)")
+                   help="without the rover's 3D surface (and the panorama from the pivot it is made from)")
     p.add_argument("--rover-surface", action="store_true", default=True,
                    help="0.98.2, experimental: also render the with-rover panorama from the pivot and make the rover a "
                         "textured surface from it (<prefix>_rover_surface.glb; the viewer lays it on the terrain-only view)")
     p.add_argument("--no-station-mesh", dest="station_mesh", action="store_false", default=True,
-                   help="0.99.26: without the station mesh (the textured terrain within 10 m and the rover: the viewer's "
+                   help="without the station mesh (the textured terrain within 10 m and the rover: the viewer's "
                         "fourth mode, 3D terrain and rover; rpp.ibr.station_mesh)")
     p.add_argument("--station-mesh-only", action="store_true",
-                   help="0.99.26: only the station meshes of stations whose panoramas exist (rpp ods --station-mesh-only "
+                   help="only the station meshes of stations whose panoramas exist (rpp ods --station-mesh-only "
                         "for each variant, then the .glb; with --publish / --upload the fourth mode is published)")
     p.add_argument("--block-cameras", default=None, metavar="FAMILIES",
-                   help="0.99.43: the block terrain from the frames of these camera families (NFR: every engineering "
+                   help="the block terrain from the frames of these camera families (NFR: every engineering "
                         "camera of the block, every size, fused into one cloud - rpp dense --block-cameras; default: the "
                         "config's 'block_cameras', else Navcam alone)")
     p.add_argument("--terrain", default=None, choices=("block", "own"),
-                   help="0.99.43: the terrain of every station of this run, whatever the config says - block: the whole "
+                   help="the terrain of every station of this run, whatever the config says - block: the whole "
                         "block's cloud (also for the stations with a named terrain set); own: the station's own frames")
     p.add_argument("--no-zcam", dest="zcam_companions", action="store_false", default=True,
-                   help="0.99.43: without the Mastcam-Z 34 mm versions of the stations that have a Z34 360 (default, in a "
+                   help="without the Mastcam-Z 34 mm versions of the stations that have a Z34 360 (default, in a "
                         "run of the whole list - no station named, or --all: each is made right after its Navcam station)")
     p.add_argument("--wait-for-blocks", type=float, nargs="?", const=36.0, default=None, metavar="HOURS",
-                   help="0.99.44: after the stations whose block is aligned, wait for the others' blocks and run them as "
+                   help="after the stations whose block is aligned, wait for the others' blocks and run them as "
                         "they come in (looked at every --poll-min minutes); stops when no station is left, or when no "
                         "block has come in for HOURS (default 36)")
     p.add_argument("--poll-min", type=float, default=15.0, help="--wait-for-blocks: minutes between looks (default 15)")
     p.add_argument("--any-block", action="store_true",
-                   help="0.99.28: run stations whose block has not finished its alignment too (default: skipped)")
+                   help="run stations whose block has not finished its alignment too (default: skipped)")
     p.add_argument("--list", action="store_true", help="the stations of the config")
     p.add_argument("--dry-run", action="store_true", help="the commands, not run")
     p.add_argument("--install", metavar="DIR", default=None, help=f"write {BAT_NAME} (and make_square.bat) into DIR and stop")
@@ -1202,20 +1202,13 @@ def _single_sites_pass(a: argparse.Namespace) -> int:
                         print(f"station mesh of {r['label']}: failed ({e})")
         if not a.publish:
             return "not published"
-        from . import web
         _console_log()
         titles = {k: {"title": v.get("title") or viewer_name(v, k),   # 0.98.19: the page puts "Sol 0xxx" before it
                       "site_name": viewer_name(v, k),     # 0.99.36: before the mark's name (made with the panorama)
                       "sols": viewer_sols(v, k),          # 0.99.36: a Mastcam-Z station's first sol only
                       "note": v.get("web_note"), "yaw_deg": v.get("yaw_deg")} for k, v in st_cfg.items()}
         use_hf = bool(getattr(a, "upload", False)) and getattr(a, "host", "hf") == "hf"
-        before = None
-        if use_hf:                                       # 0.99.3: the pictures to Hugging Face, panos.json to GitHub
-            from . import hf
-            try:
-                before = json.loads((Path(a.publish) / "panos.json").read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                before = {}
+        before = None                                    # 0.99.3: the pictures to Hugging Face, panos.json to GitHub;
         git_dir = Path(a.publish) / ".git"                     # 0.99.53: one run publishes and uploads at a time
         plock = FileLock((git_dir if git_dir.is_dir() else Path(a.publish)) / PUBLISH_LOCK)
         plock.acquire(what="the viewer page")
@@ -1228,14 +1221,14 @@ def _single_sites_pass(a: argparse.Namespace) -> int:
         from . import web
         if use_hf:
             from . import hf
-            try:                                             # read again under the lock: another run may have published
+            try:                                             # read under the lock: another run may have published
                 before = json.loads((Path(a.publish) / "panos.json").read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 before = {}
         doc = web.publish(out_root, a.publish, stations=list(labels), views=[web.OLD_VIEW_NAMES.get(v, v) for v in (a.publish_views or web.DEFAULT_VIEWS)], width=a.publish_width, titles=titles,
                           render_map=True, files_dir=hf.stage_dir(out_root) if use_hf else None)
         if not web.install_viewer(a.publish):
-            print("the viewer page (docs/ods/index.html, vendor/) is not in this installation: copy it from the repository")
+            print("the viewer page (rpp/viewer/index.html, vendor/) is not in this installation")
         msg = f"published: {len(doc['panos'])} stations in {Path(a.publish) / 'panos.json'}"
         ok = True
         if getattr(a, "upload", False):

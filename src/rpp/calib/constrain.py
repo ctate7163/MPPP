@@ -375,8 +375,8 @@ def label_camera(meta: Dict[str, Any]) -> Tuple[str, List[float], str]:
 
 
 # ------------------------------------------------------------------------------- plot helpers (the figures: rpp_studies.calibration.plots)
-# The refined formats of the calibration study, ported unchanged (project doc "plot formats", 20 Oct 2026):
-# docs/history/results/figures_20261018/fig_rig.py (+ fig_rig_trends_20oct.py) and fig_intr.py.
+# The refined formats of the calibration study, ported unchanged (project doc "plot formats", 20 Oct 2026; the
+# first versions, fig_rig.py and fig_intr.py, are in the git history at the tag pre-v1.0-archive).
 IFOV_MDEG = 18.9          # one Navcam pixel, 0.33 mrad
 FIG_DPI = 200             # the standard figures (make_figures.bat; Christian, 20 Oct)
 RIG_TREND_YLIMS = {"pitch": (-10.0, 30.0), "yaw": (-20.0, 20.0), "roll": (-20.0, 20.0)}   # mdeg (Christian, 22 Oct)

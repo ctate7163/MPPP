@@ -13,14 +13,13 @@ Imaging Node has them; they are also published as the GitHub release asset `exam
 ## 1. Install
 
 ```bash
-conda create -n rpp -c conda-forge python=3.12 git -y
+conda create -n rpp -c conda-forge python=3.12 -y
 conda activate rpp
-git clone --depth 1 https://github.com/ctate7163/rpp.git
-cd rpp
-pip install -e ".[mask,sfm,plots]"
+pip install "rover-photogrammetry[pipeline]"
+rpp doctor
 ```
 
-See [Installation](installation.md) for the dependency groups and the GPU setup.
+See [Installation](installation.md) for an install from the repository, the dependency groups and the GPU setup.
 
 ## 2. Fetch the example data
 
@@ -46,9 +45,6 @@ export RPP_SCAPES=~/rpp_scapes   # the WORK folders are created here
 ```
 
 On Windows: `setx RPP_PDS %USERPROFILE%\rpp_example` and `setx RPP_SCAPES D:\rover_blocks`, then open a new window.
-
-`RPP_PDS` set to `~/rpp_example/datadrive` (as `rpp example fetch` printed before 0.92) finds no Mastcam-Z frames; the Navcam-only run works
-with it, but the Mastcam-Z frames in `~/rpp_example/zcam` are then outside the searched folder.
 
 ## 4. Run the block
 

@@ -1,28 +1,38 @@
 """
-The ``rpp`` command: the pipeline (:mod:`rpp.pipeline`) and its bookkeeping from the shell.
+rpp: Mars rover PDS images to aligned, true-scale 3D.
 
-::
+  First steps
+    rpp doctor                       what is installed and set, and what is missing
+    rpp example fetch                download a small Mars 2020 example (Rockytop, 36 PDS products)
+    rpp run rockytop_example --zcam  process and align it
 
-    rpp process SITE|WORK [--root DIR] [--pds DIR] [--zcam] [--hazcam front|rear|both] [--set NAME=VALUE ...]
-                 [--settings FILE] [--dry-run]
-    rpp align WORK [--variant NAME] [--set ...] [--settings FILE] [--gui] [--stop-after STEP] [--force] [--status]
-    rpp run SITE|WORK [...]                  process, then align
-    rpp sites [list | check | folder SITE]   the site definitions (rpp/data/sites.json)
-    rpp cmods [list | status | promote PATH ... --note TEXT | init DIR | ship]   the camera models in use (RPP_CMODS)
-    rpp mask [list | fetch [NAME] | install FILE]      the terrain mask model
-    rpp example [fetch [--dest DIR] | build --pds DIR --zcam DIR --out DIR]   the Mars 2020 example data (Rockytop)
-    rpp pds fetch --sols FIRST LAST [--cameras ncam fcam rcam zcam] [--match TEXT] [--list]   PDS -> RPP_PDS (0.99.5)
-    rpp maps [all | zooms | figures 2 3 ...] [--out DIR] [--dpi N] [--background dtm|ortho] [--tag T] [--dems F;F] [--orthos F;F] [--waypoints refresh|auto|study]
-    rpp calib navcam [--root DIR] [--group ecam_consensus | --blocks NAME=WORK ...] [--out DIR] [--promote-if-ok]
-    rpp mesh WORK --station S003D1234 [--points PLY] [--colmap EXE] [--mesh-radius 30] [--plane-radius 100]   0.96: one clean surface
-    rpp depthmaps WORK --station ... [--cameras N] [--scale 0.5] [--photometry]   0.96: per-image depth / normal maps, the photometric cube
-    rpp ods WORK --station ... [--width 8192] [--ipd 0.064]                       0.96: the stereoscopic panorama, two eye images
-    rpp doctor                               what is set, what is missing (environment, dependencies, models)
-    rpp version
+  The pipeline
+    rpp pds fetch --sols A B         download the PDS products of a sol range into RPP_PDS
+    rpp sites [list|check|folder]    the blocks of rover stations RPP knows (rpp/data/sites.json)
+    rpp process SITE|WORK            PDS products to 16-bit images, masks, cameras and poses
+    rpp align WORK                   the COLMAP project: features, matching, bundle adjustment, health report
+    rpp run SITE|WORK                process, then align
+    rpp cmods [list|status|...]      the camera models in use
+    rpp mask [list|fetch|install]    the rover mask model
 
-``-v`` / ``-q`` set the logging level, ``--log FILE`` tees the log to a file.  ``process``, ``align`` and ``run``
-write ``<WORK>/runs/<time>/log.txt`` and ``<WORK>/mppp_status.json`` as well (:func:`rpp.runner.run_logged`).
-Every subcommand returns an exit code (0 ok, 1 failed, 2 bad arguments, 3 a run is already going on).
+  Exports
+    rpp gui                          the files that open a finished block in COLMAP or Metashape
+    rpp metashape WORK               an Agisoft Metashape job from an aligned block
+    rpp nerfstudio WORK              a Nerfstudio data set from an aligned block
+
+  Station products and the viewer (experimental; the "stations" extra)
+    rpp dense WORK --station S       the dense cloud around one rover station
+    rpp mesh / depthmaps / ods       its mesh, per-image depth maps and stereo panorama
+    rpp single-sites [STATION ...]   all of the above for the stations of a list, and the viewer's files
+
+  Research studies (a source checkout: src/rpp_studies)
+    rpp calib ...                    fit and check the camera models from aligned blocks
+    rpp zcam-states ...              the Mastcam-Z focus-backlash states
+    rpp maps ...                     the site-map figures
+
+"rpp COMMAND --help" lists a command's options.  -v / -q set the logging level and --log FILE copies the log to a
+file.  process, align and run also write <WORK>/runs/<time>/log.txt and <WORK>/mppp_status.json.  Exit codes: 0 ok,
+1 failed, 2 bad arguments, 3 a run is already going on.  Documentation: https://ctate7163.github.io/rpp/
 """
 from __future__ import annotations
 
@@ -85,8 +95,8 @@ def build_parser() -> argparse.ArgumentParser:
     _common(p)
     p.add_argument("--gui", action="store_true", help="write the COLMAP GUI files")
     p.add_argument("--stop-after", default=None, metavar="STEP", help="stop the alignment after this step")
-    p.add_argument("--metashape", action="store_true", help="0.95.2: then the Metashape job (rpp metashape)")
-    p.add_argument("--nerfstudio", action="store_true", help="0.95.2: then the Nerfstudio export (rpp nerfstudio)")
+    p.add_argument("--metashape", action="store_true", help="then the Metashape job (rpp metashape)")
+    p.add_argument("--nerfstudio", action="store_true", help="then the Nerfstudio export (rpp nerfstudio)")
 
     p = sub.add_parser("sites", help="the site definitions")
     p.add_argument("what", nargs="?", default="list", choices=("list", "check", "folder"))
@@ -133,15 +143,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("waypoints", help="the rover waypoint table in use (cached download or packaged snapshot)")
     p.add_argument("--refresh", action="store_true", help="download the current table now (every sync should)")
-    p.add_argument("--mission", default="m2020", choices=("m2020", "msl"), help="0.99.5: m2020 (default) or msl (Curiosity)")
-    p.add_argument("--path", default=None, help="0.99.5: the table file to use / download into (default: the cache)")
+    p.add_argument("--mission", default="m2020", choices=("m2020", "msl"), help="m2020 (default) or msl (Curiosity)")
+    p.add_argument("--path", default=None, help="the table file to use / download into (default: the cache)")
 
     from .pds import add_parser as _pds_parser
     _pds_parser(sub)                          # 0.99.5: rpp pds fetch
     _study_parsers(sub)                       # 0.96.0: calib, zcam-states (rpp_studies.calibration), maps (rpp_studies.sites)
     from .ibr.cli import add_parsers as _ibr_parsers
     _ibr_parsers(sub)                         # 0.96.0: mesh, depthmaps, ods (rpp.ibr)
-    p = sub.add_parser("dense", help="0.95.0: the COLMAP dense reconstruction of a finished block - the workspace "
+    p = sub.add_parser("dense", help="the COLMAP dense reconstruction of a finished block - the workspace "
                        "<project>/dense (images undistorted from the native-pixel model, the rover masks for the "
                        "fusion), patch-match stereo, fusion, a mesh; dense_reconstruct.bat next to open_in_colmap.bat "
                        "does the same with the COLMAP executable")
@@ -160,11 +170,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-bat", action="store_true", help="do not (re)write dense_reconstruct.bat (0.95.1: the batch file "
                    "calls --prepare itself)")
     p.add_argument("--maps", nargs="?", const="png", default=None, choices=("png", "jpg"),
-                   help="0.95.1: the depth and normal maps of dense/stereo as images in dense/stereo/maps_png (png or jpg)")
+                   help="the depth and normal maps of dense/stereo as images in dense/stereo/maps_png (png or jpg)")
     p.add_argument("--maps-kind", default="geometric", choices=("geometric", "photometric"),
                    help="--maps: the geometric maps (after the consistency check, default) or the photometric ones")
     p.add_argument("--max-depth", type=float, default=None, help="--maps: depth beyond this (m) is left out (default 100)")
-    p.add_argument("--station", default=None, help="0.96: only the frames of this station (S026D0630, 26_630, sol:461): "
+    p.add_argument("--station", default=None, help="only the frames of this station (S026D0630, 26_630, sol:461): "
                    "a sub-model of them, its own workspace <project>/dense_<station>[_<sequence>]")
     p.add_argument("--cameras", default="N", help="--station: the camera families (default N)")
     p.add_argument("--sequence", nargs="+", default=None, help="--station: only these sequences (NCAM03461 ...)")
@@ -172,40 +182,40 @@ def build_parser() -> argparse.ArgumentParser:
                    help="0.97.0, with --station: also the frames of the block's other stations within M meters (they "
                         "see the ground under this station's rover); its own workspace dense_<station>..._near<M>")
     p.add_argument("--whole-block", action="store_true",
-                   help="0.98.14: the terrain from the whole alignment - every frame of the block of the --cameras "
+                   help="the terrain from the whole alignment - every frame of the block of the --cameras "
                         "families (all stations, all sizes) in the workspace dense_block_<cameras>, which the block's "
                         "stations share; with --station, that station's own frames (--scale, --sequence, --images) are "
                         "recorded in dense_<station>_block/mppp_dense.json for the panorama")
     p.add_argument("--block-cameras", default=None, metavar="FAMILIES",
-                   help="0.99.43: with --whole-block, the block's cloud from the frames of these camera families "
+                   help="with --whole-block, the block's cloud from the frames of these camera families "
                         "(NFR: Navcam, front and rear Hazcam - every engineering camera, every size; default: --cameras); "
                         "the workspace is dense_block_<families>; --cameras still chooses the station's own frames")
     p.add_argument("--block-images", nargs="+", default=None, metavar="NAME",
-                   help="0.98.19: with --whole-block, the block's cloud from these frames only (a terrain set of the "
+                   help="with --whole-block, the block's cloud from these frames only (a terrain set of the "
                         "single-sites config), in the workspace dense_block_<--block-name>")
-    p.add_argument("--block-name", default=None, help="0.98.19: the name of the --block-images set (its workspace)")
+    p.add_argument("--block-name", default=None, help="the name of the --block-images set (its workspace)")
     p.add_argument("--scale", type=float, default=None, help="--station: only frames at this downsample (0.5: half-res)")
-    p.add_argument("--images", nargs="+", default=None, help="0.96: only these image names (instead of --station)")
+    p.add_argument("--images", nargs="+", default=None, help="only these image names (instead of --station)")
     p.add_argument("--add-images", nargs="+", default=None, metavar="NAME",
-                   help="0.97.19: these frames of the block as well, whatever --station / --scale / --images select "
+                   help="these frames of the block as well, whatever --station / --scale / --images select "
                         "(context frames from another place or sol: they add to the terrain)")
-    p.add_argument("--min-angle", type=float, default=None, help="0.96: the patch-match triangulation angle (deg) a pixel "
+    p.add_argument("--min-angle", type=float, default=None, help="the patch-match triangulation angle (deg) a pixel "
                    "needs; default 0.4 with --station / --images (Navcam 0.424 m baseline: 61 m), COLMAP's 3 (8 m) "
                    "for a whole block")
-    p.add_argument("--full-fov", action="store_true", help="0.96: undistort to the whole field of view (the fisheye's "
+    p.add_argument("--full-fov", action="store_true", help="undistort to the whole field of view (the fisheye's "
                    "corners kept: 10 %% of a Navcam frame, 11 %% of the rover's pixels at Van Zyl), the working size "
                    "scaled so the center keeps its resolution (~1.8x the stereo time); the default crops to the "
                    "rectangle of valid pixels")
-    p.add_argument("--restereo", action="store_true", help="0.96: delete the workspace's patch-match maps before --stereo "
+    p.add_argument("--restereo", action="store_true", help="delete the workspace's patch-match maps before --stereo "
                    "(they are deleted anyway when they were made with other options; COLMAP skips every image whose "
                    "maps exist)")
-    p.add_argument("--keep-rover", action="store_true", help="0.96: the fusion without the rover masks, into "
+    p.add_argument("--keep-rover", action="store_true", help="the fusion without the rover masks, into "
                    "fused_rover.ply (the rover body and deck kept, for rpp mesh / depthmaps / ods --rover); the "
                    "stereo is the same (it takes no masks), so --fusion --keep-rover alone after a run is enough")
-    p.add_argument("--min-views", type=int, default=None, help="0.96: the images a fused point needs (fusion "
+    p.add_argument("--min-views", type=int, default=None, help="the images a fused point needs (fusion "
                    "min_num_pixels; patch-match then wants max(1, N-1) consistent sources); default 2 with --station / "
                    "--images, COLMAP's 5 for a whole block")
-    p = sub.add_parser("metashape", help="0.95.2: a finished block as an Agisoft Metashape project - cameras (calibration "
+    p = sub.add_parser("metashape", help="a finished block as an Agisoft Metashape project - cameras (calibration "
                        "and poses fixed), COLMAP's tie points and the masks, the photos linked from images/: writes "
                        "<project>/metashape/ (job, Bundler tie points, the build script, make_metashape_project.bat); "
                        "Metashape Professional builds <block>.psx from it")
@@ -219,9 +229,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--metashape", default=rpp_env.get("RPP_METASHAPE"),
                    help="metashape.exe (default RPP_METASHAPE, else the standard Metashape Pro install)")
     p.add_argument("--run", action="store_true", help="build the project now (runs make_metashape_project.bat)")
-    p.add_argument("--open", action="store_true", help="0.98.18: convert and build when missing or older than the "
+    p.add_argument("--open", action="store_true", help="convert and build when missing or older than the "
                    "model, then open the .psx in Metashape (what open_in_metashape.bat runs)")
-    p = sub.add_parser("nerfstudio", help="0.95.2: a finished block for Nerfstudio (splatfacto): every frame "
+    p = sub.add_parser("nerfstudio", help="a finished block for Nerfstudio (splatfacto): every frame "
                        "undistorted through COLMAP's model into one pinhole size, the masks likewise, transforms.json "
                        "and the tie points as sparse_pc.ply, in <project>/nerfstudio")
     p.add_argument("work", help="the block's WORK folder (its colmap/ project) or the project folder itself")
@@ -263,9 +273,10 @@ def _study_parsers(sub) -> None:
     for mod, names in (("rpp_studies.calibration.cli", ("calib", "zcam-states")), ("rpp_studies.sites.cli", ("maps",))):
         try:
             __import__(mod, fromlist=["add_parsers"]).add_parsers(sub)
-        except ImportError as e:                                       # pragma: no cover - the studies are optional
+        except ImportError:                                            # the studies come with a source checkout
             for n in names:
-                q = sub.add_parser(n, help=f"(the study package {mod.split('.')[0]} is not installed: {e})")
+                q = sub.add_parser(n, help="a research study: needs a source checkout (src/rpp_studies)")
+                q.add_argument("_rest", nargs=argparse.REMAINDER, help=argparse.SUPPRESS)   # so the command reaches its message
                 q.set_defaults(_missing_study=mod)
 
 
@@ -276,7 +287,8 @@ def _study_command(name: str):
 
     def run(a):
         if getattr(a, "_missing_study", None):
-            print(f"ERROR: {name} needs {a._missing_study} (pip install -e . installs the studies with the package)", file=sys.stderr)
+            print(f"ERROR: {name} needs {a._missing_study}: the studies come with a source checkout "
+                  f"(git clone https://github.com/ctate7163/rpp, then pip install -e .)", file=sys.stderr)
             return 2
         return __import__(mod, fromlist=["COMMANDS"]).COMMANDS[name](a)
     return run
@@ -650,9 +662,10 @@ def cmd_doctor(a: argparse.Namespace) -> int:
         import rpp_studies
         lines.append(f"studies          {Path(rpp_studies.__file__).parent}")
     except Exception as e:                                                # noqa: BLE001
-        lines.append(f"studies          not importable ({type(e).__name__}): the calibration, error and mask-training "
-                     "studies need the source checkout (src/rpp_studies)")
+        lines.append(f"studies          not installed ({type(e).__name__}) - not needed for the pipeline; the calibration, "
+                     "error and mask-training studies come with a source checkout (src/rpp_studies)")
     missing = 0
+    no_pipeline: List[str] = []
     for var, what in (("RPP_SCAPES", "the scapes root (WORK folders)"), ("RPP_PDS", "the PDS archive"),
                       ("RPP_GPU_PYTHON", "the GPU python for SIFT (optional)"), ("COLMAP_BAT", "COLMAP (optional, GUI)")):
         v = rpp_env.get(var) if var.startswith(rpp_env.PREFIX) else os.environ.get(var)
@@ -678,11 +691,20 @@ def cmd_doctor(a: argparse.Namespace) -> int:
             lines.append(f"{mod:<16} {getattr(m, '__version__', 'ok')}   - {what}")
         except Exception as e:                                        # noqa: BLE001
             lines.append(f"{mod:<16} MISSING ({type(e).__name__})   - {what}")
+            if "optional" not in what and mod != "matplotlib":
+                no_pipeline.append(mod)
     fm = check_form()
     lines.append(f"camera models    {cmods_dir()} fingerprint {models_fingerprint()} form {'ok' if fm['ok'] else 'NOT OK: ' + '; '.join(fm['errors'])}")
     age = waypoints_age_days()
     lines.append(f"waypoints        {'packaged snapshot (rpp waypoints --refresh)' if age is None else f'downloaded copy {age:.1f} days old'}")
     lines += _live_runs(rpp_env.get("RPP_SCAPES"))
+    # 1.0: what to do next, for someone who has just installed RPP
+    if no_pipeline:
+        lines.append(f"next             install what rpp run needs ({', '.join(no_pipeline)} missing): "
+                     'pip install "rover-photogrammetry[pipeline]"')
+    elif missing:
+        lines.append("next             try the example (it needs no settings): rpp example fetch, then "
+                     "rpp run rockytop_example --zcam; for other sites set RPP_PDS and RPP_SCAPES")
     print("\n".join(lines))
     return 1 if missing else 0
 
@@ -777,6 +799,21 @@ def cmd_metashape(a: argparse.Namespace) -> int:
 
 
 FUSION_RECORD = "rpp_fusion.json"
+# 1.0: a fused cloud is made again when the fusion's own code changes (sfm/dense.py), not when any of the station steps'
+# code does - the 0.99.52 note: "The fusion is redone on every code change, because the record carries code_key ...
+# If that is too much, limit the fusion's key to sfm/dense.py".  The records of 0.99.51 to 0.99.53 hold their station
+# code key (rpp.ibr.single_sites.code_key) instead (0.99.53's too); their sfm/dense.py is the one whose hash is DENSE_CODE_0P99, so
+# their clouds count as this code's while dense.py is unchanged.
+FUSION_CODES_0P99 = ("5aa9d5f18a9a6fdc", "74faa498abf96418", "0c917caf3b0a008e",   # 0.99.51, 0.99.52 (in progress),
+                     "5f46dcfc18415f4b")                                          # 0.99.52, 0.99.53
+DENSE_CODE_0P99 = "4e328c4415a18d58"
+
+
+def fusion_code() -> str:
+    """A hash of the fusion's code, ``sfm/dense.py``."""
+    import hashlib
+    f = Path(__file__).resolve().parent / "sfm" / "dense.py"
+    return hashlib.sha1(b"dense.py" + f.read_bytes().replace(b"\r\n", b"\n")).hexdigest()[:16]
 
 
 def _fusion_record(ws, so, fo, size, a, write: bool = False):
@@ -792,10 +829,9 @@ def _fusion_record(ws, so, fo, size, a, write: bool = False):
         stereo = hashlib.sha1((ws / "stereo" / STEREO_RECORD).read_bytes()).hexdigest()
     except OSError:
         stereo = None
-    try:                                                         # 0.99.51: a fusion of other code is made again
-        from .ibr.single_sites import code_key
-        code = code_key()
-    except Exception:                                            # noqa: BLE001
+    try:                                                         # 0.99.51: a fusion of other code is made again;
+        code = fusion_code()                                     # 1.0: of other fusion code (sfm/dense.py)
+    except OSError:
         code = None
     rec = {"stereo_record": stereo, "code": code, "fusion_options": {k: fo[k] for k in sorted(fo)}, "keep_rover": keep,
            "sky": str(rpp_env.get("RPP_SKY_MASK") or "1").strip().lower(), "max_image_size": int(size or 0)}
@@ -822,7 +858,10 @@ def _fusion_cached(ws, so, fo, size, a) -> bool:
         old = json.loads(f.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
-    same = {k: old.get(k) for k in rec} == json.loads(json.dumps(rec, default=str))
+    want = json.loads(json.dumps(rec, default=str))
+    same = {k: old.get(k) for k in rec if k != "code"} == {k: v for k, v in want.items() if k != "code"}
+    code_ok = old.get("code") == want.get("code") or (old.get("code") in FUSION_CODES_0P99 and want.get("code") == DENSE_CODE_0P99)
+    same = same and code_ok
     return bool(rec["stereo_record"]) and same and old.get("ply_bytes") == st.st_size and old.get("ply_mtime") == int(st.st_mtime)
 
 

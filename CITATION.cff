@@ -1,21 +1,40 @@
 cff-version: 1.2.0
 message: "If you use RPP, please cite it as below."
 title: "RPP: Rover Photogrammetry Pipeline"
+abstract: >-
+  RPP (Rover Photogrammetry Pipeline) is a Python package that turns Mars rover images from NASA's Planetary Data
+  System (PDS) into aligned, true-scale structure-from-motion projects that combine images from many rover stops. It
+  fetches PDS products from the Mars 2020 Perseverance Navcam, Hazcam and Mastcam-Z cameras (Curiosity support is
+  experimental), converts their color, masks rover hardware and shadows with a fine-tuned convolutional network, and
+  translates the mission's CAHV, CAHVOR and CAHVORE camera models or applies versioned in-flight models that vary
+  with temperature, focus, zoom and sol. Each stop is placed from the rover's localization, and the images are
+  aligned with COLMAP feature matching and RPP's own weighted bundle adjustment with telemetry priors and stereo
+  rigs. Results open in COLMAP, Agisoft Metashape and Nerfstudio. Experimental station products (meshes, depth and
+  normal maps, and omnidirectional stereo panoramas) feed the Rover Photogrammetry Viewer (RPV) for web browsers and
+  VR headsets.
 type: software
 authors:
   - family-names: Tate
     given-names: Christian
     affiliation: "Malin Space Science Systems"
-    # orcid: "https://orcid.org/0000-0000-0000-0000"   (add the author's ORCID; see docs/RELEASING.md)
-version: 0.99.53
+    orcid: "https://orcid.org/0000-0003-3467-0099"
+version: 1.0.0rc1
 date-released: 2026-11-20
 # doi: 10.5281/zenodo.XXXXXXX   (the Zenodo concept DOI, after the first archived release; see docs/RELEASING.md)
 license: Apache-2.0
 repository-code: "https://github.com/ctate7163/rpp"
 url: "https://ctate7163.github.io/rpp/"
 keywords:
+  - Mars
   - Mars 2020
   - Perseverance
+  - Curiosity
+  - rover
   - photogrammetry
+  - structure from motion
+  - bundle adjustment
+  - camera calibration
   - COLMAP
-  - Metashape
+  - Planetary Data System
+  - stereo
+  - virtual reality

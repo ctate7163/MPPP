@@ -30,7 +30,7 @@ Formerly `ctate7163/mppp-mask`: the pipeline was called MPPP (Mars Photogrammetr
 (`mppp_mask_convnext_tiny_s4_v*.safetensors`) stay in this repository; the `rpp_mask_convnext_tiny_s4_v*` files are
 the same bytes, with the same SHA-256. `rpp_mask_v5` was released after the rename and has no old name.
 
-RPP's default is still `rpp_mask_v3` (see *Versions*); select another with `"checkpoint": "rpp_mask_v5"`.
+RPP's default since 1.0 is `rpp_mask_v5` (see *Versions*); select another with `"checkpoint": "rpp_mask_v3"`.
 
 ## Newest: `rpp_mask_v5` (18 Nov 2026, with Curiosity frames)
 
@@ -78,7 +78,7 @@ against 0.971, front Hazcam 0.968 against 0.934); on the Mars 2020 front Hazcam 
 |---|---|---|---|---|---|
 | `rpp_mask_v5` | `rpp_mask_convnext_tiny_s4_v5.safetensors` | 18 Nov 2026, fine-tune of v5.1 (from v3), epoch 1 | v8 set with Curiosity frames, 4,965 training frames | 0.978 | newest; 0.974 on `validation_set_v1` (v3: 0.973); the model for Curiosity frames |
 | `rpp_mask_v4` | `rpp_mask_convnext_tiny_s4_v4.safetensors` | 30 Oct 2026, best of 20 epochs (13) | v8 set, 4,095 masks, pipeline images only, zoom crops | 0.978 | |
-| `rpp_mask_v3` | `rpp_mask_convnext_tiny_s4_v3.safetensors` | 26 Sep 2026, best of 10 epochs (9) | v7 set, 3,931 masks + brightness-varied copies | 0.979 | RPP's default |
+| `rpp_mask_v3` | `rpp_mask_convnext_tiny_s4_v3.safetensors` | 26 Sep 2026, best of 10 epochs (9) | v7 set, 3,931 masks + brightness-varied copies | 0.979 | RPP's default until 0.99 |
 | `rpp_mask_v2` | `rpp_mask_convnext_tiny_s4_v2.safetensors` | 25 Sep 2026, 4 epochs | v7 set | 0.977 | |
 | `rpp_mask_v1` | `rpp_mask_convnext_tiny_s4_v1.safetensors` | 24 Sep 2026, 3 epochs | v7 set | 0.971 | |
 

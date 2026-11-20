@@ -9,9 +9,37 @@ This covers four things:
 
 Section 7 covers the documentation site, the Zenodo DOI and the JOSS submission.
 
-RPP downloads the model from the URLs in `src/rpp/data/models.json` and checks the SHA-256 against the value stored there. From 0.31.2 the default model, `rpp_mask_v3`, has one URL, on Hugging Face (`ctate7163/rpp-mask`), and a registry name always means that released file: a cached copy with another SHA-256 is downloaded again, and a local checkpoint stands in only with `RPP_MASK_LOCAL_FALLBACK=1`. Older models (v1, v2) keep their Hugging Face and GitHub-release URLs. The model is not stored in git, for two reasons: GitHub rejects files over 100 MB, and a large file in history makes every clone slower forever.
+RPP downloads the model from the URLs in `src/rpp/data/models.json` and checks the SHA-256 against the value stored there. From 0.31.2 the default model (`rpp_mask_v5` since 1.0, `rpp_mask_v3` before) has one URL, on Hugging Face (`ctate7163/rpp-mask`), and a registry name always means that released file: a cached copy with another SHA-256 is downloaded again, and a local checkpoint stands in only with `RPP_MASK_LOCAL_FALLBACK=1`. Older models (v1, v2) keep their Hugging Face and GitHub-release URLs. The model is not stored in git, for two reasons: GitHub rejects files over 100 MB, and a large file in history makes every clone slower forever.
 
 Commands are for Windows (Anaconda Prompt or PowerShell). On Linux and macOS the same commands work with `/` paths.
+
+---
+
+## Release 1.0.0: the checklist
+
+1.0.0rc1 is the code of 1.0. These steps turn it into 1.0.0, in this order. Each step names the section below that
+has the commands.
+
+1. **Camera models.** After the third freeze run is reviewed and its models are promoted, copy the models in use
+   into the package: `rpp cmods ship`, then check `rpp cmods list` and commit `src/rpp/data/cmods/`. Fill the
+   freeze-3 numbers into `docs/status.md`.
+2. **Mask model.** `rpp_mask_v5` is the default, and its registry entry has no SHA-256 yet. Export and upload it
+   (section 6: `upload_mask_models.bat`), then commit the `models.json` that the upload wrote (`sha256`, `bytes`,
+   `"released": true`). The test `test_a_final_release_has_its_default_mask_on_hugging_face` fails for a final
+   version until this is done.
+3. **Version.** Set `__version__ = "1.0.0"` in `src/rpp/__init__.py`, `RPV_VERSION` in
+   `src/rpp/viewer/index.html`, `version` and `date-released` in `CITATION.cff`, and add `## 1.0.0` to
+   `CHANGELOG.md`. Remove the release-candidate note in `docs/status.md`. Run `pytest -q` and
+   `mkdocs build --strict`.
+4. **GitHub.** Merge into `main` and push. Check that the `tests`, `docs` and `release` workflows pass (Pages
+   source: GitHub Actions, section 7).
+5. **TestPyPI rehearsal.** *Actions > release > Run workflow* publishes to TestPyPI (section 8). Install it in a
+   clean conda environment and run the quick start.
+6. **The release.** Publish the GitHub release `v1.0.0` with the title `RPP 1.0.0`. The tag starts the PyPI
+   upload; the release makes Zenodo archive it and mint the DOIs (section 7). A PyPI version number can never be
+   uploaded again, so do this once.
+7. **After the release.** Put the Zenodo concept DOI into `README.md` (badge), `CITATION.cff` and `docs/citing.md`.
+   Upload the Hugging Face model card (section 4) and check the dataset card of `ctate7163/rpp-rpv`.
 
 ---
 
@@ -159,13 +187,13 @@ while they are empty). On the PC, `upload_mask_models.bat` (in `D:\rover_blocks\
 brings `D:\code\RPP_ods` to the newest `ods_rpp_v*.bundle`, checks the Hugging Face login, renames
 `ctate7163/mppp-mask` to `ctate7163/rpp-mask` if that was not done yet, exports v5 (and v4, and v3 under its new
 name), uploads each with the card, sets `"released": true` in that checkout's `models.json`, verifies the
-downloads and copies `models.json` back to `_transfer` to be committed. The default stays `rpp_mask_v3`. `rpp_mask_v2` (0.14.7) was released this way; for it the registry entry was created by hand with the file name `rpp_mask_convnext_tiny_s4_v2.safetensors`. `rpp_mask_v1` stays in the registry with its own URLs (`mask-v1`); if you already uploaded it, leave it there.
+downloads and copies `models.json` back to `_transfer` to be committed. Since 1.0 the default is `rpp_mask_v5`. `rpp_mask_v2` (0.14.7) was released this way; for it the registry entry was created by hand with the file name `rpp_mask_convnext_tiny_s4_v2.safetensors`. `rpp_mask_v1` stays in the registry with its own URLs (`mask-v1`); if you already uploaded it, leave it there.
 
 ## 7. Zenodo DOI and JOSS
 
 JOSS needs a documentation page and an archived release with a DOI. The documentation site
 (`mkdocs.yml`, `docs/`) is built and deployed by `.github/workflows/docs.yml`; the archive metadata is in
-`.zenodo.json` and `CITATION.cff`. The steps below are done by hand on github.com and zenodo.org; they cannot be
+`CITATION.cff` (1.0: there is no `.zenodo.json`, which would override it completely on Zenodo). The steps below are done by hand on github.com and zenodo.org; they cannot be
 automated from the repository.
 
 ### One-time setup
@@ -180,9 +208,8 @@ automated from the repository.
    Zenodo application.
 4. **Enable the repository in Zenodo.** In Zenodo, profile menu > *GitHub*, click *Sync now*, find
    `ctate7163/rpp` and switch it on. From then on every GitHub release is archived automatically [2].
-5. **Optional: add your ORCID.** JSON has no comments, so `.zenodo.json` has no ORCID placeholder. Add
-   `"orcid": "0000-0000-0000-0000"` to the creator in `.zenodo.json`, and uncomment and fill the `orcid:` line in
-   `CITATION.cff`. Validate with `pip install cffconvert` and `cffconvert --validate -i CITATION.cff`.
+5. **The ORCID** is in `CITATION.cff`. Validate the file with `pip install cffconvert` and
+   `cffconvert --validate -i CITATION.cff` (in an environment of its own: cffconvert needs an old jsonschema).
 
 ### Release 0.92.0 and get the DOI
 
@@ -198,8 +225,8 @@ automated from the repository.
 
    Or on the web: *Releases > Draft a new release*, tag `v0.92.0`, *Publish release*. Zenodo archives the release
    and mints two DOIs: a **version DOI** for 0.92.0 and a **concept DOI** that always resolves to the latest
-   version. Processing can take some time [3]. Zenodo reads `.zenodo.json`; when both files are present, the
-   `CITATION.cff` metadata is ignored by Zenodo [4] (GitHub still uses `CITATION.cff` for "Cite this repository").
+   version. Processing can take some time [3]. Zenodo reads `CITATION.cff` when there is no `.zenodo.json` [4]; GitHub uses the same file for "Cite this
+   repository".
 8. On the Zenodo record, check the title, creator, license and keywords.
 9. **Copy the concept DOI** (`10.5281/zenodo.NNNNNNN`) into:
    * `README.md`: replace `XXXXXXX` in the DOI badge (the badge snippet is also on the Zenodo record, under the DOI);

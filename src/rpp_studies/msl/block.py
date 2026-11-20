@@ -29,7 +29,7 @@ Steps
   perspective lens with k1, k2, p1, p2, k3, fitted to each frame's label CAHVOR (:func:`rpp.calib.labelfit.
   opencv5_from_cahvore`; about 0.02 px rms on the Navcam) and the median taken.  ``--camera fisheye`` keeps the
   first block's THIN_PRISM_FISHEYE.
-* **masks** - the mask CNN (``--mask-model``, default the released ``rpp_mask_v3``) on every frame; the mask is the
+* **masks** - the mask CNN (``--mask-model``, default the released ``rpp_mask_v5``) on every frame; the mask is the
   image's alpha channel (gray + alpha PNG) and ``masks\\`` for COLMAP (0.99.16; ``--mask both`` / ``mxy`` also fetch
   and use MIPL's rover mask, MXY).  For the training set the CNN's masks are written beside the images in the layout of
   a mask training set (``mask_candidates\images\<stem>.png`` RGBA, ``masks\<stem>.png`` 255 = terrain), with the MXY
@@ -444,7 +444,7 @@ def write_image(path: Path, img8: np.ndarray, rover: Optional[np.ndarray] = None
 
 
 def write_masks(work: Path, frames: List[Dict[str, Any]], mxy: Dict[str, Path], mask_mode: str = "cnn",
-                model: Optional[str] = "rpp_mask_v3", candidates: bool = True) -> Dict[str, Any]:
+                model: Optional[str] = "rpp_mask_v5", candidates: bool = True) -> Dict[str, Any]:
     """Images, COLMAP masks and the training candidates (see the module's text).  0.99.16 (Christian, 17 Nov 2026: "for
     msl images, use the current mask cnn model and save them as the alpha channel. no need to download the official
     hardware masks"): the default is the CNN alone, and each image is a PNG whose alpha channel is the mask
@@ -542,7 +542,7 @@ def _cuda() -> bool:
 
 
 def prepare(work: Path, data: Path, preset: Dict[str, Any], camera: str = "opencv5", mask_mode: str = "cnn",
-            mask_model: Optional[str] = "rpp_mask_v3", radius_m: Optional[float] = None, pair_distance_m: float = 60.0,
+            mask_model: Optional[str] = "rpp_mask_v5", radius_m: Optional[float] = None, pair_distance_m: float = 60.0,
             pairs_per_image: int = 40, wp: Optional[Dict[str, Any]] = None, limit: Optional[int] = None,
             label_cameras: bool = False) -> Dict[str, Any]:
     work = Path(work)
@@ -1814,7 +1814,7 @@ def main(argv=None) -> int:
     ap.add_argument("--promote-families", default="NF",
                     help="promote: the camera families (N Navcam, F front Hazcam), each by its own verdict (0.99.24)")
     ap.add_argument("--dry-run", action="store_true", help="promote: check and show, copy nothing")
-    ap.add_argument("--mask-model", default="rpp_mask_v3", help="the mask CNN (registry name or file)")
+    ap.add_argument("--mask-model", default="rpp_mask_v5", help="the mask CNN (registry name or file)")
     ap.add_argument("--radius-m", type=float, default=None, help="prepare: frames within this of the block's middle")
     ap.add_argument("--pair-distance-m", type=float, default=60.0)
     ap.add_argument("--pairs-per-image", type=int, default=40)

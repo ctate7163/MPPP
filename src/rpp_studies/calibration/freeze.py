@@ -106,10 +106,10 @@ STALE_S = 900
 LOGON_TASK = "RPP freeze"
 OLD_LOGON_TASK = "MPPP freeze"      # 0.99.3: the RunOnce value of a v0p98 freeze (freeze_097 set it): removed when a v0p99
 #                                   run sets its own, so a reboot starts one freeze, not two
-REQUIRED_VERSION = "0.99"           # 0.99.3 (Christian, 16 Nov 2026: "Is there anything preventing freeze3 from running on v0p99?"):
+REQUIRED_VERSION = "1.0"            # 0.99.3 (Christian, 16 Nov 2026: "Is there anything preventing freeze3 from running on v0p99?"):
 #                                   the run on v0p99 - its own checkout D:\code\RPP_freeze on branch rpp (scripts\windows\
 #                                   freeze.bat of D:\code\RPP); v0p98's freeze runs from D:\code\MPPP_freeze ("0.98" there)
-DEFAULT_MASK = "rpp_mask_v3"         # the registry default: what a block without mask_checkpoint was processed with
+DEFAULT_MASK = "rpp_mask_v5"         # the registry default: what a block without mask_checkpoint was processed with
 STATUS_FILE, LOG_FILE, REPORT_FILE = "freeze_status.json", "freeze_log.txt", "freeze_report.md"
 
 
@@ -810,7 +810,8 @@ def newest_training_set(mask_root: str) -> Optional[str]:
     return max(sets)[1] if sets else None
 
 
-BASELINE_SETS = {"rpp_mask_v3": "masks_training_set_v7", "rpp_mask_v4": "masks_training_set_v8"}
+BASELINE_SETS = {"rpp_mask_v3": "masks_training_set_v7", "rpp_mask_v4": "masks_training_set_v8",
+                 "rpp_mask_v5": "masks_training_set_v8"}
 
 
 def baseline_training_set(mask_root: str, baseline: str) -> Optional[str]:

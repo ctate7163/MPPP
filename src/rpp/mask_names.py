@@ -21,8 +21,9 @@ def _registry() -> Dict[str, Any]:
 
 
 def canonical(name: Optional[str], reg: Optional[Dict[str, Any]] = None) -> Optional[str]:
-    """The registry name of ``name``: itself, or the model that lists it among its ``aliases``.  Anything else (a
-    path, a file name, an unknown name, ``None``) comes back as it is."""
+    """The registry name of ``name``: itself, the model that lists it among its ``aliases``, or the model exported
+    from that checkpoint file where the registry marks them as the same (``same_as_source``).  Anything else (another
+    path or file name, an unknown name, ``None``) comes back as it is."""
     if not isinstance(name, str) or not name:
         return name
     try:
@@ -33,6 +34,13 @@ def canonical(name: Optional[str], reg: Optional[Dict[str, Any]] = None) -> Opti
         return name
     for k, e in reg.get("models", {}).items():
         if name in (e.get("aliases") or []):
+            return k
+    # 1.0: the checkpoint a released model was exported from, where the registry says the two give the same masks
+    # (``same_as_source``: rpp_mask_v5 and the file freeze 3 named) - a block processed with that file is not
+    # processed again under the model's name
+    base = name.replace("\\", "/").rsplit("/", 1)[-1]
+    for k, e in reg.get("models", {}).items():
+        if e.get("same_as_source") and base == e.get("source_checkpoint"):
             return k
     return name
 

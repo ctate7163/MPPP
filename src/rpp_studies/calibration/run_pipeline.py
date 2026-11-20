@@ -35,7 +35,7 @@ Stages (each logged in ``<root>\\mppp_pipeline\\<stage>.log``, the pipeline in `
                          LightGlue, LightGlue on every octave and SIFT + LightGlue again with the camera models just
                          promoted (--rerun), no tiny joint (nothing promoted) -> <WORK>/lightglue_ab.md of each
  9. ``zcam_states``    - 0.94.4: the zcam_runs sites again as the variant ``states`` (every Mastcam-Z image its own
-                         camera, f free, no focus lines: run_zcam_states.bat), then ``rpp zcam-states`` ->
+                         camera, f free, no focus lines), then ``rpp zcam-states`` ->
                          camera_analysis/zcam_states_<date>/ (report.md, found_list_proposal.txt; the found list is
                          not changed - ``--apply`` does that)
 10. ``report``         - ``<root>\\mppp_pipeline\\REPORT.md``
@@ -65,7 +65,7 @@ PY = sys.executable
 STAGES = ("wait", "ecam_runs", "ecam_joint", "zcam_runs", "zcam_joints", "error_analysis", "rover_frame", "lightglue_ab",
           "zcam_states", "report")
 # 0.94.4 (Christian, 25 Oct): the states run - the Mastcam-Z sites again as the variant "states", one camera per image
-# with its own focal length (run_zcam_states.bat), then rpp zcam-states: which frames are low, the found-list proposal
+# with its own focal length, then rpp zcam-states: which frames are low, the found-list proposal
 ZCAM_STATES_SETS = ("ZCAM_BIN_BY=image", "ZCAM_HOLD_F_IMAGES=0", "ZCAM_BIN_REFINE=focal_pp", "ZCAM_FOCUS_LINE=false")
 # 0.94.5 (Christian, 27 Oct): focal_pp - the right eye's center free per image too (its state shows there; focal held it)
 # the stage set of the state file (0.94.4: ecam stages).  Not changed for the rover_frame stage (added 23 Oct during

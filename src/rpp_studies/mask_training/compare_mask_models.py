@@ -1,6 +1,6 @@
 """
 A/B of mask models on the same held-out frames (31 Oct 2026, before the freeze: is the v8-trained model,
-``rpp_mask_v4``, better than the default ``rpp_mask_v3``?).
+``rpp_mask_v4``, better than the default?).
 
     python -m rpp_studies.mask_training.compare_mask_models --data D:\\masks\\masks_training_set_v8
         --split-ckpt D:\\code\\MPPP\\checkpoints\\convnext_tiny_s4_seg_20261030_v8.pt

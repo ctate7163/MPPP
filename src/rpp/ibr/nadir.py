@@ -7,9 +7,12 @@ Straight down a panorama from the mast shows no terrain: the mast itself (masked
 that was filled in.  The pixels within ``NADIR_MARK_DEG`` of the nadir become a light blue disc with two rows of black
 text near its rim, ahead of the rover (:func:`make_mark`).  0.97.13: the disc lies on the surface below the mast
 (:func:`on_ground`) - each eye sees it with that surface's disparity (until 0.97.12 it was the same picture in both
-eyes: at infinity).  It goes into every color panorama (8-bit and 16-bit, eyes, center, stacked,
-enhanced), not into the depth products; ``ods.json`` records it ("nadir_mark"), ``rpp ods --no-nadir-mark`` leaves
-it out.
+eyes: at infinity).  ``ods.json`` records it ("nadir_mark"), ``rpp ods --no-nadir-mark`` leaves it out.
+
+1.0 (Christian, 20 Nov 2026: "Do not include the blue circle and text in the 360 images. That should only enter as the
+nadir_mark disk"): the mark is the picture ``<prefix>_nadir_mark.png`` alone (:func:`write_texture`, the mark seen
+from above), which the viewer lays on the ground as a disc; no panorama carries it (:data:`MARK_IN_PANORAMA`, 0.99.53).  From
+0.97.7 to 0.99.52 it was drawn into every color panorama (8-bit and 16-bit, eyes, stacked, enhanced).
 
 Image credit (Christian, 13 Nov, the last word of three): NASA/JPL-Caltech/MSSS for Navcam (and Hazcam) products,
 NASA/JPL-Caltech/MSSS/ASU when Mastcam-Z frames are in.

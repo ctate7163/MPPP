@@ -2,7 +2,7 @@
 
 From a finished block RPP makes the products of one **station** (one stop of the rover): a cleaned mesh, per-image
 depth and photometric maps, and an omnidirectional stereo panorama that can be looked at in a headset. The code is
-`rpp.ibr` (the `[ibr]` extra: open3d). The commands and every option are in [Command line](cli.md).
+`rpp.ibr` (the `[stations]` extra: open3d). The commands and every option are in [Command line](cli.md).
 
 **See the result:** the [stereo panorama viewer](ods/index.html){target="_blank" rel="noopener"} (a prototype, below).
 
@@ -199,6 +199,12 @@ none); the constants are at the top of `rpp/ibr/ods.py`, and `ods.json` records 
 
 ### The mark at the nadir
 
+**Since 0.99.53 the mark is not drawn into any panorama.** It is the picture `<prefix>_nadir_mark.png` alone, the mark
+seen from above, which the viewer lays on the ground as a disc in every mode (`ods.json`: `nadir_mark`, with
+`in_panorama: false`). Straight down, the panoramas show what the cameras saw: the rover deck in the with-rover
+variant, the filled-in ground without it. The description below is of the mark itself, and of how it was drawn into
+the panoramas from 0.97.7 to 0.99.52.
+
 Within 20 degrees of straight down the panorama shows no terrain worth keeping (the mast, or filled-in ground). A
 light blue disc there carries two rows of black text near its rim, each over at most half the circle and centered on
 the rover's front: "Mars 2020 Perseverance Rover" with the sol and the site (with Mastcam-Z frames in, only the
@@ -210,8 +216,14 @@ which leaves them about twice too narrow in the headset: the strip is stretched 
 can have its own shape in both. The first row is 1.6 times as tall as the second. The disc lies on the surface
 under the mast - the deck with the rover shown, the ground without (the median depth below the pivot of what is
 seen at the disc's rim, `depth_below_pivot_m`): each eye sees it with that surface's disparity, so it is at the
-surface's distance and not at infinity. The disc is in every color panorama, not in the depth products; `ods.json`
-records it (`nadir_mark`), and `rpp ods --no-nadir-mark` leaves it out.
+surface's distance and not at infinity. `ods.json` records it (`nadir_mark`), and `rpp ods --no-nadir-mark` leaves it
+out (no picture, no disc).
+
+### Who made each product
+
+Since 0.99.53 every product says who made it and with which RPP: XMP `dc:creator` ("Christian Tate") and
+`xmp:CreatorTool` ("RPP x.y.z") in every JPEG and PNG of a station folder, `asset.generator` and `asset.extras` in
+the `.glb` files, and `author` and `software` in `ods.json` and in each station's entry of `panos.json`.
 
 ### Sky and brightness
 
@@ -222,7 +234,7 @@ between a station's two variants.
 
 ## The viewer
 
-`docs/ods/index.html` is one static page (three.js, WebXR): it shows the `_360_3DTD` squares on a sphere per eye,
+The viewer is one static page (`rpp.viewer`: `src/rpp/viewer/index.html`; three.js, WebXR). [RPV: the Rover Photogrammetry Viewer](viewer.md) is its user guide; this section has the details. The page it shows the `_360_3DTD` squares on a sphere per eye,
 with menus for station, variant and view, a link per view (`#<station>/<variant>/<view>`), drag and wheel on a
 screen and a choice of the eye shown there (left, right, or the center where there is one; the L key), the space bar for
 the next view (0.99.37; Shift+space back), R for the rover on and off (as the rover button, 0.99.37), and in a headset: right / left trigger = next / previous station, grip = variant,
@@ -236,7 +248,7 @@ the device can show (maximum texture size, compressed-texture formats).
 - To add stations: `rpp single-sites Sol0052_S003D2046 --publish D:\code\RPV --upload --publish-only` puts the stereo JPEGs
   (reduced to 8192) on Hugging Face (`--host hf`, the default) and lists them in the viewer checkout's `panos.json`, then
   commits and pushes that checkout (`--host github`: the pictures into its `panos/`, as before 0.99.3). Since 0.99.10 the
-  repository's own `docs/ods` holds the page and `vendor/` only: the panoramas and their list live in `ctate7163/rpv`.
+  pipeline's repository holds the page and `vendor/` only (`src/rpp/viewer` since 1.0): the panoramas and their list live in `ctate7163/rpv`.
 - Another image list: `.../ods/?index=URL` (same origin, or a host that allows cross-origin requests).
 - Since 0.99.36 the upload commits the page (`index.html`, `vendor/`) with the panoramas. Before it only `panos/` and
   `panos.json` were committed in `ctate7163/rpv`, so the live page stayed at the one of 17 Nov (0.99.13) while the
@@ -367,6 +379,12 @@ seen from the pivot. To build it again from a folder that already has the center
 ```
 python -m rpp.ibr.rover_surface D:\rover_blocks\single_sites\Sol0052_S003D2046\with_rover
 ```
+
+**The rover in the 3D terrain modes** (the station mesh's rover part, `station_mesh_rover`) has its own 4096² texture.
+Since 1.0 connected triangles that face within 35° of each other share one chart of that texture, up to 0.6 m across
+(`rpp.ibr.station_mesh.layout_charts`). Before, every triangle had a cell of its own with a 4-texel gutter. On a
+120,000-triangle test mesh the texels are about 5 times finer in the same texture (0.5 mm against 2.5 mm), and the
+seams are only at the charts' edges. A chart that would fold over itself is split into single triangles.
 
 On a screen, `.../ods/?head=0.15,0,0` puts the eye 0.15 m east of the pivot (east, up, south, meters) to look at the
 model's parallax. (0.98.2-0.98.13: a grid mesh cut from the panorama's depth, with a second layer behind its edges.)

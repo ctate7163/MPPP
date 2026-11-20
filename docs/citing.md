@@ -2,7 +2,7 @@
 
 If you use RPP, please cite the archived software release:
 
-> Tate, C. (2026). *RPP: Rover Photogrammetry Pipeline* (version 0.92.0) [Computer software].
+> Tate, C. (2026). *RPP: Rover Photogrammetry Pipeline* (version 1.0.0) [Computer software].
 > Malin Space Science Systems. https://doi.org/10.5281/zenodo.XXXXXXX
 
 The DOI is a placeholder until the first release is archived on Zenodo. Zenodo assigns two kinds of DOI:
@@ -13,12 +13,12 @@ The DOI is a placeholder until the first release is archived on Zenodo. Zenodo a
 Both are listed on the Zenodo record, which is linked from the DOI badge in the
 [README](https://github.com/ctate7163/rpp#readme).
 
-When the JOSS paper is published, please cite the paper as well; its reference will be added here.
+When the software paper is published, please cite the paper as well; its reference will be added here.
 
 ## Data credits
 
-Mars 2020 images are public products of the NASA Planetary Data System. Credits: Navcam NASA/JPL-Caltech;
-Mastcam-Z NASA/JPL-Caltech/ASU/MSSS.
+Mars 2020 images are public products of the NASA Planetary Data System. Credits: Navcam and Hazcam
+NASA/JPL-Caltech; Mastcam-Z NASA/JPL-Caltech/ASU/MSSS.
 
 ## CITATION.cff
 

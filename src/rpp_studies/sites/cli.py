@@ -28,7 +28,7 @@ def add_parsers(sub) -> None:
     p.add_argument("--dems", default=None, help="1 m DTM GeoTIFFs, os.pathsep-separated (M20_DEMS)")
     p.add_argument("--orthos", default=None, help="orthomosaic GeoTIFFs (M20_ORTHOS)")
     p.add_argument("--waypoints", choices=["refresh", "auto", "study"], default="auto",
-                   help="0.96: the waypoint table the figures draw - refresh: download the current table and copy it into "
+                   help="the waypoint table the figures draw - refresh: download the current table and copy it into "
                         "the study folder; auto (default): the same when the cached copy is missing or older than a day, "
                         "else the cached copy; study: the folder's own copy as it is")
 

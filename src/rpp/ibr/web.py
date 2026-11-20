@@ -3,7 +3,7 @@ The stereo 360 products of the station runs as a folder a static web page can sh
 
 ``publish(out_root, web_dir)`` copies each station's top-down stereo JPEGs (``<name>_360_3DTD.jpg``: the left eye on
 top of the right, :mod:`rpp.ibr.ods`) into ``web_dir/panos/`` - reduced to ``width`` when wider - and writes
-``web_dir/panos.json``, the list the viewer page reads (``docs/ods/index.html`` of the repository: three.js, WebXR).
+``web_dir/panos.json``, the list the viewer page reads (:mod:`rpp.viewer`: ``index.html``, three.js, WebXR).
 ``web_dir`` holding ``index.html``, ``vendor/``, ``panos.json`` and ``panos/`` is all a host needs (GitHub Pages, any
 static server).  ``test_pano`` draws a labeled pair for checking the viewer's orientation and eye order.
 """
@@ -34,7 +34,7 @@ OLD_VIEW_NAMES = {"normal": "normal map", "range log": "distance map", "range li
                   "standard color": "standard", "enhanced color": "enhanced local"}     # 0.99.37: the page's names
 # 0.99.37 (Christian, 19 Nov 2026: "Replace the enhanced local with just enhanced"; the views "standard color, raw color,
 # enhanced color, enhanced tone, dcs color, normal map, distance map"): the page shows "standard" as "standard color"
-# and "enhanced local" as "enhanced color" (VIEW_LABEL in docs/ods/index.html); the keys stay, so links and the
+# and "enhanced local" as "enhanced color" (VIEW_LABEL in rpp/viewer/index.html); the keys stay, so links and the
 # entries published before keep working
 GEOMETRY_PARTS = ("_range_log", "_range_linear", "_normal")
 VARIANTS = (("masked", "", "terrain only"), ("rover", "with_rover", "terrain with rover (projected)"))   # key, sub-folder, label.  0.98.5
@@ -761,26 +761,26 @@ VIEWER_URL = "https://ctate7163.github.io/rpv/"        # 0.98.29: the viewer's o
 
 
 def viewer_dir() -> Path:
-    """Where ``single-sites --upload`` publishes when no ``--publish`` folder is given (0.98.29; Christian, 16 Nov 2026:
-    "change https://ctate7163.github.io/rpp/ods/ to https://ctate7163.github.io/RPV/"): ``RPP_VIEWER_DIR``; else a git
-    checkout named ``RPV`` beside this one (``D:\\code\\RPV`` beside ``D:\\code\\MPPP``), whose pushes publish
-    VIEWER_URL; else this checkout's ``docs/ods`` (as before 0.98.29 - on GitHub that page now sends visitors to
-    VIEWER_URL, so panoramas published there are not seen)."""
+    """Where ``single-sites --upload`` publishes when no ``--publish`` folder is given: ``RPP_VIEWER_DIR``; else, for
+    a source checkout, a git checkout named ``rpv`` (or ``RPV``) beside it, whose pushes publish VIEWER_URL; else the
+    folder ``rpv`` in the current directory."""
     env = rpp_env.get("RPP_VIEWER_DIR")
     if env:
         return Path(env)
     home = Path(__file__).resolve().parents[3]
-    for name in ("rpv", "RPV"):                      # 0.99.13: the checkout may be renamed with the repository
-        sib = home.parent / name
-        if (sib / ".git").exists():
-            return sib
-    return home / "docs" / "ods"
+    if (home / "pyproject.toml").is_file():           # a source checkout: the viewer's repository beside it
+        for name in ("rpv", "RPV"):
+            sib = home.parent / name
+            if (sib / ".git").exists():
+                return sib
+    return Path.cwd() / "rpv"
 
 
 def install_viewer(web_dir: PathLike, source: Optional[PathLike] = None) -> bool:
-    """The page (``index.html`` and ``vendor/``) from the checkout's ``docs/ods`` into ``web_dir`` when that is another
-    folder.  False when the checkout has no ``docs/ods`` (an installed package: take the page from the repository)."""
-    src = Path(source) if source else Path(__file__).resolve().parents[3] / "docs" / "ods"
+    """The page (``index.html`` and ``vendor/``) from the package (:mod:`rpp.viewer`) into ``web_dir`` when that is
+    another folder.  False when the page is not found."""
+    from ..viewer import page_dir
+    src = Path(source) if source else page_dir()
     web = Path(web_dir)
     if not (src / "index.html").is_file():
         return False

@@ -1,9 +1,10 @@
-# The source distribution on PyPI (0.94.4): the package, its data, the tests (0.99.37: no PDS products - the tests fetch
-# them, see tests/conftest.py), and the
+# The source distribution on PyPI: the package with its data and the viewer page, the tests (they fetch their two PDS
+# products, see tests/conftest.py; many of them need the repository's scripts, docs and studies as well), and the
 # documents a reviewer looks for. The studies, notebooks, Windows scripts, paper and documentation site stay in the
 # git repository (https://github.com/ctate7163/rpp).
 include LICENSE NOTICE README.md CHANGELOG.md CITATION.cff CONTRIBUTING.md CODE_OF_CONDUCT.md pyproject.toml
 graft src/rpp/data
+graft src/rpp/viewer
 recursive-include tests *.py
 graft tests/data
 global-exclude __pycache__ *.py[cod] .DS_Store

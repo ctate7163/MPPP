@@ -1,16 +1,13 @@
 # RPP — Methods
 
-> **Read with 0.90.0.** This document grew with the versions and still describes, as history, the Navcam
-> *rational* and *polynomial* models, the Metashape XML calibrations and the notebook-based workflow, which 0.90
-> no longer ships. What is current: the frozen forms and the promoted models are in `rpp.calib` (README, *Camera
-> models*), the pipeline is `rpp.pipeline` / the `rpp` command, matching is SIFT + LightGlue by default, and the
-> calibration campaigns are in `studies/calibration/` with `docs/calibration.md` describing the current loop (older status notes: `docs/history/notes/`). The
-> conventions, equations and flagged assumptions below still hold.
-
-
-*Status: the v0p1 text with later notes inline (version tags mark when something was added). A clean rewrite is planned for 1.0. Since v0p13 the calibration files and tables are package data in `src/rpp/data/` (formerly `params/`).*
-
-Supplementary description of the Rover Photogrammetry Pipeline, version v0p1 (21 September 2026). It documents what the code does, in the order it does it, with every convention and every unverified assumption stated. Section 8 lists the assumptions; section 9 the verification performed.
+!!! note "How to read this page"
+    This page grew with the versions: it is the conventions, equations and flagged assumptions of the pipeline,
+    with notes added as each part was built (the version tags mark when). The conventions and equations hold. Some
+    sections also describe, as history, things 1.0 no longer ships: the Navcam *rational* and *polynomial* models,
+    the Metashape XML calibrations and the notebook-based workflow. What is current: the model forms and the
+    released models are in `rpp.calib` ([Camera models and calibration](calibration.md)), the pipeline is
+    `rpp.pipeline` and the `rpp` command ([Pipeline](pipeline.md)), and the calibration study is
+    `rpp_studies.calibration`. A rewrite of this page as a methods reference is planned for 1.1.
 
 ## 1. Scope and inputs
 

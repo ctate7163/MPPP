@@ -2298,9 +2298,10 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                                  "rover_forward_azimuth_deg": round(float(fwd), 3) if fwd_known else None,
                                  "text_from_forward_deg": _nadir.TEXT_AZIMUTH_FROM_FORWARD_DEG,
                                  "note": "a light blue disc with this text in black, ahead of the rover's front, not data; it lies on the "
-                                         "horizontal plane depth_below_pivot_m below the pivot (each eye sees it with that plane's "
-                                         "disparity; from the pivot it covers the rows from first_row down); in every color "
-                                         "panorama, not in the depth products"}
+                                         "horizontal plane depth_below_pivot_m below the pivot (from the pivot it covers the rows from "
+                                         "first_row down). " + ("It is drawn into every color panorama, not into the depth products."
+                                                                if _nadir.MARK_IN_PANORAMA else "It is the picture 'texture' alone, "
+                                                                "which the viewer lays on that plane; no panorama carries it (in_panorama).")}
     if gains:
         g = estimate_gains(scene, sources, station.pivot, width=min(GAIN_PASS_WIDTH, width), rows_per_chunk=rows_per_chunk, **axes)
         rec_out["gains"] = g
@@ -2583,7 +2584,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         mark0.update({k_: mark_seen[k_] for k_ in ("bg8", "bg16") if k_ in mark_seen})
         rec_out["nadir_mark"]["in_centre_panorama"] = False
         rec_out["nadir_mark"]["in_panorama"] = bool(_nadir.MARK_IN_PANORAMA)   # 0.99.53
-        rec_out["nadir_mark"]["background_bgr_8bit"] = [float(x) for x in mark_seen.get("bg8", [])]
+        rec_out["nadir_mark"]["background_bgr_8bit"] = [float(x) for x in mark_seen.get("bg8", np.asarray(_nadir.BACKGROUND_RGB)[::-1])]
         if "bg16" in mark_seen:
             rec_out["nadir_mark"]["background_bgr_16bit"] = [float(x) for x in mark_seen["bg16"]]
     if depth_rec:

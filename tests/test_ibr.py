@@ -2063,7 +2063,7 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
     both = web.publish(r, tmp_path / "web2", width=128, views=("standard", "enhanced"))["panos"][0]         # on request
     assert both["variants"][1]["views"]["enhanced"] == "panos/S1_rover_enh_360_3DTD.jpg"
     assert not (tmp_path / "web2" / "panos" / "S1_enhlocal_360_3DTD.jpg").exists()
-    page = (Path(web.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    page = (Path(web.__file__).resolve().parents[1] / "viewer" / "index.html").read_text(encoding="utf-8")
     assert 'id="eye"' in page and "sessionstart" in page and "setEye" in page                  # the eye shown on a screen
     # 0.99.36 (Christian, 19 Nov 2026: "include center with the left and right eye if center is available")
     cv2.imwrite(str(r / "S1" / "with_rover" / "S1_rover_ods_center.png"), np.full((128, 256, 3), 70, np.uint8))
@@ -2082,7 +2082,7 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
     assert im.shape == (512, 512, 3)
     b, g, rr = im[:256].reshape(-1, 3).astype(int).sum(0)       # the top half carries the blue "LEFT EYE" (BGR)
     assert b > rr
-    repo = Path(web.__file__).resolve().parents[3] / "docs" / "ods"
+    repo = Path(web.__file__).resolve().parents[1] / "viewer"
     if repo.is_dir():
         assert (repo / "index.html").is_file() and (repo / "vendor" / "three.module.min.js").is_file()
 
@@ -2539,12 +2539,37 @@ def test_nadir_mark_lies_on_the_ground_and_its_first_row_is_larger(tmp_path, mon
     nadir.apply_mark(img, dict(m, row0=0, alpha=got["left"][0], inside=got["left"][1]), (238, 212, 176))
     assert (img[~got["left"][1]] == 90).all() and (img[got["left"][1]] != 90).any()
     proj, rec, st, scene, Pp, colors = _station_scene(tmp_path)
+    monkeypatch.setattr(nadir, "MARK_IN_PANORAMA", True)                     # 0.97.7-0.99.52: drawn into the eyes
     rep = O.render_station(proj, rec, st, scene, tmp_path / "ods_mark", width=1024, ipd_m=0.064, scale=1.0, rows_per_chunk=64)
     assert abs(rep["nadir_mark"]["depth_below_pivot_m"] - Pp[2]) < 0.05       # the plane z = 0 under the pivot
     L = cv2.imread(str(tmp_path / "ods_mark" / "Sol0091_S003D0010_ods_left.png"))
     Rr = cv2.imread(str(tmp_path / "ods_mark" / "Sol0091_S003D0010_ods_right.png"))
     band = slice(rep["nadir_mark"]["first_row"], None)
     assert (L[band] != Rr[band]).any(axis=2).mean() > 0.001                  # the text is shifted between the eyes
+    assert rep["nadir_mark"]["in_panorama"] is True
+
+
+def test_the_eye_panoramas_carry_no_nadir_mark(tmp_path):
+    """1.0 (Christian, 20 Nov 2026: "Do not include the blue circle and text in the 360 images. That should only enter
+    as the nadir_mark disk"; 0.99.53 nadir.MARK_IN_PANORAMA): the eyes are the same pixels as a render without the mark; the mark is its picture alone
+    (``<prefix>_nadir_mark.png``), recorded for the viewer's disc."""
+    import cv2
+    from rpp.ibr import nadir
+    assert nadir.MARK_IN_PANORAMA is False
+    proj, rec, st, scene, Pp, colors = _station_scene(tmp_path)
+    kw = dict(width=512, ipd_m=0.064, scale=1.0, rows_per_chunk=64)
+    rep = O.render_station(proj, rec, st, scene, tmp_path / "with", **kw)
+    O.render_station(proj, rec, st, scene, tmp_path / "without", nadir_mark=False, **kw)
+    nm = rep["nadir_mark"]
+    assert nm["in_panorama"] is False and "no panorama carries it" in nm["note"]
+    assert (tmp_path / "with" / nm["texture"]).is_file() and nm["radius_m"] > 0 and nm["depth_below_pivot_m"] > 0
+    for eye in ("left", "right"):
+        a = cv2.imread(str(tmp_path / "with" / f"Sol0091_S003D0010_ods_{eye}.png"))
+        b = cv2.imread(str(tmp_path / "without" / f"Sol0091_S003D0010_ods_{eye}.png"))
+        assert a is not None and a.shape == b.shape and (a == b).all(), eye
+    bg = np.asarray(nadir.BACKGROUND_RGB)[::-1]
+    band = a[nm["first_row"]:]
+    assert (np.abs(band.astype(float) - bg).max(axis=-1) < 3).mean() < 0.2      # no light blue disc
 
 
 def test_enhanced_views_smooth_the_sky(tmp_path):
@@ -2835,7 +2860,7 @@ def test_ground_mark_published_and_upload_keeps_a_failed_push_for_the_next_one(t
     # 0.99.36: the page goes up with the panoramas (the live viewer stayed at 17 Nov's page while only these went up)
     assert "docs/ods/index.html" in names and "page and panoramas" in subprocess.run(
         ["git", "-C", str(repo), "log", "--format=%s"], capture_output=True, text=True).stdout
-    page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    page = (Path(SS.__file__).resolve().parents[1] / "viewer" / "index.html").read_text(encoding="utf-8")
     assert "ground_mark" in page and "CircleGeometry" in page
     assert "single-sites --upload %*" in SS.BAT and "--no-upload" in SS.BAT
     a = SS.build_parser().parse_args(["--upload", "--no-upload"]) if hasattr(SS, "build_parser") else None
@@ -3170,7 +3195,7 @@ def test_rover_variant_gets_a_turning_disc_and_the_page_faces(tmp_path):
     vs = {v["key"]: v for v in doc["panos"][-1]["variants"]}
     assert vs["rover"]["ground_mark"]["file"] == vs["masked"]["ground_mark"]["file"]
     assert web.WELCOME_YAW_DEG == 270.0
-    page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    page = (Path(SS.__file__).resolve().parents[1] / "viewer" / "index.html").read_text(encoding="utf-8")
     assert "const VIEWER_NAME = 'Rover Photogrammetry Viewer (RPV)';" in page and "RPP stereo viewer" not in page and "WELCOME_AZ_DEG = 270" in page
     assert all(f'id="face{k}"' in page for k in "NESWO") and "lookKeys" in page   # O looks level since 0.98.28
 
@@ -3198,7 +3223,7 @@ def test_o_looks_along_the_rover_x_and_y_b_home_buttons(tmp_path):
     assert web.rover_forward_azimuth({"text_centre_azimuth_deg": 100.0}) == 325.0
     assert web.rover_forward_azimuth({"rover_forward_azimuth_deg": 370.0, "text_centre_azimuth_deg": 1.0}) == 10.0
     assert web.rover_forward_azimuth({}) is None
-    page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    page = (Path(SS.__file__).resolve().parents[1] / "viewer" / "index.html").read_text(encoding="utf-8")
     assert "#compass { position: fixed; right: 12px; top: 8px;" in page and "-Math.PI / 4" not in page
     assert "TEXT_FROM_FORWARD_DEG = 135" in page and "rover_forward_azimuth_deg" in page
     assert 'id="home"' in page and "goHome" in page and "faceAfterLoad = 270" in page
@@ -3217,9 +3242,9 @@ def test_viewer_moves_to_its_own_repository(tmp_path, monkeypatch):
     assert web.viewer_dir() == tmp_path / "RPV"
     monkeypatch.delenv("RPP_VIEWER_DIR")
     home = Path(web.__file__).resolve().parents[3]
-    assert web.viewer_dir() in (home.parent / "rpv", home.parent / "RPV", home / "docs" / "ods")
+    assert web.viewer_dir() in (home.parent / "rpv", home.parent / "RPV", Path.cwd() / "rpv")
     assert web.VIEWER_URL == "https://ctate7163.github.io/rpv/"        # 0.99.13: lower case
-    page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    page = (Path(SS.__file__).resolve().parents[1] / "viewer" / "index.html").read_text(encoding="utf-8")
     head = page[:page.index("</head>")]
     assert "location.replace('https://ctate7163.github.io/rpv/' + location.search + location.hash)" in head
     assert "/^\\/RPV(\\/|$)/.test(location.pathname)" in head      # 0.99.13: a copy still served at /RPV/ sends on too
@@ -3266,7 +3291,7 @@ def test_info_map_is_the_blank_panel_d_and_the_menu_says_sol_then_name(tmp_path,
     (root / "dem" / "msr_trn" / "DTM_new.tif").write_bytes(b"x")
     web.traverse_dtm(wp, tr, w, root=root)                      # another DTM: drawn again
     assert called
-    page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    page = (Path(SS.__file__).resolve().parents[1] / "viewer" / "index.html").read_text(encoding="utf-8")
     assert "menuLabel(q)" in page and "Sol ${String(sols[0]).padStart(4, '0')} ${nm}" in page
     assert "Site ${parseInt(sd[1], 10)}, Drive ${parseInt(sd[2], 10)}" in page and "#ff9500" in page and "strokeRect(mx - r, my - r" in page and "traverse.dtm" in page
     study = Path(SS.__file__).resolve().parents[2] / "rpp_studies" / "sites" / "m20_sites"
@@ -3375,7 +3400,7 @@ def test_viewer_station_arrows_rover_button_and_title():
     viewer (RPV)" instead of" the old list title'); the disc of a Mastcam-Z station named as its Navcam one; the
     Z34 panorama blended without per-image gains."""
     from rpp.ibr import web, single_sites as SS
-    page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    page = (Path(SS.__file__).resolve().parents[1] / "viewer" / "index.html").read_text(encoding="utf-8")
     nav = page[page.index('<div id="nav">'):page.index('<div id="msg">')]
     assert nav.index('id="prevSt"') < nav.index('id="roverBtn"') < nav.index('id="nextSt"')
     assert "#nav { position: fixed; right: 12px; bottom: 12px;" in page
@@ -3398,7 +3423,7 @@ def test_viewer_keeps_north_across_stations_and_its_name_in_the_bar():
     the top banner that still says Mars rover panorama viewer (RPV)"): the start heading is set once (the first panorama),
     a station change leaves the world's rotation alone; the bar and tab carry the viewer's name, which a list title of the
     viewer's own names does not replace."""
-    page = (Path(__file__).resolve().parents[1] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    page = (Path(__file__).resolve().parents[1] / "src" / "rpp" / "viewer" / "index.html").read_text(encoding="utf-8")
     show = page[page.index("async function show()"):page.index("function color(k)")]
     assert "if (!headingSet) {" in show and "headingSet = true;" in show
     assert show.count("world.rotation.y = yaw0 + turn;") == 1                       # inside the once-only block
@@ -3598,6 +3623,13 @@ def test_color_products_raw_tone_dcs(tmp_path):
     y = (g - np.asarray(P["dcs"]["mean_bgr"])) @ np.asarray(P["dcs"]["matrix_bgr"]).T
     assert np.allclose(np.cov(y.T), CP.DCS_SIGMA ** 2 * np.eye(3), atol=0.25 * CP.DCS_SIGMA ** 2)   # equal, uncorrelated
     assert np.abs(dcs[:H][mark_row + 2:].astype(int) - std[mark_row + 2:].astype(int)).mean() < 4   # the disc as standard
+    # 0.99.53: with eyes that carry no disc (in_panorama false) nothing is copied from the standard view
+    rec = json.loads((tmp_path / "ods.json").read_text())
+    rec["nadir_mark"]["in_panorama"] = False
+    (tmp_path / "ods.json").write_text(json.dumps(rec))
+    r2 = CP.write_color_products(tmp_path, "S1", levels_file=tmp_path / "levels2.json")
+    dcs2 = cv2.imread(r2["files"]["dcs"])
+    assert np.abs(dcs2[:H][mark_row + 2:].astype(int) - std[mark_row + 2:].astype(int)).mean() > 10
     assert 0 < tone[:H][t].mean() < 255 and r["parameters_from"] == "computed"
     assert "color_products_parameters_v2" in json.loads(f.read_text())
     r2 = CP.write_color_products(tmp_path, "S1", levels_file=f)

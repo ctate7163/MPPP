@@ -370,7 +370,7 @@ class SfmProject:
         one camera per eye and zoom.
         ``zcam_bin_by`` (0.94.4): ``"focus"`` (default) - the focus bins above; ``"sequence"`` - the focus bins of
         each sol and sequence apart (``ZL034_F02312_s0121_ZCAM08114``); ``"image"`` - one camera per image
-        (``ZL034_F02312_c0677678707``), each with its own focal length: the states run (``run_zcam_states.bat``).
+        (``ZL034_F02312_c0677678707``), each with its own focal length: the states run (the ``zcam_states`` stage of ``run_pipeline``).
         ``zcam_bin_refine``: ``"focal"`` - a bin camera refines fx, fy only; ``"focal_pp"`` - and on ZR cx, cy;
         ``"model"`` - f held at the model; ``"all"`` - every parameter.  Each image records ``camera_group``
         (``ZL034``), ``focus_count``, ``label_f_px`` and ``focus_state``.
