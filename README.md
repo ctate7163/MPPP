@@ -10,7 +10,7 @@ Documentation: <https://ctate7163.github.io/rpp/>
 
 **Formerly MPPP.** Until 0.98 the pipeline was called MPPP (Mars Photogrammetry Preprocessing Pipeline). Since 0.99
 it is RPP: `import rpp`, the `rpp` command, the `RPP_*` environment variables, the mask models `rpp_mask_v*` and the
-PyPI distribution `rover-photogrammetry-pipeline`. The old names still work in 0.99 (`import mppp`, `python -m mppp`,
+PyPI distribution `rover-photogrammetry` (0.99.46; `rover-photogrammetry-pipeline` before). The old names still work in 0.99 (`import mppp`, `python -m mppp`,
 the `MPPP_*` variables, `mppp_mask_v3`), and WORK folders keep their file names (`mppp_manifest_*.json`,
 `mppp_status.json`, ...), so blocks made by MPPP are reused as they are (`rpp.ondisk` lists the names that stay).
 
@@ -54,9 +54,8 @@ development releases; see [CHANGELOG.md](https://github.com/ctate7163/rpp/blob/m
 
 ## Install
 
-Install RPP into a conda environment of its own (Miniforge, Miniconda or Anaconda), from the GitHub repository.
-It is not on PyPI yet: the name `rover-photogrammetry-pipeline` is reserved there for the first release. The same
-commands work in a Windows Anaconda Prompt, PowerShell and a Linux or macOS shell:
+Install RPP into a conda environment of its own (Miniforge, Miniconda or Anaconda), from the GitHub repository. The
+same commands work in a Windows Anaconda Prompt, PowerShell and a Linux or macOS shell:
 
 ```bash
 conda create -n rpp -c conda-forge python=3.12 git -y
@@ -73,6 +72,11 @@ rpp doctor
   <https://pytorch.org> says, and pip keeps it. `pip install -e .` alone reads and processes PDS products;
   `".[all]"` adds the notebooks, the maps, the tests and the studies' packages.
 - `rpp doctor` reports what is installed and which camera models are in use.
+- From PyPI, once released: `pip install "rover-photogrammetry[mask,sfm,plots]"` in the same conda environment. The
+  distribution is `rover-photogrammetry`; the import name and the command are `rpp`. The PyPI package named `rpp` is a
+  different project (a REAPER file parser) that uses the same import name: do not install both.
+- GPU users: install the CUDA build of PyTorch first, with the command <https://pytorch.org> gives for your CUDA
+  version, then RPP; pip keeps the torch that is there.
 - `envs/rpp.yml` makes the same environment in one step: `conda env create -f envs/rpp.yml`, then
   `conda activate rpp` and `pip install -e .` in the clone.
 

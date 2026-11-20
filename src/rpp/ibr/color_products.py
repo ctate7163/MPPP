@@ -371,3 +371,85 @@ def write_color_products(out_dir: PathLike, prefix: str, top: str = "left", jpeg
     (out / f"{pre}color_products.json").write_text(json.dumps(rec, indent=1, default=float), encoding="utf-8")
     log.info("color products: %s (%s)", ", ".join(Path(v).name for v in files.values()), "; ".join(rec["notes"]) or "all masks")
     return rec
+
+
+SKIN_TAGS = {"enhlocal": "enhanced local", "enhtone": "enhanced tone", "raw": "raw color", "dcs": "dcs color"}   # 0.99.41
+
+
+def texture_products(a16: np.ndarray, k16: float, folder: PathLike, levels_file: Optional[PathLike],
+                     texels_per_deg: float) -> Dict[str, np.ndarray]:
+    """0.99.41 (Christian, 19 Nov 2026: "The different color skins for the terrain should be visible in both modes.
+    this means they should be rendered as in the full 3d projection too"): the color views of a 16-bit 3D texture
+    (BGR uint16 in the panoramas' encoding, :func:`rpp.ibr.station_mesh.write_part`) - {tag: BGR uint8} for the tags
+    of :data:`SKIN_TAGS` - with the station's own parameters from ``levels_file`` (the panoramas' shared values: the
+    same enhanced-color levels, white balance, enhanced-tone and dcs parameters, so a skin matches its panorama view);
+    the filters' radii are set in texels by ``texels_per_deg`` (the texture's texels a degree from its center) for
+    the panoramas' angles.  White texels (65535: the sky, unused) stay white; a view whose parameters the file does not
+    hold (no color products made yet) is left out."""
+    import cv2
+    from .linear16 import (ENH_LOCAL_SIGMA_FRAC, desaturate, local_contrast, shared_value, tone_enhanced, tone_pipeline)
+    white = (a16 == 65535).all(axis=-1)
+    empty = (a16 == 0).all(axis=-1)
+    H, W = a16.shape[:2]
+    out: Dict[str, np.ndarray] = {}
+    wb = white_balance(Path(folder))
+    wb_bgr = None if wb is None else wb[::-1].astype(np.float32)
+    stored: Dict[str, Any] = {}
+    if levels_file is not None and Path(levels_file).is_file():
+        try:
+            stored = json.loads(Path(levels_file).read_text(encoding="utf-8"))
+        except ValueError:
+            stored = {}
+    lv = stored.get("enhanced_gamma_stretch_s_levels")
+    params = stored.get("color_products_parameters_v2")
+    tpd = max(float(texels_per_deg), 1e-3)
+    raw = np.empty((H, W, 3), np.uint8)
+    enh = np.empty((H, W, 3), np.uint8) if lv else None
+    enht = dcs = None
+    if params:
+        ref = float(params["white_linear_8bit_units"])
+        tp = params["tone"]
+        mu = np.asarray(params["dcs"]["mean_bgr"], np.float32)
+        T = np.asarray(params["dcs"]["matrix_bgr"], np.float32)
+        mu_out = np.full(3, DCS_MID, np.float32)
+        w4 = min(TONE_WORK_WIDTH, W)
+        h4 = max(2, int(round(H * w4 / W)))
+        small = cv2.resize(a16, (w4, h4), interpolation=cv2.INTER_AREA).astype(np.float32) / np.float32(k16)
+        r = max(2, int(round(TONE_RADIUS_DEG * tpd * w4 / W)))
+        ga, gb = guided_coefficients(np.log(np.maximum(_lum(small), 1e-6) / ref).astype(np.float32), r, TONE_EPS)
+        del small
+        enht = np.empty((H, W, 3), np.uint8)
+        dcs = np.empty((H, W, 3), np.uint8)
+    for r0 in range(0, H, STRIP_ROWS):
+        r1 = min(H, r0 + STRIP_ROWS)
+        xs = a16[r0:r1].astype(np.float32) / np.float32(k16)             # BGR, 8-bit linear units
+        raw[r0:r1] = np.rint(tone_pipeline(xs / wb_bgr if wb_bgr is not None else xs)).astype(np.uint8)
+        if enh is not None:
+            enh[r0:r1] = np.rint(desaturate(tone_enhanced(xs, *lv))).astype(np.uint8)
+        if params:
+            fy = H / ga.shape[0]
+            s0, s1 = max(0, int(r0 / fy) - 2), min(ga.shape[0], int(np.ceil(r1 / fy)) + 2)
+            n = max(1, int(round((s1 - s0) * fy)))
+            off = min(max(0, int(round(r0 - s0 * fy))), max(0, n - (r1 - r0)))
+            up = lambda q: cv2.resize(q[s0:s1], (W, n), interpolation=cv2.INTER_LINEAR)[off:off + (r1 - r0)]   # noqa: E731
+            Ls = np.log(np.maximum(_lum(xs), 1e-6) / ref)
+            yt = _tone_display(xs, Ls, up(ga) * Ls + up(gb), tp["base_median_log"], tp["base_compression"])
+            enht[r0:r1] = np.rint(255.0 * _tone_stretch(yt, tp.get("display_median", 0.5))).astype(np.uint8)
+            del Ls, yt
+            g = np.clip(xs / ref, 0.0, 1.0) ** (1.0 / GAMMA)
+            d = np.clip((g - mu) @ T.T + mu_out, 0.0, 1.0)
+            d[xs.max(axis=2) <= 0] = 0.0
+            dcs[r0:r1] = np.rint(255.0 * d).astype(np.uint8)
+            del g, d
+        del xs
+    out["raw"] = raw
+    if enh is not None:
+        out["enhlocal"] = local_contrast(enh, sigma_px=ENH_LOCAL_SIGMA_FRAC * 360.0 * tpd, wrap=False)
+        del enh
+    if params:
+        out["enhtone"], out["dcs"] = enht, dcs
+    for v in out.values():
+        v[white] = 255
+        v[empty & ~white] = 0
+    return out
+

@@ -93,6 +93,9 @@ def _frames(project, st, a) -> Optional[list]:
     sols 52, 54 and 64, and showed the arm where it was on the other sols); else every frame of the station.  Then
     ``--sols``."""
     names = list(a.images) if getattr(a, "images", None) else None
+    if names and any(c in str(n) for n in names for c in "*?["):           # 0.99.46: a name may be a pattern
+        from .ods import expand_names
+        names = [n for n in expand_names(names, list(st.images)) if n in set(st.images)]
     if names is None:
         recs = sorted(Path(project.root).glob(f"dense_{st.key}*/mppp_dense.json"), key=lambda f: f.stat().st_mtime)
         if recs:
@@ -110,8 +113,17 @@ def _frames(project, st, a) -> Optional[list]:
                  ", ".join(sorted(set(base) - set(names))) or "none of them were in")
     sols = getattr(a, "sols", None)
     if sols:
+        want = set(int(x) for x in sols)
+        on = lambda base: [n for n in base if n[4:8].isdigit() and int(n[4:8]) in want]     # noqa: E731
         base = names if names is not None else list(st.images)
-        names = [n for n in base if n[4:8].isdigit() and int(n[4:8]) in set(int(x) for x in sols)]
+        got = on(base)
+        if not got and names is not None and not getattr(a, "images", None):
+            # 0.99.46: the dense workspace's frames (a Mastcam-Z station's dense step records its Navcam frames) hold none
+            # of these sols - the station's own frames of them, not an empty list (which rpp ods took for "every frame
+            # of the station": every Mastcam-Z frame of every sol and zoom)
+            got = on(list(st.images))
+            log.info("frames: none of the dense workspace's on sols %s - the station's own", sols)
+        names = got
         log.info("frames: %d on sols %s", len(names), sols)
     return names
 
@@ -249,6 +261,9 @@ def add_parsers(sub) -> None:
                    help="0.97.13: the sky sphere alone beyond the ground plane (default: per direction the sharpest of "
                         "100 m, the sky radius and infinity, blended)")
     p.add_argument("--cameras", default="N")
+    p.add_argument("--rover-zcam", action="store_true",
+                   help="0.99.46: the Mastcam-Z frames color the rover too (a run with a dedicated Mastcam-Z deck pan in "
+                        "stereo); default: the rover from the Navcam frames alone")
     p.add_argument("--fill-cameras", default="", metavar="LETTERS",
                    help="0.97.7: the station's frames of these camera families as fill-only sources - they color what "
                         "the panorama's own frames do not see (F: the front Hazcam pair, for the terrain under the arm; "
@@ -553,6 +568,7 @@ def cmd_ods(a: argparse.Namespace) -> int:
                          ground_fill=not a.no_ground_fill, mask_mast=not a.keep_mast,
                          tone_levels_file=a.tone_levels, center_depth=not a.no_depth,
                          fill_families=a.fill_cameras, nadir_mark=not a.no_nadir_mark, site_name=a.site_name,
+                         rover_zcam=getattr(a, "rover_zcam", False),
                          nadir_mark_deg=a.nadir_mark_deg)
     if getattr(a, "station_mesh_only", False):
         print(f"station mesh part: {json.dumps(rep, default=str)[:600]}")

@@ -3,6 +3,181 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.48 — 2026-11-19 (branch `rpp`)
+
+- **A stopped run loses only the step it was in** (Christian, 16:22: "Will it need to redo that if I stop it?"):
+  `rpp dense` fuses the cloud again only when its stereo maps or options changed. A fusion writes
+  `rpp_fusion.json` next to the cloud; a cloud of 0.99.46 or before is taken when `mppp_dense_run.json` (written
+  after it) records the fusion. Before, every dense call fused again, and the new `fused.ply` (its time is in the
+  mesh step's key) made the station's mesh, per-frame maps and panoramas again - after any restart, and for the
+  block's second station (a Z34 version) in the same run. The stereo maps were already kept image by image.
+- **`rpv_products.bat`** (16:22: "call this rpv_products.bat"): the freeze-3 station run of `recolor_rpv.bat` under
+  its new name (log `D:\rover_blocks_f3\single_sites\rpv_products_log.txt`), with `--skip-done`.
+
+## 0.99.47 — 2026-11-19 (branch `rpp`)
+
+- **A Mastcam-Z 360 over two sols** (Christian, 16:03: "For both examples, use both sols so that it has a full 360"):
+  `zcam_sols` in single_sites.json names the sols of the 360s taken over more than one sol - Rochette (S007D0000:
+  sols 181 and 182, 47 + 48 pairs) and Wildcat Ridge (S026D1222: sols 518 and 530, 63 + 47 pairs; the shorter sets
+  of sols 520, 521 and 534 stay out). Their Z34 versions (`Sol0181_S007D0000_Z34`, `Sol0518_S026D1222_Z34`) render
+  the 34 mm frames of both sols; elsewhere the sol with the most frames, as before.
+- **Sol 72** (16:03: "Add sol 72 to the site list"): `Sol0072_S003D2346`, Chal Rocks - the Navcam end-of-drive 360 of
+  sol 72 (NCAM03072 x3, NCAM02072 x2), the terrain from the block's cloud (shared with `Sol0073_S003D2430`), context
+  the mid-drive pairs of sols 72 (3.6 m) and 73 (8.9 m). No Mastcam-Z 360 was taken there.
+- **`rpp single-sites --skip-done`** (16:06: "recolor_rpv.bat should skip sites already processed"): a station whose
+  panoramas a good run already made in the output root (`step_ods.json` with exit 0 and `ods.json`, both variants)
+  is left out whatever code version made it, and not uploaded again; `--force` makes it again. Without it a step is
+  skipped only when its command and code are unchanged, so every new version rendered every station again.
+  `recolor_rpv.bat` gives it.
+
+## 0.99.46 — 2026-11-19 (branch `rpp`)
+
+From the dry run of the freeze-3 station run (Christian, 15:28):
+
+- **A Mastcam-Z version took every Mastcam-Z frame of its station.** `rpp ods` without `--images` takes the frames
+  the station's dense workspace was made from - for a Mastcam-Z station its Navcam frames - and `--sols` then left
+  none; the empty list read as "every frame of the station", so every sol and zoom (Butler Landing's 110 mm frames
+  too). `_frames` now falls back to the station's own frames of those sols, and the stations `zcam_companions` makes
+  name their frames (`--images`: the 34 mm frames of that sol, both eyes). This also holds for the config's own
+  Mastcam-Z stations (Three Forks North and South).
+- The Mastcam-Z versions make no per-frame maps (`depthmaps`): the Navcam station has them.
+- `rpp single-sites` runs the stations in sol order (Christian, 15:30: "put the single sites in sol order"; the
+  config's last first before), each Mastcam-Z version right after its Navcam station.
+- `Sol0011_S003D0000_Z34` in the config: Butler Landing's Mastcam-Z 34 mm 360 of sol 11 (54 pairs), after
+  `Sol0009_S003D0000` (15:30: "add Sol0011_S003D0000 and a _Z34 for every z34 360"); the other Z34 360s get theirs
+  from `zcam_companions`. `rpp ods --images` takes patterns (`Z?0_0011_*_N0030000ZCAM*_034*`).
+- `Sol0449_S026D0000` (Rose River Falls) is rendered in the block `mars2020_sol_0449_rose_river_falls_zcam`, which
+  freeze 3 aligns, not in `mars2020_sol_0437_knob_mountain_large_zcam` (15:31). The Mastcam-Z consensus list
+  (`zcam_consensus` in sites.json) already has rose_river_falls and not knob_mountain_large.
+- **PyPI distribution `rover-photogrammetry`** (Christian, 19 Nov 2026: "I like rover-photogrammetry because it is
+  shorter and general to the pipeline and viewer"; `rover-photogrammetry-pipeline` from 0.99.0): the import name and
+  the command stay `rpp`. `.github/workflows/release.yml` (was `publish.yml`) publishes on a pushed tag `v*` by
+  trusted publishing and to TestPyPI on a manual run, and checks that the wheel holds no checkpoints, PDS products or
+  run folders; the project URLs add Source and Viewer; README (PyPI install line, the other `rpp` package, the CUDA
+  torch) and RELEASING.md section 8 (accounts, pending publishers, tag release, twine fallback).
+- **The rover from the Navcam frames** (Christian, 15:41: "the rover texture should come from the ncam images unless
+  and there is a dedicated zcam deck pan in stereo"): in a Mastcam-Z run the Mastcam-Z frames no longer color the
+  rover - in the panorama (a `no_rover` source, as a context frame) and in the 3D rover (`station_mesh.rover_families`)
+  - unless `rpp ods --rover-zcam` is given: Three Forks North (the deck pan ZCAM05086 of sol 692) has it.
+- **A Navcam station at every Mastcam-Z 360 of the blocks** (15:32: "every z34 site should have a navcam site"; 15:41:
+  "Add overlook mountain and its z48 360 to the list"): from the Mastcam-Z blocks of the old root, the 34 mm 360s
+  without one got their end-of-drive Navcam station - `Sol0086_S004D0048` (Chal Rocks), `Sol0362_S011D0108` (Chal
+  Rocks), `Sol0422_S024D0000` (Enchanted Lake), `Sol0797_S039D1170` (Belva Crater), `Sol0960_S047D0000` (Airey Hill) -
+  each with its Z34 version from `zcam_companions` once its block is aligned; Overlook Mountain: `Sol1154_S052D2644`
+  and its 48 mm 360 `Sol1155_S052D2644_Z48` (244 pairs, half size).
+- `recolor_rpv.bat` is now the freeze-3 station run (Christian, 15:29: "instead of rpv_stations_freeze3.bat, make it
+  just the default recolor_rpv.bat"): the page first, then every station whose block in `D:\rover_blocks_f3` is
+  aligned, each Mastcam-Z version right after its Navcam station, the others as their blocks come in.
+
+## 0.99.45 — 2026-11-19 (branch `rpp`)
+
+- `rpp single-sites`: every log line of the publishing was printed twice (the rpp logger's console handler and a
+  second one that `logging.basicConfig` put on the root logger); the second is added only when the rpp logger has
+  none (`_console_log`).
+- `recolor_rpv.bat` no longer stops to ask about the older recolor logs (Christian, 15:11: "why does this pause
+  requiring a 'press any key'").
+
+## 0.99.44 — 2026-11-19 (branch `rpp`)
+
+Christian, 14:46: "don't use rear hazcams for the dense step. check the code one more time. run only on aligned blocks.
+Skip a bock if it doesn't exist and come back to it later. When there are no more stations to run, then stop."
+
+- The freeze-3 station run takes the block's cloud from the Navcam and front Hazcam frames (`--block-cameras NF`,
+  workspace `dense_block_FN`); no rear Hazcam frame goes into the dense step.
+- `rpp single-sites --wait-for-blocks [HOURS]` (`--poll-min`): the stations whose block is aligned run; the others -
+  a block that is not there or has no `colmap/run_done.json` yet - are looked at again every 15 minutes and run as
+  their blocks come in, the Mastcam-Z versions too; the run stops when no station is left, or when no block has come
+  in for HOURS (default 36). A pass with nothing to run publishes nothing.
+- Found in the second review, fixed: `zcam_companions` passed over every station that names its block by "work" and
+  not by "site" - most of the list since the freeze blocks, whose "work" is the Mastcam-Z block itself. A station's own
+  block is now its Mastcam-Z block when it ends in `_zcam`; else its site's; else `<block>_zcam`.
+
+## 0.99.43 — 2026-11-19 (branch `rpp`)
+
+Christian, 14:32: "do this for every site from which we have a z34 360. The ncam stations are already in the single
+sites list"; "the whole block depth should use all the ecams, low to high res and fuse them together in one mesh. That
+is the part that takes a long time. The ODS and full 3d pipeline starts from this mesh, fills holes and simplifies
+it"; "v5p2_2 is perfect".
+
+- **Mastcam-Z 34 mm versions** (`single_sites.zcam_companions`): in a run of the whole list (no station named, or
+  `--all`; `--no-zcam` turns it off) every Navcam station whose site's Mastcam-Z block holds at least 36 left-eye
+  34 mm frames of one sol taken at the station gets a Mastcam-Z station `Sol<sol>_<station>_Z34`, made right after it
+  (the config's own Mastcam-Z stations too): the panorama from that sol's 34 mm frames at half size, the station's
+  Navcam and front Hazcam frames and the Navcam station's context frames as fill, the block's terrain.
+- **The block's cloud from every engineering camera** (`rpp dense --whole-block --block-cameras NFR`, workspace
+  `dense_block_FNR`; `rpp single-sites --block-cameras NFR`, or "block_cameras" in the config): Navcam, front and
+  rear Hazcam frames of every size in one cloud per block, shared by its stations. `rpp single-sites --terrain block`
+  gives every station of a run the whole block's cloud, the ones with a named terrain set too. The config is
+  unchanged (Navcam alone, the named sets), so runs in the old root make nothing again; the freeze-3 station run
+  passes both (`rpv_stations_freeze3.bat`). The block terrain has been the config's default since 0.99.20.
+- **`rpp_mask_v5` is the second v5.2 run** (`convnext_tiny_s4_seg_20261118_v5p2_2`): the registry entry, the model
+  card (its own numbers on validation_set_v1: 0.974 against v3's 0.973, +0.0017 [-0.0063, +0.0091]; the Curiosity
+  cameras 0.983 / 0.968 against 0.971 / 0.934; 4,965 training frames, 198 of them Curiosity), docs/masks.md and
+  RELEASING.md; `upload_mask_models.bat` exports that checkpoint.
+
+## 0.99.42 — 2026-11-19 (branch `rpp`)
+
+A review of 0.99.38-0.99.41 (Christian, 14:18: "Look over the code and make sure it made the necessary changes and did
+not introduce more bugs"). Four faults of 0.99.40-0.99.41, fixed:
+
+- **The white sky took the far hills with it.** The texture's "sky" texels were every ray that met neither the mesh nor
+  the ground plane - the sky and the hills beyond the 75 m mesh - and all were whitened, as was everything beyond the
+  skyline's circle. Now (`station_mesh.sky_texels`) a far texel is sky when it is brighter than midway (log) between
+  the sky above 15 deg and the mesh's ground, or uncolored, and joined through such texels to the zenith; darker far
+  texels keep their colors, beyond the circle too.
+- RPV: the full 3D terrain had no distance map at stations published since 0.98.30 (their key is "distance map"; the
+  page looked for "range log").
+- RPV: full 3D <-> the drive on the standard view took the new skin path, so the drive did not start (or end); a
+  change into or out of the drive loads the surfaces again.
+- RPV: a skin still loading when another station (or skin) was chosen could land on the new surfaces; the later
+  choice wins.
+
+## 0.99.41 — 2026-11-19 (branch `rpp`)
+
+- RPV: the local 3D terrain is the full 3D file's terrain - the same 20 m mesh and texture, its shell to the horizon
+  left out, the panorama behind it - where the station has the full 3D file (Christian, 13:31: "the 3d terrain should
+  preferably use the same texture as the full 3d texture"); else the station mesh as before. Its texture has about
+  25 % fewer texels per degree on the near ground (the full 3D texture maps the terrain up to the skyline onto 90 % of
+  its radius: about 37 texels a degree, against 49 for the 20 m station mesh's own).
+- **Station mesh textures in 16 bits** (Christian, 13:29: "the ...mesh_terrain.jpg and full 3D texture should be made
+  projected as 16-bit images and converted to 8-bit the same way as the ods"): they were already projected from the
+  16-bit linear frames and converted with the panoramas' exposure and curve; now each part also keeps its texture in
+  the 16-bit panoramas' encoding (`<stem>_16.png`), and `rpp ods --retone` (`linear16.retone` ->
+  `station_mesh.retone_textures`) makes the .jpg again from it as it does the panoramas, so a retone reaches the 3D
+  modes too (single-sites then puts the .glb files together again). Stations rendered before 0.99.41 have no 16-bit
+  texture: their 3D textures keep the tone they were rendered with.
+- **RPV B and the color skins in 3D** (Christian, 13:54: "we need a way to change between ods and full 3d mode in VR.
+  Maybe that should be B. The different color skins for the terrain should be visible in both modes. this means they
+  should be rendered as in the full 3d projection too. As with the ods, the normal and distance textures can be
+  renered at half resolution as the terrain projection"; 14:00: "is there a way to speed up switching skins colors
+  while in full 3d mode?"):
+  - B (headset and keyboard) switches terrain stereo <-> terrain full 3D (the local 3D where a station has no full),
+    keeping the view; the rover is hidden with the rover button, R or the left grip (B was terrain only until 0.99.40).
+  - The full 3D texture gets the color skins - enhanced color, enhanced tone, original color, decorrelation stretch -
+    from its 16-bit texture with the station's own parameters (`color_products.texture_products`,
+    `station_mesh.write_skins`: `<stem>_<tag>.jpg`; made by `rpp ods` after the panoramas' color products and again by
+    a retone), listed by `web.station_scape` as "skins"; the page puts a skin on the terrain and its shell in the full
+    and the local 3D terrain.
+  - The normal and distance maps of the 3D modes are drawn from the surfaces (the distance from the eye, turbo over
+    log10 0.5-200 m as the distance panoramas; the sky white): no texture at any resolution, and they follow the eye.
+  - A change of color view on the surfaces already up only swaps the picture (the file's own texture kept for the way
+    back, one skin at a time): no file loaded again and no rover made again. In a headset it also brings the surfaces
+    back with their pivot at the eyes, the heading unchanged (14:06).
+- **16-bit sources only** (`rpp ods --bits 16`; Christian, 13:40: "the texture and ods projections should only be made
+  from projections of the 16-bit images in the eod sequences and the specially identified context images which are
+  usually the penultimate mid drive imaging"): a station frame without a 16-bit image is left out of the panorama and
+  its textures (`ods.json` linear16.left_out_without_16bit), as fill and context frames already were; before, one such
+  frame put the whole panorama in 8 bits (still the case when none of the station's frames has one). The frames
+  themselves are as before: the station's end-of-drive frames of `single_sites.json`, its named context frames, and
+  the front Hazcam fill frames taken within 2 h of them.
+- RPV: the rover button's icon is orange while the rover is hidden and white while it is shown (13:30, 13:36).
+- **The full 3D texture** (`station_mesh`; Christian, 13:34: "the full 3d texture can cut out some sky to make more
+  room for center detail", "assuming the black area does not map to the mesh, make it white"; 13:37: "the sky still
+  has too many blemishes. That can be solid white"): the sky texels, the zone beyond the skyline's circle and the
+  texels no triangle uses are white (`SKY_WHITE`; 65535 in the 16-bit texture, kept white by a retone); the terrain up
+  to the skyline takes 97 % of the disc's radius (90 %) and the skyline is at least 5 deg above the horizontal (10):
+  about 13 % more texels a degree on the ground.
+
 ## 0.99.40 — 2026-11-19 (branch `rpp`)
 
 Christian, 13:00: "change the mode banner to be just for the terrain. the terrain can be terrain stereo, terrain local

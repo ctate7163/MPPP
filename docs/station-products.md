@@ -271,7 +271,14 @@ rover; `panos.json` keeps the variants below, and the two choices pick one of th
 | terrain full 3D | `scape3d`, its 3D rover hidden | `scape3d` |
 
 The full 3D terrain loads no panorama (its texture holds the whole view from the pivot): its views are its texture
-(standard color) and the normal map. The drive (`drive3d`, the full 3D terrain and the rover) is the steering wheel
+(standard color) and the normal map. The local 3D terrain is the full 3D file's terrain (the same 20 m mesh and
+texture, the shell to the horizon left out) in front of the terrain-only panorama, where the station has the full 3D
+file (0.99.41); else the station mesh. Each part's texture is also kept in 16 bits (`<stem>_16.png`, the panoramas'
+encoding), and `rpp ods --retone` makes the textures again from it with the panoramas' 8-bit conversion (0.99.41).
+The full 3D texture also has the color skins of the panoramas - enhanced color, enhanced tone, original color,
+decorrelation stretch (`<stem>_enhlocal.jpg`, `_enhtone`, `_raw`, `_dcs`), made from its 16-bit texture with the
+station's parameters - and the page draws the normal and distance maps of the 3D modes from the surfaces themselves.
+B switches terrain stereo and terrain full 3D (0.99.41). The drive (`drive3d`, the full 3D terrain and the rover) is the steering wheel
 above the rover button, shown only with `?experimental=1`. A link to a 3D mode with the rover hidden ends in
 `/no-rover`; the wheel carries a "Beta" tag, and in a headset a thumbstick click starts and ends the drive (the sticks'
 forward / back: the tracks; left / right still turn the view). The directions in the sky show in the welcome view and
@@ -314,6 +321,16 @@ terrain under its six wheels. It stops 15 m from where the rover stood (the text
 10 m until 0.99.39). In a
 headset the rover is hidden while the head is more than 1 m from its pivot. The ground under the real rover is
 interpolated (no frame saw it), and its shadow is in the texture.
+
+### The block's terrain and the Mastcam-Z versions (0.99.43)
+
+The slow part - the multi-view stereo and its fusion - is done once per block: `rpp dense --whole-block` makes one cloud
+(`colmap/dense_block_<families>`) that the block's stations share, and each station's mesh, hole filling,
+simplification, panoramas and 3D textures start from it. `--block-cameras NFR` (`rpp single-sites --block-cameras
+NF`) takes the Navcam and front Hazcam frames of every size (the freeze-3 station run; the rear Hazcam frames are
+left out of the dense step); the default is the Navcam frames. `--wait-for-blocks` runs the stations of the blocks
+that are aligned and comes back for the others as their blocks come in (0.99.44). In a run of the whole station list, a Navcam station whose site has a Mastcam-Z 34 mm 360 at it (36
+left-eye frames of one sol or more) is followed by its Mastcam-Z version, `Sol<sol>_<station>_Z34`.
 
 ### The mesh near the mast (0.99.32)
 

@@ -143,7 +143,7 @@ def test_render_station_part_web_entry_and_plan(tmp_path, monkeypatch):
     assert web.TERRAIN_3D == ("terrain3d", "3D terrain and rover")
     src = (SS.__file__)
     page = (__import__("pathlib").Path(src).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
-    assert "showRover(vr.station_mesh, { normals: nmView, rover: vr.rover_surface })" in page and "holdNearPivot" in page
+    assert "showRover(sm, { normals: nmView, distance: dView," in page and "holdNearPivot" in page
 
 
 def test_single_sites_skips_stations_whose_block_is_not_aligned(tmp_path, capsys):
@@ -199,21 +199,24 @@ def test_fifth_mode_surface_to_the_horizon_one_texture(tmp_path):
     assert np.isclose(r.max(), SM.DOME_M) and (r > 0.99 * SM.DOME_M).sum() > 100           # the sky, at the dome
     hd = np.hypot(*(sh["V"][:, :2] - np.asarray(st.pivot)[:2]).T)
     assert hd[sh["F"]].max(axis=1).min() >= SM.SHELL_FROM_M - 1e-3                           # nothing of it under the rover
-    assert 99.9 < np.degrees(sh["knee"]) < 102.0                                             # flat ground: 10 deg above the horizontal at least
+    assert 94.9 < np.degrees(sh["knee"]) < 97.0                                              # flat ground: 5 deg above the horizontal at least (0.99.41; 10 before)
     first, last = sh["V"][sh["F"][:10]].reshape(-1, 3), sh["V"][sh["F"][-10:]].reshape(-1, 3)
     assert np.linalg.norm(first - C, axis=1).min() > 0.99 * SM.DOME_M and np.linalg.norm(last - C, axis=1).max() < 20   # the far rings first
     tp = SM.terrain_part(sc, src, st, size=1024, target=8000, full=True)
     rr = tp["record"]
-    assert rr["full"] and rr["horizon_frac"] == 0.9 and rr["shell"]["triangles"] == len(tp["shell"]["F"]) and rr["fade_m"] == [18.0, 20.0]
+    assert rr["full"] and rr["horizon_frac"] == 0.97 and rr["shell"]["triangles"] == len(tp["shell"]["F"]) and rr["fade_m"] == [18.0, 20.0]
     rpx = 1024 / 2 - SM.GUTTER_PX - 2
     rho = np.hypot(tp["shell"]["uv"][:, 0] - 0.5, tp["shell"]["uv"][:, 1] - 0.5) * 1024
-    assert rho.max() <= rpx + 1e-3 and (rho > 0.9 * rpx + 1).any()                           # the sky beyond the 90 % circle
+    assert rho.max() <= rpx + 1e-3 and (rho > 0.97 * rpx + 1).any()                          # the sky beyond the 97 % circle
     ground = np.linalg.norm(tp["shell"]["V"] - C, axis=1) < 0.5 * SM.DOME_M
-    assert rho[ground].max() <= 0.9 * rpx + 1e-3                                             # the terrain inside it
+    assert rho[ground].max() <= 0.97 * rpx + 1e-3                                            # the terrain inside it
     rho_in = np.hypot(tp["uv"][:, 0] - 0.5, tp["uv"][:, 1] - 0.5) * 1024
     assert np.isfinite(tp["texture"]).all() and tp["texture"].shape == (1024, 1024, 3)
+    # 0.99.41: the sky and the unused texels white; the ground not
+    w = tp["white"]
+    assert w.shape == (1024, 1024) and w[512, 1023] and not w[512, 512] and rr["white_texels"] == int(w.sum()) > 0
     # the map and its inverse agree across the knee
-    knee = (np.radians(rr["skyline_deg"] + 90.0), 0.9)
+    knee = (np.radians(rr["skyline_deg"] + 90.0), 0.97)
     rows, cols = np.array([100, 512, 900, 30]), np.array([512, 300, 700, 512])
     d, _ = SM.disc_dirs(rows, cols, 1024, rpx, np.pi, st.up, st.north, st.east, knee=knee)
     uv = SM.disc_uv(C + 5 * d, C, 1024, rpx, np.pi, st.up, st.north, st.east, knee=knee)
@@ -273,10 +276,252 @@ def test_viewer_terrain_modes_rover_button_and_hidden_drive():
               "right grip: terrain   |   left grip: rover", 'id="driveBeta"', "if (pressed(src, 3) &&",
               "outlineWidth: 0.14, spacing: 0.12", "az, 24, 40, 10.5", "const on = welcome.visible || infoPanel.visible;",
               "#title { font-weight: 600; margin-right: 6px; color: #fff; }", "#bar button#home, #compass button#faceO { color: #ff9500; }",
-              "const MAP_ORANGE = '#ff9500';"):
+              "const MAP_ORANGE = '#ff9500';", "#nav button#roverBtn { color: #ff9500; }", "#nav button#roverBtn.on { color: #fff; border-color: #555; }",
+              "q.key === 'scape3d' && q.station_mesh", "noHorizon: true", "skipHorizon: isMain && !!rs.noHorizon",
+              "function stereoOrFull()", "const DIST_FRAG", "canSwap(sm, skinUrl) ? swapSkin(skinUrl)", "sk[k] || /^normal/.test(k) || k === 'range log' || k === 'distance map'", "if (id !== swapId || rid !== roverId) { bmp.close(); return; }",
+              "B: stereo / full 3D"):
         assert s in page, s
     nav = page[page.index('<div id="nav">'):page.index('<div id="msg">')]
     assert nav.index('id="driveBtn"') < nav.index('id="roverBtn"') and "#nav button#driveBtn { position: absolute;" in page
     assert "lastRoverKey" not in page and "grip: rover on, off, 3D, 3D terrain" not in page
     drive = page[page.index("if (pressed(src, 3) &&"):page.index("const x = gp.axes.length >= 4")]
     assert "continue;" not in drive                               # in the drive the sticks still turn the view
+
+
+def test_station_mesh_textures_kept_in_16_bits_and_retoned_as_the_panoramas(tmp_path):
+    """0.99.40 (Christian, 19 Nov 2026: "the ...mesh_terrain.jpg and full 3D texture should be made projected as 16-bit
+    images and converted to 8-bit the same way as the ods"): the 16-bit texture beside the .jpg, and the .jpg made
+    again from it by the panoramas' conversion."""
+    from types import SimpleNamespace as NS
+    import cv2
+    from rpp.ibr import station_mesh as SM
+    from rpp.ibr.linear16 import tone_pipeline
+    rng = np.random.default_rng(0)
+    tex = (rng.random((64, 64, 3)) * 300.0).astype(np.float32)          # linear, 8-bit units
+    k16 = 64.0 * 0.8
+    to16 = lambda rgb: np.clip(np.rint(rgb * k16), 0, 65535).astype(np.uint16)                       # noqa: E731
+    to8 = lambda rgb: np.clip(np.rint(tone_pipeline(np.clip(np.rint(rgb * k16), 0, 65535) / k16)), 0, 255).astype(np.uint8)   # noqa: E731
+    part = {"texture": tex, "V": np.zeros((3, 3)), "F": np.array([[0, 1, 2]]), "uv": np.zeros((3, 2)), "record": {}}
+    st = NS(pivot=(0, 0, 0), east=(1, 0, 0), up=(0, 0, 1), north=(0, 1, 0))
+    rec = SM.write_part(tmp_path, "S", "terrain", part, st, to8, to16)
+    f16 = tmp_path / "S_station_mesh_terrain_16.png"
+    assert f16.is_file() and "S_station_mesh_terrain_16.png" in rec["files"]
+    a = cv2.imread(str(f16), cv2.IMREAD_UNCHANGED)
+    assert a.dtype == np.uint16 and np.array_equal(a[..., ::-1], to16(tex))
+    before = cv2.imread(str(tmp_path / "S_station_mesh_terrain.jpg"))
+    (tmp_path / "S_station_mesh_terrain.jpg").unlink()
+    done = SM.retone_textures(tmp_path, lambda b: np.rint(tone_pipeline(b / k16)).astype(np.uint8))
+    after = cv2.imread(str(tmp_path / "S_station_mesh_terrain.jpg"))
+    assert done == ["S_station_mesh_terrain.jpg"] and np.abs(after.astype(int) - before.astype(int)).mean() < 1.0
+    assert SM.write_part(tmp_path, "T", "scape", dict(part, shell=None), st, to8)["files"] == ["T_station_scape_terrain.npz", "T_station_scape_terrain.jpg"]
+    import inspect
+    from rpp.ibr import linear16
+    assert "retone_textures(out" in inspect.getsource(linear16.retone)
+
+
+def test_full_3d_texture_color_skins_and_their_listing(tmp_path):
+    """0.99.41 (Christian, 19 Nov 2026: "The different color skins for the terrain should be visible in both modes.
+    this means they should be rendered as in the full 3d projection too"): the skins of the 16-bit full 3D texture
+    with the station's parameters, white kept white; web.station_scape lists them."""
+    import cv2
+    import json as _json
+    from rpp.ibr import station_mesh as SM, web
+    rng = np.random.default_rng(1)
+    a = (rng.random((256, 256, 3)) * 9000 + 1000).astype(np.uint16)
+    a[:20] = 65535                                                  # the white sky
+    stem = "S_station_scape_terrain"
+    cv2.imwrite(str(tmp_path / (stem + "_16.png")), a)
+    cv2.imwrite(str(tmp_path / (stem + ".jpg")), (a // 257).astype(np.uint8))
+    (tmp_path / (stem + ".json")).write_text(_json.dumps({"texels_per_deg": 10.0}))
+    (tmp_path / "ods.json").write_text(_json.dumps({"linear16": {"exposure16": 1.0, "white_balance": [1.1, 1.0, 1.4]}}))
+    lv = tmp_path / "tone_levels.json"
+    lv.write_text(_json.dumps({"enhanced_gamma_stretch_s_levels": [150.0, 20.0, 200.0, 100.0],
+                               "color_products_parameters_v2": {"white_linear_8bit_units": 255.0,
+                                   "tone": {"base_median_log": -1.0, "base_compression": 0.5, "display_median": 0.3},
+                                   "dcs": {"mean_bgr": [0.5, 0.5, 0.5], "matrix_bgr": np.eye(3).tolist()}}}))
+    got = SM.write_skins(tmp_path, lv)
+    assert set(got) == {"enhanced local", "enhanced tone", "raw color", "dcs color"}
+    for f in got.values():
+        v = cv2.imread(str(tmp_path / f))
+        assert v.shape == (256, 256, 3) and v[:12].min() >= 245 and v[40:].std() > 1      # white stays white (JPEG)
+    (tmp_path / "S_station_scape.glb").write_bytes(b"glTF")
+    (tmp_path / "S_station_scape.json").write_text(_json.dumps({"triangles": 3, "fade_m": [18, 20]}))
+    pano = tmp_path / "panos"
+    pano.mkdir()
+    sc = web.station_scape(tmp_path, tmp_path, pano)
+    assert sc["skins"]["dcs color"] == "panos/S_station_scape_terrain_dcs.jpg" and (pano / "S_station_scape_terrain_dcs.jpg").is_file()
+    lv.write_text("{}")                                             # no parameters yet: the original color only
+    assert set(SM.write_skins(tmp_path, lv)) == {"raw color"}
+
+
+def test_sky_texels_keep_the_far_hills():
+    """0.99.42: the far texels are the sky and the hills beyond the mesh - only the bright ones joined to the zenith
+    are sky."""
+    from rpp.ibr import station_mesh as SM
+    S, rpx, knee = 512, 250.0, (np.radians(95.0), 0.97)
+    ax = np.arange(S) + 0.5 - S / 2
+    rho = np.hypot(ax[None, :], ax[:, None])
+    in_disc = rho <= rpx
+    far = in_disc & (rho > 200)
+    rgb = np.full((S, S, 3), 60.0, np.float32)                     # the ground
+    rgb[far] = 240.0                                               # the sky ...
+    hill = far & (rho < 215) & (ax[None, :] > 0)                   # ... and a dark hill on the east half, beyond the mesh
+    rgb[hill] = 70.0
+    have = in_disc.copy()
+    have[far & ~hill & (ax[:, None] > 150)] = False                # a part of the sky no frame colored
+    sky = SM.sky_texels(rgb, far, have, in_disc, S, rpx, knee)
+    assert not sky[hill].any() and not sky[in_disc & ~far].any()
+    assert sky[far & ~hill].mean() > 0.999
+    assert "surfState.drive !== !!(sm.drive && sm.whole)" in (__import__("pathlib").Path(SM.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+
+
+def test_zcam_companions_follow_their_navcam_station_and_block_cameras(tmp_path, monkeypatch):
+    """0.99.43 (Christian, 19 Nov 2026: "for stations with Z34 present ... render those z34 versions right after the ncam
+    versions" - "for every site from which we have a z34 360"; "the whole block depth should use all the ecams, low to
+    high res and fuse them together in one mesh")."""
+    import copy
+    from rpp.ibr import single_sites as SS
+    cfg = copy.deepcopy(SS.load_config())
+    lab = "Sol0461_S026D0630"
+    z = [f"ZL0_0466_07083{i:05d}_000RAD_N0260630ZCAM08500_0340LMJ01.png" for i in range(40)]
+    z += [f"ZL0_0470_07090{i:05d}_000RAD_N0260630ZCAM08501_0340LMJ01.png" for i in range(10)]      # too few: no 360
+    z += [f"ZL0_0466_07083{i:05d}_000RAD_N0260850ZCAM08500_1100LMJ01.png" for i in range(50)]      # 110 mm: not 34
+    monkeypatch.setattr(SS, "block_aligned", lambda w: "pico" not in str(w))
+    pairs = SS.zcam_companions(cfg, tmp_path, names_of=lambda work: z if "rockytop" in str(work) else [])
+    assert "Sol1308_S061D1678" in cfg["_zcam_pending"]            # 0.99.44: its Mastcam-Z block is not aligned yet
+    zlab = "Sol0466_S026D0630_Z34"
+    assert pairs[lab] == zlab and pairs["Sol0686_S032D1184"] == "Sol0690_S032D1184_Z34"           # the config's own pair
+    assert "Sol0474_S026D0850" not in pairs
+    st = cfg["stations"][zlab]
+    assert SS.is_zcam_station(st) and st["work"].endswith("rockytop_zcam") and st["ods_args"][:4] == ["--cameras", "Z", "--sols", "466"]
+    assert "N?F_*_N0260630NCAM*.png" in st["context"] and SS.viewer_name(st, zlab).endswith("(zcam)")
+    oa = st["ods_args"]                                            # 0.99.46: the 34 mm frames of that sol named, both eyes
+    assert oa[oa.index("--images") + 1:] == sorted(n for n in z if n.startswith("ZL0_0466") and "_0340" in n)
+    runs = SS.plan(cfg, tmp_path, labels=[lab, "Sol0474_S026D0850"], companions=pairs, block_cameras="NF", terrain="block")
+    assert [r["label"] for r in runs] == [lab, zlab, "Sol0474_S026D0850"]
+    assert not any(c["step"] == "depthmaps" for c in runs[1]["commands"])
+    zods = next(c["argv"] for c in runs[1]["commands"] if c["step"] == "ods")
+    assert "--images" in zods and "--sols" in zods
+    dense = next(c["argv"] for c in runs[0]["commands"] if c["step"] == "dense")
+    mesh = next(c["argv"] for c in runs[0]["commands"] if c["step"] == "mesh")
+    assert dense[dense.index("--block-cameras") + 1] == "NF" and "--block-images" not in dense      # --terrain block: not the named set
+    assert mesh[mesh.index("--points") + 1].endswith(str(__import__("pathlib").Path("colmap") / "dense_block_FN" / "fused.ply"))
+    plain = SS.plan(cfg, tmp_path, labels=[lab])
+    d0 = next(c["argv"] for c in plain[0]["commands"] if c["step"] == "dense")
+    assert "--block-cameras" not in d0 and "--block-name" in d0                                     # the config's own, unchanged
+
+
+def test_zcam_360_over_two_sols_uses_both(tmp_path, monkeypatch):
+    """0.99.47 (Christian, 19 Nov 2026: "For both examples, use both sols so that it has a full 360" - Rochette 181 and
+    182, Wildcat Ridge 518 and 530; "Add sol 72 to the site list")."""
+    import copy
+    from rpp.ibr import single_sites as SS
+    cfg = copy.deepcopy(SS.load_config())
+    assert cfg["zcam_sols"]["S007D0000"] == [181, 182] and cfg["zcam_sols"]["S026D1222"] == [518, 530]
+    z = []
+    for sol, n in ((181, 47), (182, 48)):
+        z += [f"Z{e}0_{sol:04d}_06830{i:05d}_000RAD_N0070000ZCAM08{sol:03d}_0340LMJ01.png" for i in range(n) for e in "LR"]
+    for sol, n in ((518, 63), (520, 12), (530, 47)):
+        z += [f"Z{e}0_{sol:04d}_07300{i:05d}_000RAD_N0261222ZCAM08{sol:03d}_0340LMJ01.png" for i in range(n) for e in "LR"]
+    monkeypatch.setattr(SS, "block_aligned", lambda w: True)
+    pairs = SS.zcam_companions(cfg, tmp_path, names_of=lambda work: z)
+    ro, wi = pairs["Sol0180_S007D0000"], pairs["Sol0502_S026D1222"]
+    assert ro == "Sol0181_S007D0000_Z34" and wi == "Sol0518_S026D1222_Z34"
+    for lab, sols, n in ((ro, ["181", "182"], 2 * 95), (wi, ["518", "530"], 2 * 110)):
+        oa = cfg["stations"][lab]["ods_args"]
+        assert oa[oa.index("--sols") + 1:oa.index("--zcam-scale")] == sols
+        imgs = oa[oa.index("--images") + 1:]
+        assert len(imgs) == n and sorted({x[4:8] for x in imgs}) == [s.zfill(4) for s in sols]   # sol 520 left out
+    st = cfg["stations"]["Sol0072_S003D2346"]
+    assert st["station"] == "3_2346" and len(st["frames"]["images"]) == 10
+    labs = SS.sol_order(list(cfg["stations"]))
+    assert labs.index("Sol0072_S003D2346") < labs.index("Sol0073_S003D2430")
+
+
+def test_skip_done_leaves_out_stations_already_made(tmp_path):
+    """0.99.47 (Christian, 19 Nov 2026: "recolor_rpv.bat should skip sites already processed"): any code version."""
+    import json
+    from rpp.ibr import single_sites as SS
+    run = {"label": "Sol0009_S003D0000", "out": str(tmp_path / "Sol0009_S003D0000"), "variants": ["rover", "masked"],
+           "commands": [{"step": "ods", "variant": "rover", "argv": []}]}
+    assert not SS.station_done(run)
+    for sub in ("with_rover", ""):
+        d = tmp_path / "Sol0009_S003D0000" / sub
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "step_ods.json").write_text(json.dumps({"key": "old code", "exit": 0}))
+    assert not SS.station_done(run)                                # no ods.json in the folders yet
+    for sub in ("with_rover", ""):
+        (tmp_path / "Sol0009_S003D0000" / sub / "ods.json").write_text("{}")
+    assert SS.station_done(run)
+    (tmp_path / "Sol0009_S003D0000" / "step_ods.json").write_text(json.dumps({"key": "x", "exit": 1}))
+    assert not SS.station_done(run)                                # the masked one failed: made again
+
+
+def test_wait_for_blocks_runs_what_comes_in_and_stops(tmp_path, monkeypatch):
+    """0.99.44 (Christian, 19 Nov 2026: "run only on aligned blocks. Skip a bock if it doesn't exist and come back to it
+    later. When there are no more stations to run, then stop")."""
+    from types import SimpleNamespace as NS
+    from rpp.ibr import single_sites as SS
+    calls = []
+
+    def one(a):
+        calls.append(set(a._skip))
+        n = len(calls)
+        a._ran = ["A"] if n == 1 else ["B"] if n == 3 else []
+        a._late = ["B"] if n < 3 else []
+        return 0
+    monkeypatch.setattr(SS, "_single_sites_pass", one)
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    out = SS.cmd_single_sites(NS(wait_for_blocks=36.0, poll_min=15.0, dry_run=False, any_block=False))
+    assert out == 0 and calls == [set(), {"A"}, {"A"}]
+    calls.clear()
+    monkeypatch.setattr(SS, "_single_sites_pass", lambda a: (calls.append(1), setattr(a, "_ran", []), setattr(a, "_late", ["B"]), 0)[-1])
+    assert SS.cmd_single_sites(NS(wait_for_blocks=0.0, poll_min=15.0, dry_run=False, any_block=False)) == 0 and len(calls) == 1
+
+
+def test_stations_in_sol_order_butler_z34_and_rose_river_falls():
+    """0.99.46 (Christian, 19 Nov 2026: "put the single sites in sol order. add Sol0011_S003D0000 and a _Z34 for every
+    z34 360"; "use rose river falls instead")."""
+    from rpp.ibr import single_sites as SS
+    cfg = SS.load_config()
+    runs = SS.plan(cfg, "/r", labels=None)
+    labs = [r["label"] for r in runs]
+    sols = [int(l[3:7]) for l in labs]
+    assert sols == sorted(sols) and labs[0] == "Sol0009_S003D0000"
+    runs = SS.plan(cfg, "/r", labels=SS.sol_order(list(cfg["stations"])), companions={"Sol0009_S003D0000": "Sol0011_S003D0000_Z34"})
+    labs = [r["label"] for r in runs]
+    assert labs[:2] == ["Sol0009_S003D0000", "Sol0011_S003D0000_Z34"]
+    z = next(c["argv"] for c in runs[1]["commands"] if c["step"] == "ods")
+    assert "Z?0_0011_*_N0030000ZCAM*_034*" in z and not any(c["step"] == "depthmaps" for c in runs[1]["commands"])
+    assert cfg["stations"]["Sol0449_S026D0000"]["work"] == "mars2020_sol_0449_rose_river_falls_zcam"
+    import json as _json
+    from rpp.waypoints.sites import load_site_table
+    g = load_site_table().get("groups") or _json.loads((__import__("pathlib").Path(SS.__file__).resolve().parents[1] / "data" / "sites.json").read_text())["groups"]
+    assert "rose_river_falls" in g["zcam_consensus"] and "knob_mountain_large" not in g["zcam_consensus"]
+
+
+def test_fusion_is_reused_after_a_restart(tmp_path):
+    """0.99.47 (Christian, 19 Nov 2026: "Will it need to redo that if I stop it?"): the fused cloud of unchanged stereo
+    maps and options is not made again (a new fused.ply made the station's mesh, maps and panoramas again)."""
+    import os
+    from types import SimpleNamespace as NS
+    from rpp import cli
+    from rpp.sfm.dense import STEREO_RECORD
+    ws = tmp_path / "dense_block_FN"
+    (ws / "stereo").mkdir(parents=True)
+    (ws / "stereo" / STEREO_RECORD).write_text('{"options": {}}')
+    a = NS(keep_rover=False)
+    assert not cli._fusion_cached(ws, {}, {}, 0, a)                 # no cloud
+    (ws / "fused.ply").write_bytes(b"ply\n" + b"0" * 100)
+    assert not cli._fusion_cached(ws, {}, {}, 0, a)                 # a cloud from before 0.99.47 without its run record
+    (ws / "mppp_dense_run.json").write_text('{"steps": {"stereo": {}, "fusion": {"points": 5}}}')
+    assert cli._fusion_cached(ws, {}, {}, 0, a)                     # ... with it: the run fused these maps
+    (ws / "rpp_fusion.json").unlink()
+    cli._fusion_record(ws, {}, {}, 0, a, write=True)
+    assert cli._fusion_cached(ws, {}, {}, 0, a)
+    assert not cli._fusion_cached(ws, {}, {"min_num_pixels": 3}, 0, a)   # other fusion options
+    (ws / "stereo" / STEREO_RECORD).write_text('{"options": {"x": 1}}')
+    assert not cli._fusion_cached(ws, {}, {}, 0, a)                 # other stereo maps
+    (ws / "stereo" / STEREO_RECORD).write_text('{"options": {}}')
+    os.utime(ws / "fused.ply", (1, 1))
+    assert not cli._fusion_cached(ws, {}, {}, 0, a)                 # not the file that fusion wrote

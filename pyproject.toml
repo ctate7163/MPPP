@@ -3,9 +3,9 @@ requires = ["setuptools>=77.0.3"]          # 77: the SPDX license expression and
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rover-photogrammetry-pipeline"   # 0.99.0: the import name is rpp (formerly mppp); "rpp" on PyPI is another project
+name = "rover-photogrammetry"   # 0.99.46 (rover-photogrammetry-pipeline from 0.99.0): the import name is rpp (formerly mppp); "rpp" on PyPI is another project
 dynamic = ["version"]      # from rpp.__version__ (the single source)
-description = "Rover Photogrammetry Pipeline (RPP, formerly MPPP): Mars rover PDS images to COLMAP and Metashape, with rover masks, camera models and pose priors"
+description = "Rover Photogrammetry Pipeline and Viewer (RPP, RPV; formerly MPPP): Mars rover PDS images to COLMAP and Metashape, with rover masks, camera models, pose priors and stereo panoramas"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
@@ -44,7 +44,7 @@ release = ["huggingface_hub"]                                                 # 
 ibr     = ["open3d>=0.20", "huggingface_hub"]                                  # 0.96: rpp mesh / depthmaps / ods (rpp.ibr); 0.99.3: the upload
 docs    = ["mkdocs>=1.6.1,<2", "mkdocs-material>=9.7", "mkdocstrings[python]>=1.0"]     # the documentation site (mkdocs.yml)
 dev     = ["pytest", "flake8", "nbformat", "pillow"]
-all     = ["rover-photogrammetry-pipeline[mask,sfm,error,plots,maps,notebooks,rover,ibr,dev]"]
+all     = ["rover-photogrammetry[mask,sfm,error,plots,maps,notebooks,rover,ibr,dev]"]
 
 [tool.setuptools.dynamic]
 version = { attr = "rpp.__version__" }
@@ -65,6 +65,8 @@ mppp = "mppp:cli_main"          # 0.99 only: the command before the rename, with
 Homepage = "https://github.com/ctate7163/rpp"
 Documentation = "https://ctate7163.github.io/rpp/"
 Repository = "https://github.com/ctate7163/rpp"
+Source = "https://github.com/ctate7163/rpp"
+Viewer = "https://ctate7163.github.io/rpv/"
 Issues = "https://github.com/ctate7163/rpp/issues"
 Changelog = "https://github.com/ctate7163/rpp/blob/main/CHANGELOG.md"
 

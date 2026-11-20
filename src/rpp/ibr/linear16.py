@@ -486,21 +486,23 @@ def tone_enhanced(x: np.ndarray, ref: float, lo: float, hi: float, med: float) -
     return np.clip(255.0 * out, 0.0, 255.0)
 
 
-def local_contrast(bgr8: np.ndarray, sky_weight: Optional[np.ndarray] = None) -> np.ndarray:
+def local_contrast(bgr8: np.ndarray, sky_weight: Optional[np.ndarray] = None, sigma_px: Optional[float] = None,
+                   wrap: bool = True) -> np.ndarray:
     """An unsharp mask on the lightness of an 8-bit BGR equirectangular image (the color kept), continuous across
     the 360-degree seam.  The same filter for any image: both eyes are treated alike.  ``sky_weight`` (0.97.13; (H,
     W) 0-1): no sharpening where it is 1 - in the sky there is no detail to bring out, only the steps between the
-    8-bit levels and the frames' seams."""
+    8-bit levels and the frames' seams.  0.99.41: ``sigma_px`` (default ENH_LOCAL_SIGMA_FRAC of the width: the same
+    angle as in a panorama) and ``wrap`` False for a picture that is not a 360-degree panorama (a 3D texture)."""
     import cv2
     W = bgr8.shape[1]
-    sigma = max(1.0, ENH_LOCAL_SIGMA_FRAC * W)
-    pad = int(4 * sigma) + 1
-    lab = cv2.cvtColor(np.concatenate([bgr8[:, -pad:], bgr8, bgr8[:, :pad]], axis=1), cv2.COLOR_BGR2LAB).astype(np.float32)
+    sigma = max(1.0, ENH_LOCAL_SIGMA_FRAC * W if sigma_px is None else float(sigma_px))
+    pad = int(4 * sigma) + 1 if wrap else 0
+    lab = cv2.cvtColor(np.concatenate([bgr8[:, -pad:], bgr8, bgr8[:, :pad]], axis=1) if pad else bgr8, cv2.COLOR_BGR2LAB).astype(np.float32)
     Lc = lab[..., 0]
     amount = ENH_LOCAL_AMOUNT
     if sky_weight is not None:
         sw = np.asarray(sky_weight, np.float32)
-        amount = ENH_LOCAL_AMOUNT * (1.0 - np.concatenate([sw[:, -pad:], sw, sw[:, :pad]], axis=1))
+        amount = ENH_LOCAL_AMOUNT * (1.0 - (np.concatenate([sw[:, -pad:], sw, sw[:, :pad]], axis=1) if pad else sw))
     detail = amount * (Lc - cv2.GaussianBlur(Lc, (0, 0), sigma))
     room = np.where(detail < 0, Lc, 255.0 - Lc) / ENH_LOCAL_KNEE           # 0.98.30: no clipping at black (or white)
     lab[..., 0] = np.clip(Lc + detail * np.clip(room, 0.0, 1.0), 0, 255)
@@ -648,16 +650,28 @@ def retone(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quality: int 
     cv2.imwrite(str(out / f"{pre}{STACK_NAME}.jpg"), sq, [cv2.IMWRITE_JPEG_QUALITY, int(jpeg_quality)])
     drop_old_stacks(out, pre[:-1] if pre.endswith("_") else pre)
     enh = write_enhanced(out, prefix, top=top, jpeg_quality=jpeg_quality, levels_file=levels_file)
+    textures = []
+    try:                                                                    # 0.99.40: the station mesh's textures, the same way
+        from .station_mesh import retone_textures
+        textures = retone_textures(out, lambda b: np.rint(tone_pipeline(b / k16)).astype(np.uint8))
+    except Exception as e:                                                  # noqa: BLE001 - the panoramas stand
+        log.warning("retone: the station mesh textures were not made again (%s)", e)
     try:                                                                    # 0.99.37: raw color, enhanced tone, dcs color
         from .color_products import write_color_products
         more = write_color_products(out, prefix, top=top, jpeg_quality=jpeg_quality, levels_file=levels_file)
     except Exception as e:                                                  # noqa: BLE001 - the others stand
         log.warning("retone: no raw / enhanced tone / dcs views (%s)", e)
         more = {"error": str(e)}
+    try:                                                                    # 0.99.41: the full 3D texture's color skins
+        from .station_mesh import write_skins
+        textures = list(textures) + list(write_skins(out, levels_file).values())
+    except Exception as e:                                                  # noqa: BLE001
+        log.warning("retone: no color skins of the full 3D texture (%s)", e)
     try:                                                                    # 0.97.4: the new files carry the XMP again
         from .xmp import tag_folder
         tag_folder(out)
     except Exception:                                                       # noqa: BLE001
         pass
     return {"levels_16bit_units": [float(v) for v in levels], "square": str(out / f"{pre}{STACK_NAME}.jpg"), "top": top,
-            "enhanced": enh, "color_products": {k: v for k, v in more.items() if k in ("files", "notes", "error")}}
+            "enhanced": enh, "color_products": {k: v for k, v in more.items() if k in ("files", "notes", "error")},
+            "station_mesh_textures": textures}

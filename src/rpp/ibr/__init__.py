@@ -14,7 +14,7 @@ rpp.ibr - image-based rendering products of an aligned block (0.96.0, the protot
   station's own frames (the omnidirectional stereo of a 64 mm IPD circle about the pivot), with a provenance map.
 
 Everything is in the block frame (meters) of the model the block ended with (``gui_native/sparse``); nothing is
-re-aligned.  The optional dependency set is ``rover-photogrammetry-pipeline[ibr]`` (open3d); the CLI is ``rpp mesh``,
+re-aligned.  The optional dependency set is ``rover-photogrammetry[ibr]`` (open3d); the CLI is ``rpp mesh``,
 ``rpp depthmaps`` and ``rpp ods``.
 """
 from .station import Station, fit_pivot, select_station, station_images  # noqa: F401

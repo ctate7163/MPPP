@@ -13,16 +13,16 @@ checks its SHA-256 against `src/rpp/data/models.json` and keeps it in the user c
 
 | name | trained on | held-out IoU | status |
 |---|---|---|---|
-| `rpp_mask_v5` | v8 mask set with Curiosity Navcam and front Hazcam frames (4,767 training frames); a fine-tune of v3 | 0.978 | prepared 19 Nov 2026 (0.99.34); best on `validation_set_v1` |
+| `rpp_mask_v5` | v8 mask set with Curiosity Navcam and front Hazcam frames (4,965 training frames); a fine-tune of v3 | 0.978 | prepared 19 Nov 2026 (0.99.43: the run `v5p2_2`); the model for Curiosity frames; freeze 3 runs on it |
 | `rpp_mask_v4` | v8 mask set: 4,095 masks, sols 9–2022 (Navcam, Mastcam-Z, Hazcams, WATSON) | 0.978 | prepared 31 Oct 2026 |
-| `rpp_mask_v3` | v7 mask set: 3,931 masks + brightness-varied copies | 0.979 | the default (freeze 3 runs on it) |
+| `rpp_mask_v3` | v7 mask set: 3,931 masks + brightness-varied copies | 0.979 | the registry default |
 | `rpp_mask_v2`, `rpp_mask_v1` | v7 mask set | 0.977, 0.971 | kept for reproducibility |
 
 The held-out IoUs come from different splits of different sets, so they are not a comparison. The fair one is
 `validation_set_v1` (`D:\masks\validation_set_v1`, made by `rpp_studies.mask_training.validation_set`): 100 frames
-of the aligned blocks that are in no training set, 90 of them cleaned by hand. On it the exclusion IoU is 0.977 for
-`rpp_mask_v5` and 0.973 for `rpp_mask_v3` (+0.0043, 95 % interval +0.0003 to +0.0088); a second run of v5's recipe
-scored 0.974, so the gain is about the size of the spread between runs. Per camera, and the caveats, are in the
+of the aligned blocks that are in no training set, 90 of them cleaned by hand. On it the exclusion IoU is 0.974 for
+`rpp_mask_v5` and 0.973 for `rpp_mask_v3` (+0.0017, 95 % interval -0.0063 to +0.0091: no difference overall); on the
+Curiosity cameras v5 is higher (Navcam 0.983 against 0.971, front Hazcam 0.968 against 0.934). Per camera, and the caveats, are in the
 model card on [Hugging Face](https://huggingface.co/ctate7163/rpp-mask).
 
 Held-out exclusion IoU of `rpp_mask_v4` on its own split, by camera (valid pixels only):

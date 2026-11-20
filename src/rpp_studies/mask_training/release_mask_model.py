@@ -1,7 +1,7 @@
 """
 Release tooling for the mask model (maintainers only): upload a registry model and its card to Hugging Face, and
 verify every download URL of a model against the registry's SHA-256.  Needs ``huggingface_hub`` (``pip install
-rover-photogrammetry-pipeline[release]``) and a write token (``huggingface-cli login`` or ``HF_TOKEN``).
+rover-photogrammetry[release]``) and a write token (``huggingface-cli login`` or ``HF_TOKEN``).
 
     python -m rpp_studies.mask_training.release_mask_model upload [NAME] [--repo REPO] [--card FILE] [--private] [--file FILE]
                                                 [--extra training_curves.png figure1_masks.png]

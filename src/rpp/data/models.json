@@ -90,17 +90,17 @@
     },
     "rpp_mask_v5": {
       "file": "rpp_mask_convnext_tiny_s4_v5.safetensors",
-      "source_checkpoint": "convnext_tiny_s4_seg_20261118_v5p2.pt",
-      "val_iou": 0.9781020561854045,
+      "source_checkpoint": "convnext_tiny_s4_seg_20261118_v5p2_2.pt",
+      "val_iou": 0.9783034057666858,
       "backbone": "convnext_tiny",
       "stride4": true,
-      "description": "ConvNeXt-tiny + FPN/ASPP with a stride-4 decoder; include (terrain and sky) vs exclude (rover hardware, rover shadows and other artificial objects); v5.2 (18 Nov 2026): fine-tuned from v5.1 (itself from v3) at lr 1e-5 on the v8 mask set with Curiosity (MSL) Navcam and Hazcam frames, mild photometric augmentation on half the samples, gray 0.1, a 2 px edge-ignore band; held-out IoU 0.978 (the frozen test list); on 90 hand-cleaned frames no model trained on (validation_set_v1) exclusion IoU 0.977 against v3's 0.973",
+      "description": "ConvNeXt-tiny + FPN/ASPP with a stride-4 decoder; include (terrain and sky) vs exclude (rover hardware, rover shadows and other artificial objects); v5.2, second run (18 Nov 2026; Christian, 19 Nov: 'v5p2_2 is perfect'): fine-tuned from v5.1 (itself from v3) at lr 1e-5 on the v8 mask set with 198 Curiosity (MSL) Navcam and front Hazcam frames (4,965 training frames), mild photometric augmentation on half the samples, gray 0.1, a 2 px edge-ignore band; the weights of its first epoch; held-out IoU 0.978 (the frozen test list); on 90 hand-cleaned frames no model trained on (validation_set_v1) exclusion IoU 0.974 against v3's 0.973 (+0.0017, 95 % interval -0.0063 to +0.0091: no difference overall) - Curiosity Navcam 0.983 against 0.971, Curiosity front Hazcam 0.968 against 0.934",
       "hf_repo": "ctate7163/rpp-mask",
       "urls": [
         "https://huggingface.co/ctate7163/rpp-mask/resolve/main/rpp_mask_convnext_tiny_s4_v5.safetensors"
       ],
       "released": false,
-      "note": "0.99.34: SHA-256 and size written by the export (python -m rpp.mask.hub export ... --name rpp_mask_v5 --update-registry); upload with upload_mask_models.bat. Not the default: freeze-3 stays on rpp_mask_v3."
+      "note": "0.99.34: SHA-256 and size written by the export (python -m rpp.mask.hub export ... --name rpp_mask_v5 --update-registry); upload with upload_mask_models.bat. Not the registry default (rpp_mask_v3); freeze 3 runs on this checkpoint."
     }
   }
 }
