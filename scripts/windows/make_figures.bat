@@ -17,6 +17,11 @@ REM   site_map_<tag>.png                          figure 2 of make_maps (crater 
 REM   zcam<zoom>_efl_vs_focus_<joint>.png         0.95.2: efl vs focus of the newest 34, 48 and 63 mm joints
 REM   hazcam_rig_trends_<F|R>_<fit>.png           0.95.2: the newest Hazcam fit: rig trends of each pair
 REM   hazcam_efl_vs_temperature_<fit>.png         0.95.2: and the four eyes' focal length against temperature
+REM   joss_figure1..4*.png (+ .json)              1.0: the JOSS paper's figures 1-4, 400 dpi (rpp_studies.paper.joss_figures):
+REM                                              pipeline diagram (+ .svg); Navcam pairs sol 9 / 52; blocks Butler Landing,
+REM                                              Van Zyl Overlook, Rockytop; stations sol 9 / 461 / 52 - each skipped with one
+REM                                              line when its input is missing. Freeze-3 blocks: RPP_FREEZE_ROOT (default
+REM                                              D:\rover_blocks_f3). RPP_FIG_ARGS=--joss none leaves them out.
 REM Other joints or a Hazcam fit: set RPP_FIG_ARGS=--zcam-joints FOLDER ... --hazcam FOLDER (or - for none)
 REM
 REM   make_figures.bat [NAVCAM_JOINT_FOLDER] [ZCAM_CALIBRATION_FOLDER] [DPI]

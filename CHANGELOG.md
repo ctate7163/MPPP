@@ -76,6 +76,11 @@ still those of 0.99; 1.0.0 will carry the models of the third freeze run.
   (`rpp.sfm.depth_filter`: depth edges, small islands, back-facing normals, an optional range limit per camera), both
   together, and COLMAP's Delaunay mesher. The station products, the block's depth maps and its `fused.ply` are not
   changed. See [Station products](docs/station-products.md).
+- **The JOSS figures 1-4 are in the standard figure set** (`make_figures.bat`, `rpp_studies.paper.joss_figures`): the
+  pipeline diagram, the Navcam pairs of sols 9 and 52, the aligned blocks of Butler Landing, Van Zyl Overlook and
+  Rockytop, and the 3D assets of the stations of sols 9, 461 and 52, one entry per file at 400 dpi. An entry whose
+  input is missing is skipped with one line saying why. The oblique views and renders are ray cast, and the rover
+  models are RPP's own model with the arm in its stowed pose from the image labels.
 
 ### Removed
 

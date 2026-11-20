@@ -36,6 +36,11 @@ Writes, into ``--out`` (default ``<RPP>/Claude outputs``):
   site_map_<tag>.png                     the traverse map: figure 2 of ``rpp maps`` (crater | traverse, block table,
                                          1 m DTM where M20_DEMS has it); --site-map simple: plot_site_map
   undistorted_example.png                with --frame (rpp.colmap.plot_undistorted_example)
+  joss_figure*.png (+ .json)             1.0: the JOSS paper's figures 1-4 at 400 dpi (rpp_studies.paper.joss_figures):
+                                         the pipeline diagram (+ .svg), the Navcam pairs of sols 9 and 52, the blocks
+                                         of Butler Landing, Van Zyl Overlook and Rockytop, the stations of sols 9, 461
+                                         and 52 - each skipped with one line when its input is missing (--joss none:
+                                         left out; --freeze-root: the freeze-3 blocks)
 """
 from __future__ import annotations
 
@@ -201,6 +206,10 @@ def main(argv=None) -> int:
                          "figure (default EOD_WORK or D:\\rover_frame_eod); without it the shipped DJ32 fit alone")
     ap.add_argument("--dpi", type=int, default=200)
     ap.add_argument("--site-map", choices=["maps", "simple", "none"], default="maps")
+    ap.add_argument("--joss", choices=["all", "none"], default="all", help="1.0: the JOSS figures 1-4 "
+                    "(rpp_studies.paper.joss_figures, 400 dpi); none: left out")
+    ap.add_argument("--freeze-root", default=None, help="1.0: the freeze-3 blocks for the JOSS figures (default "
+                    "RPP_FREEZE_ROOT, RPP_RPV_ROOT or D:\\rover_blocks_f3)")
     a = ap.parse_args(argv)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -462,6 +471,11 @@ def main(argv=None) -> int:
             model, p, width, lens = m["model"], m["params"], int(m.get("width", 5120)), m.get("source", m["model"])
         plot_undistorted_example(im, model, p, width, out / "undistorted_example.png", mask=mask,
                                  title=Path(a.frame).name, lens=lens)
+    # ---- 1.0 (Christian, 20 Nov 2026): the JOSS figures 1-4, one entry per file; an entry whose input is missing says
+    # why in one line and is skipped
+    if a.joss != "none":
+        from rpp_studies.paper import joss_figures as J
+        J.make_all(out, a.root, a.freeze_root or J.default_freeze_root())
     print(f"figures in {out}")
     return 0
 

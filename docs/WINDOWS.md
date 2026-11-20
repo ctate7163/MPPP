@@ -59,6 +59,24 @@ python (`rpp_gpu`) by itself.
 running. `set RPP_NO_PAUSE=1` first for an unattended run. `--publish DIR --publish-only` puts the
 stereo JPEGs and the viewer page into `DIR` (see [Station products](station-products.md)).
 
+## The standard figures: `scripts\windows\make_figures.bat`
+
+Double-click it. It writes the camera-model and block figures into `Claude outputs\figures_<yyyymmdd>` (200 dpi), and
+the JOSS paper's figures 1-4 beside them at 400 dpi (`rpp_studies.paper.joss_figures`):
+
+| file | figure |
+|---|---|
+| `joss_figure1_pipeline_diagram.png`, `.svg` | 1: the pipeline diagram |
+| `joss_figure2_navcam_undistorted_sol0009.png`, `joss_figure2b_..._sol0052.png` | 2: a Navcam pair, processed and undistorted |
+| `joss_figure3_block_butler_landing.png`, `3b_..._van_zyl_overlook`, `3c_..._rockytop` | 3: an aligned block |
+| `joss_figure4_station_sol0009.png`, `4b_..._sol0461`, `4c_..._sol0052` | 4: a station's 3D assets |
+
+Each JOSS figure also writes a `.json` with the numbers for its caption. An entry whose input does not exist yet
+says why in one line and is skipped; for example, figure 4c waits for a full 3D model of Sol 52. The freeze-3
+blocks are read from `RPP_FREEZE_ROOT` (default `D:\rover_blocks_f3`), the others from `RPP_SCAPES`.
+`set RPP_FIG_ARGS=--joss none` leaves the JOSS figures out. One figure alone:
+`python -m rpp_studies.paper.joss_figures --out DIR --only figure3c`.
+
 ## Site maps: `scripts\windows\make_maps.bat`
 
 Double-click it (or `make_maps.bat dtm 300`, `make_maps.bat ortho`, `make_maps.bat both 450`): the six M20 site-map
