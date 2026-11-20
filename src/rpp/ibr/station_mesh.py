@@ -103,6 +103,7 @@ SKY_WHITE = True                # 0.99.41 (Christian, 19 Nov 2026: "the sky stil
 #                                 the fifth mode's texture the sky's texels (:func:`sky_texels`: the bright far texels
 #                                 joined to the zenith - not the hills beyond the mesh) and the texels no triangle
 #                                 uses are white
+POLE_WHITE_EL_DEG = 60.0        # 0.99.52: the fifth mode's texture is sky white above this elevation (no hill rises so high)
 SHELL_FROM_M = 17.0             # the shell starts this far from the mast axis (the near mesh fades out over FADE_M; 7 m
 #                                 until 0.99.39)
 FADE_M = (18.0, 20.0)           # the near terrain's opacity: 1 at the first, 0 at the second (horizontal m from the axis;
@@ -431,15 +432,18 @@ def sky_texels(rgb: np.ndarray, far: np.ndarray, have: np.ndarray, in_disc: np.n
     r_ref = float(_rho_of_theta(np.array([np.pi / 2 + np.radians(SKY_REF_EL_DEG)]), rpx, np.pi, knee)[0])
     hi = far & have & (rho2 > np.float32(r_ref ** 2))
     ground = in_disc & have & ~far
+    r_pole = float(_rho_of_theta(np.array([np.pi / 2 + np.radians(POLE_WHITE_EL_DEG)]), rpx, np.pi, knee)[0])
     if hi.sum() < 100 or ground.sum() < 100:
-        return far & (rho2 > np.float32((knee[1] * rpx + 1.0) ** 2))
+        return (far & (rho2 > np.float32((knee[1] * rpx + 1.0) ** 2))) | (in_disc & (rho2 > np.float32(r_pole ** 2)))
     cut = float(np.exp(0.5 * (np.log(max(float(np.median(lum[hi][::17])), 1e-6)) + np.log(max(float(np.median(lum[ground][::97])), 1e-6)))))
     like = (far & (~have | (lum > cut))).astype(np.uint8)
     del lum
     _, comp = cv2.connectedComponents(like, connectivity=8)
     ring = (rho2 > np.float32((rpx - 4.0) ** 2)) & (like > 0)      # the zenith: the disc's last texels
     ids = np.unique(comp[ring])
-    return np.isin(comp, ids[ids > 0])
+    # 0.99.52 (Christian, 20 Nov 2026: "the top pole in the ods and full 3d models are visible as a convergent
+    # discolored point"): every texel above POLE_WHITE_EL_DEG is sky - the zenith is the disc's rim, one point
+    return np.isin(comp, ids[ids > 0]) | (in_disc & (rho2 > np.float32(r_pole ** 2)))
 
 
 def push_pull(rgb: np.ndarray, have: np.ndarray, region: np.ndarray) -> np.ndarray:

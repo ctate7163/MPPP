@@ -3727,3 +3727,23 @@ def test_frames_fall_back_to_the_stations_own_frames_of_the_sols(tmp_path):
     proj = NS(root=tmp_path)
     assert _frames(proj, st, NS(images=None, sols=[11], exclude=None)) == z[:2]
     assert _frames(proj, st, NS(images=None, sols=[9], exclude=None)) == nav
+
+
+def test_blend_pole_one_color_at_the_zenith():
+    """0.99.52 (Christian, 20 Nov 2026: "the top pole in the ods and full 3d models are visible as a convergent
+    discolored point. Make sure that the sky at the pole is blended")."""
+    from rpp.ibr import ods as O
+    H, W = 180, 360
+    rgb = np.zeros((H, W, 3), np.float32)
+    rgb[:, :W // 2] = (100, 120, 140)                                # two halves of different sky up to the pole
+    rgb[:, W // 2:] = (60, 80, 100)
+    before = rgb.copy()
+    r = O.blend_pole(rgb)
+    assert r["rows"] == 20
+    assert np.ptp(rgb[0], axis=0).max() < 1e-3                       # the top row: one color
+    assert np.allclose(rgb[25], before[25])                          # below 70 deg: untouched
+    assert np.ptp(rgb[5], axis=0).max() < np.ptp(rgb[15], axis=0).max() <= np.ptp(before[15], axis=0).max()
+    u8 = np.zeros((H, W, 3), np.uint8)
+    u8[:, ::2] = 200
+    O.blend_pole(u8)
+    assert u8.dtype == np.uint8 and np.ptp(u8[0].astype(int), axis=0).max() <= 1

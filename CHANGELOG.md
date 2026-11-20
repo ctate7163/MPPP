@@ -3,6 +3,15 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.52 — unreleased (branch `rpp`)
+
+- **The sky at the zenith is blended** (Christian, 20 Nov: "the top pole in the ods and full 3d models are visible as a
+  convergent discolored point. Make sure that the sky at the pole is blended"): the seen sky was kept as it was
+  above the frames' tops, so where frames reached high their colors and the fill's columns met in a point at the
+  zenith. `blend_pole` cross-fades every eye's sky above `POLE_BLEND_FROM_DEG` (70 deg) into its azimuthal average
+  (a 6 deg Gaussian on the sky, wider as 1 / cos(elevation)), reaching one color above 88 deg. In the full 3D
+  texture every texel above `POLE_WHITE_EL_DEG` (60 deg) is sky white (the zenith is the disc's rim).
+
 ## 0.99.51 — 2026-11-20 (branch `rpp`)
 
 Christian, 20 Nov, from the first freeze-3 station meshes.

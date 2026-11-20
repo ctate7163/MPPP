@@ -1374,10 +1374,11 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
     sky = fill_sky(rgb, source, label) if sky_fill else np.zeros(label.shape, bool)
     evened = even_sky(rgb, label) if sky_fill else {}
     healed = heal_sky(rgb, evened.get("weight"), label) if sky_fill else {}       # 0.98.4: the last check on the sky
+    pole = blend_pole(rgb) if sky_fill else {}           # 0.99.52: no discolored point at the zenith
     if checked:                                              # and any surface still without a source
         _brown((source == -1) & ((label == LABEL_MESH) | (label == LABEL_PLANE)))
     return {"brown_filled": brown, "rover": rover_px, "rgb": rgb, "source": source, "label": label, "range": rng, "hidden_fallback": hidden, "filled": filled,
-            "sky_filled": sky, "sky_evened": evened, "sky_healed": healed, "ground_filled": gfill, "surface_check_rejected": rej, "provenance": prov,
+            "sky_filled": sky, "sky_evened": evened, "sky_healed": healed, "sky_pole": pole, "ground_filled": gfill, "surface_check_rejected": rej, "provenance": prov,
             "sky_weight": evened.pop("weight", None), "effective_frames": _effective_frames(neff_vals)}
 
 
@@ -1420,6 +1421,45 @@ def fill_ground(rgb: np.ndarray, source: np.ndarray, donors: np.ndarray) -> np.n
     rgb[holes] = np.clip(fill[holes], 0, top).astype(rgb.dtype)
     source[holes] = -4
     return holes
+
+
+POLE_BLEND_FROM_DEG = 70.0       # 0.99.52 (Christian, 20 Nov 2026: "the top pole in the ods and full 3d models are visible
+#                                   as a convergent discolored point. Make sure that the sky at the pole is blended"):
+#                                   above this elevation the sky is cross-faded into its azimuthal average ...
+POLE_SIGMA_DEG = 6.0             # ... a Gaussian of this many degrees on the sky (its width in azimuth grows as
+#                                   1 / cos(elevation)), the whole row's mean where that is wider than the row; the
+#                                   cross-fade a smoothstep from 0 at POLE_BLEND_FROM_DEG to 1 at the zenith, where
+#                                   every column has one color
+POLE_TOP_DEG = 88.0              # the rows above this all take the mean of the rows above it
+
+
+def blend_pole(rgb: np.ndarray, from_deg: float = POLE_BLEND_FROM_DEG, sigma_deg: float = POLE_SIGMA_DEG) -> Dict[str, Any]:
+    """The sky about the zenith of an equirectangular eye (in place): no frame edge or fill column converges there to
+    a point.  Returns {"rows", "from_deg"}."""
+    from scipy.ndimage import gaussian_filter1d
+    H, W = rgb.shape[:2]
+    el = 90.0 - (np.arange(H) + 0.5) / H * 180.0
+    rows = np.flatnonzero(el > float(from_deg))
+    if not len(rows):
+        return {"rows": 0, "from_deg": float(from_deg)}
+    top = 255.0 if rgb.dtype == np.uint8 else LINEAR_TOP
+    blk = rgb[rows].astype(np.float32)
+    top_rows = el[rows] > POLE_TOP_DEG
+    pole = blk[top_rows].reshape(-1, blk.shape[-1]).mean(axis=0) if top_rows.any() else blk[0].mean(axis=0)
+    for i, r in enumerate(rows):
+        e = float(el[r])
+        t = np.clip((e - from_deg) / (90.0 - from_deg), 0.0, 1.0)
+        t = t * t * (3.0 - 2.0 * t)
+        sig = sigma_deg / 360.0 * W / max(np.cos(np.radians(e)), 1e-6)
+        if e > POLE_TOP_DEG:
+            avg, t = np.broadcast_to(pole, blk[i].shape), 1.0
+        elif sig >= W / 2.0:
+            avg = np.broadcast_to(blk[i].mean(axis=0), blk[i].shape)
+        else:
+            avg = gaussian_filter1d(blk[i], sig, axis=0, mode="wrap")
+        blk[i] = (1.0 - t) * blk[i] + t * avg
+    rgb[rows] = np.clip(blk, 0, top).astype(rgb.dtype)
+    return {"rows": int(len(rows)), "from_deg": float(from_deg)}
 
 
 def fill_sky(rgb: np.ndarray, source: np.ndarray, label: np.ndarray) -> np.ndarray:
