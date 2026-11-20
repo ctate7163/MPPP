@@ -209,6 +209,25 @@ def test_update_code_refuses_under_a_live_run(tmp_path, capsys):
     assert "not a git checkout" in capsys.readouterr().out
 
 
+def test_update_code_refuses_under_a_live_run_on_another_root(tmp_path, capsys, monkeypatch):
+    """0.99.49: sync_code.bat (root D:\\rover_blocks) updated D:\\code\\RPP_freeze under freeze 3 on D:\\rover_blocks_f3."""
+    monkeypatch.delenv("RPP_FREEZE_ROOT", raising=False)
+    root, f3 = tmp_path / "rover_blocks", tmp_path / "rover_blocks_f3"
+    root.mkdir()
+    (f3 / "mppp_pipeline").mkdir(parents=True)
+    clone = tmp_path / "RPP_freeze"
+    f = f3 / "mppp_pipeline" / fz.STATUS_FILE
+    alive = {"state": "running", "heartbeat": fz.now(), "pid": os.getppid(), "tag": fz.TAG, "steps": {}}
+    f.write_text(json.dumps(dict(alive, code=f"0.99.40 {clone / 'src' / 'rpp' / '__init__.py'} [1310abf]")), encoding="utf-8")
+    assert fz.main(["--root", str(root), "--code", str(clone), "--update-code"]) == 2
+    out = capsys.readouterr().out
+    assert "not updated" in out and "rover_blocks_f3" in out
+    f.write_text(json.dumps(dict(alive, code=f"0.99.40 {tmp_path / 'other' / 'src' / 'rpp' / '__init__.py'}")), encoding="utf-8")
+    assert fz.main(["--root", str(root), "--code", str(clone), "--update-code"]) == 1      # another checkout: not a git one
+    f.write_text(json.dumps(dict(alive, code=f"0.99.40 {clone}", heartbeat="2026-01-01T00:00:00")), encoding="utf-8")
+    assert fz.main(["--root", str(root), "--code", str(clone), "--update-code"]) == 1      # a stale run does not hold it
+
+
 def test_version_gate(tmp_path, monkeypatch):
     root = _root(tmp_path)
     monkeypatch.setattr(fz, "code_version", lambda r: "0.95.5 D:\\code\\MPPP_freeze2\\src\\rpp\\__init__.py")

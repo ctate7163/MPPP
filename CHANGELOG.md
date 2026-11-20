@@ -3,6 +3,18 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.49 — 2026-11-20 (branch `rpp`)
+
+- **`freeze --update-code` checks every root** (Christian, 20 Nov: "make that change"): `sync_code.bat` fast-forwards
+  the freeze checkout unless a freeze is alive on it, but it looked only at `--root` (`RPP_FREEZE_ROOT`, else
+  `D:\rover_blocks`). On 19 Nov at 16:57 it moved `D:\code\RPP_freeze` from 0.99.40 to 0.99.48 under freeze 3 on
+  `D:\rover_blocks_f3`, and the blocks started after that (Issole/Seitah South, Seitah Overlook, Taylorfjellet,
+  Three Forks North) ran 0.99.48. `freezes_on_code` now finds a live freeze on `--root`, `RPP_FREEZE_ROOT` and every
+  folder next to `--root` with a `mppp_pipeline/freeze_status.json`, and refuses when it runs this checkout
+  (`--force-update` overrides). Between 0.99.40 and 0.99.48 nothing the alignment runs changed (only `rpp dense`,
+  the viewer, the station list and the mask registry's v5 entry; the freeze names its mask checkpoint), so the
+  freeze-3 blocks are on the same alignment code.
+
 ## 0.99.48 — 2026-11-19 (branch `rpp`)
 
 - **A stopped run loses only the step it was in** (Christian, 16:22: "Will it need to redo that if I stop it?"):
