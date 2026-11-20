@@ -47,7 +47,8 @@ TERRAIN_3D = ("terrain3d", "3D terrain and rover")     # 0.98.8 (Christian: "ter
 DEFAULT_VIEWS = ("standard", "raw color", "enhanced local", "enhanced tone", "dcs color", "normal map", "distance map")   # 0.99.37; 0.98.30 (Christian, 16 Nov 2026: "Include the
 #   enhlocal image versions in the upload and let it be viewable as one of the skins that button B shows"); 0.98.12 (Christian, 15 Nov 2026: "Uploaded the range map too in log scale"); ("standard", "normal") from 0.98.5 (Christian: "Uploaded the normal maps too"); ("standard",) since 0.97.18 (Christian, 13 Nov 2026: "don't upload the enhanced version to github");
 #                                      ("standard", "enhanced") before; rpp single-sites --publish-views brings it back
-GEOMETRY_WIDTH = 4096              # 0.98.12: the range and normal views are published at most this wide (the color ones at width)
+GEOMETRY_WIDTH = 16384             # 0.98.12: the range and normal views are published at most this wide (the color ones at
+#                                    width); 0.99.51: 4096 until now - they are made at half the color width
 DEFAULT_WIDTH = 8192               # the square's side: 8192 x 8192 holds two 8192 x 4096 eyes (Quest 3: fine).  0.98.30:
 #                                    the panoramas are rendered at 16K (rpp ods); publishing reduces them to this (area filter)
 

@@ -400,6 +400,12 @@ HEIGHT_FIELD_SPIKE_M = 0.10       # a cell of few points this far above or below
 HEIGHT_FIELD_SPIKE_POINTS = 8     # ... "few"
 HEIGHT_FIELD_STEEP_M = 0.06       # a step between neighboring cells larger than this (about 76 deg at 1.5 cm) is a face:
 HEIGHT_FIELD_STEEP_GROW = 4       # the cells about it (grown this many cells, the enclosed ones too) are meshed by Poisson
+# 0.99.51 (Christian, 20 Nov 2026: "why does the mesh have these squares of low res triangles?"; "the normal map also has
+# these strange square artifacts"): one stray cell 6 cm off its neighbors on flat ground made a Poisson square (about 15
+# cm) with a crack round it - 12-14 % of the 0-4 m disc on the block clouds (sparser than a station's own, so many
+# cells take a coarser grid's height and a lone measured one stands out)
+HEIGHT_FIELD_OUTLIER_M = HEIGHT_FIELD_STEEP_M   # a cell this far from the median of its 3 x 3 neighbors takes that median
+HEIGHT_FIELD_FACE_MIN_CELLS = 6   # a face: a connected run of at least this many step cells (fewer: the height field's)
 
 
 def _grid_medians(x: np.ndarray, y: np.ndarray, z: np.ndarray, cell: float, N: int, min_points: int) -> Tuple[np.ndarray, np.ndarray]:
@@ -483,6 +489,18 @@ def height_field_arrays(points: np.ndarray, pivot: Sequence[float], up: Sequence
         add = ~have & (w >= 5)
         H[add] = s_[add] / w[add]
     have = np.isfinite(H)
+    outliers = 0
+    if HEIGHT_FIELD_OUTLIER_M and have.any():                 # 0.99.51: a lone cell off its neighbors is smoothed
+        Hp = np.pad(np.where(have, H, np.nan), 1, constant_values=np.nan)
+        nb = np.stack([Hp[1 + a:1 + a + 2 * N, 1 + b:1 + b + 2 * N] for a in (-1, 0, 1) for b in (-1, 0, 1)])
+        with np.errstate(invalid="ignore"), __import__("warnings").catch_warnings():
+            __import__("warnings").simplefilter("ignore", RuntimeWarning)
+            med = np.nanmedian(nb, axis=0)
+            cnt = np.isfinite(nb).sum(axis=0)
+        odd = have & (cnt >= 5) & np.isfinite(med) & (np.abs(H - med) > HEIGHT_FIELD_OUTLIER_M)
+        H[odd] = med[odd]
+        outliers = int(odd.sum())
+        del Hp, nb
     # a rock's face: a step between neighbors; the cells about it (and those it encloses) are left to Poisson
     Hz = np.where(have, H, np.nan)
     jump = np.zeros_like(have)
@@ -494,6 +512,14 @@ def height_field_arrays(points: np.ndarray, pivot: Sequence[float], up: Sequence
     jump[1:, :] |= dy
     jump[:-1, :] |= dy
     steep_m = np.zeros_like(have)
+    small_faces = 0
+    if jump.any() and HEIGHT_FIELD_FACE_MIN_CELLS > 1:          # 0.99.51: only a connected step is a face
+        lab, nl = ndimage.label(jump, structure=np.ones((3, 3), bool))
+        sizes = np.bincount(lab.ravel(), minlength=nl + 1)
+        keep_l = sizes >= int(HEIGHT_FIELD_FACE_MIN_CELLS)
+        keep_l[0] = False
+        small_faces = int((~keep_l[1:]).sum())
+        jump = keep_l[lab]
     if jump.any():
         steep_m = ndimage.binary_dilation(jump, iterations=int(HEIGHT_FIELD_STEEP_GROW))
         steep_m = ndimage.binary_fill_holes(steep_m)
@@ -520,11 +546,26 @@ def height_field_arrays(points: np.ndarray, pivot: Sequence[float], up: Sequence
             out = np.zeros(len(dq), bool)
             out[okq] = _g[qj[okq], qi[okq]]
             return out
-        steep.update(inside=inside, cells=int(steep_m.sum()))
+        def snap(Q: np.ndarray, _s=steep_m, _H=np.where(have, H, np.nan)) -> np.ndarray:
+            """0.99.51: the Poisson patch's vertices outside the face cells (its ring over the height field) put on the
+            height field - the patch meets the grid without a crack."""
+            Q = np.array(Q, float, copy=True)
+            dq = Q - P
+            qi = np.floor((dq @ e) / cell_m).astype(np.int64) + N
+            qj = np.floor((dq @ n) / cell_m).astype(np.int64) + N
+            okq = (qi >= 0) & (qi < 2 * N) & (qj >= 0) & (qj < 2 * N)
+            ring = np.zeros(len(Q), bool)
+            ring[okq] = ~_s[qj[okq], qi[okq]] & np.isfinite(_H[qj[okq], qi[okq]])
+            if ring.any():
+                z_now = dq[ring] @ u
+                Q[ring] += (_H[qj[ring], qi[ring]] - z_now)[:, None] * u
+            return Q
+        steep.update(inside=inside, snap=snap, cells=int(steep_m.sum()))
     return V, F, {"method": "height field", "cell_m": float(cell_m), "cells_measured": measured0,
                   "spikes_dropped": int(spike.sum()), "cells_from_coarser_grids": from_coarse,
                   "cells_closed": int(have.sum()) - measured0 + int(spike.sum()) - from_coarse,
-                  "faces_to_poisson_cells": int(steep_m.sum()), "triangles": int(len(F))}
+                  "faces_to_poisson_cells": int(steep_m.sum()), "outliers_smoothed": outliers,
+                  "step_blobs_too_small_for_a_face": small_faces, "triangles": int(len(F))}
 
 
 def zoned_poisson(points: np.ndarray, normals: Optional[np.ndarray], pivot: Sequence[float], up: Sequence[float],
@@ -558,6 +599,8 @@ def zoned_poisson(points: np.ndarray, normals: Optional[np.ndarray], pivot: Sequ
                 if len(F2):
                     cen2, _, _ = triangle_geometry(V2, F2)
                     V2, F2 = keep_triangles(V2, F2, st_["inside"](cen2))
+                    if "snap" in st_ and len(V2):                # 0.99.51: no crack round the patch
+                        V2 = st_["snap"](V2)
                     F = np.vstack([np.asarray(F, np.int64), np.asarray(F2, np.int64) + len(V)]) if len(F2) else F
                     V = np.vstack([V, V2]) if len(F2) else V
                 how = dict(how, method="height field + poisson on the faces", poisson_face_triangles=int(len(F2)))

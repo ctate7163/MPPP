@@ -214,7 +214,8 @@ def test_fifth_mode_surface_to_the_horizon_one_texture(tmp_path):
     assert np.isfinite(tp["texture"]).all() and tp["texture"].shape == (1024, 1024, 3)
     # 0.99.41: the sky and the unused texels white; the ground not
     w = tp["white"]
-    assert w.shape == (1024, 1024) and w[512, 1023] and not w[512, 512] and rr["white_texels"] == int(w.sum()) > 0
+    assert w.shape == (1024, 1024) and w.any() and not w[512, 512] and rr["white_texels"] == int(w.sum()) > 0
+    assert not w[512, 1023]                                     # 0.99.51: the band about the disc takes its colors
     # the map and its inverse agree across the knee
     knee = (np.radians(rr["skyline_deg"] + 90.0), 0.97)
     rows, cols = np.array([100, 512, 900, 30]), np.array([512, 300, 700, 512])
@@ -445,15 +446,18 @@ def test_skip_done_leaves_out_stations_already_made(tmp_path):
     run = {"label": "Sol0009_S003D0000", "out": str(tmp_path / "Sol0009_S003D0000"), "variants": ["rover", "masked"],
            "commands": [{"step": "ods", "variant": "rover", "argv": []}]}
     assert not SS.station_done(run)
+    code = SS.code_key()
     for sub in ("with_rover", ""):
         d = tmp_path / "Sol0009_S003D0000" / sub
         d.mkdir(parents=True, exist_ok=True)
-        (d / "step_ods.json").write_text(json.dumps({"key": "old code", "exit": 0, "finished": "2026-11-19T18:24:54"}))
+        (d / "step_ods.json").write_text(json.dumps({"key": "old", "exit": 0, "code": code, "finished": "2026-11-19T18:24:54"}))
     assert not SS.station_done(run)                                # no ods.json in the folders yet
     for sub in ("with_rover", ""):
         (tmp_path / "Sol0009_S003D0000" / sub / "ods.json").write_text("{}")
     assert SS.station_done(run)
-    (tmp_path / "Sol0009_S003D0000" / "step_ods.json").write_text(json.dumps({"key": "x", "exit": 1}))
+    (tmp_path / "Sol0009_S003D0000" / "step_ods.json").write_text(json.dumps({"key": "x", "exit": 0, "code": "other"}))
+    assert not SS.station_done(run)                                # 0.99.51: made by other code: made again
+    (tmp_path / "Sol0009_S003D0000" / "step_ods.json").write_text(json.dumps({"key": "x", "exit": 1, "code": code}))
     assert not SS.station_done(run)                                # the masked one failed: made again
 
 
@@ -513,10 +517,8 @@ def test_fusion_is_reused_after_a_restart(tmp_path):
     a = NS(keep_rover=False)
     assert not cli._fusion_cached(ws, {}, {}, 0, a)                 # no cloud
     (ws / "fused.ply").write_bytes(b"ply\n" + b"0" * 100)
-    assert not cli._fusion_cached(ws, {}, {}, 0, a)                 # a cloud from before 0.99.47 without its run record
     (ws / "mppp_dense_run.json").write_text('{"steps": {"stereo": {}, "fusion": {"points": 5}}}')
-    assert cli._fusion_cached(ws, {}, {}, 0, a)                     # ... with it: the run fused these maps
-    (ws / "rpp_fusion.json").unlink()
+    assert not cli._fusion_cached(ws, {}, {}, 0, a)                 # 0.99.51: a cloud without its record: fused again
     cli._fusion_record(ws, {}, {}, 0, a, write=True)
     assert cli._fusion_cached(ws, {}, {}, 0, a)
     assert not cli._fusion_cached(ws, {}, {"min_num_pixels": 3}, 0, a)   # other fusion options
@@ -578,3 +580,56 @@ def test_freeze3_root_block_order_busy_and_recolor(tmp_path):
     assert SS.freeze_alive(root)
     (root / "mppp_pipeline" / "freeze_status.json").write_text(json.dumps({"state": "done", "heartbeat": hb}))
     assert not SS.freeze_alive(root)
+
+
+def test_small_hidden_patches_keep_the_disc_and_borders_take_their_colors():
+    """0.99.51 (Christian, 20 Nov 2026: "could you warp the UV a little so that slightly occluded spots are included in
+    the main texture as opposed to being put in the corners? Only larger and more continuous back faces should go to
+    the corners"; borders "a neutral color with its surroundings so that jpg compress blurring does not bleed")."""
+    import numpy as np
+    from rpp.ibr import station_mesh as SM
+    n = 6                                                       # a 6 x 6 grid of 0.1 m squares, 72 triangles
+    xs, ys = np.meshgrid(np.arange(n + 1) * 0.1, np.arange(n + 1) * 0.1)
+    V = np.c_[xs.ravel(), ys.ravel(), np.zeros(xs.size)]
+    vid = lambda i, j: j * (n + 1) + i
+    F = np.array([t for j in range(n) for i in range(n) for t in ((vid(i, j), vid(i + 1, j), vid(i + 1, j + 1)),
+                                                                  (vid(i, j), vid(i + 1, j + 1), vid(i, j + 1)))])
+    area = np.full(len(F), 0.005)
+    uv = V[:, :2] * 100.0                                       # the disc's coordinates: x, y in cm
+    vis = np.ones(len(F), bool)
+    mid = [k for k, (a, b, c) in enumerate(F) if all(0.2 - 1e-9 <= V[x, 0] <= 0.3 + 1e-9 and 0.2 - 1e-9 <= V[x, 1] <= 0.3 + 1e-9 for x in (a, b, c))]
+    assert len(mid) == 2
+    vis[mid] = False                                            # a small hidden square: 0.01 m2 > WARP_MAX_M2 at 0.005 each?
+    uv2, vis2, rec = SM.warp_small_patches(V, F, uv.copy(), vis, area, max_m2=0.02)
+    assert vis2.all() and rec["warped_patches"] == 1 and rec["warped_triangles"] == 2 and rec["inner_vertices"] == 0
+    big = np.ones(len(F), bool)                                 # a 4 x 4 block hidden, 32 triangles = 0.16 m2: cells
+    blk = [k for k, (a, b, c) in enumerate(F) if all(0.1 - 1e-9 <= V[x, 0] <= 0.5 + 1e-9 and 0.1 - 1e-9 <= V[x, 1] <= 0.5 + 1e-9 for x in (a, b, c))]
+    big[blk] = False
+    uv3, vis3, rec3 = SM.warp_small_patches(V, F, uv.copy(), big, area, max_m2=0.02)
+    assert not vis3[blk].any() and rec3["warped_patches"] == 0
+    uv4, vis4, rec4 = SM.warp_small_patches(V, F, uv.copy() * 0 + uv, big, area, max_m2=1.0)   # a large limit: warped,
+    assert vis4.all() and rec4["inner_vertices"] == 9                                          # 3 x 3 inner vertices
+    inner = [vid(i, j) for i in (2, 3, 4) for j in (2, 3, 4)]
+    assert np.allclose(uv4[inner], uv[inner], atol=1e-6)        # harmonic on a regular grid: the plane itself
+    rgb = np.zeros((64, 64, 3), np.float32)
+    used = np.zeros((64, 64), bool)
+    used[20:40, 20:40] = True
+    rgb[used] = (100, 150, 200)
+    far, k = SM.border_fill(rgb, used, border_px=8)
+    assert k > 0 and np.allclose(rgb[18, 30], (100, 150, 200)) and far[0, 0] and not far[15, 30]
+
+
+def test_unpublish_and_no_navcam(tmp_path):
+    """0.99.51 (Christian, 20 Nov 2026: "Sol0362_S011D0108 should be taken down until it is regenerated"; its Navcam
+    frames are no 360: only its Mastcam-Z version is made)."""
+    import json
+    from rpp.ibr import single_sites as SS
+    (tmp_path / "panos.json").write_text(json.dumps({"panos": [{"id": "welcome"}, {"id": "Sol0362_S011D0108"}, {"id": "Sol0086_S004D0048"}]}))
+    r = SS.unpublish(tmp_path, ["sol0362_s011d0108", "Sol9999_S000D0000"])
+    assert r["removed"] == ["Sol0362_S011D0108"] and r["left"] == 2
+    assert [p["id"] for p in json.loads((tmp_path / "panos.json").read_text())["panos"]] == ["welcome", "Sol0086_S004D0048"]
+    cfg = SS.load_config()
+    assert cfg["stations"]["Sol0362_S011D0108"]["no_navcam"]
+    runs = SS.plan(cfg, tmp_path, labels=["Sol0362_S011D0108", "Sol0086_S004D0048"],
+                   companions={"Sol0362_S011D0108": "Sol0086_S004D0048"})
+    assert [r_["label"] for r_ in runs] == ["Sol0086_S004D0048"]

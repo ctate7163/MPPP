@@ -3,6 +3,49 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.51 — 2026-11-20 (branch `rpp`)
+
+Christian, 20 Nov, from the first freeze-3 station meshes.
+
+- **No Poisson squares in the 0-4 m height field** ("why does the mesh have these squares of low res triangles?"; "the
+  normal map also has these strange square artifacts"): one cell 6 cm off its neighbors on flat ground made a Poisson
+  patch about 15 cm square with a crack round it (12-14 % of the disc on the block clouds). Now a cell more than
+  `HEIGHT_FIELD_OUTLIER_M` (6 cm) from the median of its 3 x 3 neighbors takes that median; a face is a connected run of
+  at least `HEIGHT_FIELD_FACE_MIN_CELLS` (6) step cells; and the Poisson patch's ring outside the face cells is put on
+  the height field (`snap`), so it meets the grid without a crack.
+- **Small hidden patches stay in the main texture** ("could you warp the UV a little so that slightly occluded spots
+  are included in the main texture ... Only larger and more continuous back faces should go to the corners"):
+  `warp_small_patches` - a connected patch of triangles the projection center does not see (or sees edge on) smaller
+  than `WARP_MAX_M2` (0.01 m2) that touches seen triangles keeps the disc: its inner vertices' texture coordinates
+  are the harmonic map between its seen edges. Larger patches keep their cells.
+- **Neutral borders** ("they should be a neutral color with its surroundings so that jpg compress blurring does not
+  bleed over"): `GUTTER_PX` 4 (2), and every texel within `BORDER_PX` (16) of the disc or a cell takes the colors
+  about it (pull-push); the full 3D texture's white starts beyond that band (and in the sky).
+- **The local 3D terrain uses the full 3D texture** ("The ..._station_mesh_terrain should use the same texture as the
+  ..._station_scape_terrain just with a smaller mesh"): the masked run makes the full 3D part first and writes the
+  local one as its mesh without the shell - one texture render instead of two (about 7 min less a 16K station).
+- **Original color is the raw color** ("the raw color version should reverse the blue and green white enhancements
+  ... may need a slight brightness boost"): the color products were made before `ods.json` held the white balance, so
+  "original color" was the standard view (the products said so: "no white balance in ods.json"). The white balance is
+  now written before them; the raw view divides by it and is brightened so that a gray keeps its luminance
+  (`RAW_KEEP_LUMA`: x 1.19 for [1, 1.224, 1.569] - red x 1.19, green x 0.97, blue x 0.76).
+- **Normal and range maps at half the color width** ("if the terrain is 16k, then the normal and range should be
+  8k"): `geometry_width` = width / 2 (4096 at most until now); the page publishes them as made.
+- **Remade unless made by the same code** ("every site gets remade from the fusion up if it wasn't generated on the
+  same code. Previous alignments and depth maps should be reused"): `--skip-done` skips a station only when its
+  panoramas' step records carry this code's `code_key`; the fusion record carries it too, so a block's cloud is fused
+  again once per code (the stereo maps are kept). A 0.99.50 or older cloud is fused again.
+- **One sol on every plate** ("the sol numbers on the blue plates should never be two. Only take the first sol").
+- `Sol0086_S004D0048`: the context frames NCAM00301 of sol 86 (S004D0012) and NCAM03084 of sol 84 (S004D0000).
+- **`Sol0362_S011D0108` is not made** ("chal rocks Sol0362_S011D0108 model has many spikes and sky floaters"): the
+  Navcam frames at S011D0108 are no 360 - four pairs on sol 362, two on 363, two on 367, one on 371 over sols
+  362-379 - so its panorama was mostly filled color, its far rocks smeared on a thin cloud and its sky from four
+  frames. A station marked `"no_navcam"` is not made itself; its Mastcam-Z version (`Sol0369_S011D0108_Z34`, 68
+  pairs) still is.
+- **`rpp single-sites --unpublish LABEL ... [--upload]`** ("how do I remove a site from showing up on the RPV
+  viewer?"): the stations out of `panos.json`, pushed with `--upload`; a later run of a station puts it back.
+  `unpublish_station.bat <label>` runs it from `D:\code\RPP_rpv`.
+
 ## 0.99.50 — 2026-11-20 (branch `rpp`)
 
 Christian, 20 Nov: "make a new version of rpv_products that always runs rockytop first and then goes to the end of the

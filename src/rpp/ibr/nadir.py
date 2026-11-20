@@ -101,14 +101,15 @@ def mark_sols(names: Sequence[str]) -> List[int]:
     those (0.99.36; Christian, 19 Nov 2026: 'the blue disk on the z34 Three Forks North should not have the ", 692"
     on it. For this and the future, just give it the first sol of the zcam images')."""
     z = sols_of([n for n in names if str(n)[:1].upper() == "Z"])
-    return z[:1] if z else sols_of(names)
+    return z[:1] if z else sols_of(names)[:1]          # 0.99.51 (Christian, 20 Nov 2026: "the sol numbers on the blue
+    #                                                    plates should never be two. Only take the first sol")
 
 
 def mark_lines(names: Sequence[str], site: Optional[str] = None, sols: Optional[Sequence[int]] = None) -> List[str]:
     """The four lines: the rover, sol and site, the image credit, the author (0.97.16; Christian, 13 Nov 2026: "put
     'made by C. Tate' after the 'image credit: NASA/JPL...'" - the author was before the credit).  The sols:
     ``sols``, else :func:`mark_sols` of the frames."""
-    s = sorted({int(x) for x in sols}) if sols else mark_sols(names)
+    s = sorted({int(x) for x in sols})[:1] if sols else mark_sols(names)
     sol = "" if not s else (f"Sol {s[0]}" if len(s) == 1 else f"Sols {s[0]}-{s[-1]}" if s[-1] - s[0] == len(s) - 1
                             else "Sols " + ", ".join(str(x) for x in s))
     where = " - ".join(x for x in (sol, site) if x)

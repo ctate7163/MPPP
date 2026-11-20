@@ -792,7 +792,12 @@ def _fusion_record(ws, so, fo, size, a, write: bool = False):
         stereo = hashlib.sha1((ws / "stereo" / STEREO_RECORD).read_bytes()).hexdigest()
     except OSError:
         stereo = None
-    rec = {"stereo_record": stereo, "fusion_options": {k: fo[k] for k in sorted(fo)}, "keep_rover": keep,
+    try:                                                         # 0.99.51: a fusion of other code is made again
+        from .ibr.single_sites import code_key
+        code = code_key()
+    except Exception:                                            # noqa: BLE001
+        code = None
+    rec = {"stereo_record": stereo, "code": code, "fusion_options": {k: fo[k] for k in sorted(fo)}, "keep_rover": keep,
            "sky": str(rpp_env.get("RPP_SKY_MASK") or "1").strip().lower(), "max_image_size": int(size or 0)}
     ply = ws / (FUSED_ROVER_PLY if keep else "fused.ply")
     if write and ply.is_file() and stereo:
@@ -811,17 +816,8 @@ def _fusion_cached(ws, so, fo, size, a) -> bool:
         st = ply.stat()
     except OSError:
         return False
-    if not f.is_file():                                          # a cloud of 0.99.46 or before: the run record says
-        from .sfm.dense import STEREO_RECORD                     # it fused these very maps (written after the cloud,
-        run = Path(ws) / "mppp_dense_run.json"                   # the stereo record older than the cloud)
-        try:
-            ok = "fusion" in (json.loads(run.read_text(encoding="utf-8")).get("steps") or {})
-            ok = ok and not rec["keep_rover"] and run.stat().st_mtime >= st.st_mtime >= (Path(ws) / "stereo" / STEREO_RECORD).stat().st_mtime
-        except (OSError, ValueError):
-            return False
-        if ok:
-            _fusion_record(ws, None, dict(rec["fusion_options"]), rec["max_image_size"], a, write=True)
-        return bool(ok)
+    if not f.is_file():                                          # 0.99.51: no record (a cloud of 0.99.50 or before,
+        return False                                             # or of other code): fused again
     try:
         old = json.loads(f.read_text(encoding="utf-8"))
     except (OSError, ValueError):

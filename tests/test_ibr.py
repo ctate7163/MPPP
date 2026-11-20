@@ -1104,7 +1104,7 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     cfg = SS.load_config()
     assert cfg["stations"]["Sol0690_S032D1184_Z34"]["experimental"] is True      # 0.98.2: runs only when named
     Z34 = {"Sol0690_S032D1184_Z34", "Sol0670_S032D0672_Z34"}                     # 0.99.16: Three Forks South too
-    assert {r["label"] for r in SS.plan(cfg, tmp_path)} == set(cfg["stations"]) - Z34
+    assert {r["label"] for r in SS.plan(cfg, tmp_path)} == set(cfg["stations"]) - Z34 - {"Sol0362_S011D0108"}   # 0.99.51: no_navcam
     zs = cfg["stations"]["Sol0670_S032D0672_Z34"]                                # the Z34 360 of the Navcam 360's own sol
     assert zs["experimental"] is True and zs["ods_args"][2:5] == ["--sols", "670", "670"] and zs["terrain"] == "block"
     assert set(cfg["stations"]["Sol0670_S032D0672"]["frames"]["images"]) <= set(zs["context"])
@@ -2193,8 +2193,8 @@ def test_nadir_mark_lines_credit_and_disc():
     assert nadir.site_name("van_zyl_overlook_huge") == "Van Zyl Overlook" and nadir.site_name(None) is None
     lines = nadir.mark_lines(nav, "Rockytop")
     assert lines == ["Mars 2020 Perseverance Rover", "Sol 461 - Rockytop", "Image credit: NASA/JPL-Caltech/MSSS", "made by C. Tate"]
-    assert nadir.mark_lines(["NLF_0686_a", "NLF_0688_a"])[1] == "Sols 686, 688"
-    assert nadir.mark_lines(["NLF_0686_a", "NLF_0687_a"])[1] == "Sols 686-687"
+    assert nadir.mark_lines(["NLF_0686_a", "NLF_0688_a"])[1] == "Sol 686"           # 0.99.51: the first sol only
+    assert nadir.mark_lines(["NLF_0686_a", "NLF_0687_a"], sols=[687, 686])[1] == "Sol 686"
     # 0.99.36: with Mastcam-Z frames the first sol of those alone (the Navcam fill frames' sols not either)
     assert nadir.mark_lines(["ZL0_0690_a", "ZR0_0692_a", "NLF_0686_a"], "Three Forks North")[1] == "Sol 690 - Three Forks North"
     W, H = 4096, 2048
@@ -2733,22 +2733,16 @@ def test_geometry_panoramas_masked_black_and_image_copies(tmp_path):
     assert sorted(files) == ["normal", "range_linear", "range_log"]
     assert Path(files["range_log"]).name == "Sol0091_S003D0010_range_log_360_3DTD.jpg"
     rl, nm = cv2.imread(files["range_log"]), cv2.imread(files["normal"])
-    assert rl.shape == (256, 256, 3) and nm.shape == rl.shape                 # the left eye on top of the right
-    g = nm[128 - 30, 10].astype(int)                                          # looking down at the flat ground: up
+    assert rl.shape == (128, 128, 3) and nm.shape == rl.shape                 # 0.99.51: half the color width
+    g = nm[64 - 15, 5].astype(int)                                            # looking down at the flat ground: up
     assert abs(g[0] - 255) < 12 and abs(g[1] - 128) < 12 and abs(g[2] - 128) < 12, g      # BGR: up in blue
-    near, far = rl[128 - 6, 10].astype(int), rl[64 + 12, 10].astype(int)      # steeply down against near the horizon
+    near, far = rl[64 - 3, 5].astype(int), rl[32 + 6, 5].astype(int)          # steeply down against near the horizon
     assert not np.array_equal(near, far)
     from rpp.ibr import web as W
     assert sorted(W.station_files(out)) == ["distance map", "distance map linear", "normal map", "standard"]   # 0.98.30 names
     rep2 = O.render_station(proj, rec, st, scene, tmp_path / "o2", width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, geometry=False)
     assert "geometry" not in rep2 and not list((tmp_path / "o2").glob("*range*"))
-    old, O.GEOMETRY_WIDTH = O.GEOMETRY_WIDTH, 128                             # 0.98.12: the range and normal at most 4k
-    try:
-        rep3 = O.render_station(proj, rec, st, scene, tmp_path / "o3", width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32)
-    finally:
-        O.GEOMETRY_WIDTH = old
-    assert cv2.imread(rep3["geometry"]["files"]["normal"]).shape == (128, 128, 3) and rep3["geometry"]["width"] == 128
-    assert O.GEOMETRY_WIDTH == 4096
+    assert rep["geometry"]["width"] == 128 and O.geometry_width(16384) == 8192 and O.geometry_width(8192) == 4096
     lab = np.full((8, 8), RC.LABEL_MESH, np.uint8)
     lab[:4] = RC.LABEL_MASKED
     for mode in ("log", "linear"):
@@ -3555,7 +3549,7 @@ def test_viewer_names_three_forks_and_zcam():
         assert not n.startswith("Three Forks") or "North" in n or "South" in n, (k, n)
         assert ("(zcam)" in n) == ss.is_zcam_station(cfg["stations"][k]), (k, n)
     assert ss.viewer_sols(cfg["stations"]["Sol0690_S032D1184_Z34"], "Sol0690_S032D1184_Z34") == [690]
-    assert ss.viewer_sols(cfg["stations"]["Sol0686_S032D1184"], "Sol0686_S032D1184") is None
+    assert ss.viewer_sols(cfg["stations"]["Sol0686_S032D1184"], "Sol0686_S032D1184") == [686]   # 0.99.51: one sol
     assert ss.mark_name(cfg["stations"]["Sol0690_S032D1184_Z34"]) == "Three Forks North"       # the disc: no tag (0.99.13)
     assert "web.py" in ss.NOT_IN_CODE_KEY and "hf.py" in ss.NOT_IN_CODE_KEY and "ods.py" not in ss.NOT_IN_CODE_KEY
 
@@ -3656,6 +3650,36 @@ def test_height_field_drops_spikes_fills_sparse_cells_and_leaves_rock_faces_to_p
     cen2 = V2[F2].mean(axis=1)
     on_block = (np.abs(cen2[:, 0] + 2.0) < 0.3) & (np.abs(cen2[:, 1]) < 0.2) & (cen2[:, 2] > 0.4)
     assert on_block.sum() > 20                                      # the block's top is there, from Poisson
+
+
+def test_height_field_no_poisson_squares_on_flat_ground_and_no_crack():
+    """0.99.51 (Christian, 20 Nov 2026: "why does the mesh have these squares of low res triangles?"; "the normal map also
+    has these strange square artifacts"): a lone cell off its neighbors is smoothed instead of making a Poisson square;
+    a real face still goes to Poisson, and the patch's ring is put on the height field."""
+    from rpp.ibr import mesh as M
+    rng = np.random.default_rng(7)
+    g = np.mgrid[-2:2:0.005, -2:2:0.005].reshape(2, -1).T
+    z = 0.002 * rng.normal(size=len(g))
+    keep = np.ones(len(g), bool)
+    bumps = []
+    for k in range(40):                                            # lone bumps: one cell 8-20 cm up (its own points)
+        c = (np.floor(rng.uniform(-1.8, 1.8, 2) / 0.015) + 0.5) * 0.015
+        keep &= ~((np.abs(g[:, 0] - c[0]) < 0.0075) & (np.abs(g[:, 1] - c[1]) < 0.0075))
+        bumps.append(np.c_[np.tile(c, (4, 1)) + 0.001 * rng.normal(size=(4, 2)), [rng.uniform(0.08, 0.2)] * 4])
+    pts = np.vstack([np.c_[g[keep], z[keep]], *bumps])
+    P = np.array([0.0, 0.0, 2.0])
+    st = {}
+    V, F, how = M.height_field_arrays(pts, P, (0, 0, 1), 1.9, steep=st)
+    assert st["cells"] == 0 and how["outliers_smoothed"] + how["spikes_dropped"] >= 30, how
+    assert np.abs(V[:, 2]).max() < 0.03
+    box = (np.abs(g[:, 0] - 1.0) < 0.3) & (np.abs(g[:, 1]) < 0.3)  # a 0.6 m block, 0.3 m tall: a face
+    pts2 = np.vstack([np.c_[g[~box], z[~box]], np.c_[g[box], np.full(box.sum(), 0.3)]])
+    st2 = {}
+    V2, F2, how2 = M.height_field_arrays(pts2, P, (0, 0, 1), 1.9, steep=st2)
+    assert st2["cells"] > 0
+    q = np.array([[1.0, 0.0, 0.31], [1.0 + 0.3 + 10.5 * how2["cell_m"], 0.0, 0.05]])   # on the block; outside the faces
+    s_ = st2["snap"](q)
+    assert abs(s_[0, 2] - 0.31) < 1e-9 and abs(s_[1, 2]) < 0.01                       # the ring point on the ground
 
 
 def test_ods_width_from_the_stations_own_frames():

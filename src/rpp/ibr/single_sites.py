@@ -99,8 +99,9 @@ def viewer_sols(st: Dict[str, Any], label: str = "") -> Optional[List[int]]:
     """For a Mastcam-Z station the one sol the viewer gives (as on its disc, :func:`rpp.ibr.nadir.mark_sols`): the
     first of its ``--sols`` in ``ods_args``, else the sol in its label; None for the others (the disc's sols)."""
     import re
-    if not is_zcam_station(st):
-        return None
+    if not is_zcam_station(st):                         # 0.99.51: one sol on every plate - the label's
+        m = re.match(r"^Sol(\d+)", str(label))
+        return [int(m.group(1))] if m else None
     args = [str(x) for x in (st.get("ods_args") or [])]
     for i, x in enumerate(args[:-1]):
         if x == "--sols" and args[i + 1].isdigit():
@@ -388,6 +389,9 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
             if lab in companions and companions[lab] in cfg["stations"]:
                 out_.append(companions[lab])
         todo = list(dict.fromkeys(out_))
+    # 0.99.51 (Christian, 20 Nov 2026, Sol0362_S011D0108: "many spikes and sky floaters"): a station marked "no_navcam" -
+    # its Navcam frames are no 360 (Sol 362: four pairs) - is not made itself; its Mastcam-Z version still is
+    todo = [lab for lab in todo if not (cfg["stations"].get(lab) or {}).get("no_navcam")]
     bc = block_cameras or cfg.get("block_cameras")              # 0.99.43: the block's cloud from these families (NFR)
     unknown = [lab for lab in todo if lab not in cfg["stations"]]
     if unknown:
@@ -521,8 +525,8 @@ def step_done(out: PathLike, step: str, key: str) -> bool:
 
 def station_done(run: Dict[str, Any]) -> bool:
     """0.99.47: True when every variant of this planned station has its panorama from a good run in its output folder
-    (``step_ods.json`` with exit 0 and ``ods.json``) - whatever code or command made it (:func:`step_done` also wants
-    the same key, so a new version runs every station again)."""
+    (``step_ods.json`` with exit 0 and ``ods.json``) - 0.99.51: made by this code (:func:`code_key`; 0.99.47-0.99.50:
+    by any code, then by 0.99 or newer)."""
     base = Path(run["out"])
     if not run.get("variants") or not any(c["step"] == "ods" for c in run.get("commands", [])):
         return False
@@ -534,9 +538,18 @@ def station_done(run: Dict[str, Any]) -> bool:
             return False
         if rec.get("exit") != 0 or not (vout / STEP_OUTPUT["ods"]).is_file():
             return False
-        if not _made_by_0p99(rec):
-            return False
+        if rec.get("code") != _CODE_NOW():                 # 0.99.51 (Christian, 20 Nov 2026: "every site gets remade
+            return False                                   # from the fusion up if it wasn't generated on the same code")
     return True
+
+
+def _CODE_NOW() -> str:
+    if not _CODE_CACHE:
+        _CODE_CACHE.append(code_key())
+    return _CODE_CACHE[0]
+
+
+_CODE_CACHE: List[str] = []
 
 
 V0P99_DATE = "2026-11-16"          # 0.99.0 (the rename to RPP); a record without its version is dated instead
@@ -848,6 +861,8 @@ def add_parser(sub) -> None:
                    "360_3DTD.jpg / .png")
     p.add_argument("--retone", action="store_true", help="only make the 8-bit panoramas and squares again from the "
                    "16-bit ones already there (no rendering)")
+    p.add_argument("--unpublish", nargs="+", default=None, metavar="LABEL", help="0.99.51: take these stations off "
+                   "the viewer page (panos.json; with --upload pushed) - a later run of a station puts it back")
     p.add_argument("--recolor", action="store_true", help="0.99.50: no meshing, projection or rendering - the color "
                    "processing of every made station again from its 16-bit panoramas and textures (8-bit eyes, enhanced "
                    "and color products, mesh textures, color skins, the .glb files), then published and uploaded")
@@ -927,6 +942,16 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
     later. When there are no more stations to run, then stop"): with ``--wait-for-blocks`` the run is repeated for the
     stations whose block was not aligned yet (and the Mastcam-Z versions whose block was not), every ``--poll-min``
     minutes, until none is left - or no block has come in for ``--wait-for-blocks`` hours."""
+    if getattr(a, "unpublish", None):                    # 0.99.51: off the viewer page, nothing else
+        from .web import upload, viewer_dir
+        d = a.publish or str(viewer_dir())
+        r = unpublish(d, a.unpublish)
+        print(f"single-sites: off the viewer: {', '.join(r['removed']) or 'none of them was listed'} ({r['left']} stations left)")
+        if getattr(a, "upload", False) and r["removed"]:
+            up = upload(d, list(a.unpublish))
+            print(("uploaded: " if up["ok"] else "NOT uploaded: ") + up["message"])
+            return 0 if up["ok"] else 1
+        return 0
     wait_h = getattr(a, "wait_for_blocks", None)
     INSTANCE["name"] = getattr(a, "instance", None)
     if getattr(a, "recolor", False):                     # 0.99.50: the made stations once, nothing waited for
@@ -955,6 +980,20 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
             return rc
         print(f"single-sites: {len(done)} done, waiting for the blocks of {len(late)}: {', '.join(late)}", flush=True)
         time.sleep(max(1.0, float(getattr(a, "poll_min", 15.0))) * 60.0)
+
+
+def unpublish(web_dir: PathLike, labels: Sequence[str]) -> Dict[str, Any]:
+    """0.99.51 (Christian, 20 Nov 2026: "how do I remove a site from showing up on the RPV viewer? specifically,
+    Sol0362_S011D0108 should be taken down until it is regenerated"): the stations ``labels`` out of ``panos.json``
+    (their pictures stay where they are hosted).  Returns {"removed", "left"}."""
+    f = Path(web_dir) / "panos.json"
+    doc = json.loads(f.read_text(encoding="utf-8"))
+    want = {str(x).upper() for x in labels}
+    keep = [p for p in doc.get("panos", []) if str(p.get("id", "")).upper() not in want]
+    removed = [p.get("id") for p in doc.get("panos", []) if str(p.get("id", "")).upper() in want]
+    doc["panos"] = keep
+    f.write_text(json.dumps(doc, indent=1), encoding="utf-8")
+    return {"removed": removed, "left": len(keep)}
 
 
 def freeze_alive(root: PathLike) -> bool:

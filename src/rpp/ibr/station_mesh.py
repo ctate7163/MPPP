@@ -66,7 +66,16 @@ GRAZING_COS = 0.12              # a terrain triangle C sees at more than about 8
 CELL_RADIUS_M = 10.0            # 0.99.39: ... and one C does not see, only within this of the mast axis; beyond, every
 #                                 triangle takes the disc (flat ground is edge on from about 20 m, and the cells share
 #                                 one texel size: 10-20 m of hidden ground would make every cell about 3x coarser)
-GUTTER_PX = 2                   # texels around every cell and the disc, colored as if the surface went on
+GUTTER_PX = 4                   # texels around every cell and the disc, colored as if the surface went on (2 until
+#                                 0.99.51: JPEG's 8 x 8 blocks and the viewer's mipmaps reached past them)
+BORDER_PX = 16                  # 0.99.51 (Christian, 20 Nov 2026: "they should be a neutral color with its surroundings so
+#                                 that jpg compress blurring does not bleed over to the actual mesh"): the texels this
+#                                 near a cell or the disc take the colors about them (pull-push), not white or black
+WARP_MAX_M2 = 0.01              # 0.99.51 ("could you warp the UV a little so that slightly occluded spots are included in
+#                                 the main texture ... Only larger and more continuous back faces should go to the
+#                                 corners"): a connected patch of triangles C does not see (or sees edge on) smaller
+#                                 than this keeps the disc - its inner vertices' texture coordinates are spread between
+#                                 those of the seen triangles about it (a harmonic map); a larger one gets cells
 MAX_CELL_PX = 384               # a cell's longest side; a larger triangle is given coarser texels
 TERRAIN_OFFSET_M = 0.05         # a cell texel's ray starts this far off the simplified surface (it may lie below
 ROVER_OFFSET_M = 0.005          # the measured one); the rover model is exact
@@ -530,6 +539,96 @@ def horizon_shell(scene, C, pivot, up, north, east, from_m: float = SHELL_FROM_M
     return {"V": V[used], "F": remap[F], "knee": knee, "theta0": float(th0), "rings": int(nr), "az": int(na)}
 
 
+# ------------------------------------------------------------------------------------------- 0.99.51: small hidden patches
+def hidden_patches(F: np.ndarray, hidden: np.ndarray, area: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """(component label per triangle, -1 where not ``hidden``; the area of each component) - the hidden triangles
+    joined across their shared edges."""
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.csgraph import connected_components
+    h = np.flatnonzero(hidden)
+    lab = np.full(len(F), -1, np.int64)
+    if len(h) == 0:
+        return lab, np.zeros(0)
+    Fh = np.asarray(F, np.int64)[h]
+    e = np.concatenate([Fh[:, [0, 1]], Fh[:, [1, 2]], Fh[:, [2, 0]]])
+    e.sort(axis=1)
+    t = np.tile(np.arange(len(h)), 3)
+    key = e[:, 0] * (int(e.max()) + 1) + e[:, 1]
+    o = np.argsort(key, kind="stable")
+    ks, ts = key[o], t[o]
+    same = ks[1:] == ks[:-1]
+    a, b = ts[:-1][same], ts[1:][same]
+    g = coo_matrix((np.ones(len(a)), (a, b)), shape=(len(h), len(h)))
+    n, comp = connected_components(g, directed=False)
+    lab[h] = comp
+    return lab, np.bincount(comp, weights=np.asarray(area, float)[h], minlength=n)
+
+
+def warp_small_patches(V: np.ndarray, F: np.ndarray, uv: np.ndarray, vis: np.ndarray, area: np.ndarray,
+                       max_m2: float = WARP_MAX_M2) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
+    """(uv, vis): the hidden patches smaller than ``max_m2`` that touch seen triangles join the disc - their vertices
+    shared with seen triangles keep their texture coordinates, the others are the mean of their neighbors' (the
+    harmonic map over the patch, solved at once), so a patch shows the disc's texels between its seen edges with no
+    seam.  A patch with no seen neighbor keeps its cells."""
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.linalg import spsolve
+    F = np.asarray(F, np.int64)
+    lab, areas = hidden_patches(F, ~vis, area)
+    rec = {"patches": int(len(areas)), "max_m2": float(max_m2)}
+    if not len(areas):
+        return uv, vis, dict(rec, warped_patches=0, warped_triangles=0)
+    small_c = areas < float(max_m2)
+    cand = (lab >= 0) & small_c[np.maximum(lab, 0)]
+    on_seen = np.zeros(len(V), bool)
+    on_seen[F[vis].ravel()] = True
+    touch = np.zeros(len(areas), bool)                          # the patches with a vertex on a seen triangle
+    ct = np.flatnonzero(cand)
+    touch[np.unique(lab[ct][on_seen[F[ct]].any(axis=1)])] = True
+    take = cand & touch[np.maximum(lab, 0)]
+    if not take.any():
+        return uv, vis, dict(rec, warped_patches=0, warped_triangles=0)
+    Ft = F[take]
+    verts = np.unique(Ft)
+    inner = verts[~on_seen[verts]]
+    uv = np.array(uv, float, copy=True)
+    if len(inner):
+        idx = -np.ones(len(V), np.int64)
+        idx[inner] = np.arange(len(inner))
+        e = np.concatenate([Ft[:, [0, 1]], Ft[:, [1, 2]], Ft[:, [2, 0]]])
+        e = np.unique(np.sort(e, axis=1), axis=0)
+        e = np.concatenate([e, e[:, ::-1]])                     # both ways: i's neighbor j
+        i_in = idx[e[:, 0]] >= 0
+        e = e[i_in]
+        deg = np.bincount(idx[e[:, 0]], minlength=len(inner)).astype(float)
+        jin = idx[e[:, 1]] >= 0
+        rows = np.concatenate([np.arange(len(inner)), idx[e[jin, 0]]])
+        cols = np.concatenate([np.arange(len(inner)), idx[e[jin, 1]]])
+        vals = np.concatenate([deg, -np.ones(int(jin.sum()))])
+        A = coo_matrix((vals, (rows, cols)), shape=(len(inner), len(inner))).tocsr()
+        b = np.zeros((len(inner), 2))
+        np.add.at(b, idx[e[~jin, 0]], uv[e[~jin, 1]])
+        ok = deg > 0
+        sol = np.column_stack([spsolve(A, b[:, k]) for k in range(2)]) if len(inner) > 1 else b / np.maximum(deg, 1)[:, None]
+        sol = np.asarray(sol, float).reshape(len(inner), 2)
+        good = ok & np.isfinite(sol).all(axis=1)
+        uv[inner[good]] = sol[good]
+    vis2 = vis | take
+    return uv, vis2, dict(rec, warped_patches=int(np.unique(lab[take]).size), warped_triangles=int(take.sum()),
+                          warped_m2=round(float(area[take].sum()), 4), inner_vertices=int(len(inner)))
+
+
+def border_fill(rgb: np.ndarray, used: np.ndarray, border_px: int = BORDER_PX) -> Tuple[np.ndarray, int]:
+    """0.99.51: the texels within ``border_px`` of the ``used`` ones (the disc and the cells) take the colors about
+    them (:func:`push_pull`) - JPEG and the viewer's mipmaps blur into the surroundings' own colors, not white or
+    black.  Returns (the texels farther out - the fifth mode's white; the texels filled)."""
+    import cv2
+    k = 2 * int(border_px) + 1
+    near = cv2.dilate(used.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))).astype(bool)
+    band = near & ~used
+    filled = push_pull(rgb, used, band)
+    return ~near, int(filled.sum())
+
+
 # ------------------------------------------------------------------------------------------- the two parts
 def terrain_part(scene, sources, station, pool=None, size: int = TEXTURE_PX, radius_m: float = RADIUS_M,
                  center_above_m: float = CENTER_ABOVE_M, target: int = TARGET_TRIANGLES, linear: bool = False,
@@ -568,6 +667,8 @@ def terrain_part(scene, sources, station, pool=None, size: int = TEXTURE_PX, rad
     disc = (size / 2.0, rpx + GUTTER_PX + 3)
     if float((nrm * area[:, None]).sum(0) @ up) < 0:            # the winding's normals point down: turned up (rays
         nrm = -nrm                                              # start above the surface)
+    uv_v = disc_uv(V, C, size, rpx, theta_max, up, north, east, knee=knee)
+    uv_v, vis, warp = warp_small_patches(V, F, uv_v, vis, area)  # 0.99.51: small hidden patches keep the disc
     hid = np.flatnonzero(~vis)
     nh = nrm[hid].copy()
     lay = triangle_layout(V, F[hid], nh)
@@ -591,19 +692,25 @@ def terrain_part(scene, sources, station, pool=None, size: int = TEXTURE_PX, rad
         del ground
     else:
         filled = push_pull(rgb, have & in_disc, in_disc)
-    white = None
-    if full and SKY_WHITE:                                       # 0.99.41: the sky white, and what no triangle uses
-        white = ~in_disc
-        for (x, y), (w, h) in zip(cells["pos"], cells["wh"]):
-            g = GUTTER_PX
-            white[max(0, int(y) - g):int(y + h) + g, max(0, int(x) - g):int(x + w) + g] = False
-        if sky is not None:
-            white |= sky_texels(rgb, sky & in_disc, have, in_disc, size, rpx, knee)
+    sky_white = None
+    if full and SKY_WHITE and sky is not None:                   # 0.99.41: the sky white
+        sky_white = sky_texels(rgb, sky & in_disc, have, in_disc, size, rpx, knee)
     sky = None
     med = np.median(rgb[seen_disc][::97], axis=0) if seen_disc.any() else np.full(3, 128.0)
     cell_filled = fill_cells(rgb, have, cells, med)
-    # the mesh: the disc's triangles share their vertices; a cell's triangle has its own three
-    uv_v = disc_uv(V, C, size, rpx, theta_max, up, north, east, knee=knee)
+    used = in_disc.copy()                                        # 0.99.51: a band about the disc and the cells takes
+    for (x, y), (w, h) in zip(cells["pos"], cells["wh"]):        # their colors; beyond it, the fifth mode's white
+        used[int(y):int(y + h), int(x):int(x + w)] = True
+    far_out, border_filled = border_fill(rgb, used)
+    del used
+    white = None
+    if full and SKY_WHITE:                                       # 0.99.41: what no triangle uses, and the sky
+        white = far_out
+        if sky_white is not None:
+            white |= sky_white
+    del far_out, sky_white
+    # the mesh: the disc's triangles share their vertices (0.99.51: the small hidden patches' too, warped); a cell's
+    # triangle has its own three
     Fv = F[vis]
     nv = len(V)
     Vo = np.concatenate([V, V[F[hid]].reshape(-1, 3)])
@@ -619,6 +726,7 @@ def terrain_part(scene, sources, station, pool=None, size: int = TEXTURE_PX, rad
                cell_texel_mm=None if cells["texel_m"] is None else round(1000 * cells["texel_m"], 2),
                disc_texels_colored=round(float(seen_disc.sum() / max(n_disc_texels, 1)), 4),
                disc_texels_filled=int(filled.sum()), cell_texels_filled=int(cell_filled),
+               border_texels_filled=int(border_filled), warped=warp,
                mrad_per_texel=round(1000 * (knee[0] / (knee[1] * rpx) if knee else theta_max / rpx), 4))
     out_shell = None
     if shell is not None:

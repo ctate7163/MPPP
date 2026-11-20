@@ -1834,7 +1834,16 @@ def stack_file(out_dir: PathLike, prefix: str = "", ext: str = ".png", suffix: s
 
 GEOMETRY_VIEWS = ("range_log", "range_linear", "normal")
 NORMAL_FILL_DIM = 0.45            # 0.99.32: the hole fill's normal colors times this in the normal panorama
-GEOMETRY_WIDTH = 4096             # 0.98.12 (Christian, 15 Nov 2026: "Make those extra channels 4k and the same with the range
+GEOMETRY_FRACTION = 2            # 0.99.51 (Christian, 20 Nov 2026: "The normal and range maps should be rendered at
+#                                   half the terrain resolution. So if the terrain is 16k, then the normal and range
+#                                   should be 8k"): the range and normal panoramas' width = the color one's / this
+
+
+def geometry_width(width: int) -> int:
+    return max(1, int(width) // GEOMETRY_FRACTION)
+
+
+GEOMETRY_WIDTH = 4096             # 0.98.12 - until 0.99.51 the width at most; now geometry_width(); 0.98.12 (Christian, 15 Nov 2026: "Make those extra channels 4k and the same with the range
 #                                   map ... It doesn't need to be as high res as the ods"): the range and normal panoramas'
 #                                   width (the color ones' until 0.98.11)
 
@@ -2415,19 +2424,37 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                 else:
                     v = tone_soft(lin8) if tone == "soft" else np.clip(lin8, 0, 255)
                 return np.clip(np.rint(v), 0, 255).astype(np.uint8)
+            scape_done = False
+            if use_masks and _sm.SCAPE:                  # 0.99.51 (Christian, 20 Nov 2026: "The ..._station_mesh_terrain
+                try:                                     # should use the same texture as the ..._station_scape_terrain just
+                    part = _sm.terrain_part(scene, sources, station, pool, size=_sm.TEXTURE_PX,    # with a smaller mesh"):
+                                            target=_sm.TARGET_TRIANGLES, linear=linear,            # the full 3D part
+                                            rows_per_chunk=rows_per_chunk, full=True)              # first; the local 3D
+                    rec_out["station_scape"] = _sm.write_part(out, pf, "scape", part, station, to8, to16)   # terrain is its
+                    local = dict(part, shell=None, record=dict(part["record"], texture_of="station_scape_terrain",  # mesh
+                                                               shell=None))                                       # without
+                    rec_out["station_mesh"] = _sm.write_part(out, pf, "terrain", local, station, to8, to16)      # the shell
+                    del part, local
+                    scape_done = True
+                except Exception as e:                   # noqa: BLE001
+                    log.warning("ods: the full 3D terrain was not made (%s: %s)", type(e).__name__, e)
+                    rec_out["station_scape"] = {"failed": f"{type(e).__name__}: {e}"}
             try:
-                if use_masks:
+                if scape_done:
+                    pass
+                elif use_masks:
                     part, kind = _sm.terrain_part(scene, sources, station, pool, size=_sm.TEXTURE_PX, target=_sm.TARGET_TRIANGLES, linear=linear,
                                                      rows_per_chunk=rows_per_chunk), "terrain"
                 else:
                     part, kind = _sm.rover_part(scene, sources, station, pool, size=_sm.ROVER_TEXTURE_PX, linear=linear,
                                                    rows_per_chunk=rows_per_chunk), "rover"
-                rec_out["station_mesh"] = _sm.write_part(out, pf, kind, part, station, to8, to16)
-                del part
+                if not scape_done:
+                    rec_out["station_mesh"] = _sm.write_part(out, pf, kind, part, station, to8, to16)
+                    del part
             except Exception as e:                       # noqa: BLE001 - the panoramas are not lost for it
                 log.warning("ods: the station mesh's part was not made (%s: %s)", type(e).__name__, e)
                 rec_out["station_mesh"] = {"failed": f"{type(e).__name__}: {e}"}
-            if use_masks and _sm.SCAPE:                  # 0.99.32: the fifth mode's terrain, out to the horizon and the sky
+            if use_masks and _sm.SCAPE and not scape_done and "station_scape" not in rec_out:   # 0.99.32: the fifth mode
                 try:                                     # 0.99.34: its own record - a failure here is not the station mesh's
                     part = _sm.terrain_part(scene, sources, station, pool, size=_sm.TEXTURE_PX, target=_sm.TARGET_TRIANGLES,
                                             linear=linear, rows_per_chunk=rows_per_chunk, full=True)
@@ -2471,6 +2498,9 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         if linear:
             rec_out["stacked_16bit"] = stack_eyes(out, top=stack_top, prefix=prefix, suffix="_16")
             rec_out.setdefault("linear16", {})["exposure16"] = float(exposure16)
+            fr0 = [v for v in (lin_rep.get("frames") or {}).values() if v]     # 0.99.51: the raw color view divides
+            if fr0:                                                             # by it (it was not there yet)
+                rec_out["linear16"].update(white_balance=fr0[0].get("white_balance"), brightness=fr0[0].get("brightness"))
             (out / "ods.json").write_text(json.dumps(rec_out, indent=1, default=str), encoding="utf-8")   # write_enhanced reads the exposure
             from .linear16 import write_enhanced
             rec_out["enhanced"] = write_enhanced(out, prefix, top=stack_top, levels_file=tone_levels_file)
@@ -2542,13 +2572,13 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             "frames_clipped_in_8bit_share_max": max([f["clipped_in_8bit_share"] for f in fr], default=None)}
     if geometry and set(eyes) >= {"left", "right"}:                         # 0.97.20: the model through the same rays
         tg = time.time()
-        rec_out["geometry"] = {"files": geometry_panorama(scene, station, out, prefix or "", min(width, GEOMETRY_WIDTH), ipd_m, azimuth0_deg, pole_merge_deg,
+        rec_out["geometry"] = {"files": geometry_panorama(scene, station, out, prefix or "", geometry_width(width), ipd_m, azimuth0_deg, pole_merge_deg,
                                                           rows_per_chunk, top=stack_top),
                                "range": "from each eye's ray origin; colors as the per-image depth pictures (photometry_jpg/scales.json: "
                                         "depth_log, depth_linear)",
                                "normal": "station frame: [R, G, B] = 127.5 * (1 + [east, north, up]) on the mesh and the rover model; "
                                          "the ground plane black (0.98.12), sky white",
-                               "width": min(width, GEOMETRY_WIDTH),
+                               "width": geometry_width(width),
                                "note": "the model alone (mesh, plane, rover model, far field): no source frame is used"}
         rec_out["geometry"]["seconds"] = round(time.time() - tg, 1)
         log.info("ods: range and normal panoramas in %.0f s", rec_out["geometry"]["seconds"])
