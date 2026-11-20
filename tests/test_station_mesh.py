@@ -270,15 +270,15 @@ def test_viewer_terrain_modes_rover_button_and_hidden_drive():
     import pathlib
     from rpp.ibr import single_sites as SS
     page = (pathlib.Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
-    for s in ("['stereo', 'terrain stereo'], ['local', 'terrain local 3D'], ['full', 'terrain full 3D']",
+    for s in ("['stereo', 'terrain stereo'], ['full', 'terrain 3D']",
               "get('experimental') === '1'", 'id="driveBtn"', "$('driveBtn').onclick = driveToggle;",
               "if (isWhole(vr)) return null;", "if (!whole) {", "rk !== 'no-rover'", "roverOn = false, roverId = 0",
-              "if (e.data && e.data.handedness === 'left') roverToggle(); else step('v', 1);",
-              "right grip: terrain   |   left grip: rover", 'id="driveBeta"', "if (pressed(src, 3) &&",
+              "c.addEventListener('squeezestart', () => roverToggle());", "session.end(); return;",
+              "grip: rover on / off   |   hold Y: leave VR", 'id="driveBeta"', "if (pressed(src, 3) &&",
               "outlineWidth: 0.14, spacing: 0.12", "az, 24, 40, 10.5", "const on = welcome.visible || infoPanel.visible;",
               "#title { font-weight: 600; margin-right: 6px; color: #fff; }", "#bar button#home, #compass button#faceO { color: #ff9500; }",
               "const MAP_ORANGE = '#ff9500';", "#nav button#roverBtn { color: #ff9500; }", "#nav button#roverBtn.on { color: #fff; border-color: #555; }",
-              "q.key === 'scape3d' && q.station_mesh", "noHorizon: true", "skipHorizon: isMain && !!rs.noHorizon",
+              "noHorizon: true", "skipHorizon: isMain && !!rs.noHorizon",
               "function stereoOrFull()", "const DIST_FRAG", "canSwap(sm, skinUrl) ? swapSkin(skinUrl)", "sk[k] || /^normal/.test(k) || k === 'range log' || k === 'distance map'", "if (id !== swapId || rid !== roverId) { bmp.close(); return; }",
               "B: stereo / full 3D"):
         assert s in page, s

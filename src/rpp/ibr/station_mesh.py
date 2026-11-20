@@ -443,7 +443,21 @@ def sky_texels(rgb: np.ndarray, far: np.ndarray, have: np.ndarray, in_disc: np.n
     ids = np.unique(comp[ring])
     # 0.99.52 (Christian, 20 Nov 2026: "the top pole in the ods and full 3d models are visible as a convergent
     # discolored point"): every texel above POLE_WHITE_EL_DEG is sky - the zenith is the disc's rim, one point
-    return np.isin(comp, ids[ids > 0]) | (in_disc & (rho2 > np.float32(r_pole ** 2)))
+    out = np.isin(comp, ids[ids > 0]) | (in_disc & (rho2 > np.float32(r_pole ** 2)))
+    # 0.99.52 (Christian, 20 Nov 2026: "the oeb enhanced tone skin has really bad sky artifacts" - a dark wavy band at the
+    # frames' tops and patches afloat over the horizon, which the tone mapping brought out): beyond the skyline's
+    # circle (the knee: the highest mesh plus its margin) every far texel is sky; inside it a far patch that is not
+    # sky stays only when it stands on the ground (touches texels of the mesh) - a hill does, a floater does not
+    out |= far & (rho2 > np.float32((knee[1] * rpx + 1.0) ** 2))
+    rest = (far & ~out).astype(np.uint8)
+    if rest.any():
+        n, comp2 = cv2.connectedComponents(rest, connectivity=8)
+        near = cv2.dilate(ground.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+        stands = np.zeros(n, bool)
+        stands[np.unique(comp2[near & (rest > 0)])] = True
+        stands[0] = True
+        out |= ~stands[comp2] & (rest > 0)
+    return out
 
 
 def push_pull(rgb: np.ndarray, have: np.ndarray, region: np.ndarray) -> np.ndarray:

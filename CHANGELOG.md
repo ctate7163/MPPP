@@ -3,7 +3,7 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
-## 0.99.52 — unreleased (branch `rpp`)
+## 0.99.52 — 2026-11-20 (branch `rpp`)
 
 - **The sky at the zenith is blended** (Christian, 20 Nov: "the top pole in the ods and full 3d models are visible as a
   convergent discolored point. Make sure that the sky at the pole is blended"): the seen sky was kept as it was
@@ -11,6 +11,16 @@ The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p9
   zenith. `blend_pole` cross-fades every eye's sky above `POLE_BLEND_FROM_DEG` (70 deg) into its azimuthal average
   (a 6 deg Gaussian on the sky, wider as 1 / cos(elevation)), reaching one color above 88 deg. In the full 3D
   texture every texel above `POLE_WHITE_EL_DEG` (60 deg) is sky white (the zenith is the disc's rim).
+- **Full 3D sky** ("the oeb enhanced tone skin has really bad sky artifacts"): in `sky_texels` every far texel beyond
+  the skyline's circle is sky (the frames' darker top rows made a wavy band the tone mapping brought out), and a
+  far patch inside it stays only when it touches the mesh's texels - floaters over the horizon go white.
+- **Viewer** (Christian, 20 Nov): two terrain modes, "terrain stereo" and "terrain 3D" (no local 3D; a station
+  without the full 3D file shows its station mesh); the menus in the order station, color, terrain, eye - the eye
+  menu only in terrain stereo, as left, center, right; "(zcam)" reads "Mastcam-Z" in the station menu; either grip
+  shows or hides the rover (the right grip was the terrain mode since 0.99.40); Y held for a second leaves VR
+  (`session.end()` - the Meta button's quit dialog is the system's and cannot be removed by a page), a short Y is
+  home; a skin change frees the last skin before the next is decoded.
+- `Sol0009_S003D0000` context: NCAM03014 of sol 14 (0668192003 and 0668192052), both eyes.
 
 ## 0.99.51 — 2026-11-20 (branch `rpp`)
 

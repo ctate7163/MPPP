@@ -3265,7 +3265,7 @@ def test_info_map_is_the_blank_panel_d_and_the_menu_says_sol_then_name(tmp_path,
     web.traverse_dtm(wp, tr, w, root=root)                      # another DTM: drawn again
     assert called
     page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
-    assert "menuLabel(q)" in page and "Sol ${String(sols[0]).padStart(4, '0')} ${siteName(p)}" in page
+    assert "menuLabel(q)" in page and "Sol ${String(sols[0]).padStart(4, '0')} ${nm}" in page
     assert "Site ${parseInt(sd[1], 10)}, Drive ${parseInt(sd[2], 10)}" in page and "#ff9500" in page and "strokeRect(mx - r, my - r" in page and "traverse.dtm" in page
     study = Path(SS.__file__).resolve().parents[2] / "rpp_studies" / "sites" / "m20_sites"
     src = (study / "mapplot3.py").read_text(encoding="utf-8")

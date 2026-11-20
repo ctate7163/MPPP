@@ -36,7 +36,7 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
   Headset (0.98.4): right trigger = next station, left trigger = the one before, thumbstick left / right = turn,
   X = info page on the left hand (site, sol, map), A = the next view (0.99.37: standard color, raw color, enhanced color,
   enhanced tone, dcs color, normal map, distance map),
-  right grip = terrain, left grip = the rover (0.99.40; grip = variant before)   (0.98.13: A and X swapped)
+  either grip = the rover on / off (0.99.52; 0.99.40: right grip = terrain), Y held 1 s = leave VR (0.99.52)   (0.98.13: A and X swapped)
   0.98.28: Y = home (the welcome view, facing west); on a screen the house button or H.  0.99.41: B = terrain stereo <->
   terrain full 3D (the color skins are in both; before, B was terrain only and again the next color skin).
   The 3D rover is set again at the eyes' center whenever the station, the variant or the view changes and when R
@@ -109,9 +109,9 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
   <button id="home" title="welcome view, facing west (H; headset: Y)" aria-label="home"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 9.5V20h5v-6h3v6h5V9.5"/></svg></button>
   <span id="title">Rover Photogrammetry Viewer</span>
   <select id="station" title="station"></select>
-  <select id="variant" title="terrain: stereo panorama, local 3D, full 3D (V; headset: right grip)"></select>
-  <select id="view" title="view"></select>
-  <select id="eye" title="which eye's panorama a screen shows - or the center, where the station has it (a headset shows both eyes)">
+  <select id="view" title="color view (space; headset: A)"></select>
+  <select id="variant" title="terrain: stereo panorama or 3D (V or B; headset: B)"></select>
+  <select id="eye" title="terrain stereo: which eye's panorama a screen shows - or the center, where the station has it (a headset shows both eyes)">
     <option value="left">left eye</option><option value="right">right eye</option>
   </select>
 </div>
@@ -499,13 +499,17 @@ async function swapSkin(url) {
   if (url) {
     t = skinTex.url === url ? skinTex.t : null;
     if (!t) {
+      if (skinTex.t) {                               // 0.99.52: the last skin freed before the next is decoded (a headset's
+        for (const m of roverParts) if (m.material.uniforms && m.material.uniforms.map && m.material.uniforms.map.value === skinTex.t && m.userData.baseTex) m.material.uniforms.map.value = m.userData.baseTex;
+        skinTex.t.dispose(); if (skinTex.t.image && skinTex.t.image.close) skinTex.t.image.close();   // memory: three 8K
+        skinTex = { url: null, t: null };            // textures at once did not fit)
+      }
       const bmp = await createImageBitmap(await (await fetch(url)).blob());
       if (id !== swapId || rid !== roverId) { bmp.close(); return; }
       t = new THREE.Texture(bmp);
       t.flipY = false; t.wrapS = THREE.RepeatWrapping; t.generateMipmaps = true; t.colorSpace = THREE.NoColorSpace;
       t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
       t.needsUpdate = true;
-      if (skinTex.t) { skinTex.t.dispose(); if (skinTex.t.image && skinTex.t.image.close) skinTex.t.image.close(); }
       skinTex = { url, t };
     }
   }
@@ -716,7 +720,7 @@ const VIEWER_NAME = 'Rover Photogrammetry Viewer (RPV)';
 // 0.99.36 (Christian, 19 Nov 2026: "please put the rpp-rpv viewer version number on the lower left above the site name,
 // images size, and version on which the site was rendered"): the page's own version (the RPP release that wrote it;
 // tests/test_station_mesh.py keeps it equal to rpp.__version__), above the station's line
-const RPV_VERSION = '0.99.51';
+const RPV_VERSION = '0.99.52';
 $('ver').textContent = `RPV viewer ${RPV_VERSION}`;
 const CREDIT = 'Created by Christian Tate at MSSS';   // 0.99.14 (Christian, 17 Nov 2026: 'remove the "for research purposes" phrase')
 // 0.99.39 (Christian, 19 Nov 2026: "remove the code: ... text from the welcome screen"): the credit alone, no link to
@@ -760,7 +764,7 @@ function showWelcome(on) {
                                  { text: 'Mars 2020 Perseverance rover', px: 120, weight: 700 }]), WELCOME_AZ_DEG, 14, 5, 4.2));
     ctlHeadset = place(textPanel([{ text: 'trigger: next site   |   left trigger: back   |   stick: turn', px: 84, weight: 600 },
                                  { text: 'X: info and map   |   Y: home   |   A: view', px: 84, weight: 600 },
-                                 { text: 'B: stereo / full 3D   |   right grip: terrain   |   left grip: rover', px: 84, weight: 600 },
+                                 { text: 'B: stereo / 3D   |   grip: rover on / off   |   hold Y: leave VR', px: 84, weight: 600 },
                                  { text: 'stick click: drive the rover (beta)   |   in the drive: sticks forward / back', px: 84, weight: 600 }],
                                 { back: 'rgba(0,0,0,0.35)', uniform: true }), WELCOME_AZ_DEG, -6, 5, 3.6);   // 0.99.14: one size
     // 0.99.37 (Christian, 19 Nov 2026: "In the browser 2d version. Show a differ set of controls, including using the
@@ -811,7 +815,8 @@ function siteName(p) {                                        // the title witho
 function menuLabel(p) {
   if (p.welcome) return p.title || 'Welcome';
   const sols = solsOf(p);
-  return sols.length ? `Sol ${String(sols[0]).padStart(4, '0')} ${siteName(p)}` : siteName(p);
+  const nm = siteName(p).replace(/\s*\(zcam\)/i, ' Mastcam-Z');   // 0.99.52: "replace (zcam) with Mastcam-Z"
+  return sols.length ? `Sol ${String(sols[0]).padStart(4, '0')} ${nm}` : nm;
 }
 function infoLines() {
   const p = panos[cur.s] || {};
@@ -948,10 +953,12 @@ const viewLabel = k => VIEW_LABEL[k] || k;
 // hidden. Driver mode uses the full 3D terrain and rover"): the menu chooses the terrain; the rover button (R) shows or
 // hides the rover - in stereo the with-rover panorama, in the 3D modes the 3D rover; the drive is the steering wheel,
 // shown only with ?experimental=1.  panos.json keeps its variants: the terrain and the rover pick one of them.
-const TERRAIN_MODES = [['stereo', 'terrain stereo'], ['local', 'terrain local 3D'], ['full', 'terrain full 3D']];
-const MODE_OF = { masked: 'stereo', rover: 'stereo', rover3d: 'stereo', terrain3d: 'local', scape3d: 'full', drive3d: 'drive' };
-const MODE_KEYS = { local: ['terrain3d'], full: ['scape3d'], drive: ['drive3d'] };
-const MODE_FALLBACK = { drive: 'full', full: 'local', local: 'stereo' };   // where a station lacks the mode
+// 0.99.52 (Christian, 20 Nov 2026: "remove the terrain 3d local for now so that the viewer just shows terrain stereo or
+// terrain 3D"): two modes; a station without the full 3D file shows its station mesh (terrain3d) as terrain 3D
+const TERRAIN_MODES = [['stereo', 'terrain stereo'], ['full', 'terrain 3D']];
+const MODE_OF = { masked: 'stereo', rover: 'stereo', rover3d: 'stereo', terrain3d: 'full', scape3d: 'full', drive3d: 'drive' };
+const MODE_KEYS = { full: ['scape3d', 'terrain3d'], drive: ['drive3d'] };
+const MODE_FALLBACK = { drive: 'full', full: 'stereo' };   // where a station lacks the mode
 const EXPERIMENTAL = new URLSearchParams(location.search).get('experimental') === '1';
 let mode = 'stereo';
 const modeKeys = m => m === 'stereo' ? (roverOn ? ['rover', 'rover3d'] : ['masked']) : MODE_KEYS[m] || [];
@@ -987,12 +994,12 @@ function fill() {
   $('station').value = cur.s;
   $('variant').innerHTML = modesOf(p).map(([m, label]) => `<option value="${m}">${label}</option>`).join('');   // 0.99.40
   $('variant').value = mode === 'drive' ? 'full' : mode;
-  $('eye').style.display = isWhole(variants(p)[cur.v]) ? 'none' : '';     // no panorama in the full 3D terrain
+  $('eye').style.display = mode === 'stereo' ? '' : 'none';      // 0.99.52: the eyes are the stereo panorama's
   $('view').innerHTML = views(p, cur.v).map((k, i) => `<option value="${i}">${viewLabel(k)}</option>`).join('');
   $('view').value = cur.w;
   centerOk = !!centerFileOf();                                   // 0.99.36: center, where this choice has one
-  $('eye').innerHTML = '<option value="left">left eye</option><option value="right">right eye</option>' +
-    (centerOk ? '<option value="center">center</option>' : '');
+  $('eye').innerHTML = '<option value="left">left eye</option>' +     // 0.99.52: the center between the eyes
+    (centerOk ? '<option value="center">center</option>' : '') + '<option value="right">right eye</option>';
   $('eye').value = screenEye;
 }
 
@@ -1099,7 +1106,7 @@ async function show() {
     // 0.99.40 (Christian, 19 Nov 2026: "the 3d terrain should preferably use the same texture as the full 3d texture"):
     // the local 3D terrain is the full 3D file's terrain - the same 20 m mesh and its texture, its shell to the horizon
     // left out, the panorama behind it - where the station has the full 3D file; else the station mesh
-    const scape = mode === 'local' ? variants(p).find(q => q.key === 'scape3d' && q.station_mesh) : null;
+    const scape = null;                                          // 0.99.52: no local 3D mode
     const sm = scape ? Object.assign({}, scape.station_mesh, { whole: false, drive: undefined, noHorizon: true }) : vr.station_mesh;
     const dView = /^(distance|range)/.test(names[cur.w] || '');   // 0.99.41: a 3D mode's distance map from its surfaces
     const skinFile = sm && sm.skins && sm.skins[names[cur.w]];      // 0.99.41: the color skin of the full 3D texture
@@ -1176,7 +1183,7 @@ function goHome() {
 function stereoOrFull() {
   const p = panos[cur.s] || {};
   const ms = modesOf(p).map(x => x[0]);
-  const to = mode === 'stereo' ? (ms.includes('full') ? 'full' : ms.includes('local') ? 'local' : 'stereo') : 'stereo';
+  const to = mode === 'stereo' ? (ms.includes('full') ? 'full' : 'stereo') : 'stereo';
   pick(p, to, viewName());
   show();
 }
@@ -1358,7 +1365,9 @@ for (let i = 0; i < 2; i++) {
   c.addEventListener('selectstart', e => step('s', e.data && e.data.handedness === 'left' ? -1 : 1));   // right trigger: next
   //                                                                                       station; left trigger: the one before
   // 0.99.40: right grip - the next terrain mode; left grip - the rover shown or hidden (grip: the next variant before)
-  c.addEventListener('squeezestart', e => { if (e.data && e.data.handedness === 'left') roverToggle(); else step('v', 1); });
+  // 0.99.52 (Christian, 20 Nov 2026: "The grip button doesn't show and hide the rover like it used to"): either grip -
+  // the right one was the terrain mode since 0.99.40, which B is
+  c.addEventListener('squeezestart', () => roverToggle());
   scene.add(c);
 }
 const held = new Map();                         // per controller and button: pressed in the last frame
@@ -1369,7 +1378,7 @@ function pressed(src, i) {                       // button i of this controller 
   held.set(key, is);
   return is && !was;
 }
-let stickL = 0, stickR = 0;
+let stickL = 0, stickR = 0, yDown = 0, yDone = false;
 function buttons(dt) {                           // xr-standard: button 4 is A (right) / X (left), button 5 is B (right) / Y (left)
   const session = renderer.xr.getSession();
   if (!session) return;
@@ -1378,7 +1387,15 @@ function buttons(dt) {                           // xr-standard: button 4 is A (
     if (!gp) continue;
     const left = src.handedness === 'left';
     if (pressed(src, 4)) { if (left) toggleInfo(); else step('w', 1); }       // 0.98.13: X (left): info; A (right): the next view
-    if (pressed(src, 5)) { if (left) goHome(); else stereoOrFull(); }         // 0.98.28: Y (left): home, facing west; B (right): 0.99.41 stereo / full 3D
+    // 0.99.52 (Christian, 20 Nov 2026: "want to escape the vr mode ... back to the 2d browser view" without the system's
+    // quit dialog, which the Meta button always shows): Y held for a second ends the session; a short press is home
+    if (left) {
+      const down = !!(gp.buttons[5] && gp.buttons[5].pressed), now = performance.now();
+      if (down && !yDown) { yDown = now; yDone = false; }
+      if (down && !yDone && now - yDown > 1000) { yDone = true; session.end(); return; }
+      if (!down && yDown) { if (!yDone) goHome(); yDown = 0; }
+    } else if (pressed(src, 5)) stereoOrFull();
+    if (false) { if (left) goHome(); else stereoOrFull(); }         // 0.98.28: Y (left): home, facing west; B (right): 0.99.41 stereo / full 3D
     // 0.99.40 (Christian, 19 Nov 2026: "In VR mode, enter driving/ steering mode with a click on the joystick. Left and
     // right still rotate the view and forward and back on the left and right controler works in like skid steering"):
     // a thumbstick click (xr-standard button 3) starts the drive where the station has it, and ends it
