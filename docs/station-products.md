@@ -10,7 +10,7 @@ depth and photometric maps, and an omnidirectional stereo panorama that can be l
 
 | step | command | what it makes |
 |---|---|---|
-| dense | `rpp dense WORK --station S` | COLMAP patch-match stereo (12 source images, window step 2) and two fusions, loose and strict, merged into `fused.ply`; cached, so a second run costs nothing |
+| dense | `rpp dense WORK --station S` | COLMAP patch-match stereo (12 source images, window step 2) and the fusion into `fused.ply`; cached, so a second run costs nothing |
 | mesh | `rpp mesh WORK --station S` | `mesh.ply`: the terrain out to 75 m, a ground plane beyond it to 200 m (300 m in `rpp ods`), the rover model |
 | depthmaps | `rpp depthmaps WORK --station S --photometry` | per image: depth, range, normal, incidence, emission, phase, cast shadow (also from the rover's mast, booms and camera head) |
 | ods | `rpp ods WORK --station S` | the stereo panorama and its companions |
@@ -34,6 +34,44 @@ unattended).
 - With the rover shown, the [rover model](rover-model.md) is added at the station's rover pose.
 - The sky is a sphere of 300 m radius (`rpp ods --sky-radius`), and the ground plane reaches to it. `rpp ods`
   refines what lies beyond the plane per direction: see "The far field" below.
+
+## Trying fusion and mesh variants (1.0, experimental)
+
+`rpp fusion-compare STATION ... --root ROOT` tries other ways to fuse and mesh a station's block cloud without
+changing the station products. It needs a station whose block cloud is already made by `rpp single-sites` or
+`rpv_process.bat`, and it does not run the stereo again.
+
+For each variant it fuses the block's existing depth maps into `<block>/colmap/dense_block_FN/compare/<variant>/`.
+Then it meshes that cloud with the same arguments the station run uses, into
+`compare/<variant>/stations/<station>/`, which includes the mesh preview. Finally it scores the mesh against the
+block's tie points.
+
+| variant | what it is |
+|---|---|
+| `current` | the station run's own cloud, meshed again: the reference |
+| `two_pass` | the loose fusion and a strict one (four pixels, 1 px, 8°), merged |
+| `filtered` | the depth maps filtered first (below), then the station run's fusion |
+| `filtered_two_pass` | both |
+| `delaunay`, `filtered_delaunay` | COLMAP's Delaunay mesher, which uses which cameras saw each point (needs `--colmap EXE`) |
+
+The depth filter (`rpp.sfm.depth_filter`) works on copies of the maps and drops:
+
+- pixels at a depth step of more than 5 % between neighbours, plus 1 pixel around them: the flying pixels at a
+  rock's outline that become skins in the mesh;
+- islands of fewer than 64 pixels;
+- pixels whose normal faces away from the camera;
+- with `--max-range F=20 R=20`, Hazcam depth beyond 20 m.
+
+The score uses the tie points seen in at least 3 images with at most 1 px error. They come from the sparse
+alignment, not from the dense matching. For each ring of distance from the mast, the score is the share of tie points
+within the range's depth tolerance of the measured terrain (holes count against it) and the 90th percentile
+distance. A variant is **worse** if any ring with 30 or more tie points loses more than 0.01 of that share or grows
+its 90th percentile by more than 10 %. `compare/<station>_comparison.md` has the table and the verdicts.
+
+The comparison holds the block's lock while it reads the maps and the cloud, so a 1.0 station run of that block waits.
+A 0.99 run takes no lock, so do not compare a block that one is still making. The filtered maps (a few GB a block)
+are deleted at the end unless `--keep-maps` is given. Nothing becomes a default until the comparison on real
+stations shows it is not worse.
 
 ## The per-image maps
 

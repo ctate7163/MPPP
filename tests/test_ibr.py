@@ -601,7 +601,10 @@ def test_dense_stereo_goes_to_the_pipelines_gpu_python(tmp_path, monkeypatch):
                                STATION_STEREO_OPTIONS, STEREO_RECORD)
     fast = {**STATION_STEREO_OPTIONS, **STATION_STEREO_FAST}           # 1.0: new maps with the sparser window,
     assert kw["stereo_options"] == fast and kw["fusion_options"] == STATION_FUSION_OPTIONS
-    assert kw["sources"] == PATCH_MATCH_SOURCES and kw["fusion_strict"] == STATION_FUSION_STRICT   # 12 sources, 2 fusions
+    assert kw["sources"] == PATCH_MATCH_SOURCES and kw["fusion_strict"] is None    # 12 sources; one fusion by default
+    calls.clear()
+    assert rpp_main(["dense", str(root.parent), "--station", "3_10", "--fusion", "--two-pass-fusion"]) == 0
+    assert calls[0][2]["fusion_strict"] == STATION_FUSION_STRICT                   # the strict pass on request
     calls.clear()
     assert rpp_main(["dense", str(root.parent), "--station", "3_10", "--stereo", "--min-angle", "1.5", "--min-views", "3"]) == 0
     kw = calls[0][2]
@@ -630,8 +633,7 @@ def test_dense_stereo_goes_to_the_pipelines_gpu_python(tmp_path, monkeypatch):
     assert rpp_main(["dense", str(root.parent), "--station", "3_10", "--whole-block", "--stereo", "--restereo"]) == 0
     assert calls[0][2]["stereo_options"] == fast and calls[0][2]["sources"] == PATCH_MATCH_SOURCES
     calls.clear()
-    assert rpp_main(["dense", str(root.parent), "--station", "3_10", "--stereo", "--sources", "0", "--window-step", "1",
-                     "--single-fusion"]) == 0
+    assert rpp_main(["dense", str(root.parent), "--station", "3_10", "--stereo", "--sources", "0", "--window-step", "1"]) == 0
     kw = calls[0][2]
     assert kw["sources"] is None and kw["stereo_options"]["window_step"] == 1 and kw["fusion_strict"] is None
 

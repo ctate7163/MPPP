@@ -24,6 +24,7 @@ rpp: Mars rover PDS images to aligned, true-scale 3D.
     rpp dense WORK --station S       the dense cloud around one rover station
     rpp mesh / depthmaps / ods       its mesh, per-image depth maps and stereo panorama
     rpp single-sites [STATION ...]   all of the above for the stations of a list, and the viewer's files
+    rpp fusion-compare STATION ...   fusion and mesh variants, scored apart from the products
 
   Research studies (a source checkout: src/rpp_studies)
     rpp calib ...                    fit and check the camera models from aligned blocks
@@ -151,6 +152,23 @@ def build_parser() -> argparse.ArgumentParser:
     _study_parsers(sub)                       # 0.96.0: calib, zcam-states (rpp_studies.calibration), maps (rpp_studies.sites)
     from .ibr.cli import add_parsers as _ibr_parsers
     _ibr_parsers(sub)                         # 0.96.0: mesh, depthmaps, ods (rpp.ibr)
+    p = sub.add_parser("fusion-compare", help="1.0 (experimental): fusion and meshing variants of a station's block "
+                       "cloud (filtered depth maps, two-pass fusion, Delaunay), made apart from the station products "
+                       "and scored against the block's tie points (rpp.sfm.fusion_compare)")
+    p.add_argument("stations", nargs="+", help="stations of the station list (as rpp single-sites names them)")
+    p.add_argument("--root", required=True, help="the blocks' root (e.g. D:\\rover_blocks_f3)")
+    p.add_argument("--config", default=None, help="the station list (default: the package's)")
+    p.add_argument("--variants", nargs="+", default=None, help="default: current two_pass filtered filtered_two_pass "
+                   "(and delaunay filtered_delaunay with --colmap)")
+    p.add_argument("--colmap", default=None, help="the COLMAP executable, for the Delaunay variants")
+    p.add_argument("--block-cameras", default="NF", help="as rpv_process.bat runs the stations (default NF)")
+    p.add_argument("--terrain", default="block", help="as rpv_process.bat (default block)")
+    p.add_argument("--edge-rel", type=float, default=None, help="the depth filter's step (default 0.05 of the depth)")
+    p.add_argument("--speckle-px", type=int, default=None, help="the depth filter's smallest island (default 64 px)")
+    p.add_argument("--max-range", nargs="+", default=None, metavar="FAMILY=M", help="e.g. F=20 R=20: Hazcam depth "
+                   "beyond 20 m dropped by the filter")
+    p.add_argument("--keep-maps", action="store_true", help="keep the filtered depth maps (a few GB a block)")
+    p.add_argument("--refuse", action="store_true", help="filter and fuse again even when the variants are there")
     p = sub.add_parser("dense", help="the COLMAP dense reconstruction of a finished block - the workspace "
                        "<project>/dense (images undistorted from the native-pixel model, the rover masks for the "
                        "fusion), patch-match stereo, fusion, a mesh; dense_reconstruct.bat next to open_in_colmap.bat "
@@ -210,8 +228,8 @@ def build_parser() -> argparse.ArgumentParser:
                    "(default 12 for a station or block; 0: COLMAP's 20)")
     p.add_argument("--window-step", type=int, default=None, help="1.0: patch-match window step for new maps (default 2 "
                    "for a station or block; 1: every pixel of the window)")
-    p.add_argument("--single-fusion", action="store_true", help="1.0: one (loose) fusion, without the strict pass "
-                   "and the merge")
+    p.add_argument("--two-pass-fusion", action="store_true", help="1.0 (experimental, off by default until rpp "
+                   "fusion-compare shows it is not worse): a strict second fusion merged with the loose one")
     p.add_argument("--restereo", action="store_true", help="delete the workspace's patch-match maps before --stereo "
                    "(they are deleted anyway when they were made with other options; COLMAP skips every image whose "
                    "maps exist)")
@@ -810,10 +828,13 @@ FUSION_RECORD = "rpp_fusion.json"
 # If that is too much, limit the fusion's key to sfm/dense.py".  The records of 0.99.51 to 0.99.53 hold their station
 # code key (rpp.ibr.single_sites.code_key) instead (0.99.53's too); their sfm/dense.py is the one whose hash is DENSE_CODE_0P99, so
 # their clouds count as this code's while dense.py is unchanged.
-# 1.0's dense.py (the strict second fusion and the merge) is another, so those clouds are fused again, from their maps.
+# 1.0's dense.py adds the faster stereo, the depth filter's helpers and an opt-in strict second fusion; its single
+# (loose) fusion is 0.99.52's, so a single-fusion cloud of 0.99.51 to 1.0 is kept (LOOSE_FUSION_CODES).  A change to the
+# loose fusion in run_dense must take these codes out.
 FUSION_CODES_0P99 = ("5aa9d5f18a9a6fdc", "74faa498abf96418", "0c917caf3b0a008e",   # 0.99.51, 0.99.52 (in progress),
                      "5f46dcfc18415f4b")                                          # 0.99.52, 0.99.53
 DENSE_CODE_0P99 = "4e328c4415a18d58"
+LOOSE_FUSION_CODES = FUSION_CODES_0P99 + (DENSE_CODE_0P99,)
 
 
 def fusion_code() -> str:
@@ -872,7 +893,7 @@ def _fusion_cached(ws, so, fo, size, a) -> bool:
         return False
     want = json.loads(json.dumps(rec, default=str))
     same = {k: old.get(k) for k in rec if k != "code"} == {k: v for k, v in want.items() if k != "code"}
-    code_ok = old.get("code") == want.get("code") or (old.get("code") in FUSION_CODES_0P99 and want.get("code") == DENSE_CODE_0P99)
+    code_ok = old.get("code") == want.get("code") or (old.get("code") in LOOSE_FUSION_CODES and not want.get("fusion_strict"))
     same = same and code_ok
     return bool(rec["stereo_record"]) and same and old.get("ply_bytes") == st.st_size and old.get("ply_mtime") == int(st.st_mtime)
 
@@ -990,7 +1011,7 @@ def cmd_dense(a: argparse.Namespace) -> int:
     if getattr(a, "window_step", None) is not None:
         so["window_step"] = int(a.window_step)
     strict = None
-    if subset is not None and not getattr(a, "keep_rover", False) and not getattr(a, "single_fusion", False):
+    if subset is not None and not getattr(a, "keep_rover", False) and getattr(a, "two_pass_fusion", False):
         strict = dict(STATION_FUSION_STRICT)
     a._fusion_strict = strict                                    # for _fusion_record
     if getattr(a, "min_angle", None) is not None:
@@ -1038,6 +1059,11 @@ def cmd_dense(a: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fusion_compare(a: argparse.Namespace) -> int:
+    from .sfm.fusion_compare import main
+    return main(a)
+
+
 def cmd_version(a: argparse.Namespace) -> int:
     from . import __file__ as where, __version__
     print(f"rpp {__version__} ({Path(where).parent})")
@@ -1054,7 +1080,7 @@ def _ibr_command(name: str):
 
 COMMANDS = {"gui": cmd_gui, "process": cmd_process, "align": cmd_align, "run": cmd_run, "sites": cmd_sites, "cmods": cmd_cmods,
             "mask": cmd_mask, "example": cmd_example, "waypoints": cmd_waypoints, "pds": _pds_command, "maps": _study_command("maps"), "calib": _study_command("calib"), "doctor": cmd_doctor,
-            "zcam-states": _study_command("zcam-states"), "dense": cmd_dense, "metashape": cmd_metashape, "nerfstudio": cmd_nerfstudio,
+            "zcam-states": _study_command("zcam-states"), "dense": cmd_dense, "fusion-compare": cmd_fusion_compare, "metashape": cmd_metashape, "nerfstudio": cmd_nerfstudio,
             "mesh": _ibr_command("mesh"), "depthmaps": _ibr_command("depthmaps"), "ods": _ibr_command("ods"),
             "single-sites": _ibr_command("single-sites"), "hf-check": _ibr_command("hf-check"),
             "version": cmd_version}

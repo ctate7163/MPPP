@@ -62,7 +62,8 @@ STATION_FUSION_OPTIONS = {"min_num_pixels": 2}
 PATCH_MATCH_SOURCES = 12
 COLMAP_SOURCES = 20                 # what a workspace made by COLMAP's undistorter has (and every workspace before 1.0)
 STATION_STEREO_FAST = {"window_step": 2}
-# THE FUSION, two passes.  The loose fusion (STATION_FUSION_OPTIONS: two pixels) keeps the far terrain that one stereo
+# THE FUSION, two passes - opt-in (rpp dense --two-pass-fusion) until rpp fusion-compare shows on real stations that
+# it is not worse (Christian, 20 Nov 2026: "without the danger of making anything worse").  The loose fusion (STATION_FUSION_OPTIONS: two pixels) keeps the far terrain that one stereo
 # pair sees, and with it the noise of the near terrain.  A strict fusion (STATION_FUSION_STRICT: four agreeing pixels,
 # 1 px, 8 deg) keeps only what several views agree on.  fused.ply is the strict cloud plus the loose points farther than
 # MERGE_PX working pixels (at their distance from the nearest camera) from any strict point: the strict surface where

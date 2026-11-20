@@ -533,8 +533,8 @@ def test_fusion_is_reused_after_a_restart(tmp_path):
 def test_fusion_key_is_the_dense_code(tmp_path, monkeypatch):
     """1.0 (the 0.99.52 note: "The fusion is redone on every code change, because the record carries code_key ...
     limit the fusion's key to sfm/dense.py"): a change to the station steps' code does not fuse again; the clouds of
-    0.99.51 to 0.99.53 (their record holds the station code key) count as 0.99.52's dense.py; 1.0's dense.py (the
-    strict second fusion and the merge) fuses them again - from their stereo maps, which are kept."""
+    0.99.51 to 0.99.53 (their record holds the station code key) and of 0.99.52's dense.py are kept for a single
+    fusion - 1.0's loose fusion is 0.99.52's; a two-pass fusion (rpp dense --two-pass-fusion) fuses them again."""
     import json
     from types import SimpleNamespace as NS
     from rpp import cli
@@ -548,18 +548,16 @@ def test_fusion_key_is_the_dense_code(tmp_path, monkeypatch):
     cli._fusion_record(ws, {}, {}, 0, a, write=True)
     rec = json.loads((ws / cli.FUSION_RECORD).read_text())
     assert rec["code"] == cli.fusion_code() != SS.code_key()
-    assert cli.fusion_code() != cli.DENSE_CODE_0P99                  # 1.0's dense.py: the two fusions
-    for old in cli.FUSION_CODES_0P99:                                # a record written by 0.99.51 to 0.99.53
+    assert cli.fusion_code() != cli.DENSE_CODE_0P99                  # 1.0's dense.py has more in it
+    for old in cli.LOOSE_FUSION_CODES:                               # a record written by 0.99.51 to 0.99.53
         (ws / cli.FUSION_RECORD).write_text(json.dumps(dict(rec, code=old)))
-        assert not cli._fusion_cached(ws, {}, {}, 0, a), old         # fused again (the maps are kept)
-        monkeypatch.setattr(cli, "fusion_code", lambda: cli.DENSE_CODE_0P99)
-        assert cli._fusion_cached(ws, {}, {}, 0, a), old             # what 0.99.52's dense.py would have said
-        monkeypatch.undo()
+        assert cli._fusion_cached(ws, {}, {}, 0, a), old             # the same single fusion: kept
+        a2 = NS(keep_rover=False, _fusion_strict={"min_num_pixels": 4})
+        assert not cli._fusion_cached(ws, {}, {}, 0, a2), old        # the two-pass fusion: fused again
     (ws / cli.FUSION_RECORD).write_text(json.dumps(dict(rec, code="ffffffffffffffff")))
     assert not cli._fusion_cached(ws, {}, {}, 0, a)                 # another code
-    (ws / cli.FUSION_RECORD).write_text(json.dumps(dict(rec, code=cli.FUSION_CODES_0P99[-1])))
-    monkeypatch.setattr(cli, "fusion_code", lambda: "0123456789abcdef")
-    assert not cli._fusion_cached(ws, {}, {}, 0, a)                 # 0.99.52's cloud, but dense.py changed since
+    (ws / cli.FUSION_RECORD).write_text(json.dumps(dict(rec, code="0123456789abcdef")))
+    assert not cli._fusion_cached(ws, {}, {}, 0, a)                 # a cloud of some other dense.py
 
 
 def test_freeze3_root_block_order_busy_and_recolor(tmp_path):
