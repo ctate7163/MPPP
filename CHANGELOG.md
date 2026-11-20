@@ -3,6 +3,36 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.50 — 2026-11-20 (branch `rpp`)
+
+Christian, 20 Nov: "make a new version of rpv_products that always runs rockytop first and then goes to the end of the
+mission and runs in reverse chronological order skipping any that has ran on v0p99 or newer. Add a flag for
+--recolor"; "this new version should run rockytop and others in parallel with the present rpv_products".
+
+- **A station's block in the freeze-3 root**: `block_folder` looked for a Navcam station's Navcam block
+  (`mars2020_sol_0460_rockytop`), which freeze 3 does not make - its blocks are the Mastcam-Z ones, with every Navcam
+  frame - and for a few Mastcam-Z blocks by other folder names (`_sol_0770_belva_crater_large_zcam` for freeze 3's
+  `_sol_0768_`). When the block is not in the root, `block_with_frames` takes the block there with the most frames of
+  the station (`N<site><drive>NCAM`, or `ZCAM` for a Mastcam-Z station). The four Rockytop Navcam stations, Chal Rocks
+  `Sol0361_S011D0000` and most of the list now find their freeze-3 blocks; a station whose block is in the root is
+  unchanged.
+- **`--first NAME ...` and `--reverse`**: the stations whose block folder holds a NAME first (in sol order), then
+  the others by sol, the latest first; a Mastcam-Z version stays right after its Navcam station (`run_order`).
+- **Version 0.99 or newer**: `--skip-done` leaves out a station only when its panoramas' step records are from RPP
+  0.99 or newer - their new `"rpp"` field, else their finish date on or after 16 Nov 2026 (0.99.0).
+- **`--recolor`**: no meshing, projection or rendering. Every station with its 16-bit panoramas in the output root
+  (both variants) gets its color processing again - the 8-bit eyes and square, enhanced and color products, the
+  mesh textures and the color skins, from the 16-bit images, with the tone levels found again - its .glb files put
+  together again, and is published and uploaded. One pass, nothing waited for.
+- **Two runs at once**: `--instance NAME` writes `single_sites_status_<NAME>.json`; a station whose
+  `single_site_log.txt` another run wrote in the last 15 minutes is left for later (`busy_elsewhere`).
+- **The wait ends with the freeze**: `--wait-for-blocks` stops after a pass with nothing to run when no freeze runs
+  on the root (`freeze_alive`: `mppp_pipeline/freeze_status.json` "running" with a heartbeat in the last 30 minutes) -
+  the stations without a freeze-3 block (Van Zyl, Hidden Harbor) no longer keep it waiting 36 hours.
+- `rpv_products_0p99p50.bat` runs all this from its own checkout `D:\code\RPP_rpv` (`update_rpp_rpv.bat`), beside a
+  run from `D:\code\RPP_ods`: `rpv_products_0p99p50.bat` (Rockytop first, then the latest sol first),
+  `rpv_products_0p99p50.bat --recolor`.
+
 ## 0.99.49 — 2026-11-20 (branch `rpp`)
 
 - **`freeze --update-code` checks every root** (Christian, 20 Nov: "make that change"): `sync_code.bat` fast-forwards

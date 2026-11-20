@@ -448,7 +448,7 @@ def test_skip_done_leaves_out_stations_already_made(tmp_path):
     for sub in ("with_rover", ""):
         d = tmp_path / "Sol0009_S003D0000" / sub
         d.mkdir(parents=True, exist_ok=True)
-        (d / "step_ods.json").write_text(json.dumps({"key": "old code", "exit": 0}))
+        (d / "step_ods.json").write_text(json.dumps({"key": "old code", "exit": 0, "finished": "2026-11-19T18:24:54"}))
     assert not SS.station_done(run)                                # no ods.json in the folders yet
     for sub in ("with_rover", ""):
         (tmp_path / "Sol0009_S003D0000" / sub / "ods.json").write_text("{}")
@@ -525,3 +525,56 @@ def test_fusion_is_reused_after_a_restart(tmp_path):
     (ws / "stereo" / STEREO_RECORD).write_text('{"options": {}}')
     os.utime(ws / "fused.ply", (1, 1))
     assert not cli._fusion_cached(ws, {}, {}, 0, a)                 # not the file that fusion wrote
+
+
+def test_freeze3_root_block_order_busy_and_recolor(tmp_path):
+    """0.99.50 (Christian, 20 Nov 2026: "always runs rockytop first and then goes to the end of the mission and runs in
+    reverse chronological order skipping any that has ran on v0p99 or newer"; "Add a flag for --recolor"; "run
+    rockytop and others in parallel with the present rpv_products")."""
+    import json, os, time
+    from pathlib import Path
+    from rpp.ibr import single_sites as SS
+    root = tmp_path / "rover_blocks_f3"
+    for b, names in (("mars2020_sol_0460_rockytop_zcam", ["NLF_0461_0707868000_000RAD_N0260630NCAM03461_0A0195J01.png",
+                                                         "NRF_0461_0707868000_000RAD_N0260630NCAM03461_0A0195J01.png",
+                                                         "ZL0_0484_0709000000_000RAD_N0261004ZCAM08484_0340LMJ01.png"]),
+                     ("mars2020_sol_0072_chal_rocks_large_zcam", ["NLF_0461_0707868000_000RAD_N0260630NCAM00301_0A0295J01.png"])):
+        (root / b / "colmap").mkdir(parents=True)
+        (root / b / "colmap" / "project.json").write_text(json.dumps({"images": [{"name": n} for n in names]}))
+        (root / b / "colmap" / "run_done.json").write_text("{}")
+    st = {"site": "rockytop", "station": "26_630"}
+    assert SS.block_folder(st, root).name == "mars2020_sol_0460_rockytop_zcam"     # no ..._rockytop Navcam block here
+    assert SS.block_folder({"site": "rockytop", "station": "99_1"}, root).name == "mars2020_sol_0460_rockytop"   # no frames
+    w = str(root / "mars2020_sol_0460_rockytop_zcam")
+    runs = [{"label": lab, "work": wk, "out": str(tmp_path / "out" / lab), "variants": ["rover", "masked"], "commands": []}
+            for lab, wk in (("Sol0009_S003D0000", "x/mars2020_sol_0001_butler_landing_zcam"), ("Sol0461_S026D0630", w),
+                            ("Sol1955_S091D0124", "x/b"), ("Sol0477_S026D1004", w), ("Sol0484_S026D1004_Z34", w),
+                            ("Sol0670_S032D0672", "x/c"), ("Sol0670_S032D0672_Z34", "x/c"))]
+    order = [r["label"] for r in SS.run_order(runs, {"Sol0477_S026D1004": "Sol0484_S026D1004_Z34",
+                                                     "Sol0670_S032D0672": "Sol0670_S032D0672_Z34"},
+                                              first=["rockytop"], reverse=True)]
+    assert order == ["Sol0461_S026D0630", "Sol0477_S026D1004", "Sol0484_S026D1004_Z34", "Sol1955_S091D0124",
+                     "Sol0670_S032D0672", "Sol0670_S032D0672_Z34", "Sol0009_S003D0000"]
+    assert SS._made_by_0p99({"rpp": "0.99.50"}) and not SS._made_by_0p99({"rpp": "0.98.31"})
+    assert SS._made_by_0p99({"finished": "2026-11-19T18:24:54"}) and not SS._made_by_0p99({"finished": "2026-11-10T01:00:00"})
+    r = runs[1]
+    assert not SS.busy_elsewhere(r)
+    Path(r["out"]).mkdir(parents=True)
+    (Path(r["out"]) / "single_site_log.txt").write_text("rendering")
+    assert SS.busy_elsewhere(r) and not SS.busy_elsewhere(r, mine={r["label"]})
+    old = time.time() - SS.BUSY_S - 60
+    os.utime(Path(r["out"]) / "single_site_log.txt", (old, old))
+    assert not SS.busy_elsewhere(r)
+    assert not SS.has_16bit(r)
+    for sub in ("with_rover", ""):
+        (Path(r["out"]) / sub).mkdir(parents=True, exist_ok=True)
+        (Path(r["out"]) / sub / "Sol0461_S026D0630_ods_right_16.png").write_bytes(b"x")
+    assert SS.has_16bit(r)
+    assert not SS.freeze_alive(root)
+    (root / "mppp_pipeline").mkdir()
+    import datetime
+    hb = datetime.datetime.now().isoformat(timespec="seconds")
+    (root / "mppp_pipeline" / "freeze_status.json").write_text(json.dumps({"state": "running", "heartbeat": hb}))
+    assert SS.freeze_alive(root)
+    (root / "mppp_pipeline" / "freeze_status.json").write_text(json.dumps({"state": "done", "heartbeat": hb}))
+    assert not SS.freeze_alive(root)

@@ -28,7 +28,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 from .. import env as rpp_env
 
 PathLike = Union[str, Path]
@@ -320,13 +320,19 @@ def block_folder(st: Dict[str, Any], root: PathLike) -> Path:
     """The block of a station: ``work``, else the Navcam WORK folder of its ``site`` in the site definitions."""
     if st.get("work"):                                   # 0.98.4: a folder name alone is a block under the root (0.98.2's
         w = Path(st["work"])                             # Mastcam-Z station was looked for in the current folder)
-        return w if w.is_absolute() or len(w.parts) > 1 else Path(root) / w
-    from ..waypoints.sites import load_site_table, work_folder
-    table = load_site_table()
-    site = table["sites"].get(st["site"])
-    if site is None:
-        raise KeyError(f"site {st['site']!r} is not in the site definitions")
-    return Path(work_folder(Path(root), st["site"], False, site["sols"]))
+        w = w if w.is_absolute() or len(w.parts) > 1 else Path(root) / w
+    else:
+        from ..waypoints.sites import load_site_table, work_folder
+        table = load_site_table()
+        site = table["sites"].get(st["site"])
+        if site is None:
+            raise KeyError(f"site {st['site']!r} is not in the site definitions")
+        w = Path(work_folder(Path(root), st["site"], False, site["sols"]))
+    if not (w / "colmap").is_dir() and Path(w).parent == Path(root):   # 0.99.50: not in this root - the block with
+        found = block_with_frames(st, root)                             # the station's frames
+        if found is not None:
+            return found
+    return w
 
 
 def frame_args(frames: Dict[str, Any]) -> List[str]:
@@ -469,6 +475,7 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
 
 STEP_OUTPUT = {"mesh": "mesh.ply", "depthmaps": "maps_report.md", "ods": "ods.json"}
 STATUS_FILE = "single_sites_status.json"
+INSTANCE: Dict[str, Optional[str]] = {"name": None}   # 0.99.50: --instance - its own status file (two runs at once)
 
 
 NOT_IN_CODE_KEY = ("single_sites.py", "web.py", "hf.py")     # the runner and the publishing (panos.json, Hugging Face)
@@ -527,14 +534,123 @@ def station_done(run: Dict[str, Any]) -> bool:
             return False
         if rec.get("exit") != 0 or not (vout / STEP_OUTPUT["ods"]).is_file():
             return False
+        if not _made_by_0p99(rec):
+            return False
     return True
+
+
+V0P99_DATE = "2026-11-16"          # 0.99.0 (the rename to RPP); a record without its version is dated instead
+
+
+def _rpp_version() -> str:
+    from .. import __version__
+    return __version__
+
+
+def _made_by_0p99(rec: Dict[str, Any]) -> bool:
+    """0.99.50 (Christian, 20 Nov 2026: "skipping any that has ran on v0p99 or newer"): the step record is from RPP
+    0.99 or newer - its "rpp" (since 0.99.50), else its "finished" date on or after 0.99.0's."""
+    v = rec.get("rpp")
+    if v:
+        try:
+            return tuple(int(x) for x in str(v).split(".")[:2]) >= (0, 99)
+        except ValueError:
+            return False
+    return str(rec.get("finished") or "") >= V0P99_DATE
+
+
+def has_16bit(run: Dict[str, Any]) -> bool:
+    """0.99.50: every variant of the station has its 16-bit eye panoramas - what --recolor starts from."""
+    base = Path(run["out"])
+    vs = run.get("variants") or []
+    return bool(vs) and all(any((base / ("with_rover" if v == "rover" else "")).glob("*ods_right_16.png")) for v in vs)
+
+
+BUSY_S = 900                       # 0.99.50: a station whose log changed this recently is being made by another run
+
+
+def busy_elsewhere(run: Dict[str, Any], mine: Sequence[str] = ()) -> bool:
+    """0.99.50 (Christian, 20 Nov 2026: "run rockytop and others in parallel with the present rpv_products"): another
+    run is making this station - its ``single_site_log.txt`` was written in the last :data:`BUSY_S` seconds and this
+    run did not start it."""
+    if run["label"] in mine:
+        return False
+    f = Path(run["out"]) / "single_site_log.txt"
+    try:
+        return time.time() - f.stat().st_mtime < BUSY_S
+    except OSError:
+        return False
+
+
+def run_order(runs: List[Dict[str, Any]], pairs: Optional[Dict[str, str]] = None, first: Sequence[str] = (),
+              reverse: bool = False) -> List[Dict[str, Any]]:
+    """0.99.50 (Christian, 20 Nov 2026: "always runs rockytop first and then goes to the end of the mission and runs
+    in reverse chronological order"): the stations whose block folder holds one of ``first`` (in sol order), then the
+    others by sol - the latest first with ``reverse``; a Mastcam-Z version stays right after its Navcam station."""
+    import re
+    anchor = {z: n for n, z in (pairs or {}).items()}
+
+    def sol(lab):
+        m = re.match(r"^Sol(\d+)", str(lab))
+        return int(m.group(1)) if m else 10 ** 6
+
+    def key(r):
+        a_ = anchor.get(r["label"], r["label"])
+        own = next((x for x in runs if x["label"] == a_), r)
+        grp = 0 if any(f.lower() in Path(own["work"]).name.lower() for f in first) else 1
+        s_ = sol(a_)
+        return (grp, s_ if grp == 0 or not reverse else -s_, a_, r["label"] != a_)
+    return sorted(runs, key=key)
+
+
+_NAMES_CACHE: Dict[str, Tuple[float, List[str]]] = {}
+
+
+def _block_names(work: Path) -> List[str]:
+    f = Path(work) / "colmap" / "project.json"
+    try:
+        m = f.stat().st_mtime
+    except OSError:
+        return []
+    c = _NAMES_CACHE.get(str(f))
+    if c and c[0] == m:
+        return c[1]
+    try:
+        names = [r["name"] for r in json.loads(f.read_text(encoding="utf-8")).get("images", [])]
+    except (OSError, ValueError, KeyError, TypeError):
+        names = []
+    _NAMES_CACHE[str(f)] = (m, names)
+    return names
+
+
+def block_with_frames(st: Dict[str, Any], root: PathLike) -> Optional[Path]:
+    """0.99.50: the block under ``root`` with the most frames of this station (``N<site><drive>`` of its ``station``
+    "site_drive", Navcam frames - Mastcam-Z for a Mastcam-Z station) - for a root without the station's own block: the
+    freeze-3 root has only the Mastcam-Z blocks (..._rockytop_zcam, with every Navcam frame), and other folder names
+    (..._sol_0768_belva_crater_large_zcam for _sol_0770_).  None when no block has two."""
+    import re
+    m = re.match(r"^\s*(\d+)_(\d+)\s*$", str(st.get("station") or ""))
+    if not m:
+        return None
+    tok = f"N{int(m.group(1)):03d}{int(m.group(2)):04d}" + ("ZCAM" if is_zcam_station(st) else "NCAM")
+    best, best_n = None, 1
+    try:
+        blocks = sorted(p for p in Path(root).iterdir() if (p / "colmap" / "project.json").is_file())
+    except OSError:
+        return None
+    for b in blocks:
+        n = sum(1 for x in _block_names(b) if tok in x)
+        if n > best_n or (n == best_n and best is not None and block_aligned(b) and not block_aligned(best)):
+            best, best_n = b, n
+    return best
 
 
 def _status(out_root: Path, **kw) -> None:
     """``single_sites_status.json`` in the output root: what is running now (station, variant, step, since when) and
     what is done - so the run can be read without asking (written whole each time)."""
     try:
-        (out_root / STATUS_FILE).write_text(json.dumps(dict(kw, updated=time.strftime("%Y-%m-%dT%H:%M:%S")), indent=1),
+        name = STATUS_FILE if not INSTANCE["name"] else STATUS_FILE.replace(".json", f"_{INSTANCE['name']}.json")
+        (out_root / name).write_text(json.dumps(dict(kw, instance=INSTANCE["name"], updated=time.strftime("%Y-%m-%dT%H:%M:%S")), indent=1),
                                             encoding="utf-8")
     except OSError:
         pass
@@ -668,7 +784,8 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
                         if rc == 0:
                             vout.mkdir(parents=True, exist_ok=True)
                             step_record(vout, step).write_text(json.dumps(
-                                {"key": key, "exit": 0, "argv": c["argv"], "code": code, "minutes": round((time.time() - t0) / 60, 2),
+                                {"key": key, "exit": 0, "argv": c["argv"], "code": code, "rpp": _rpp_version(),
+                                 "minutes": round((time.time() - t0) / 60, 2),
                                  "finished": time.strftime("%Y-%m-%dT%H:%M:%S")}, indent=1), encoding="utf-8")
                     mins.setdefault(v, {})[step] = (time.time() - t0) / 60
                     codes[v][step] = rc
@@ -731,6 +848,14 @@ def add_parser(sub) -> None:
                    "360_3DTD.jpg / .png")
     p.add_argument("--retone", action="store_true", help="only make the 8-bit panoramas and squares again from the "
                    "16-bit ones already there (no rendering)")
+    p.add_argument("--recolor", action="store_true", help="0.99.50: no meshing, projection or rendering - the color "
+                   "processing of every made station again from its 16-bit panoramas and textures (8-bit eyes, enhanced "
+                   "and color products, mesh textures, color skins, the .glb files), then published and uploaded")
+    p.add_argument("--reverse", action="store_true", help="0.99.50: the latest sol first (after --first)")
+    p.add_argument("--first", nargs="+", default=[], metavar="NAME", help="0.99.50: the stations whose block folder "
+                   "holds one of these (e.g. rockytop) before all others")
+    p.add_argument("--instance", default=None, help="0.99.50: the name of this run (its own status file "
+                   "single_sites_status_<name>.json; another run's station is left alone while its log is written)")
     p.add_argument("--skip-done", action="store_true", help="0.99.47: leave out every station whose panoramas a good run "
                    "already made in the output root, with any code version (recolor_rpv.bat gives it; --force wins)")
     p.add_argument("--force", action="store_true", help="0.97.2: run every step again (default: a mesh, depthmaps or ods "
@@ -803,7 +928,10 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
     stations whose block was not aligned yet (and the Mastcam-Z versions whose block was not), every ``--poll-min``
     minutes, until none is left - or no block has come in for ``--wait-for-blocks`` hours."""
     wait_h = getattr(a, "wait_for_blocks", None)
-    if wait_h is None or a.dry_run or getattr(a, "any_block", False):
+    INSTANCE["name"] = getattr(a, "instance", None)
+    if getattr(a, "recolor", False):                     # 0.99.50: the made stations once, nothing waited for
+        a.retone = True
+    if wait_h is None or a.dry_run or getattr(a, "any_block", False) or getattr(a, "recolor", False):
         return _single_sites_pass(a)
     import time
     done: set = set()
@@ -819,11 +947,29 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
         if not late:
             print(f"single-sites: no station left to run ({len(done)} done)", flush=True)
             return rc
+        if not ran and getattr(a, "root", None) and not freeze_alive(a.root):        # 0.99.50: no freeze on the root - no block will come in
+            print(f"single-sites: no freeze runs on {a.root} - stopped with {len(late)} left: {', '.join(late)}", flush=True)
+            return rc
         if time.time() - last > float(wait_h) * 3600.0:
             print(f"single-sites: no block came in for {float(wait_h):g} h - stopped with {len(late)} left: {', '.join(late)}", flush=True)
             return rc
         print(f"single-sites: {len(done)} done, waiting for the blocks of {len(late)}: {', '.join(late)}", flush=True)
         time.sleep(max(1.0, float(getattr(a, "poll_min", 15.0))) * 60.0)
+
+
+def freeze_alive(root: PathLike) -> bool:
+    """0.99.50: a freeze runs on ``root`` (its ``mppp_pipeline/freeze_status.json`` "running" with a heartbeat in the
+    last 30 minutes) - the blocks still to come; True when that cannot be read (no early stop on a doubt)."""
+    import datetime
+    f = Path(root) / "mppp_pipeline" / "freeze_status.json"
+    if not f.is_file():
+        return False
+    try:
+        st = json.loads(f.read_text(encoding="utf-8"))
+        age = (datetime.datetime.now() - datetime.datetime.fromisoformat(st.get("heartbeat"))).total_seconds()
+    except (OSError, ValueError, TypeError):
+        return True
+    return st.get("state") == "running" and age < 1800
 
 
 def _single_sites_pass(a: argparse.Namespace) -> int:
@@ -845,7 +991,7 @@ def _single_sites_pass(a: argparse.Namespace) -> int:
     pairs = None
     # only in a run of the whole list (no station named, or --all): a run of named stations is those stations
     if getattr(a, "zcam_companions", True) and (given is None or getattr(a, "all", False)) \
-            and not (a.squares_only or a.retone or a.publish_only):
+            and not (a.squares_only or (a.retone and not getattr(a, "recolor", False)) or a.publish_only):
         try:                                                     # 0.99.43: the Z34 versions, where a block has a Z34 360
             pairs = zcam_companions(cfg, root)
             new = [z for z in pairs.values() if cfg["stations"][z].get("derived_from")]
@@ -857,6 +1003,12 @@ def _single_sites_pass(a: argparse.Namespace) -> int:
                 rover_surface=getattr(a, "rover_surface", False),
                 station_mesh="only" if getattr(a, "station_mesh_only", False) else getattr(a, "station_mesh", False),
                 companions=pairs, block_cameras=getattr(a, "block_cameras", None), terrain=getattr(a, "terrain", None))
+    if getattr(a, "recolor", False):                            # 0.99.50: the stations made in the output root
+        gone = [r for r in runs if not has_16bit(r)]
+        runs = [r for r in runs if r not in gone]
+        print(f"single-sites --recolor: {len(runs)} station(s) with their 16-bit panoramas"
+              + (f", {len(gone)} without (not made yet, or before 0.99.38)" if gone else ""))
+        a.any_block = True
     if not getattr(a, "any_block", False):                      # 0.99.28 (Christian, 18 Nov 2026: "The next ods should use
         late = [r for r in runs if not block_aligned(r["work"])]   # the post freeze blocks. Skip an ods site if the block
         for r in late:                                          # has not aligned yet")
@@ -872,12 +1024,27 @@ def _single_sites_pass(a: argparse.Namespace) -> int:
                 print(f"single-sites: {r['label']} skipped - already made in {r['out']} (--force makes it again)")
         runs = [r for r in runs if r not in done_]
         a._done_before = getattr(a, "_done_before", set()) | {r["label"] for r in done_}
+    mine = getattr(a, "_mine", set())
+    busy = [r for r in runs if busy_elsewhere(r, mine)]          # 0.99.50: another run's station - looked at again later
+    for r in busy:
+        print(f"single-sites: {r['label']} skipped - another run is making it (its log changed in the last "
+              f"{BUSY_S // 60} minutes)")
+    runs = [r for r in runs if r not in busy]
+    if busy and hasattr(a, "_late"):
+        a._late = list(a._late) + [r["label"] for r in busy]
+    if getattr(a, "first", None) or getattr(a, "reverse", False):
+        runs = run_order(runs, pairs, first=getattr(a, "first", []) or [], reverse=getattr(a, "reverse", False))
+    a._mine = set(mine) | {r["label"] for r in runs}
     skip = getattr(a, "_skip", None)
     if skip is not None:                                         # 0.99.44: a later pass of --wait-for-blocks
         runs = [r for r in runs if r["label"] not in skip]
         a._ran = [r["label"] for r in runs]
         if not runs:
             return 0
+    if a.dry_run and getattr(a, "recolor", False):
+        for r in runs:
+            print(f"{r['label']}: recolor {r['out']} ({', '.join(r['variants'])}) and upload")
+        return 0
     if a.dry_run:
         for r in runs:
             print(f"{r['label']}: {r['work']} -> {r['out']}")
