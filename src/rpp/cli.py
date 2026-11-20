@@ -206,6 +206,12 @@ def build_parser() -> argparse.ArgumentParser:
                    "corners kept: 10 %% of a Navcam frame, 11 %% of the rover's pixels at Van Zyl), the working size "
                    "scaled so the center keeps its resolution (~1.8x the stereo time); the default crops to the "
                    "rectangle of valid pixels")
+    p.add_argument("--sources", type=int, default=None, help="1.0: source images per image for new depth maps "
+                   "(default 12 for a station or block; 0: COLMAP's 20)")
+    p.add_argument("--window-step", type=int, default=None, help="1.0: patch-match window step for new maps (default 2 "
+                   "for a station or block; 1: every pixel of the window)")
+    p.add_argument("--single-fusion", action="store_true", help="1.0: one (loose) fusion, without the strict pass "
+                   "and the merge")
     p.add_argument("--restereo", action="store_true", help="delete the workspace's patch-match maps before --stereo "
                    "(they are deleted anyway when they were made with other options; COLMAP skips every image whose "
                    "maps exist)")
@@ -804,6 +810,7 @@ FUSION_RECORD = "rpp_fusion.json"
 # If that is too much, limit the fusion's key to sfm/dense.py".  The records of 0.99.51 to 0.99.53 hold their station
 # code key (rpp.ibr.single_sites.code_key) instead (0.99.53's too); their sfm/dense.py is the one whose hash is DENSE_CODE_0P99, so
 # their clouds count as this code's while dense.py is unchanged.
+# 1.0's dense.py (the strict second fusion and the merge) is another, so those clouds are fused again, from their maps.
 FUSION_CODES_0P99 = ("5aa9d5f18a9a6fdc", "74faa498abf96418", "0c917caf3b0a008e",   # 0.99.51, 0.99.52 (in progress),
                      "5f46dcfc18415f4b")                                          # 0.99.52, 0.99.53
 DENSE_CODE_0P99 = "4e328c4415a18d58"
@@ -833,8 +840,13 @@ def _fusion_record(ws, so, fo, size, a, write: bool = False):
         code = fusion_code()                                     # 1.0: of other fusion code (sfm/dense.py)
     except OSError:
         code = None
+    strict = getattr(a, "_fusion_strict", None)
     rec = {"stereo_record": stereo, "code": code, "fusion_options": {k: fo[k] for k in sorted(fo)}, "keep_rover": keep,
            "sky": str(rpp_env.get("RPP_SKY_MASK") or "1").strip().lower(), "max_image_size": int(size or 0)}
+    if strict:                                                   # 1.0: the strict pass and the merge (merge_fusions)
+        from .sfm.dense import MERGE_PX
+        rec["fusion_strict"] = {k: strict[k] for k in sorted(strict)}
+        rec["merge_px"] = MERGE_PX
     ply = ws / (FUSED_ROVER_PLY if keep else "fused.ply")
     if write and ply.is_file() and stereo:
         st = ply.stat()
@@ -957,9 +969,30 @@ def cmd_dense(a: argparse.Namespace) -> int:
     # the CUDA python the alignment itself uses (pipeline._default_gpu_python: RPP_GPU_PYTHON, RPP_GPU_PY,
     # %LOCALAPPDATA%\mppp\gpu_python.txt, the rpp_gpu conda env) when neither --python nor GPU_PYTHON names one.
     # 10 Nov on the PC: the 9 Nov fix looked at gpu_python() alone and missed RPP_GPU_PYTHON / the rpp_gpu env
-    from .sfm.dense import STATION_FUSION_OPTIONS, STATION_STEREO_OPTIONS
+    from .sfm.dense import (PATCH_MATCH_SOURCES, STATION_FUSION_OPTIONS, STATION_FUSION_STRICT, STATION_STEREO_FAST,
+                            STATION_STEREO_OPTIONS, workspace_stereo_record)
     so = dict(STATION_STEREO_OPTIONS) if subset is not None else {}     # 10 Nov: COLMAP's 3 deg stopped Rockytop at 8 m
     fo = dict(STATION_FUSION_OPTIONS) if subset is not None else {}
+    # 1.0: new maps with fewer source images and a sparser matching window; a workspace that already holds maps keeps
+    # the options they were made with (no map made again), unless --restereo, --sources or --window-step say otherwise
+    sources = None
+    prev = None if getattr(a, "restereo", False) else workspace_stereo_record(ws)
+    if prev is not None and int(prev.get("max_image_size") or 0) in (0, size):
+        so = dict(prev.get("options") or {})
+        sources = prev.get("sources")
+        print(f"dense: the workspace's {sum(1 for _ in (ws / 'stereo' / 'depth_maps').glob('*.bin'))} depth-map files "
+              f"are kept - their options again ({sources or 'COLMAP 20'} source images)")
+    elif subset is not None:
+        so.update(STATION_STEREO_FAST)
+        sources = PATCH_MATCH_SOURCES
+    if getattr(a, "sources", None) is not None:
+        sources = int(a.sources) or None
+    if getattr(a, "window_step", None) is not None:
+        so["window_step"] = int(a.window_step)
+    strict = None
+    if subset is not None and not getattr(a, "keep_rover", False) and not getattr(a, "single_fusion", False):
+        strict = dict(STATION_FUSION_STRICT)
+    a._fusion_strict = strict                                    # for _fusion_record
     if getattr(a, "min_angle", None) is not None:
         so.update(min_triangulation_angle=min(float(a.min_angle), 1.0), filter_min_triangulation_angle=float(a.min_angle))
     if getattr(a, "min_views", None) is not None:
@@ -971,7 +1004,7 @@ def cmd_dense(a: argparse.Namespace) -> int:
     need_gpu = True
     if "stereo" in steps and not getattr(a, "restereo", False):           # 0.97.0: nothing to compute -> no GPU, no wait
         from .sfm.dense import stereo_cached
-        if stereo_cached(ws, so, max_image_size=size):
+        if stereo_cached(ws, so, max_image_size=size, sources=sources):
             steps = [s for s in steps if s != "stereo"]
             need_gpu = False
             print("dense: the stereo maps of this workspace are there, made with these options - stereo skipped, "
@@ -988,11 +1021,16 @@ def cmd_dense(a: argparse.Namespace) -> int:
         print(f"dense: {', '.join(steps)} in {py}")
         res = run_step(py, "dense", proj, lock=need_gpu, steps=steps, max_image_size=size, workspace=str(ws), images=subset,
                        stereo_options=so, fusion_options=fo, keep_rover=bool(getattr(a, "keep_rover", False)),
-                       restereo=bool(getattr(a, "restereo", False)), full_fov=bool(getattr(a, "full_fov", False)))
+                       restereo=bool(getattr(a, "restereo", False)), full_fov=bool(getattr(a, "full_fov", False)),
+                       sources=sources, fusion_strict=strict)
     else:
         res = run_dense(proj, workspace=ws, steps=steps, max_image_size=size, images=subset,
                         stereo_options=so, fusion_options=fo, keep_rover=bool(getattr(a, "keep_rover", False)),
-                       restereo=bool(getattr(a, "restereo", False)), full_fov=bool(getattr(a, "full_fov", False)))
+                       restereo=bool(getattr(a, "restereo", False)), full_fov=bool(getattr(a, "full_fov", False)),
+                        sources=sources, fusion_strict=strict)
+    if "fusion_strict" in (res.get("steps") or {}):             # 1.0: the two fusions into one fused.ply
+        from .sfm.dense import merge_fusions
+        res["steps"]["merge"] = merge_fusions(ws)
     for k, v in (res.get("steps") or {}).items():
         print(f"  {k}: {v}")
     if "fusion" in (res.get("steps") or {}):

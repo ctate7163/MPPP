@@ -10,7 +10,7 @@ depth and photometric maps, and an omnidirectional stereo panorama that can be l
 
 | step | command | what it makes |
 |---|---|---|
-| dense | `rpp dense WORK --station S` | COLMAP patch-match stereo and fusion for the station's frames (`fused.ply`); cached, so a second run costs nothing |
+| dense | `rpp dense WORK --station S` | COLMAP patch-match stereo (12 source images, window step 2) and two fusions, loose and strict, merged into `fused.ply`; cached, so a second run costs nothing |
 | mesh | `rpp mesh WORK --station S` | `mesh.ply`: the terrain out to 75 m, a ground plane beyond it to 200 m (300 m in `rpp ods`), the rover model |
 | depthmaps | `rpp depthmaps WORK --station S --photometry` | per image: depth, range, normal, incidence, emission, phase, cast shadow (also from the rover's mast, booms and camera head) |
 | ods | `rpp ods WORK --station S` | the stereo panorama and its companions |

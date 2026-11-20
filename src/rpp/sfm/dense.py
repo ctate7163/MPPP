@@ -48,6 +48,29 @@ DENSE_MAX_IMAGE_SIZE = 2000        # the long side of the undistorted (working) 
 STATION_STEREO_OPTIONS = {"min_triangulation_angle": 0.3, "filter_min_triangulation_angle": 0.3,
                           "filter_min_num_consistent": 1}
 STATION_FUSION_OPTIONS = {"min_num_pixels": 2}
+# 1.0 (Christian, 20 Nov 2026: "look into some way to accelerate the depth map generation and improve the fusion. The
+# depth fusion takes a lot less time than making the depth maps, so we can increase the processing on that to ensure
+# the mesh is higher quality").
+#
+# THE DEPTH MAPS, faster.  Patch-match's cost grows with the source images each reference image is matched against
+# (COLMAP's image_undistorter writes __auto__, 20 into stereo/patch-match.cfg) and with the pixels of the matching
+# window it samples (window_step 1: all 11 x 11).  A new workspace now takes PATCH_MATCH_SOURCES source images, the
+# ones that share the most tie points with it, and samples every other pixel of the window (STATION_STEREO_FAST).
+# Estimate, not measured: about 1.7 x from the sources and 2-3 x from the window, so a 303-frame block in well under
+# half its time; the first new block's mppp_dense_run.json ("stereo": "seconds") tells.  A workspace whose maps were
+# made with other options keeps its own options when it resumes (workspace_stereo_record), so no map is made again.
+PATCH_MATCH_SOURCES = 12
+COLMAP_SOURCES = 20                 # what a workspace made by COLMAP's undistorter has (and every workspace before 1.0)
+STATION_STEREO_FAST = {"window_step": 2}
+# THE FUSION, two passes.  The loose fusion (STATION_FUSION_OPTIONS: two pixels) keeps the far terrain that one stereo
+# pair sees, and with it the noise of the near terrain.  A strict fusion (STATION_FUSION_STRICT: four agreeing pixels,
+# 1 px, 8 deg) keeps only what several views agree on.  fused.ply is the strict cloud plus the loose points farther than
+# MERGE_PX working pixels (at their distance from the nearest camera) from any strict point: the strict surface where
+# it exists, the loose one only where it does not (merge_fusions).  The two clouds stay as fused_loose.ply and
+# fused_strict.ply.
+STATION_FUSION_STRICT = {"min_num_pixels": 4, "max_reproj_error": 1.0, "max_normal_error": 8.0}
+MERGE_PX = 2.0
+FUSED_LOOSE_PLY, FUSED_STRICT_PLY = "fused_loose.ply", "fused_strict.ply"
 # 10 Nov 2026 (Christian: "try this with and without the rover body and deck shown"): the fusion without the rover
 # masks goes to its own cloud, so the rover-removed products stay as they are
 FUSED_ROVER_PLY = "fused_rover.ply"
@@ -315,8 +338,43 @@ def stereo_outputs_ready(ws: PathLike, record: Dict[str, Any], force: bool = Fal
     return {"cleared": len(maps) if why else 0, "why": why, "kept": 0 if why else len(maps)}
 
 
-def stereo_record(ws: PathLike, stereo_options: Optional[Dict[str, Any]], geom_consistency: bool, max_image_size: int):
-    """(PatchMatchOptions, the fields set, the record of ``stereo/mppp_stereo.json``) of a stereo run on ``ws``."""
+def workspace_stereo_record(ws: PathLike) -> Optional[Dict[str, Any]]:
+    """1.0: the record of the depth maps a workspace already holds (``stereo/mppp_stereo.json``, with at least one map),
+    else None - a run that resumes takes these options, so that its maps are kept."""
+    st = Path(ws) / "stereo"
+    f = st / STEREO_RECORD
+    if not f.is_file() or not any((st / "depth_maps").glob("*.bin")):
+        return None
+    try:
+        return json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def set_source_images(ws: PathLike, n: int) -> int:
+    """1.0: ``stereo/patch-match.cfg`` with ``__auto__, n`` for every image (the n images that share the most tie points
+    with it); the images changed.  A list of named source images is left as it is."""
+    f = Path(ws) / "stereo" / "patch-match.cfg"
+    if not f.is_file():
+        return 0
+    lines = f.read_text(encoding="utf-8").splitlines()
+    k = 0
+    for i, ln in enumerate(lines):
+        if ln.strip().startswith("__auto__"):
+            new = f"__auto__, {int(n)}"
+            if ln.strip() != new:
+                lines[i] = new
+                k += 1
+    if k:
+        f.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return k
+
+
+def stereo_record(ws: PathLike, stereo_options: Optional[Dict[str, Any]], geom_consistency: bool, max_image_size: int,
+                  sources: Optional[int] = None):
+    """(PatchMatchOptions, the fields set, the record of ``stereo/mppp_stereo.json``) of a stereo run on ``ws``.
+    ``sources`` (1.0): the source images per image (patch-match.cfg); the record names it only when it is not
+    COLMAP's 20, so the records of the maps made before 1.0 stay what they were."""
     import pycolmap
     ws = Path(ws)
     wrec = ws / "mppp_dense.json"
@@ -329,11 +387,13 @@ def stereo_record(ws: PathLike, stereo_options: Optional[Dict[str, Any]], geom_c
     fov = json.loads(wrec.read_text(encoding="utf-8")).get("full_fov", False) if wrec.is_file() else False
     rec = {"options": {k: float(v) if isinstance(v, float) else v for k, v in so.items()},
            "geom_consistency": bool(geom_consistency), "max_image_size": int(max_image_size), "full_fov": bool(fov)}
+    if sources is not None and int(sources) != COLMAP_SOURCES:
+        rec["sources"] = int(sources)
     return po, so, rec
 
 
 def stereo_cached(ws: PathLike, stereo_options: Optional[Dict[str, Any]] = None, geom_consistency: bool = True,
-                  max_image_size: int = 0) -> bool:
+                  max_image_size: int = 0, sources: Optional[int] = None) -> bool:
     """0.97.0 (Christian, 12 Nov 2026: "Don't wait for the GPU when the stereo maps are cached"): True when every
     image of the workspace has its depth and normal map from a run with these very options - a stereo step would
     do nothing, so it needs neither the GPU nor the wait for it."""
@@ -344,7 +404,7 @@ def stereo_cached(ws: PathLike, stereo_options: Optional[Dict[str, Any]] = None,
     if not imgs or not rec_file.is_file():
         return False
     try:
-        _, _, rec = stereo_record(ws, stereo_options, geom_consistency, max_image_size)
+        _, _, rec = stereo_record(ws, stereo_options, geom_consistency, max_image_size, sources)
         old = json.loads(rec_file.read_text(encoding="utf-8"))
     except Exception:                                            # noqa: BLE001 - then the stereo step decides
         return False
@@ -486,14 +546,18 @@ def run_dense(project: SfmProject, workspace: Optional[PathLike] = None, steps=(
               gpu_index: str = "-1", images: Optional[Sequence[str]] = None,
               stereo_options: Optional[Dict[str, Any]] = None,
               fusion_options: Optional[Dict[str, Any]] = None, keep_rover: bool = False,
-              restereo: bool = False, full_fov: bool = False, sky: Optional[bool] = None) -> Dict[str, Any]:
+              restereo: bool = False, full_fov: bool = False, sky: Optional[bool] = None,
+              sources: Optional[int] = None, fusion_strict: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """0.99.20: ``sky`` (default :data:`SKY_MASK`) - the fusion leaves the frames' sky out (:func:`write_sky_masks`).
 
     The dense steps from Python: ``prepare`` (:func:`prepare_dense`), ``stereo`` (patch-match stereo; needs a CUDA
     pycolmap), ``fusion`` (``dense/fused.ply``, the masks applied), ``mesh`` (``dense/meshed-poisson.ply``).
     ``stereo_options`` / ``fusion_options``: ``PatchMatchOptions`` / ``StereoFusionOptions`` fields to set (e.g.
     :data:`STATION_STEREO_OPTIONS`); COLMAP's defaults otherwise.  ``keep_rover``: the fusion without the rover masks,
-    into ``fused_rover.ply`` (the rover body and deck kept; the stereo is the same - it takes no masks)."""
+    into ``fused_rover.ply`` (the rover body and deck kept; the stereo is the same - it takes no masks).
+    ``sources`` (1.0): the source images per image (:func:`set_source_images`; None: as the workspace has them).
+    ``fusion_strict`` (1.0): a second fusion with these options into ``fused_strict.ply`` (not with ``keep_rover``);
+    :func:`merge_fusions` then makes ``fused.ply`` of the two."""
     import pycolmap
     ws = Path(workspace) if workspace else Path(project.root) / DENSE_DIR
     out: Dict[str, Any] = {"workspace": str(ws), "steps": {}}
@@ -507,9 +571,11 @@ def run_dense(project: SfmProject, workspace: Optional[PathLike] = None, steps=(
             raise RuntimeError("patch-match stereo needs a CUDA pycolmap (the gpu_python environment) or "
                                "dense_reconstruct.bat with a CUDA COLMAP")
         t0 = time.time()
-        po, so, srec = stereo_record(ws, stereo_options, geom_consistency, max_image_size)
+        po, so, srec = stereo_record(ws, stereo_options, geom_consistency, max_image_size, sources)
         po.gpu_index = str(gpu_index)
         state = stereo_outputs_ready(ws, srec, force=restereo)
+        if sources is not None:                                  # 1.0: after the old maps went, if they did
+            set_source_images(ws, int(sources))
         pycolmap.patch_match_stereo(str(ws), "COLMAP", options=po)
         out["steps"]["stereo"] = {"seconds": round(time.time() - t0, 1), "geom_consistency": bool(geom_consistency),
                                   "options": so, "old_maps": state}
@@ -536,12 +602,130 @@ def run_dense(project: SfmProject, workspace: Optional[PathLike] = None, steps=(
                                        options=fo, output_type="ply")
         out["steps"]["fusion"] = {"seconds": round(time.time() - t0, 1), "points": fused.num_points3D(),
                                   "ply": str(ply), "masks": str(fo.mask_path) if used_masks else None, "sky": sky_rep, "options": fset, "rover_kept": bool(keep_rover)}
+        if fusion_strict and not keep_rover:                     # 1.0: the second, strict pass with the same masks
+            t1 = time.time()
+            fs = pycolmap.StereoFusionOptions()
+            fs.mask_path = fo.mask_path
+            fs.max_image_size = int(max_image_size)
+            sset = set_options(fs, {**(fusion_options or {}), **fusion_strict})
+            strict = pycolmap.stereo_fusion(str(ws / FUSED_STRICT_PLY), str(ws), "COLMAP",
+                                            input_type="geometric" if geom_consistency else "photometric", options=fs, output_type="ply")
+            out["steps"]["fusion_strict"] = {"seconds": round(time.time() - t1, 1), "points": strict.num_points3D(),
+                                             "ply": str(ws / FUSED_STRICT_PLY), "options": sset}
     if "mesh" in steps:
         t0 = time.time()
         pycolmap.poisson_meshing(str(ws / "fused.ply"), str(ws / "meshed-poisson.ply"))
         out["steps"]["mesh"] = {"seconds": round(time.time() - t0, 1), "ply": str(ws / "meshed-poisson.ply")}
     (ws / "mppp_dense_run.json").write_text(json.dumps(out, indent=1, default=str), encoding="utf-8")
     return out
+
+
+# ------------------------------------------------------------------------------------------- the two fusions (1.0)
+_PLY_TYPES = {"float": "<f4", "float32": "<f4", "double": "<f8", "float64": "<f8", "uchar": "u1", "uint8": "u1",
+              "char": "i1", "int8": "i1", "ushort": "<u2", "uint16": "<u2", "short": "<i2", "int16": "<i2",
+              "uint": "<u4", "uint32": "<u4", "int": "<i4", "int32": "<i4"}
+
+
+def read_ply_vertices(path: PathLike) -> Tuple[bytes, np.ndarray]:
+    """(the header, the vertex records) of a binary little-endian PLY of vertices only (COLMAP's fused cloud)."""
+    with open(path, "rb") as fh:
+        head = b""
+        while not head.endswith(b"end_header\n"):
+            ln = fh.readline()
+            if not ln:
+                raise ValueError(f"{path}: no end_header")
+            head += ln
+        txt = head.decode("ascii", "replace").splitlines()
+        if "format binary_little_endian 1.0" not in txt:
+            raise ValueError(f"{path}: not a binary little-endian PLY")
+        n, fields, inside = 0, [], False
+        for ln in txt:
+            w = ln.split()
+            if w[:2] == ["element", "vertex"]:
+                n, inside = int(w[2]), True
+            elif w[:1] == ["element"]:
+                inside = False
+            elif inside and w[:1] == ["property"] and len(w) == 3:
+                fields.append((w[2], _PLY_TYPES[w[1]]))
+        data = np.fromfile(fh, dtype=np.dtype(fields), count=n)
+    return head, data
+
+
+def write_ply_vertices(path: PathLike, head: bytes, data: np.ndarray) -> None:
+    import re
+    head = re.sub(rb"element vertex \d+", b"element vertex %d" % len(data), head, count=1)
+    tmp = Path(str(path) + ".tmp")
+    with open(tmp, "wb") as fh:
+        fh.write(head)
+        data.tofile(fh)
+    os.replace(tmp, path)
+
+
+def read_vis(path: PathLike) -> List[np.ndarray]:
+    """COLMAP's ``fused.ply.vis``: per point, the images that see it."""
+    raw = np.fromfile(path, dtype=np.uint32)
+    n = int(raw[0]) | (int(raw[1]) << 32)
+    out, i = [], 2
+    for _ in range(n):
+        k = int(raw[i])
+        out.append(raw[i + 1:i + 1 + k])
+        i += 1 + k
+    return out
+
+
+def write_vis(path: PathLike, vis: Sequence[np.ndarray]) -> None:
+    parts = [np.array([len(vis) & 0xFFFFFFFF, len(vis) >> 32], np.uint32)]
+    for v in vis:
+        parts.append(np.array([len(v)], np.uint32))
+        parts.append(np.asarray(v, np.uint32))
+    np.concatenate(parts).tofile(path)
+
+
+def merge_fusions(ws: PathLike, merge_px: float = MERGE_PX) -> Dict[str, Any]:
+    """1.0: ``fused.ply`` (the loose fusion) and ``fused_strict.ply`` into one cloud: every strict point, and the loose
+    points farther than ``merge_px`` working pixels from any strict point - a pixel at the point's distance from the
+    nearest camera of the workspace (its median focal length).  The loose cloud is kept as ``fused_loose.ply``; the
+    ``.vis`` files go with their points.  Needs scipy (the main environment)."""
+    from scipy.spatial import cKDTree
+    ws = Path(ws)
+    t0 = time.time()
+    loose_f, strict_f = ws / "fused.ply", ws / FUSED_STRICT_PLY
+    if not strict_f.is_file():
+        raise FileNotFoundError(f"{strict_f}: no strict fusion to merge")
+    if (ws / FUSED_LOOSE_PLY).is_file() and loose_f.stat().st_mtime <= (ws / FUSED_LOOSE_PLY).stat().st_mtime:
+        loose_f = ws / FUSED_LOOSE_PLY                            # fused.ply is an earlier merge: from the loose cloud again
+    head, L = read_ply_vertices(loose_f)
+    _, S = read_ply_vertices(strict_f)
+    if L.dtype != S.dtype:
+        raise ValueError("the two fusions' PLY records differ")
+    xyz = lambda a: np.stack([a["x"], a["y"], a["z"]], axis=1).astype(np.float64)   # noqa: E731
+    PL, PS = xyz(L), xyz(S)
+    import pycolmap
+    rec = pycolmap.Reconstruction(str(ws / "sparse"))
+    C = np.array([im.projection_center() for im in rec.images.values()], float)
+    fpx = float(np.median([c.params[0] for c in rec.cameras.values()]))
+    d_cam, _ = cKDTree(C).query(PL, k=1, workers=-1)
+    r = merge_px * np.maximum(d_cam, 0.1) / max(fpx, 1.0)
+    d_s, _ = cKDTree(PS).query(PL, k=1, workers=-1, distance_upper_bound=float(r.max()) if len(r) else 0.0) if len(PS) else (np.full(len(PL), np.inf), None)
+    keep = d_s > r
+    out = np.concatenate([S, L[keep]])
+    if loose_f.name == "fused.ply":                              # the first merge: the loose cloud kept by its own name
+        os.replace(loose_f, ws / FUSED_LOOSE_PLY)
+        if (ws / "fused.ply.vis").is_file():
+            os.replace(ws / "fused.ply.vis", ws / (FUSED_LOOSE_PLY + ".vis"))
+    write_ply_vertices(ws / "fused.ply", head, out)
+    vis_rep = None
+    lv, sv = ws / (FUSED_LOOSE_PLY + ".vis"), ws / (FUSED_STRICT_PLY + ".vis")
+    if lv.is_file() and sv.is_file():
+        vl, vs = read_vis(lv), read_vis(sv)
+        write_vis(ws / "fused.ply.vis", list(vs) + [vl[i] for i in np.flatnonzero(keep)])
+        vis_rep = "fused.ply.vis"
+    rep = {"strict_points": int(len(S)), "loose_points": int(len(L)), "loose_kept": int(keep.sum()),
+           "points": int(len(out)), "merge_px": float(merge_px), "focal_px": round(fpx, 1), "vis": vis_rep,
+           "seconds": round(time.time() - t0, 1)}
+    (ws / "rpp_fusion_merge.json").write_text(json.dumps(rep, indent=1), encoding="utf-8")
+    log.info("dense: fused.ply = %d strict + %d of %d loose points (%.0f s)", len(S), int(keep.sum()), len(L), rep["seconds"])
+    return rep
 
 
 def read_colmap_array(path: PathLike):

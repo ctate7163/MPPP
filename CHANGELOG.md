@@ -60,6 +60,18 @@ still those of 0.99; 1.0.0 will carry the models of the third freeze run.
 - `CITATION.cff` carries the abstract, the keywords and the author's ORCID, and is the only source of the Zenodo
   record's metadata.
 - The tests run on Linux and Windows in GitHub Actions.
+- **Faster depth maps and a two-pass fusion** (`rpp dense`, every station and block workspace):
+  - New depth maps match each image against its 12 best-connected images (COLMAP's default is 20) and sample every
+    other pixel of the 11 x 11 matching window (`window_step 2`). `--sources N` (0: COLMAP's 20) and
+    `--window-step 1` give the full work. The speed-up is an estimate (about 2-4 x) until the first block is timed.
+  - A workspace that already holds depth maps (the 0.99 blocks, a block stopped part way) keeps the options its maps
+    were made with, so no map is made again. `--restereo` makes them again with the new options.
+  - The fusion runs twice: the loose fusion (two agreeing pixels: the far terrain that one stereo pair sees) and a
+    strict one (four pixels, 1 px, 8°). `fused.ply` is every strict point plus the loose points more than 2 working
+    pixels from any strict point (`fused_loose.ply`, `fused_strict.ply` and `rpp_fusion_merge.json` beside it). So
+    the near terrain comes from what several views agree on, and the far terrain is still there.
+    `--single-fusion` makes the loose cloud alone.
+  - The fused clouds of 0.99.51 to 0.99.53 are fused again from their kept stereo maps.
 
 ### Removed
 

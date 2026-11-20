@@ -554,6 +554,22 @@ def test_dense_subset_prepare_and_fusion_write_fused_ply(tmp_path, monkeypatch):
     assert (ws / "fused.ply").is_file() and out["steps"]["fusion"]["points"] > 1000
     pts = np.asarray(o3d.io.read_point_cloud(str(ws / "fused.ply")).points)
     assert np.median(np.abs(pts[:, 2])) < 0.01                           # on the plane z = 0
+    # 1.0: the strict second pass and the merge - every strict point, the loose ones only away from them; the .vis
+    # (COLMAP's visibility, for its Delaunay mesher) goes with its points; a second merge starts from the loose cloud
+    from rpp.sfm.dense import FUSED_LOOSE_PLY, FUSED_STRICT_PLY, merge_fusions, read_ply_vertices, read_vis
+    out = run_dense(proj, workspace=ws, steps=("fusion",), max_image_size=400, images=res["subset"],
+                    fusion_strict={"min_num_pixels": 1, "max_reproj_error": 0.5})
+    n_loose, n_strict = out["steps"]["fusion"]["points"], out["steps"]["fusion_strict"]["points"]
+    assert 0 < n_strict <= n_loose
+    m = merge_fusions(ws)
+    assert (ws / FUSED_LOOSE_PLY).is_file() and (ws / FUSED_STRICT_PLY).is_file()
+    assert m["loose_points"] == n_loose and m["strict_points"] == n_strict and m["loose_kept"] < n_loose
+    head, data = read_ply_vertices(ws / "fused.ply")
+    assert len(data) == m["points"] == n_strict + m["loose_kept"] and {"x", "nx", "red"} <= set(data.dtype.names)
+    assert len(o3d.io.read_point_cloud(str(ws / "fused.ply")).points) == m["points"]
+    if m["vis"]:
+        assert len(read_vis(ws / "fused.ply.vis")) == m["points"]
+    assert merge_fusions(ws)["points"] == m["points"]                    # again: from fused_loose.ply, the same cloud
 
 
 def test_dense_stereo_goes_to_the_pipelines_gpu_python(tmp_path, monkeypatch):
@@ -581,21 +597,43 @@ def test_dense_stereo_goes_to_the_pipelines_gpu_python(tmp_path, monkeypatch):
     py, step, kw = calls[0]
     assert py == "/envs/rpp_gpu/python.exe" and step == "dense" and kw["steps"] == ["stereo", "fusion"]
     assert kw["workspace"].endswith("dense_S003D0010") and len(kw["images"]) == 4
-    from rpp.sfm.dense import STATION_FUSION_OPTIONS, STATION_STEREO_OPTIONS
-    assert kw["stereo_options"] == STATION_STEREO_OPTIONS and kw["fusion_options"] == STATION_FUSION_OPTIONS
+    from rpp.sfm.dense import (PATCH_MATCH_SOURCES, STATION_FUSION_OPTIONS, STATION_FUSION_STRICT, STATION_STEREO_FAST,
+                               STATION_STEREO_OPTIONS, STEREO_RECORD)
+    fast = {**STATION_STEREO_OPTIONS, **STATION_STEREO_FAST}           # 1.0: new maps with the sparser window,
+    assert kw["stereo_options"] == fast and kw["fusion_options"] == STATION_FUSION_OPTIONS
+    assert kw["sources"] == PATCH_MATCH_SOURCES and kw["fusion_strict"] == STATION_FUSION_STRICT   # 12 sources, 2 fusions
     calls.clear()
     assert rpp_main(["dense", str(root.parent), "--station", "3_10", "--stereo", "--min-angle", "1.5", "--min-views", "3"]) == 0
     kw = calls[0][2]
     assert kw["stereo_options"] == {"min_triangulation_angle": 1.0, "filter_min_triangulation_angle": 1.5,
-                                    "filter_min_num_consistent": 2}
+                                    "filter_min_num_consistent": 2, **STATION_STEREO_FAST}
     assert kw["fusion_options"] == {"min_num_pixels": 3}
     # 0.98.14: --whole-block - the block's frames in one shared workspace, the station's own frames recorded beside it
     calls.clear()
     assert rpp_main(["dense", str(root.parent), "--station", "3_10", "--whole-block", "--stereo", "--fusion"]) == 0
     kw = calls[0][2]
-    assert kw["workspace"].endswith("dense_block_N") and len(kw["images"]) == len(rows) and kw["stereo_options"] == STATION_STEREO_OPTIONS
+    assert kw["workspace"].endswith("dense_block_N") and len(kw["images"]) == len(rows) and kw["stereo_options"] == fast
     stub = json.loads((root / "dense_S003D0010_block" / "mppp_dense.json").read_text(encoding="utf-8"))
     assert len(stub["subset"]) == 4 and stub["terrain"] == "block" and stub["points"].endswith("fused.ply")
+    # 1.0: a workspace with depth maps of 0.99 (COLMAP's 20 sources, the full window) resumes with those options, so no
+    # map is made again; --restereo, --sources and --window-step still choose
+    wsb = Path(kw["workspace"])
+    (wsb / "stereo" / "depth_maps").mkdir(parents=True, exist_ok=True)
+    (wsb / "stereo" / "depth_maps" / "NLF_1.png.geometric.bin").write_bytes(b"0")
+    (wsb / "stereo" / STEREO_RECORD).write_text(json.dumps({"options": STATION_STEREO_OPTIONS, "geom_consistency": True,
+                                                             "max_image_size": 2000, "full_fov": False}))
+    calls.clear()
+    assert rpp_main(["dense", str(root.parent), "--station", "3_10", "--whole-block", "--stereo", "--fusion"]) == 0
+    kw = calls[0][2]
+    assert kw["stereo_options"] == STATION_STEREO_OPTIONS and kw["sources"] is None
+    calls.clear()
+    assert rpp_main(["dense", str(root.parent), "--station", "3_10", "--whole-block", "--stereo", "--restereo"]) == 0
+    assert calls[0][2]["stereo_options"] == fast and calls[0][2]["sources"] == PATCH_MATCH_SOURCES
+    calls.clear()
+    assert rpp_main(["dense", str(root.parent), "--station", "3_10", "--stereo", "--sources", "0", "--window-step", "1",
+                     "--single-fusion"]) == 0
+    kw = calls[0][2]
+    assert kw["sources"] is None and kw["stereo_options"]["window_step"] == 1 and kw["fusion_strict"] is None
 
 
 def test_station_dense_options_reach_the_mesh_radius_and_are_set_on_pycolmap():
@@ -3781,3 +3819,19 @@ def test_blend_pole_one_color_at_the_zenith():
     u8[:, ::2] = 200
     O.blend_pole(u8)
     assert u8.dtype == np.uint8 and np.ptp(u8[0].astype(int), axis=0).max() <= 1
+
+
+def test_patch_match_sources_are_set_in_the_cfg(tmp_path):
+    """1.0: new depth maps match each image against its 12 best-connected images, not COLMAP's 20."""
+    from rpp.sfm.dense import set_source_images, stereo_record, workspace_stereo_record
+    st = tmp_path / "stereo"
+    st.mkdir()
+    (st / "patch-match.cfg").write_text("NLF_1.png\n__auto__, 20\nNLF_2.png\n__auto__, 20\nNLF_3.png\nNLF_1.png, NLF_2.png\n")
+    assert set_source_images(tmp_path, 12) == 2
+    assert (st / "patch-match.cfg").read_text().splitlines() == ["NLF_1.png", "__auto__, 12", "NLF_2.png", "__auto__, 12",
+                                                                  "NLF_3.png", "NLF_1.png, NLF_2.png"]
+    assert set_source_images(tmp_path, 12) == 0
+    assert "sources" not in stereo_record(tmp_path, {}, True, 2000, None)[2]      # 0.99's records stay as they were
+    assert "sources" not in stereo_record(tmp_path, {}, True, 2000, 20)[2]
+    assert stereo_record(tmp_path, {}, True, 2000, 12)[2]["sources"] == 12
+    assert workspace_stereo_record(tmp_path) is None                              # no maps yet
