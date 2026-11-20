@@ -952,9 +952,18 @@ def cmd_dense(a: argparse.Namespace) -> int:
             ws = ws.with_name(ws.name + f"_near{a.nearby_m:g}")
             print(f"dense: {len(nb['names'])} frames of {len(nb['stations'])} stations within {a.nearby_m:g} m added: "
                   + (", ".join(f"{k} ({v['distance_m']:g} m, {v['images']})" for k, v in nb["stations"].items()) or "none"))
-        extra = [n if str(n).lower().endswith(".png") else f"{n}.png" for n in (getattr(a, "add_images", None) or [])]
+        extra = [n if str(n).lower().endswith(".png") or any(c in str(n) for c in "*?[") else f"{n}.png"
+                 for n in (getattr(a, "add_images", None) or [])]
         if extra:                                                # 0.97.19: context frames
             known = {r["name"] for r in proj.images}
+            # 1.0: a name with * ? [ is a pattern over the block's frames (as rpp ods --context-images takes them: the
+            # Mastcam-Z versions' context, e.g. N?F_*_N0390926NCAM*.png); one that matches nothing is left out
+            import fnmatch
+            pats = [n for n in extra if any(c in n for c in "*?[")]
+            empty = [n for n in pats if not fnmatch.filter(known, n)]
+            if empty:
+                print(f"dense: --add-images patterns matching no frame of the block, left out: {empty}")
+            extra = sorted({m for n in pats for m in fnmatch.filter(known, n)} | {n for n in extra if n not in pats})
             gone = [n for n in extra if n not in known]
             if gone:
                 print(f"dense: --add-images not in the project: {gone[:3]}", file=sys.stderr)

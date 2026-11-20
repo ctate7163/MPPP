@@ -87,6 +87,9 @@ still those of 0.99; 1.0.0 will carry the models of the third freeze run.
 - The Sol 784 station (`Sol0784_S039D0926`) takes the sol 797 NCAM03795 and NCAM02797 pairs as context, besides
   the sol 784 NCAM00301 pair. A station's new `zcam_context` list is context for its Mastcam-Z 34 mm version only:
   `Sol0789_S039D0926_Z34` takes the ZCAM08826 frames (sol 805, 110 frames).
+- `rpp dense --add-images` takes name patterns (`N?F_*_N0390926NCAM*.png`), as `rpp ods --context-images` does, so
+  a Mastcam-Z version run with `--terrain own` meshes its station and context frames. A pattern that matches nothing
+  is left out with a note.
 
 ### Removed
 

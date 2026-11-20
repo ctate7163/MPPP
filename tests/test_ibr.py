@@ -3837,3 +3837,28 @@ def test_patch_match_sources_are_set_in_the_cfg(tmp_path):
     assert "sources" not in stereo_record(tmp_path, {}, True, 2000, 20)[2]
     assert stereo_record(tmp_path, {}, True, 2000, 12)[2]["sources"] == 12
     assert workspace_stereo_record(tmp_path) is None                              # no maps yet
+
+
+def test_dense_add_images_takes_patterns(tmp_path, monkeypatch):
+    """1.0: rpp dense --add-images expands patterns over the block's frames (the Z34 versions' context: N?F_*NCAM*,
+    Z?0_*ZCAM08826_034*), and a pattern that matches nothing is left out instead of failing the step."""
+    import rpp.sfm.gpu as G
+    from rpp.cli import main as rpp_main
+    from rpp.sfm.project import SfmProject
+    proj0, rec, st, scene, P, colors = _station_scene(tmp_path)
+    root = proj0.root
+    (root / "gui_native" / "sparse").mkdir(parents=True)
+    rec.write(str(root / "gui_native" / "sparse"))
+    rows = json.loads((root / "project.json").read_text(encoding="utf-8"))["images"]
+    for r in rows:
+        r.update(station="Sol0091_S003D0010", sequence="NCAM00001", downsample_scale=1.0)
+    SfmProject(root, rows, {}, {}, [0.0, 0.0, 0.0], {"world_frame": "site3_enu"}).save()
+    calls = []
+    monkeypatch.setattr(pycolmap, "has_cuda", False, raising=False)
+    import rpp.pipeline as PL
+    monkeypatch.setattr(PL, "_default_gpu_python", lambda: "/envs/rpp_gpu/python.exe")
+    monkeypatch.setattr(G, "run_step", lambda py, step, proj, **kw: calls.append(kw) or {"steps": {}})
+    assert rpp_main(["dense", str(root.parent), "--images", "NLF_1.png", "--add-images", "NLF_[23]*", "Z?0_*ZCAM08826*",
+                     "--stereo"]) == 0
+    assert sorted(calls[0]["images"]) == ["NLF_1.png", "NLF_2.png", "NLF_3.png"]
+    assert rpp_main(["dense", str(root.parent), "--images", "NLF_1.png", "--add-images", "NLF_9.png", "--stereo"]) == 2
