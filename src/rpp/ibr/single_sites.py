@@ -191,6 +191,13 @@ def zcam_companions(cfg: Dict[str, Any], root: PathLike, names_of=None) -> Dict[
         if not per_sol or max(per_sol.values()) < int(cfg.get("zcam_360_min_frames", ZCAM_360_MIN_FRAMES)):
             continue
         sol = max(per_sol, key=lambda k: (per_sol[k], -k))
+        # 0.99.47 (Christian, 19 Nov 2026: "use both sols so that it has a full 360" - Rochette 181 and 182, Wildcat
+        # Ridge 518 and 530): a 360 taken over more than one sol is named in the config's "zcam_sols" {station key:
+        # [sols]}; the label carries the first of them, the panorama all their 34 mm frames
+        sols = sorted(int(x) for x in (cfg.get("zcam_sols") or {}).get(key, []) if int(x) in frames_of) or [sol]
+        sol = sols[0]
+        frames = sorted(n for s_ in sols for n in frames_of[s_])
+        left = sum(per_sol.get(s_, 0) for s_ in sols)
         tok = f"N{sd[0]:03d}{sd[1]:04d}"
         zlab = f"Sol{sol:04d}_{key}_Z34"
         cfg["stations"][zlab] = {
@@ -199,11 +206,12 @@ def zcam_companions(cfg: Dict[str, Any], root: PathLike, names_of=None) -> Dict[
             # 0.99.46: the panorama's frames named - the 34 mm frames of that sol, both eyes.  Without --images rpp ods
             # takes the frames the station's dense workspace was made from (the Navcam ones), --sols left none, and
             # it fell back to every Mastcam-Z frame of the station, all sols and zooms
-            "ods_args": ["--cameras", "Z", "--sols", str(sol), "--zcam-scale", "0.5", "--fill-cameras", "NF", "--no-gains",
-                         "--images", *sorted(frames_of[sol])],
+            "ods_args": ["--cameras", "Z", "--sols", *[str(x) for x in sols], "--zcam-scale", "0.5", "--fill-cameras", "NF",
+                         "--no-gains", "--images", *frames],
             "depthmaps_variants": ["none"],                      # 0.99.46: no per-frame maps (the Navcam station has them)
             "context": [f"N?F_*_{tok}NCAM*.png", f"F?F_*_{tok}FHAZ*.png", *(st.get("context") or [])],
-            "note": f"0.99.43, made by zcam_companions: the {per_sol[sol]} left-eye 34 mm frames of sol {sol} at this station "
+            "note": f"0.99.43, made by zcam_companions: the {left} left-eye 34 mm frames of sol{'s' if len(sols) > 1 else ''} "
+                    f"{' and '.join(str(x) for x in sols)} at this station "
                     f"(the Mastcam-Z block {zwork.name}), after the Navcam station {lab}"}
         pairs[lab] = zlab
     return pairs
@@ -504,6 +512,24 @@ def step_done(out: PathLike, step: str, key: str) -> bool:
     return rec.get("key") == key and rec.get("exit") == 0 and (Path(out) / STEP_OUTPUT[step]).is_file()
 
 
+def station_done(run: Dict[str, Any]) -> bool:
+    """0.99.47: True when every variant of this planned station has its panorama from a good run in its output folder
+    (``step_ods.json`` with exit 0 and ``ods.json``) - whatever code or command made it (:func:`step_done` also wants
+    the same key, so a new version runs every station again)."""
+    base = Path(run["out"])
+    if not run.get("variants") or not any(c["step"] == "ods" for c in run.get("commands", [])):
+        return False
+    for v in run["variants"]:
+        vout = base / ("with_rover" if v == "rover" else "")
+        try:
+            rec = json.loads(step_record(vout, "ods").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+        if rec.get("exit") != 0 or not (vout / STEP_OUTPUT["ods"]).is_file():
+            return False
+    return True
+
+
 def _status(out_root: Path, **kw) -> None:
     """``single_sites_status.json`` in the output root: what is running now (station, variant, step, since when) and
     what is done - so the run can be read without asking (written whole each time)."""
@@ -705,6 +731,8 @@ def add_parser(sub) -> None:
                    "360_3DTD.jpg / .png")
     p.add_argument("--retone", action="store_true", help="only make the 8-bit panoramas and squares again from the "
                    "16-bit ones already there (no rendering)")
+    p.add_argument("--skip-done", action="store_true", help="0.99.47: leave out every station whose panoramas a good run "
+                   "already made in the output root, with any code version (recolor_rpv.bat gives it; --force wins)")
     p.add_argument("--force", action="store_true", help="0.97.2: run every step again (default: a mesh, depthmaps or ods "
                    "step whose command, code, cloud and upstream steps are unchanged since its last good run is skipped)")
     p.add_argument("--publish", metavar="DIR", default=None,
@@ -837,6 +865,13 @@ def _single_sites_pass(a: argparse.Namespace) -> int:
         if late:
             print(f"single-sites: {len(runs)} station(s) to run, {len(late)} skipped for blocks not aligned yet")
         a._late = [r["label"] for r in late] + [f"{k} (Z34?)" for k in (cfg.get("_zcam_pending") or {}) if pairs is not None]
+    if getattr(a, "skip_done", False) and not getattr(a, "force", False) and not (a.squares_only or a.retone or a.publish_only):
+        done_ = [r for r in runs if station_done(r)]             # 0.99.47 (Christian, 19 Nov 2026: "recolor_rpv.bat should
+        for r in done_:                                          # skip sites already processed")
+            if r["label"] not in getattr(a, "_done_before", set()):     # once, not on every pass of --wait-for-blocks
+                print(f"single-sites: {r['label']} skipped - already made in {r['out']} (--force makes it again)")
+        runs = [r for r in runs if r not in done_]
+        a._done_before = getattr(a, "_done_before", set()) | {r["label"] for r in done_}
     skip = getattr(a, "_skip", None)
     if skip is not None:                                         # 0.99.44: a later pass of --wait-for-blocks
         runs = [r for r in runs if r["label"] not in skip]

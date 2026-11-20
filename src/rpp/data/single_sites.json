@@ -19,6 +19,17 @@
   "--fill-cameras",
   "F"
  ],
+ "zcam_sols": {
+  "_doc": "0.99.47 (Christian, 19 Nov 2026: 'For both examples, use both sols so that it has a full 360'): the Mastcam-Z 34 mm 360s taken over more than one sol - station key: [sols]; the Z34 version of that station uses the frames of all of them (else the one sol with the most frames)",
+  "S007D0000": [
+   181,
+   182
+  ],
+  "S026D1222": [
+   518,
+   530
+  ]
+ },
  "stations": {
   "Sol0086_S004D0048": {"site": "chal_rocks_large", "work": "mars2020_sol_0072_chal_rocks_large_zcam", "station": "4_48", "terrain": "block", "frames": {"images": ["NLF_0086_0674586486_566RAD_N0040048NCAM00304_0A0195J01.png", "NLF_0086_0674586665_402RAD_N0040048NCAM03086_0A0295J01.png", "NLF_0086_0674586714_928RAD_N0040048NCAM03086_0A0195J02.png", "NLF_0086_0674586868_427RAD_N0040048NCAM03086_0A0295J01.png", "NLF_0086_0674586911_512RAD_N0040048NCAM02086_0A0295J01.png", "NLF_0086_0674586964_049RAD_N0040048NCAM02086_0A0295J01.png", "NRF_0086_0674586486_566RAD_N0040048NCAM00304_0A0195J01.png", "NRF_0086_0674586665_402RAD_N0040048NCAM03086_0A0295J01.png", "NRF_0086_0674586714_928RAD_N0040048NCAM03086_0M0195J03.png", "NRF_0086_0674586868_427RAD_N0040048NCAM03086_0A0295J01.png", "NRF_0086_0674586911_512RAD_N0040048NCAM02086_0A0295J01.png", "NRF_0086_0674586964_049RAD_N0040048NCAM02086_0A0295J01.png"]}, "note": "0.99.46 (Christian, 19 Nov 2026: \"every z34 site should have a navcam site\"): the Navcam end-of-drive frames of sol 86 (12) at the place of the Mastcam-Z 34 mm 360 of sol 90, in the block mars2020_sol_0072_chal_rocks_large_zcam"},
   "Sol0362_S011D0108": {"site": "chal_rocks_large", "work": "mars2020_sol_0072_chal_rocks_large_zcam", "station": "11_108", "terrain": "block", "frames": {"images": ["NLF_0362_0699083767_899RAD_N0110108NCAM00708_0A00LLJ01.png", "NLF_0362_0699084316_163RAD_N0110108NCAM03362_0A0195J01.png", "NLF_0362_0699084464_976RAD_N0110108NCAM03362_0A0195J01.png", "NLF_0362_0699084710_597RAD_N0110108NCAM03362_0A0195J01.png", "NRF_0362_0699083767_899RAD_N0110108NCAM00708_0A00LLJ01.png", "NRF_0362_0699084316_163RAD_N0110108NCAM03362_0A0195J01.png", "NRF_0362_0699084464_976RAD_N0110108NCAM03362_0A0195J01.png", "NRF_0362_0699084710_597RAD_N0110108NCAM03362_0A0195J01.png"]}, "note": "0.99.46 (Christian, 19 Nov 2026: \"every z34 site should have a navcam site\"): the Navcam end-of-drive frames of sol 362 (8) at the place of the Mastcam-Z 34 mm 360 of sol 369, in the block mars2020_sol_0072_chal_rocks_large_zcam"},
@@ -1173,6 +1184,33 @@
    "frames": {},
    "context": [
     "N?F_0606_*RAD_N0301096NCAM*"
+   ]
+  },
+  "Sol0072_S003D2346": {
+   "site": "chal_rocks_large",
+   "work": "mars2020_sol_0072_chal_rocks_large_zcam",
+   "station": "3_2346",
+   "terrain": "block",
+   "note": "0.99.47 (Christian, 19 Nov 2026: 'Add sol 72 to the site list'): Chal Rocks, the Navcam end-of-drive 360 of sol 72 at S003D2346 - NCAM03072 x3, NCAM02072 x2 (5 pairs), the front Hazcam pair FHAZ02002 for the fill; the terrain from every Navcam frame of the block (dense_block_N, shared with Sol0073_S003D2430); context: the mid-drive pairs NCAM00301 sol 72 at S003D2302 (3.6 m) and sol 73 at S003D2394 (8.9 m)",
+   "frames": {
+    "images": [
+     "NLF_0072_0673345368_678RAD_N0032346NCAM03072_0A0295J01.png",
+     "NLF_0072_0673345418_523RAD_N0032346NCAM03072_0A0195J01.png",
+     "NLF_0072_0673345590_746RAD_N0032346NCAM03072_0A0295J01.png",
+     "NLF_0072_0673345635_321RAD_N0032346NCAM02072_0A0295J01.png",
+     "NLF_0072_0673345727_044RAD_N0032346NCAM02072_0A0295J01.png",
+     "NRF_0072_0673345368_678RAD_N0032346NCAM03072_0A0295J01.png",
+     "NRF_0072_0673345418_523RAD_N0032346NCAM03072_0A0195J01.png",
+     "NRF_0072_0673345590_746RAD_N0032346NCAM03072_0A0295J01.png",
+     "NRF_0072_0673345635_321RAD_N0032346NCAM02072_0A0295J01.png",
+     "NRF_0072_0673345727_044RAD_N0032346NCAM02072_0A0295J01.png"
+    ]
+   },
+   "context": [
+    "NLF_0072_0673342138_231RAD_N0032302NCAM00301_0A0295J01.png",
+    "NRF_0072_0673342138_231RAD_N0032302NCAM00301_0A0295J01.png",
+    "NLF_0073_0673426662_691RAD_N0032394NCAM00301_0A0295J01.png",
+    "NRF_0073_0673426662_691RAD_N0032394NCAM00301_0A0295J01.png"
    ]
   },
   "Sol0073_S003D2430": {

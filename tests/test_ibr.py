@@ -1123,7 +1123,9 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     new99p46 = {"Sol0011_S003D0000_Z34", "Sol0086_S004D0048", "Sol0362_S011D0108", "Sol0422_S024D0000", "Sol0797_S039D1170",
                 "Sol0960_S047D0000", "Sol1154_S052D2644", "Sol1155_S052D2644_Z48"}    # 0.99.46: a Navcam station at every Z 360
     assert all(cfg["stations"][k]["work"].endswith("_zcam") and cfg["stations"][k]["frames"]["images"] for k in new99p46)
-    assert set(cfg["stations"]) - Z34 - new98p6 - new99p46 == {"Sol0052_S003D2046", "Sol0461_S026D0630", "Sol0686_S032D1184", "Sol0474_S026D0850",
+    new99p47 = {"Sol0072_S003D2346"}                     # 0.99.47: "Add sol 72 to the site list"
+    assert cfg["stations"]["Sol0072_S003D2346"]["work"].endswith("_zcam") and cfg["stations"]["Sol0072_S003D2346"]["context"]
+    assert set(cfg["stations"]) - Z34 - new98p6 - new99p46 - new99p47 == {"Sol0052_S003D2046", "Sol0461_S026D0630", "Sol0686_S032D1184", "Sol0474_S026D0850",
                                     "Sol1635_S079D0732", "Sol1411_S068D0142", "Sol1792_S087D0000", "Sol1454_S071D0056", "Sol0477_S026D1004", "Sol0502_S026D1222", "Sol2009_S092D0000", "Sol2022_S093D0000", "Sol1947_S091D0000",
                                     "Sol1177_S054D0000", "Sol1183_S054D0866", "Sol1308_S061D1678", "Sol0609_S030D1172", "Sol0116_S004D1250"} | new98p30   # 0.98.19: + Skinner Ridge, Wildcat Ridge, Hippo Pools 1947 / 2009 / 2022, Bright Angel 1177 / 1183, Pico Turquino 1308, Hidden Harbor 609
     assert len(cfg["stations"]["Sol0052_S003D2046"]["frames"]["images"]) == 12

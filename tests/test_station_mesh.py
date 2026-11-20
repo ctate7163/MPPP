@@ -411,6 +411,52 @@ def test_zcam_companions_follow_their_navcam_station_and_block_cameras(tmp_path,
     assert "--block-cameras" not in d0 and "--block-name" in d0                                     # the config's own, unchanged
 
 
+def test_zcam_360_over_two_sols_uses_both(tmp_path, monkeypatch):
+    """0.99.47 (Christian, 19 Nov 2026: "For both examples, use both sols so that it has a full 360" - Rochette 181 and
+    182, Wildcat Ridge 518 and 530; "Add sol 72 to the site list")."""
+    import copy
+    from rpp.ibr import single_sites as SS
+    cfg = copy.deepcopy(SS.load_config())
+    assert cfg["zcam_sols"]["S007D0000"] == [181, 182] and cfg["zcam_sols"]["S026D1222"] == [518, 530]
+    z = []
+    for sol, n in ((181, 47), (182, 48)):
+        z += [f"Z{e}0_{sol:04d}_06830{i:05d}_000RAD_N0070000ZCAM08{sol:03d}_0340LMJ01.png" for i in range(n) for e in "LR"]
+    for sol, n in ((518, 63), (520, 12), (530, 47)):
+        z += [f"Z{e}0_{sol:04d}_07300{i:05d}_000RAD_N0261222ZCAM08{sol:03d}_0340LMJ01.png" for i in range(n) for e in "LR"]
+    monkeypatch.setattr(SS, "block_aligned", lambda w: True)
+    pairs = SS.zcam_companions(cfg, tmp_path, names_of=lambda work: z)
+    ro, wi = pairs["Sol0180_S007D0000"], pairs["Sol0502_S026D1222"]
+    assert ro == "Sol0181_S007D0000_Z34" and wi == "Sol0518_S026D1222_Z34"
+    for lab, sols, n in ((ro, ["181", "182"], 2 * 95), (wi, ["518", "530"], 2 * 110)):
+        oa = cfg["stations"][lab]["ods_args"]
+        assert oa[oa.index("--sols") + 1:oa.index("--zcam-scale")] == sols
+        imgs = oa[oa.index("--images") + 1:]
+        assert len(imgs) == n and sorted({x[4:8] for x in imgs}) == [s.zfill(4) for s in sols]   # sol 520 left out
+    st = cfg["stations"]["Sol0072_S003D2346"]
+    assert st["station"] == "3_2346" and len(st["frames"]["images"]) == 10
+    labs = SS.sol_order(list(cfg["stations"]))
+    assert labs.index("Sol0072_S003D2346") < labs.index("Sol0073_S003D2430")
+
+
+def test_skip_done_leaves_out_stations_already_made(tmp_path):
+    """0.99.47 (Christian, 19 Nov 2026: "recolor_rpv.bat should skip sites already processed"): any code version."""
+    import json
+    from rpp.ibr import single_sites as SS
+    run = {"label": "Sol0009_S003D0000", "out": str(tmp_path / "Sol0009_S003D0000"), "variants": ["rover", "masked"],
+           "commands": [{"step": "ods", "variant": "rover", "argv": []}]}
+    assert not SS.station_done(run)
+    for sub in ("with_rover", ""):
+        d = tmp_path / "Sol0009_S003D0000" / sub
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "step_ods.json").write_text(json.dumps({"key": "old code", "exit": 0}))
+    assert not SS.station_done(run)                                # no ods.json in the folders yet
+    for sub in ("with_rover", ""):
+        (tmp_path / "Sol0009_S003D0000" / sub / "ods.json").write_text("{}")
+    assert SS.station_done(run)
+    (tmp_path / "Sol0009_S003D0000" / "step_ods.json").write_text(json.dumps({"key": "x", "exit": 1}))
+    assert not SS.station_done(run)                                # the masked one failed: made again
+
+
 def test_wait_for_blocks_runs_what_comes_in_and_stops(tmp_path, monkeypatch):
     """0.99.44 (Christian, 19 Nov 2026: "run only on aligned blocks. Skip a bock if it doesn't exist and come back to it
     later. When there are no more stations to run, then stop")."""

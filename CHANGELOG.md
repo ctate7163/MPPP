@@ -3,6 +3,22 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.47 — 2026-11-19 (branch `rpp`)
+
+- **A Mastcam-Z 360 over two sols** (Christian, 16:03: "For both examples, use both sols so that it has a full 360"):
+  `zcam_sols` in single_sites.json names the sols of the 360s taken over more than one sol - Rochette (S007D0000:
+  sols 181 and 182, 47 + 48 pairs) and Wildcat Ridge (S026D1222: sols 518 and 530, 63 + 47 pairs; the shorter sets
+  of sols 520, 521 and 534 stay out). Their Z34 versions (`Sol0181_S007D0000_Z34`, `Sol0518_S026D1222_Z34`) render
+  the 34 mm frames of both sols; elsewhere the sol with the most frames, as before.
+- **Sol 72** (16:03: "Add sol 72 to the site list"): `Sol0072_S003D2346`, Chal Rocks - the Navcam end-of-drive 360 of
+  sol 72 (NCAM03072 x3, NCAM02072 x2), the terrain from the block's cloud (shared with `Sol0073_S003D2430`), context
+  the mid-drive pairs of sols 72 (3.6 m) and 73 (8.9 m). No Mastcam-Z 360 was taken there.
+- **`rpp single-sites --skip-done`** (16:06: "recolor_rpv.bat should skip sites already processed"): a station whose
+  panoramas a good run already made in the output root (`step_ods.json` with exit 0 and `ods.json`, both variants)
+  is left out whatever code version made it, and not uploaded again; `--force` makes it again. Without it a step is
+  skipped only when its command and code are unchanged, so every new version rendered every station again.
+  `recolor_rpv.bat` gives it.
+
 ## 0.99.46 — 2026-11-19 (branch `rpp`)
 
 From the dry run of the freeze-3 station run (Christian, 15:28):
