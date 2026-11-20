@@ -266,6 +266,9 @@ def test_xmp_reader_reads_old_products(tmp_path):
     old = xmp.fields_xmp({"Scale": "1.5", "Unit": "m"}).decode().replace("rpp:", "mppp:").replace(
         "https://github.com/ctate7163/RPP/ns/1.0/", "https://github.com/ctate7163/MPPP/ns/1.0/")
     xmp.inject_png(p, old.encode())
-    assert xmp.read_fields(p) == {"Scale": "1.5", "Unit": "m"}
+    got = xmp.read_fields(p)
+    assert {k: got[k] for k in ("Scale", "Unit")} == {"Scale": "1.5", "Unit": "m"} and got["Author"] == "Christian Tate"
     xmp.tag_fields(p, {"Scale": "2"})
-    assert xmp.read_fields(p) == {"Scale": "2"} and b"xmlns:rpp=" in xmp.read_xmp(p)
+    got = xmp.read_fields(p)
+    assert got["Scale"] == "2" and "Unit" not in got and b"xmlns:rpp=" in xmp.read_xmp(p)
+    assert got["Software"].startswith("RPP ") and b"<dc:creator>" in xmp.read_xmp(p)       # 0.99.53

@@ -2341,7 +2341,9 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
     rec_out["render_processes"] = n_workers if (pool is not None and pool.failed is None) else 1
     try:
         for eye in (() if station_mesh == "only" else eyes):
-            if mark0 is not None and eye in ("left", "right"):       # 0.97.13: the mark as this eye sees it on the ground
+            if mark0 is not None and not _nadir.MARK_IN_PANORAMA:     # 0.99.53: the mark is the viewer's disc only
+                mark = None
+            elif mark0 is not None and eye in ("left", "right"):     # 0.97.13: the mark as this eye sees it on the ground
                 m0 = max(0, mark0["row0"] - int(np.ceil(_nadir.GROUND_MARGIN_DEG / 180.0 * height)))
                 al = np.zeros((height - m0, width), np.float32)
                 ins = np.zeros((height - m0, width), bool)
@@ -2580,6 +2582,7 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             log.warning("ods: the nadir mark's texture was not written (%s)", e)
         mark0.update({k_: mark_seen[k_] for k_ in ("bg8", "bg16") if k_ in mark_seen})
         rec_out["nadir_mark"]["in_centre_panorama"] = False
+        rec_out["nadir_mark"]["in_panorama"] = bool(_nadir.MARK_IN_PANORAMA)   # 0.99.53
         rec_out["nadir_mark"]["background_bgr_8bit"] = [float(x) for x in mark_seen.get("bg8", [])]
         if "bg16" in mark_seen:
             rec_out["nadir_mark"]["background_bgr_16bit"] = [float(x) for x in mark_seen["bg16"]]
@@ -2625,8 +2628,11 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
     rec_out["seconds"] = round(time.time() - t0, 1)
     try:                                                                    # 0.97.4: XMP in the stacked products
         from .xmp import tag_folder
+        from .xmp import author_fields, tag_products
+        rec_out.update(author_fields())                                     # 0.99.53: the author and the RPP version
         rec_out["xmp"] = tag_folder(out, heading_center_deg=float(rec_out.get("azimuth_of_column_0_deg") or 0.0) + 180.0,
                                     extra={"Station": str(getattr(station, "label", "") or prefix)})
+        rec_out["xmp_author"] = len(tag_products(out, {"Station": str(getattr(station, "label", "") or prefix)}))
     except Exception as e:                                                  # noqa: BLE001 - the products are complete without it
         log.warning("ods: XMP not written (%s: %s)", type(e).__name__, e)
     (out / "ods.json").write_text(json.dumps(rec_out, indent=1, default=float), encoding="utf-8")

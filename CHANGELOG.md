@@ -3,6 +3,27 @@
 The development history before 0.95 is in `docs/history/` (`CHANGELOG_v0p90-v0p94.md`, `CHANGELOG_v0p13-v0p85.md`,
 `CHANGELOG_v0p1-v0p12.md`).
 
+## 0.99.53 — 2026-11-20 (branch `rpp`)
+
+- **No blue disc in the 360 images** (Christian, 20 Nov: "Do not include the blue circle and text in the 360 images.
+  That should only enter as the nadir_mark disk"): `nadir.MARK_IN_PANORAMA = False` - the eyes' panoramas (8- and
+  16-bit) and every view made from them carry no mark; `<prefix>_nadir_mark.png` is still written and the viewer
+  draws it on the ground. `ods.json` nadir_mark.in_panorama says which; the color products no longer copy the
+  disc's rows from the standard view.
+- **Author and version in every product** ("Each RPV data products should have some metadata indicating what version
+  of RPP generated it and that Christian Tate is the author"): every JPEG and PNG of a station folder carries an XMP
+  packet with `dc:creator` Christian Tate, `xmp:CreatorTool` and `rpp:Software` "RPP <version>" (`xmp.tag_products`;
+  the stereo squares in their own packet); the .glb files in `asset.generator` and `asset.extras` (author,
+  software); `ods.json` ("author", "software") and the entries of panos.json ("author").
+- **More than one station run at once** ("relax the conflict control so that I can run more than one rpv products at
+  once as long as they are not working on the same sites at the same time"): OS locks, let go when their holder
+  ends however it ends (`FileLock`) - `station.lock` in a station's folder (a station another run holds is skipped
+  and looked at again in the next pass), `rpp_dense_block.lock` in a block's colmap folder about the cloud (the
+  second run waits, then finds it made), `rpp_publish.lock` in the viewer checkout's .git about the publishing and
+  the upload (panos.json read again under it). `update_rpp_rpv.bat` gives each window the first free checkout of
+  `D:\code\RPP_rpv`, `_rpv_b`, `_rpv_c`, `_rpv_d` (none is changed while a run uses it); `rpv_products_0p99p53.bat`
+  names its instance, log and status after it.
+
 ## 0.99.52 — 2026-11-20 (branch `rpp`)
 
 - **The sky at the zenith is blended** (Christian, 20 Nov: "the top pole in the ods and full 3d models are visible as a

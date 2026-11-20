@@ -1013,8 +1013,9 @@ def glb_bytes(parts: Sequence[Tuple[str, np.ndarray, np.ndarray, np.ndarray, byt
            "materials": mats, "textures": texs, "images": imgs,
            "samplers": [{"magFilter": 9729, "minFilter": 9987, "wrapS": 33071, "wrapT": 33071}],
            "bufferViews": views, "buffers": [{"byteLength": sum(len(p) for p in chunks)}]}
-    if extras:
-        doc["asset"]["extras"] = extras
+    from .xmp import author_fields, software                    # 0.99.53: the author and the RPP version
+    doc["asset"]["generator"] = f"{software()} (rpp.ibr.station_mesh)"
+    doc["asset"]["extras"] = dict(extras or {}, **author_fields())
     js = json.dumps(doc, separators=(",", ":")).encode("utf-8")
     js += b" " * (-len(js) % 4)
     binary = b"".join(chunks)

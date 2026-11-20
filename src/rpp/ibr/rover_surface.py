@@ -154,8 +154,9 @@ def glb_bytes(vertices: np.ndarray, triangles: np.ndarray, jpeg: bytes, depth_pn
                    {"bufferView": bv_d, "mimeType": "image/png", "name": "range"}],
         "bufferViews": views, "buffers": [{"byteLength": sum(len(p) for p in parts)}],
     }
-    if extras:
-        doc["asset"]["extras"] = extras
+    from .xmp import author_fields, software                    # 0.99.53: the author and the RPP version
+    doc["asset"]["generator"] = f"{software()} (rpp.ibr.rover_surface)"
+    doc["asset"]["extras"] = dict(extras or {}, **author_fields())
     js = json.dumps(doc, separators=(",", ":")).encode("utf-8")
     js += b" " * (-len(js) % 4)
     binary = b"".join(parts)

@@ -2512,11 +2512,13 @@ def test_near_blend_is_gradual_and_the_provenance_is_a_mix(tmp_path):
     assert tuple(int(x) for x in q[1, 0]) in pure and tuple(q[0, 0]) == (128, 128, 128)
 
 
-def test_nadir_mark_lies_on_the_ground_and_its_first_row_is_larger(tmp_path):
+def test_nadir_mark_lies_on_the_ground_and_its_first_row_is_larger(tmp_path, monkeypatch):
     """0.97.13: the first row is taller than the second; each eye sees the disc on the plane below the pivot, so the
-    eyes' pictures of it differ by that plane's disparity, and from the pivot it is the drawing itself."""
+    eyes' pictures of it differ by that plane's disparity, and from the pivot it is the drawing itself.  0.99.53: the
+    panoramas carry it only with MARK_IN_PANORAMA (the viewer's disc otherwise)."""
     import cv2
     from rpp.ibr import nadir
+    monkeypatch.setattr(nadir, "MARK_IN_PANORAMA", True)
     W, H = 4096, 2048
     m = nadir.make_mark(W, H, nadir.mark_lines(["NLF_0052_a"], "Van Zyl Overlook"), center_azimuth_deg=180.0)
     assert m["rows"][1]["height_px"] >= m["rows"][0]["height_px"] and m["rows"][0]["span_deg"] <= 180.5    # 0.98.14: no longer the larger

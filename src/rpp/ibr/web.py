@@ -667,7 +667,7 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
         if stations and d.name not in stations:
             continue
         third = fourth = fifth = sixth = None
-        entry: Dict[str, Any] = {"id": d.name, "title": d.name, "variants": [], "mppp": __version__, "rpp": __version__,
+        entry: Dict[str, Any] = {"id": d.name, "title": d.name, "variants": [], "mppp": __version__, "rpp": __version__, "author": "Christian Tate",
                                  "published": time.strftime("%Y-%m-%d")}
         entry.update({k: v for k, v in ((titles or {}).get(d.name) or {}).items() if v is not None})
         for key, sub, label in VARIANTS:

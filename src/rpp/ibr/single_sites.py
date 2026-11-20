@@ -716,6 +716,70 @@ def _summary_line(run: Dict[str, Any], variant: str, codes: Dict[str, int], mins
     return "| " + " | ".join(cells) + " |"
 
 
+class FileLock:
+    """0.99.53 (Christian, 20 Nov 2026: "relax the conflict control so that I can run more than one rpv products at once
+    as long as they are not working on the same sites at the same time"): an OS lock on one byte of ``path`` - held by
+    one process at a time, let go when it ends however it ends (no stale lock to delete)."""
+
+    def __init__(self, path: PathLike):
+        self.path, self.fh = Path(path), None
+
+    def acquire(self, blocking: bool = True, poll_s: float = 5.0, what: str = "") -> bool:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        fh = open(self.path, "a+b")
+        if fh.seek(0, 2) == 0:
+            fh.write(b"\0"); fh.flush()
+        said = False
+        while True:
+            try:
+                fh.seek(0)
+                if sys.platform == "win32":
+                    import msvcrt
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.fh = fh
+                return True
+            except OSError:
+                if not blocking:
+                    fh.close()
+                    return False
+                if not said and what:
+                    print(f"single-sites: waiting for {what} (another run holds {self.path})", flush=True)
+                    said = True
+                time.sleep(poll_s)
+
+    def release(self) -> None:
+        if self.fh is None:
+            return
+        try:
+            self.fh.seek(0)
+            if sys.platform == "win32":
+                import msvcrt
+                msvcrt.locking(self.fh.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(self.fh.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        self.fh.close()
+        self.fh = None
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, *exc):
+        self.release()
+
+
+STATION_LOCK = "station.lock"          # 0.99.53: in a station's output folder while a run makes it
+BLOCK_LOCK = "rpp_dense_block.lock"    # ... in a block's colmap folder while a run makes its cloud
+PUBLISH_LOCK = "rpp_publish.lock"      # ... in the viewer checkout's .git while a run publishes and uploads
+BUSY_SKIPPED: List[str] = []           # the stations of the last run_all another run held
+
+
 def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool = False, retone: bool = False,
             force: bool = False, after_station=None) -> int:
     """Runs the plan.  0.97.2: a step whose command, code, inputs and upstream steps are those of its last successful
@@ -733,9 +797,19 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
              "| station | variant | exit codes (minutes) | fused points | ground plane | panorama (left eye) | square |",
              "|---|---|---|---|---|---|---|"]
     bad = 0
+    BUSY_SKIPPED.clear()
+    held: Optional[FileLock] = None
     for run in runs:
         base = Path(run["out"])
         base.mkdir(parents=True, exist_ok=True)
+        if held is not None:
+            held.release()
+        held = FileLock(base / STATION_LOCK)               # 0.99.53: one run per station at a time
+        if not held.acquire(blocking=False):
+            held = None
+            BUSY_SKIPPED.append(run["label"])
+            print(f"single-sites: {run['label']} skipped - another run is making it (it holds {base / STATION_LOCK})", flush=True)
+            continue
         print(f"\n######## {run['label']}: {run['note']}\n######## block {run['work']} -> {base}", flush=True)
         codes: Dict[str, Dict[str, int]] = {v: {} for v in run["variants"]}
         mins: Dict[str, Dict[str, Optional[float]]] = {}
@@ -771,7 +845,12 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
                             since=time.strftime("%Y-%m-%dT%H:%M:%S"), done=done, stations=[r["label"] for r in runs])
                     t0 = time.time()
                     if step == "dense":                    # its own cache (rpp dense: stereo and fusion records)
-                        rc = _run(c["argv"], fh)
+                        with_lock = FileLock(work_ / "colmap" / BLOCK_LOCK)      # 0.99.53: one cloud maker per block;
+                        with_lock.acquire(what=f"the cloud of {work_.name}")      # the next finds it made
+                        try:
+                            rc = _run(c["argv"], fh)
+                        finally:
+                            with_lock.release()
                     else:
                         clouds = sorted((work_ / "colmap").glob(f"dense_{station_key(run['label'])}*/fused.ply")) if step == "mesh" else []
                         if step == "mesh" and "--points" in c["argv"]:      # 0.98.14: the block's cloud
@@ -823,8 +902,10 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
             except Exception as e:                       # noqa: BLE001 - the next station still runs
                 done.append(f"{run['label']} upload: failed ({e})")
                 print(f"######## {run['label']}: publishing failed ({e})", flush=True)
+    if held is not None:
+        held.release()
     _status(out_root, started=t_run, station=None, step=None, finished=time.strftime("%Y-%m-%dT%H:%M:%S"), done=done,
-            stations=[r["label"] for r in runs], failed=int(bad))
+            stations=[r["label"] for r in runs], failed=int(bad), busy_skipped=list(BUSY_SKIPPED))
     (out_root / "single_sites_summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n" + "\n".join(lines[4:]) + f"\n\nsummary: {out_root / 'single_sites_summary.md'}")
     return 1 if bad else 0
@@ -1135,6 +1216,22 @@ def _single_sites_pass(a: argparse.Namespace) -> int:
                 before = json.loads((Path(a.publish) / "panos.json").read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 before = {}
+        git_dir = Path(a.publish) / ".git"                     # 0.99.53: one run publishes and uploads at a time
+        plock = FileLock((git_dir if git_dir.is_dir() else Path(a.publish)) / PUBLISH_LOCK)
+        plock.acquire(what="the viewer page")
+        try:
+            return _publish_and_upload(labels, quiet, titles, use_hf, before)
+        finally:
+            plock.release()
+
+    def _publish_and_upload(labels, quiet, titles, use_hf, before):
+        from . import web
+        if use_hf:
+            from . import hf
+            try:                                             # read again under the lock: another run may have published
+                before = json.loads((Path(a.publish) / "panos.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                before = {}
         doc = web.publish(out_root, a.publish, stations=list(labels), views=[web.OLD_VIEW_NAMES.get(v, v) for v in (a.publish_views or web.DEFAULT_VIEWS)], width=a.publish_width, titles=titles,
                           render_map=True, files_dir=hf.stage_dir(out_root) if use_hf else None)
         if not web.install_viewer(a.publish):
@@ -1159,6 +1256,10 @@ def _single_sites_pass(a: argparse.Namespace) -> int:
     each = (lambda run: finish([run["label"]])) if (a.publish and not a.publish_only and not a.squares_only) else None
     rc = 0 if (a.publish and a.publish_only) else run_all(runs, out_root, squares_only=a.squares_only, retone=a.retone,
                                                           force=getattr(a, "force", False), after_station=each)
+    if BUSY_SKIPPED and not (a.publish and a.publish_only):      # 0.99.53: another run's: looked at again later
+        a._ran = [x for x in getattr(a, "_ran", []) if x not in BUSY_SKIPPED]
+        a._late = list(getattr(a, "_late", [])) + [x for x in BUSY_SKIPPED if x not in getattr(a, "_late", [])]
+        runs = [r for r in runs if r["label"] not in BUSY_SKIPPED]
     if each is None or getattr(finish, "failed", False):         # all at once, or again what an upload left behind
         finish([r["label"] for r in runs])
     rc = rc or (1 if getattr(finish, "failed", False) and getattr(a, "upload", False) else 0)

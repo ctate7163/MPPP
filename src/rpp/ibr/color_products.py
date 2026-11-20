@@ -260,6 +260,8 @@ def _mark_row(out: Path, H: int) -> Optional[int]:
         nm = (json.loads((out / "ods.json").read_text(encoding="utf-8")).get("nadir_mark") or {})
     except (OSError, ValueError):
         return None
+    if nm.get("in_panorama") is False:                           # 0.99.53: no disc in the panoramas to copy
+        return None
     r = nm.get("first_row")
     return int(r) if r is not None and 0 < int(r) < H else None
 

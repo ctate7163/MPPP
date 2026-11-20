@@ -633,3 +633,32 @@ def test_unpublish_and_no_navcam(tmp_path):
     runs = SS.plan(cfg, tmp_path, labels=["Sol0362_S011D0108", "Sol0086_S004D0048"],
                    companions={"Sol0362_S011D0108": "Sol0086_S004D0048"})
     assert [r_["label"] for r_ in runs] == ["Sol0086_S004D0048"]
+
+
+def test_two_runs_take_turns_by_station_locks(tmp_path):
+    """0.99.53 (Christian, 20 Nov 2026: "relax the conflict control so that I can run more than one rpv products at once
+    as long as they are not working on the same sites at the same time"): a station another process holds is skipped
+    and named for later; the lock is the OS's, let go when its holder ends."""
+    import subprocess, sys
+    from pathlib import Path
+    from rpp.ibr import single_sites as SS
+    base = tmp_path / "Sol0009_S003D0000"
+    base.mkdir()
+    holder = subprocess.Popen([sys.executable, "-c", "import sys, time; sys.path.insert(0, %r); "
+                               "from rpp.ibr.single_sites import FileLock; l = FileLock(%r); l.acquire(); "
+                               "print('held', flush=True); time.sleep(30)" % (str(Path(SS.__file__).parents[2]), str(base / SS.STATION_LOCK))],
+                              stdout=subprocess.PIPE, text=True)
+    try:
+        assert holder.stdout.readline().strip() == "held"
+        runs = [{"label": "Sol0009_S003D0000", "out": str(base), "work": str(tmp_path / "b"), "note": "",
+                 "variants": ["masked"], "commands": []}]
+        SS.run_all(runs, tmp_path)
+        assert SS.BUSY_SKIPPED == ["Sol0009_S003D0000"]
+        assert not SS.FileLock(base / SS.STATION_LOCK).acquire(blocking=False)
+    finally:
+        holder.kill(); holder.wait()
+    lk = SS.FileLock(base / SS.STATION_LOCK)
+    assert lk.acquire(blocking=False)                                  # the holder is gone: free again
+    lk.release()
+    SS.run_all(runs, tmp_path)
+    assert SS.BUSY_SKIPPED == []

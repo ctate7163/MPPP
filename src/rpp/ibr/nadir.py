@@ -96,6 +96,11 @@ def block_name(site_key: Optional[str]) -> Optional[str]:
     return " ".join(parts)
 
 
+MARK_IN_PANORAMA = False      # 0.99.53 (Christian, 20 Nov 2026: "Do not include the blue circle and text in the 360
+#                               images. That should only enter as the nadir_mark disk"): the eyes' panoramas carry no
+#                               mark; the viewer draws <prefix>_nadir_mark.png on the ground (True: as until 0.99.52)
+
+
 def mark_sols(names: Sequence[str]) -> List[int]:
     """The sols the mark gives: every sol of the frames, but with Mastcam-Z frames among them only the first sol of
     those (0.99.36; Christian, 19 Nov 2026: 'the blue disk on the z34 Three Forks North should not have the ", 692"
