@@ -370,11 +370,30 @@ def block_folder(st: Dict[str, Any], root: PathLike) -> Path:
         if site is None:
             raise KeyError(f"site {st['site']!r} is not in the site definitions")
         w = Path(work_folder(Path(root), st["site"], False, site["sols"]))
-    if not (w / "colmap").is_dir() and Path(w).parent == Path(root):   # 0.99.50: not in this root - the block with
-        found = block_with_frames(st, root)                             # the station's frames
+    if (w / "colmap" / "project.json").is_file():
+        return w
+    if Path(w).parent == Path(root):                             # 0.99.50: not in this root - the block with the
+        found = block_with_frames(st, root)                      # station's frames
+        if found is not None:
+            return found
+    # 1.0 (Christian, 20 Nov 2026: "Sol0052 should run from RPP_RPV_ROOT=D:\rover_blocks_f3 the same as Sol0784" - its
+    # block is aligned only in D:\rover_blocks): the roots of RPP_BLOCK_ROOTS (separated by ;) are looked in next, so
+    # the products of every station go to the one output root
+    for extra in block_roots():
+        w2 = extra / w.name
+        if (w2 / "colmap" / "project.json").is_file():
+            return w2
+        found = block_with_frames(st, extra)
         if found is not None:
             return found
     return w
+
+
+def block_roots() -> List[Path]:
+    """1.0: the further blocks' roots of ``RPP_BLOCK_ROOTS`` (``D:\\rover_blocks;E:\\more``), those that exist."""
+    import os
+    raw = os.environ.get("RPP_BLOCK_ROOTS") or ""
+    return [Path(x.strip()) for x in raw.replace(",", ";").split(";") if x.strip() and Path(x.strip()).is_dir()]
 
 
 def frame_args(frames: Dict[str, Any]) -> List[str]:

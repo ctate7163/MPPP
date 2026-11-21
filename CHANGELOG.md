@@ -114,6 +114,13 @@ still those of 0.99; 1.0.0 will carry the models of the third freeze run.
     above it every far texel is white, below it none is, and a far texel below it that was taken for sky is filled
     from the hills around it.
 - The viewer's normal map of the 3D modes is black beyond 100 m from the mast axis, as the sky.
+- The sky is told from the terrain by a first fit to the sky above 10 deg (a far pixel 5 % darker or redder than it
+  is terrain), and kept as it is just above the skyline (the original up to 1.5 deg, the fit from 6 deg up; "it
+  should have a softer touch near the horizon"): hazy distant mountains stay. Only small specks below the skyline are
+  recolored. Checked on the 0.99 panoramas of Sol 9, 52, 86 and 362.
+- `RPP_BLOCK_ROOTS` (roots separated by `;`): a station whose block is not aligned in the run's root is looked for
+  there, and its products still go to the run's output root (Van Zyl, aligned only in `D:\rover_blocks`, in a run
+  on `D:\rover_blocks_f3`).
 
 ### Removed
 
