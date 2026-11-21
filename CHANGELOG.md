@@ -98,8 +98,10 @@ still those of 0.99; 1.0.0 will carry the models of the third freeze run.
   (`#Sol0052_S003D2046/...`) open the renamed station.
 - The full 3D model's texture charts take triangles without area (Van Zyl: "the station mesh's part was not made
   (OverflowError: int too big to convert)").
-- The release v1.0.0rc1 is archived on Zenodo: doi:10.5281/zenodo.24408630 (README badge, `CITATION.cff`,
-  `docs/citing.md`).
+- RPP is archived on Zenodo: doi:10.5281/zenodo.24408629 for every version (README badge, `CITATION.cff`, `docs/citing.md`),
+  doi:10.5281/zenodo.24408630 for v1.0.0rc1.
+- Van Zyl (`Sol0052`) takes the sol 49 frames NCAM00302 (S003D1940) and NCAM03049 (S003D1950) as context instead of the
+  sol 33 ones.
 
 ### Removed
 

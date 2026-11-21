@@ -20,7 +20,7 @@ authors:
     orcid: "https://orcid.org/0000-0003-3467-0099"
 version: 1.0.0rc1
 date-released: 2026-11-20
-doi: 10.5281/zenodo.24408630
+doi: 10.5281/zenodo.24408629   # the concept DOI (every version); v1.0.0rc1 alone: 10.5281/zenodo.24408630
 license: Apache-2.0
 repository-code: "https://github.com/ctate7163/rpp"
 url: "https://ctate7163.github.io/rpp/"

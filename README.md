@@ -4,7 +4,7 @@
 [![docs](https://github.com/ctate7163/rpp/actions/workflows/docs.yml/badge.svg)](https://ctate7163.github.io/rpp/)
 [![PyPI](https://img.shields.io/pypi/v/rover-photogrammetry.svg)](https://pypi.org/project/rover-photogrammetry/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/ctate7163/rpp/blob/main/LICENSE)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24408630.svg)](https://doi.org/10.5281/zenodo.24408630)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24408629.svg)](https://doi.org/10.5281/zenodo.24408629)
 
 **Mars rover images to true-scale 3D, across many rover stops.**
 
@@ -16,7 +16,7 @@ stop at a time. RPP combines the images of nearby stops: it turns the public ima
 - **See the results:** the Rover Photogrammetry Viewer (RPV), <https://ctate7163.github.io/rpv/>, in a browser or a
   VR headset
 - **Rover mask model:** <https://huggingface.co/ctate7163/rpp-mask>
-- **Cite:** RPP 1.0.0rc1, [doi:10.5281/zenodo.24408630](https://doi.org/10.5281/zenodo.24408630) (Zenodo; see [Citing RPP](https://ctate7163.github.io/rpp/citing/))
+- **Cite:** [doi:10.5281/zenodo.24408629](https://doi.org/10.5281/zenodo.24408629) (Zenodo, all versions; 1.0.0rc1 alone: [doi:10.5281/zenodo.24408630](https://doi.org/10.5281/zenodo.24408630)); see [Citing RPP](https://ctate7163.github.io/rpp/citing/)
 
 ## What RPP does
 

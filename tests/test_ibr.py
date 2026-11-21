@@ -2786,7 +2786,8 @@ def test_context_frames_are_masked_fill_only_and_stay_off_the_rover(tmp_path):
     assert d2[d2.index("--add-images") + 1:d2.index("--add-images") + 1 + len(cfg["stations"]["Sol0461"]["context"])] == cfg["stations"]["Sol0461"]["context"]
     assert cfg["stations"]["Sol0052"]["context"][:2] == ["NLF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png",
                                                                    "NRF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png"]
-    assert all("_0033_" in n for n in cfg["stations"]["Sol0052"]["context"][2:])      # 0.98.19: + sol 33
+    assert cfg["stations"]["Sol0052"]["context"][2:] == ["N?F_0049_0671300154_616RAD_N0031940NCAM00302_*.png",   # 1.0: sol 49,
+                                                         "N?F_0049_0671302488_426RAD_N0031950NCAM03049_*.png"]  # not sol 33
 
 
 def test_geometry_panoramas_masked_black_and_image_copies(tmp_path):
@@ -3353,7 +3354,7 @@ def test_stations_of_16_nov_and_context_patterns(tmp_path):
     c = st["Sol1308"]["context"]
     assert {n.split("_")[1] for n in c} == {"1307", "1308"} and sum("NCAM00301" in n for n in c) == 4 and len(c) == 22
     assert st["Sol0609"]["site"] == "hidden_harbor" and st["Sol0609"]["context"] == ["N?F_0606_*RAD_N0301096NCAM*"]
-    assert sum("_0033_" in n for n in st["Sol0052"]["context"]) == 10
+    assert sum("_0033_" in n for n in st["Sol0052"]["context"]) == 0 and sum("_0049_" in n for n in st["Sol0052"]["context"]) == 2
     have = {"NLF_0606_0001_222RAD_N0301096NCAM03606_0A0195J01.png", "NLF_0609_0002_222RAD_N0301172NCAM03609_0A0195J01.png"}
     assert expand_names(["N?F_0606_*RAD_N0301096NCAM*.png", "nope*.png"], have) == ["NLF_0606_0001_222RAD_N0301096NCAM03606_0A0195J01.png", "nope*.png"]
     runs = SS.plan(cfg, tmp_path, labels=["Sol0609"])
