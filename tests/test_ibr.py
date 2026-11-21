@@ -2786,7 +2786,8 @@ def test_context_frames_are_masked_fill_only_and_stay_off_the_rover(tmp_path):
     assert d2[d2.index("--add-images") + 1:d2.index("--add-images") + 1 + len(cfg["stations"]["Sol0461"]["context"])] == cfg["stations"]["Sol0461"]["context"]
     assert cfg["stations"]["Sol0052"]["context"][:2] == ["NLF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png",
                                                                    "NRF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png"]
-    assert all("_0033_" in n for n in cfg["stations"]["Sol0052"]["context"][2:])      # 0.98.19: + sol 33
+    assert cfg["stations"]["Sol0052"]["context"][2:] == ["N?F_0049_0671300154_616RAD_N0031940NCAM00302_*.png",   # 1.0: sol 49,
+                                                         "N?F_0049_0671302488_426RAD_N0031950NCAM03049_*.png"]  # not sol 33
 
 
 def test_geometry_panoramas_masked_black_and_image_copies(tmp_path):
@@ -3353,7 +3354,7 @@ def test_stations_of_16_nov_and_context_patterns(tmp_path):
     c = st["Sol1308"]["context"]
     assert {n.split("_")[1] for n in c} == {"1307", "1308"} and sum("NCAM00301" in n for n in c) == 4 and len(c) == 22
     assert st["Sol0609"]["site"] == "hidden_harbor" and st["Sol0609"]["context"] == ["N?F_0606_*RAD_N0301096NCAM*"]
-    assert sum("_0033_" in n for n in st["Sol0052"]["context"]) == 10
+    assert sum("_0033_" in n for n in st["Sol0052"]["context"]) == 0 and sum("_0049_" in n for n in st["Sol0052"]["context"]) == 2
     have = {"NLF_0606_0001_222RAD_N0301096NCAM03606_0A0195J01.png", "NLF_0609_0002_222RAD_N0301172NCAM03609_0A0195J01.png"}
     assert expand_names(["N?F_0606_*RAD_N0301096NCAM*.png", "nope*.png"], have) == ["NLF_0606_0001_222RAD_N0301096NCAM03606_0A0195J01.png", "nope*.png"]
     runs = SS.plan(cfg, tmp_path, labels=["Sol0609"])
@@ -3862,3 +3863,39 @@ def test_dense_add_images_takes_patterns(tmp_path, monkeypatch):
                      "--stereo"]) == 0
     assert sorted(calls[0]["images"]) == ["NLF_1.png", "NLF_2.png", "NLF_3.png"]
     assert rpp_main(["dense", str(root.parent), "--images", "NLF_1.png", "--add-images", "NLF_9.png", "--stereo"]) == 2
+
+
+def test_one_skyline_and_a_smooth_sky():
+    """1.0 (Christian, 20 Nov 2026, Van Zyl: "the van zyl sky still has artifacts"): an eye's sky is one smooth fit above
+    one skyline - the frames' brighter and darker footprints and a dark edge in the sky go, a sky speck between the hills
+    takes the hills' colors, a lone dark floater above the hills is sky, the terrain is not touched."""
+    from rpp.ibr import ods as O
+    from rpp.ibr.raycast import LABEL_FAR, LABEL_MESH
+    H, W = 360, 720
+    rows = np.arange(H)[:, None]
+    el = 90.0 - (rows + 0.5) / H * 180.0
+    label = np.where(el > 2.0, LABEL_FAR, LABEL_MESH).astype(np.uint8) * np.ones((1, W), np.uint8)
+    sky = 180.0 + 40.0 * np.cos(np.radians(el))                  # brighter toward the horizon
+    rgb = np.repeat(np.repeat(sky, W, axis=1)[..., None], 3, axis=2)
+    hills = (el <= 2.0 + 3.0 * (1 + np.sin(np.arange(W)[None, :] / W * 6 * np.pi))) & (el > 2.0)
+    rgb[hills] = 70.0                                            # far hills, darker than the sky
+    elw = np.broadcast_to(el, (H, W))
+    rgb[elw <= 2.0] = 60.0                                       # the mesh
+    rgb[40:90, 100:200] *= 1.15                                  # a frame's brighter footprint
+    rgb[100:140, 400:500] *= 0.85                                # a darker one
+    rgb[150, 250:350] = 40.0                                     # a frame's dark edge, a row long
+    hr, hc = np.nonzero(hills)
+    rgb[hr[len(hr) // 2], hc[len(hc) // 2]] = 210.0               # a speck of sky inside the hills
+    rgb[120, 600] = 50.0                                         # a dark floater high in the sky
+    rgb = rgb.astype(np.uint16)
+    mesh_before = rgb[el[:, 0] <= 2.0].copy()
+    rep = O.skyline_sky(rgb, label)
+    assert rep and rep["sky_px"] > 0 and rep["specks_px"] >= 1
+    assert np.array_equal(rgb[el[:, 0] <= 2.0], mesh_before)                       # the terrain untouched
+    s = rgb[:60, :, 0].astype(float)
+    assert abs(float(rgb[60, 99, 0]) - float(rgb[60, 100, 0])) <= 1 and abs(float(rgb[90, 150, 0]) - float(rgb[89, 150, 0])) <= 1   # no footprint edge
+    assert abs(float(rgb[60, 150, 0]) - float(rgb[60, 600, 0])) < 10              # nor much of its brightness
+    assert abs(float(rgb[150, 300, 0]) - float(rgb[150, 200, 0])) < 4             # the dark edge gone
+    assert rgb[120, 600, 0] > 150                                                  # the floater is sky
+    assert rgb[hr[len(hr) // 2], hc[len(hc) // 2], 0] < 120                        # the speck has the hills' color
+    assert np.ptp(s[:, ::90], axis=1).max() < 6                                    # smooth in azimuth near the zenith

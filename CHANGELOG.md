@@ -98,8 +98,22 @@ still those of 0.99; 1.0.0 will carry the models of the third freeze run.
   (`#Sol0052_S003D2046/...`) open the renamed station.
 - The full 3D model's texture charts take triangles without area (Van Zyl: "the station mesh's part was not made
   (OverflowError: int too big to convert)").
-- The release v1.0.0rc1 is archived on Zenodo: doi:10.5281/zenodo.24408630 (README badge, `CITATION.cff`,
-  `docs/citing.md`).
+- RPP is archived on Zenodo: doi:10.5281/zenodo.24408629 for every version (README badge, `CITATION.cff`, `docs/citing.md`),
+  doi:10.5281/zenodo.24408630 for v1.0.0rc1.
+- Van Zyl (`Sol0052`) takes the sol 49 frames NCAM00302 (S003D1940) and NCAM03049 (S003D1950) as context instead of the
+  sol 33 ones.
+- **One skyline and a smooth sky** (Van Zyl: "the van zyl sky still has artifacts", "Make sure to improve the horizon
+  and sky boundary problem"):
+  - In each panorama eye the skyline is one row per column: the top of the terrain that stands on the ground (the mesh
+    and the plane, and far pixels darker than midway between the sky and the ground, followed up from the horizon),
+    median filtered over 1 deg of azimuth. Above it the sky is a smooth fit to its own pixels (the log of each color
+    channel: a cubic in elevation times azimuth harmonics to the third, which fade out at the zenith), so the frames'
+    footprints, their edges and the fills' seams are gone. Below it, far pixels as bright as the sky take the colors
+    of the terrain on either side in their row.
+  - In the full 3D texture the white sky ends at one skyline per 0.25 deg of azimuth (median filtered over 2.25 deg):
+    above it every far texel is white, below it none is, and a far texel below it that was taken for sky is filled
+    from the hills around it.
+- The viewer's normal map of the 3D modes is black beyond 100 m from the mast axis, as the sky.
 
 ### Removed
 

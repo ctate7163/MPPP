@@ -2,10 +2,10 @@
 
 If you use RPP, please cite the archived software release:
 
-> Tate, C. (2026). *RPP: Rover Photogrammetry Pipeline* (version 1.0.0rc1) [Computer software].
-> Malin Space Science Systems. https://doi.org/10.5281/zenodo.24408630
+> Tate, C. (2026). *RPP: Rover Photogrammetry Pipeline* [Computer software].
+> Malin Space Science Systems. https://doi.org/10.5281/zenodo.24408629
 
-The release v1.0.0rc1 (20 Nov 2026) is archived on Zenodo as [doi:10.5281/zenodo.24408630](https://doi.org/10.5281/zenodo.24408630). Zenodo assigns two kinds of DOI:
+RPP is archived on Zenodo: [doi:10.5281/zenodo.24408629](https://doi.org/10.5281/zenodo.24408629) cites every version (it resolves to the newest), and the release v1.0.0rc1 of 20 Nov 2026 alone is [doi:10.5281/zenodo.24408630](https://doi.org/10.5281/zenodo.24408630). Zenodo assigns these two kinds of DOI:
 
 - the **concept DOI**, which always resolves to the latest version; use it to cite RPP in general;
 - a **version DOI** for each release; use it to cite the exact version you ran (`rpp version` prints the version).
