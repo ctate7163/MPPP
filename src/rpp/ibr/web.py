@@ -196,7 +196,7 @@ def station_mesh(folder: Path, web: Path, pano_dir: Optional[Path] = None) -> Op
 
 
 WELCOME_ID = "welcome"
-WELCOME_STATION = "Sol0052_S003D2046"      # Van Zyl Overlook
+WELCOME_STATION = "Sol0052"                # Van Zyl Overlook (1.0: the sol alone; Sol0052_S003D2046 before)
 WELCOME_WIDTH = 4096
 WELCOME_MUTE = (0.60, 0.85, 0.08)          # the welcome picture (0.98.14; Christian, 15 Nov 2026: "the welcome screen should
 #                                            have color, just be a little more muted than the true van zyl ods"): the colors'
@@ -517,6 +517,20 @@ def traverse_dtm(wp: Dict[str, Any], traverse: Dict[str, Any], web: Path, root: 
         return None
 
 
+def station_code_in(folder: Path) -> str:
+    """1.0: the S003D2046 of a station's output folder named by its sol alone (Sol0052): from its station.json."""
+    for f in (folder / "station.json", folder / "with_rover" / "station.json"):
+        try:
+            d = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for k in ("label", "key", "station"):
+            m = re.search(r"S\d{3}D\d{4}", str(d.get(k) or ""))
+            if m:
+                return m.group(0)
+    return ""
+
+
 def station_on_map(label: str, wp: Optional[Dict[str, Any]]) -> Optional[List[float]]:
     """[x, y] of a station ("...S003D2046...") in the traverse map's meters, or None."""
     m = re.search(r"S(\d{3})D(\d{4})", label)
@@ -733,7 +747,7 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
             entry["variants"].append(fifth)
         if sixth is not None:
             entry["variants"].append(sixth)
-        xy = traverse and station_on_map(d.name, wp)
+        xy = traverse and station_on_map(d.name if re.search(r"S\d{3}D\d{4}", d.name) else station_code_in(d), wp)
         if xy:
             entry["map"] = xy
         for key, sub, label in VARIANTS:                         # the X button's words (info)
@@ -744,11 +758,17 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
         if entry["variants"]:
             old[d.name] = entry
             log.info("publish: %s (%s)", d.name, ", ".join(f"{v['key']}: {len(v['views'])}" for v in entry["variants"]))
+    # 1.0: a station listed under its long name of 0.97.14-0.99 (Sol0052_S003D2046) and now published by its sol
+    # (Sol0052) is listed once, by the new name
+    for k in [k for k in old if re.match(r"^Sol\d{4}_S\d{3}D\d{4}", k)]:
+        if re.sub(r"^(Sol\d{4})_S\d{3}D\d{4}", r"\1", k) in old:
+            old.pop(k)
+            log.info("publish: %s is listed by its new name - the old entry left out", k)
     if old.pop(OLD_TEST_ID, None) is not None:                   # 0.98.4: "Remove the fake ods"
         for f in (web / "panos").glob(OLD_TEST_ID + "*"):
             f.unlink()
     old.pop(WELCOME_ID, None)
-    first = welcome_pano(web, old.get(WELCOME_STATION), pano_dir if files_dir else None)
+    first = welcome_pano(web, old.get(WELCOME_STATION) or old.get("Sol0052_S003D2046"), pano_dir if files_dir else None)
     doc = {"title": title, "panos": ([first] if first else []) + [old[k] for k in sorted(old)]}
     if traverse:
         doc["traverse"] = traverse

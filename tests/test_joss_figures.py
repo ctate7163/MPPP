@@ -82,7 +82,7 @@ def test_figure4_from_a_station_folder(tmp_path):
     quad whose texture is red in its top-left quarter (glTF uv (0, 0)) seen from above."""
     from rpp.ibr.station_mesh import glb_bytes
     from rpp_studies.paper import joss_figures as J
-    lab = "Sol0009_S003D0000"
+    lab = "Sol0009"
     d = tmp_path / "f3root" / "single_sites" / lab
     (d / "with_rover").mkdir(parents=True)
     pano = np.full((400, 1200, 3), 90, np.uint8)

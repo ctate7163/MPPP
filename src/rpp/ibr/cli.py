@@ -51,11 +51,11 @@ def _station(project, rec, a):
     st = select_station(project, rec, a.station, families=getattr(a, "cameras", "N") or "N",
                         pivot_height=getattr(a, "pivot_height", None) or "zcam")
     if not re.match(r"sol\d+_", str(a.station).strip(), re.I):   # 0.97.14: the code carries the sol of the frames used
-        from .station import sol_of_frames, station_code       # (--station Sol0052_S003D2046 names it outright)
+        from .station import sol_of_frames, station_code       # (--station Sol0052 names it outright)
         sol = sol_of_frames(_frames(project, st, a) or [])
         if sol is not None:
             st.label = station_code(st.site, st.drive, sol)
-    if getattr(a, "out", None):                      # e.g. D:\rover_blocks\single_sites\Sol0052_S003D2046[\with_rover]
+    if getattr(a, "out", None):                      # e.g. D:\rover_blocks\single_sites\Sol0052[\with_rover]
         out = Path(a.out)
     else:
         out = Path(project.root) / "ods" / (st.label + ("_rover" if getattr(a, "rover", False) else ""))
@@ -195,7 +195,7 @@ def add_parsers(sub) -> None:
     p.add_argument("--cameras", default="N", help="the station's frames for the pivot (default N)")
     p.add_argument("--no-preview", action="store_true")
     p.add_argument("--out", default=None, help="0.96: the folder for this station's products (default <project>/ods/<station>[_rover]), e.g. "
-                   "D:\\rover_blocks\\single_sites\\Sol0052_S003D2046; use the same --out for mesh, depthmaps and ods")
+                   "D:\\rover_blocks\\single_sites\\Sol0052; use the same --out for mesh, depthmaps and ods")
     _rover_args(p)
     p.add_argument("--keep-floating", action="store_true", help="keep surface floating above the terrain (default, "
                    "0.96.1: removed - anything above the cameras, and beyond 3 m of the mast axis anything less than "
@@ -234,7 +234,7 @@ def add_parsers(sub) -> None:
     p.add_argument("--no-preview", action="store_true")
     p.add_argument("--no-validate", action="store_true")
     p.add_argument("--out", default=None, help="0.96: the folder for this station's products (default <project>/ods/<station>[_rover]), e.g. "
-                   "D:\\rover_blocks\\single_sites\\Sol0052_S003D2046; use the same --out for mesh, depthmaps and ods")
+                   "D:\\rover_blocks\\single_sites\\Sol0052; use the same --out for mesh, depthmaps and ods")
     _rover_args(p)
     p = sub.add_parser("ods", help="0.96: the stereoscopic panorama of the station - two equirect eye images (rpp.ibr.ods)")
     p.add_argument("work")
@@ -302,8 +302,8 @@ def add_parsers(sub) -> None:
                    "the frames (default: masked - the rover model's mast projected into every frame)")
     p.add_argument("--no-ground-fill", action="store_true", help="leave black what no frame colored below the horizon "
                    "(default: filled as plain terrain from the terrain around it - under the rover, behind the arm)")
-    p.add_argument("--prefix", default=None, help="the panoramas' file-name prefix (default the station, Sol0052_S003D2046_ / "
-                   "Sol0052_S003D2046_rover_: Sol0052_S003D2046_ods_left.png ...; '' for the bare ods_left.png)")
+    p.add_argument("--prefix", default=None, help="the panoramas' file-name prefix (default the station, Sol0052_ / "
+                   "Sol0052_rover_: Sol0052_ods_left.png ...; '' for the bare ods_left.png)")
     p.add_argument("--rows-per-chunk", type=int, default=128)
     p.add_argument("--station-mesh", action="store_true",
                    help="0.99.26: also this run's part of the station mesh (rpp.ibr.station_mesh: the terrain within 10 m "
@@ -339,7 +339,7 @@ def add_parsers(sub) -> None:
     p.add_argument("--stack-only", action="store_true", help="only stack the eye images already in the folder into "
                    "360_3DTD.png / .jpg (no rendering)")
     p.add_argument("--out", default=None, help="0.96: the folder for this station's products (default <project>/ods/<station>[_rover]), e.g. "
-                   "D:\\rover_blocks\\single_sites\\Sol0052_S003D2046; use the same --out for mesh, depthmaps and ods")
+                   "D:\\rover_blocks\\single_sites\\Sol0052; use the same --out for mesh, depthmaps and ods")
     _rover_args(p)
 
 

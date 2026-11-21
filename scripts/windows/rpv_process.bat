@@ -94,7 +94,7 @@ if "%MODE%"=="unpublish" (
 )
 if not defined DRY (
   echo ---- the viewer page first ^(published with Van Zyl of D:\rover_blocks, nothing rendered^)
-  python -m rpp --log "%LOG%" single-sites Sol0052_S003D2046 --root D:\rover_blocks --any-block --publish-only --upload
+  python -m rpp --log "%LOG%" single-sites Sol0052 --root D:\rover_blocks --any-block --publish-only --upload
 )
 set "RPP_SCAPES=%ROOT%"
 echo ==== %DATE% %TIME% rpv_process %SLOT% %* (rpp in %T%, branch %BR%) >> "%LOG%"

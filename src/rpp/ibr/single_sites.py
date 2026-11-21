@@ -5,7 +5,7 @@ Christian, 10 Nov 2026: "We'll use these three as the test sites. organize the o
 D:\\rover_blocks\\single_sites\\Sol0052_S003D2046 and so forth" - "the single sites should come from a config file".
 
     python -m rpp single-sites                        every station of the config
-    python -m rpp single-sites Sol0052_S003D2046 Sol0686_S032D1184    those
+    python -m rpp single-sites Sol0052 Sol0686    those
     python -m rpp single-sites --steps ods            only the panoramas (mesh and maps already there)
     python -m rpp single-sites --squares-only         only stack the eye images already there into the squares
     python -m rpp single-sites --list | --dry-run     what would run
@@ -135,7 +135,6 @@ def zcam_companions(cfg: Dict[str, Any], root: PathLike, names_of=None) -> Dict[
     runs (:func:`plan` puts a companion right after its Navcam station).  ``names_of(block folder)`` -> the block's
     image names (default: its project.json)."""
     import re
-    from .station import station_key
     from ..waypoints.sites import load_site_table, work_folder
 
     def default_names(work):
@@ -147,13 +146,13 @@ def zcam_companions(cfg: Dict[str, Any], root: PathLike, names_of=None) -> Dict[
     have = {}                                                    # station key -> the config's own Mastcam-Z label
     for lab, st in cfg["stations"].items():
         if is_zcam_station(st):
-            have[re.sub(r"_Z\d+$", "", station_key(lab).upper())] = lab
+            have[station_code_of(st, lab)] = lab
     pairs: Dict[str, str] = {}
     cache: Dict[str, List[str]] = {}
     for lab, st in list(cfg["stations"].items()):
         if is_zcam_station(st):
             continue
-        key = station_key(lab).upper()
+        key = station_code_of(st, lab)
         if key in have:
             pairs[lab] = have[key]
             continue
@@ -200,9 +199,12 @@ def zcam_companions(cfg: Dict[str, Any], root: PathLike, names_of=None) -> Dict[
         frames = sorted(n for s_ in sols for n in frames_of[s_])
         left = sum(per_sol.get(s_, 0) for s_ in sols)
         tok = f"N{sd[0]:03d}{sd[1]:04d}"
-        zlab = f"Sol{sol:04d}_{key}_Z34"
+        zlab = f"Sol{sol:04d}_Z34"                               # 1.0: the sol alone (Sol0789_Z34)
+        if zlab in cfg["stations"] and cfg["stations"][zlab].get("derived_from") != lab:
+            zlab = f"Sol{sol:04d}_{key}_Z34"                     # two Z34 360s of one sol: the station's code kept
         cfg["stations"][zlab] = {
             "name": f"{mark_name(st) or lab} (Z34)", "work": zwork.name, "station": st["station"], "derived_from": lab,
+            "old_label": f"Sol{sol:04d}_{key}_Z34",
             "frames": dict(st.get("frames") or {}), "variants": ["masked", "rover"], "terrain": "block",
             # 0.99.46: the panorama's frames named - the 34 mm frames of that sol, both eyes.  Without --images rpp ods
             # takes the frames the station's dense workspace was made from (the Navcam ones), --sols left none, and
@@ -234,10 +236,10 @@ REM    0.97.0: the Perseverance model in the rover mesh, the panorama blended in
 REM    station for the rover-shown and rover-masked versions (<station>\tone_levels.json), the per-image pictures as
 REM    jpg in photometry_jpg (rad, depth linear / log, normal, incidence, emission, phase, shadow), a center panorama
 REM    with its depth, the viewpoint on the azimuth axis at the Mastcam-Z height
-REM    examples:  run_single_site_ibr.bat Sol0052_S003D2046            one station
+REM    examples:  run_single_site_ibr.bat Sol0052            one station
 REM               run_single_site_ibr.bat --steps ods          the panoramas again (mesh and maps kept)
 REM               run_single_site_ibr.bat --dry-run            the commands, not run
-REM               run_single_site_ibr.bat Sol0052_S003D2046 --no-upload  the run without the upload at its end
+REM               run_single_site_ibr.bat Sol0052 --no-upload  the run without the upload at its end
 REM               run_single_site_ibr.bat --publish-only                 no rendering: publish and push what is there
 REM    0.97.24: when the run is done its panoramas are published and uploaded (--upload is given here; --no-upload
 REM    after it wins).  0.99.3: the pictures go to the Hugging Face dataset ctate7163/rpp-rpv, station by station,
@@ -306,10 +308,47 @@ SQUARES_BAT = SQUARES_BAT.replace("python -m rpp single-sites --upload %*", "pyt
 assert "--squares-only %*" in SQUARES_BAT and "make_square.bat [LABEL" in SQUARES_BAT
 
 
+# 1.0 (Christian, 20 Nov 2026: "let's shorten the rpv_process site names to just the Sol numbers. The site and drive
+# are not necessary because there cannot be two eod locations on one sol"): a station is Sol0052, its Mastcam-Z version
+# Sol0789_Z34 - the station itself (site and drive) is its entry's "station".  A label of 0.97.14-0.99
+# (Sol0052_S003D2046) still names it, and the viewer's entries and links under the old names are replaced by the new.
+_LONG_LABEL = __import__("re").compile(r"^(Sol\d{4})_S\d{3}D\d{4}(?=$|_)", __import__("re").IGNORECASE)
+
+
+def short_label(label: str) -> str:
+    """``Sol0052_S003D2046`` -> ``Sol0052``, ``Sol0011_S003D0000_Z34`` -> ``Sol0011_Z34``; any other name as it is."""
+    return _LONG_LABEL.sub(r"\1", str(label))
+
+
+def station_code_of(st: Optional[Dict[str, Any]], label: str = "") -> str:
+    """``S003D2046`` of a station entry - its "station" (3_2046, S003D2046), else the S...D... of ``label``."""
+    import re
+    from .station import parse_station
+    try:
+        s, d, _ = parse_station(str((st or {}).get("station"))) if (st or {}).get("station") else (None, None, None)
+    except ValueError:
+        s = d = None
+    if s is not None and d is not None:
+        return f"S{s:03d}D{d:04d}"
+    m = re.search(r"S(\d{3})D(\d{4})", str(label))
+    return f"S{m.group(1)}D{m.group(2)}" if m else str(label).upper()
+
+
 def load_config(path: Optional[PathLike] = None) -> Dict[str, Any]:
     cfg = json.loads(Path(path or CONFIG).read_text(encoding="utf-8"))
     if not isinstance(cfg.get("stations"), dict) or not cfg["stations"]:
         raise ValueError(f"{path or CONFIG}: no 'stations'")
+    shorts = [short_label(k) for k in cfg["stations"]]           # 1.0: a config of long labels read with the short ones
+    clash = {s for s in shorts if shorts.count(s) > 1}
+    renamed: Dict[str, Dict[str, Any]] = {}
+    for lab, st in cfg["stations"].items():
+        new = short_label(lab)
+        if new in clash:
+            new = lab                                            # two stations of one sol: both keep their long names
+        if new != lab:
+            st = dict(st, old_label=st.get("old_label") or lab)
+        renamed[new] = st
+    cfg["stations"] = renamed
     for lab, st in cfg["stations"].items():
         if "station" not in st or not ("site" in st or "work" in st):
             raise ValueError(f"{lab}: needs 'station' and 'site' or 'work'")
@@ -375,11 +414,13 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
     out_root = Path(out_root) if out_root else root / cfg.get("out", "single_sites")
     from .station import station_key
     by_key: Dict[str, List[str]] = {}                           # 0.97.14: Sol0052_S003D2046 still names Sol0052_Sol0052_S003D2046
-    for lab in cfg["stations"]:
-        by_key.setdefault(station_key(lab).upper(), []).append(lab)
+    for lab, st_ in cfg["stations"].items():                    # 1.0: S003D2046 and the old Sol0052_S003D2046 name Sol0052
+        by_key.setdefault(station_code_of(st_, lab), []).append(lab)
+        if st_.get("old_label"):
+            by_key.setdefault(str(st_["old_label"]).upper(), []).append(lab)
     todo = []
     for lab in (list(labels) if labels else sol_order([k for k, v in cfg["stations"].items() if not v.get("experimental")])):   # 0.99.46: in sol order (the config's last first from 0.98.3)
-        todo += [lab] if lab in cfg["stations"] else by_key.get(str(lab).upper(), [lab])      # 0.98.2: an "experimental"
+        todo += [lab] if lab in cfg["stations"] else by_key.get(str(lab).upper(), by_key.get(station_key(lab).upper(), [lab]))      # 0.98.2: an "experimental"
         #                                                                                       station runs only when named
     if companions:                                              # 0.99.43: a Mastcam-Z version right after its Navcam station
         mine = {companions[t] for t in todo if t in companions}     # the versions whose Navcam station runs too
@@ -474,7 +515,8 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                 if step == "ods" and station_mesh:       # 0.99.26: each variant's part of the station mesh
                     argv += ["--station-mesh-only" if station_mesh == "only" else "--station-mesh"]
                 cmds.append({"variant": v, "step": step, "argv": argv})
-        runs.append({"label": lab, "work": str(work), "out": str(base), "note": st.get("note", ""), "variants": vs,
+        runs.append({"label": lab, "code": station_code_of(st, lab), "old_label": st.get("old_label"),
+                     "work": str(work), "out": str(base), "note": st.get("note", ""), "variants": vs,
                      "commands": cmds})
     return runs
 
@@ -854,7 +896,7 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
                         finally:
                             with_lock.release()
                     else:
-                        clouds = sorted((work_ / "colmap").glob(f"dense_{station_key(run['label'])}*/fused.ply")) if step == "mesh" else []
+                        clouds = sorted((work_ / "colmap").glob(f"dense_{run.get('code') or station_key(run['label'])}*/fused.ply")) if step == "mesh" else []
                         if step == "mesh" and "--points" in c["argv"]:      # 0.98.14: the block's cloud
                             clouds = [Path(c["argv"][c["argv"].index("--points") + 1])]
                         tf = c["argv"][c["argv"].index("--terrain-from") + 1] if "--terrain-from" in c["argv"] else None
@@ -891,7 +933,7 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
                         print(f"######## {run['label']} {v}: {c['step']} failed (exit {rc}) - the rest of this variant skipped")
         work = Path(run["work"])
         for name, dst in (("mppp_dense.json", "dense_workspace.json"), ("mppp_dense_run.json", "dense_run.json")):
-            for f in sorted((work / "colmap").glob(f"dense_{station_key(run['label'])}*/{name}")):
+            for f in sorted((work / "colmap").glob(f"dense_{run.get('code') or station_key(run['label'])}*/{name}")):
                 shutil.copy2(f, base / dst)
         for v in run["variants"]:
             bad += any(codes[v].values())
@@ -1071,9 +1113,10 @@ def unpublish(web_dir: PathLike, labels: Sequence[str]) -> Dict[str, Any]:
     (their pictures stay where they are hosted).  Returns {"removed", "left"}."""
     f = Path(web_dir) / "panos.json"
     doc = json.loads(f.read_text(encoding="utf-8"))
-    want = {str(x).upper() for x in labels}
-    keep = [p for p in doc.get("panos", []) if str(p.get("id", "")).upper() not in want]
-    removed = [p.get("id") for p in doc.get("panos", []) if str(p.get("id", "")).upper() in want]
+    want = {short_label(str(x)).upper() for x in labels}         # 1.0: a station by its new name or its old one
+    hit = lambda p: short_label(str(p.get("id", ""))).upper() in want      # noqa: E731
+    keep = [p for p in doc.get("panos", []) if not hit(p)]
+    removed = [p.get("id") for p in doc.get("panos", []) if hit(p)]
     doc["panos"] = keep
     f.write_text(json.dumps(doc, indent=1), encoding="utf-8")
     return {"removed": removed, "left": len(keep)}

@@ -177,10 +177,10 @@ def test_sol121_seitah_station_in_the_list():
     from pathlib import Path
     from rpp.ibr import single_sites as SS
     cfg = json.loads((Path(SS.__file__).parents[1] / "data" / "single_sites.json").read_text(encoding="utf-8"))
-    st = cfg["stations"]["Sol0116_S004D1250"]
+    st = cfg["stations"]["Sol0116"]
     assert st["station"] == "4_1250" and len(st["frames"]["images"]) == 11 and all("N0041250" in n for n in st["frames"]["images"])
     assert len(st["context"]) == 2 and all("N0041206NCAM00310" in n for n in st["context"])
-    run = SS.plan(cfg, "/tmp/root", labels=["Sol0116_S004D1250"])[0]
+    run = SS.plan(cfg, "/tmp/root", labels=["Sol0116"])[0]
     ods = [c for c in run["commands"] if c["step"] == "ods"]
     assert ods and all("--context-images" in c["argv"] for c in ods) and run["work"].endswith("seitah_overlook_zcam")
 
@@ -383,23 +383,23 @@ def test_zcam_companions_follow_their_navcam_station_and_block_cameras(tmp_path,
     import copy
     from rpp.ibr import single_sites as SS
     cfg = copy.deepcopy(SS.load_config())
-    lab = "Sol0461_S026D0630"
+    lab = "Sol0461"
     z = [f"ZL0_0466_07083{i:05d}_000RAD_N0260630ZCAM08500_0340LMJ01.png" for i in range(40)]
     z += [f"ZL0_0470_07090{i:05d}_000RAD_N0260630ZCAM08501_0340LMJ01.png" for i in range(10)]      # too few: no 360
     z += [f"ZL0_0466_07083{i:05d}_000RAD_N0260850ZCAM08500_1100LMJ01.png" for i in range(50)]      # 110 mm: not 34
     monkeypatch.setattr(SS, "block_aligned", lambda w: "pico" not in str(w))
     pairs = SS.zcam_companions(cfg, tmp_path, names_of=lambda work: z if "rockytop" in str(work) else [])
-    assert "Sol1308_S061D1678" in cfg["_zcam_pending"]            # 0.99.44: its Mastcam-Z block is not aligned yet
-    zlab = "Sol0466_S026D0630_Z34"
-    assert pairs[lab] == zlab and pairs["Sol0686_S032D1184"] == "Sol0690_S032D1184_Z34"           # the config's own pair
-    assert "Sol0474_S026D0850" not in pairs
+    assert "Sol1308" in cfg["_zcam_pending"]            # 0.99.44: its Mastcam-Z block is not aligned yet
+    zlab = "Sol0466_Z34"
+    assert pairs[lab] == zlab and pairs["Sol0686"] == "Sol0690_Z34"           # the config's own pair
+    assert "Sol0474" not in pairs
     st = cfg["stations"][zlab]
     assert SS.is_zcam_station(st) and st["work"].endswith("rockytop_zcam") and st["ods_args"][:4] == ["--cameras", "Z", "--sols", "466"]
     assert "N?F_*_N0260630NCAM*.png" in st["context"] and SS.viewer_name(st, zlab).endswith("(zcam)")
     oa = st["ods_args"]                                            # 0.99.46: the 34 mm frames of that sol named, both eyes
     assert oa[oa.index("--images") + 1:] == sorted(n for n in z if n.startswith("ZL0_0466") and "_0340" in n)
-    runs = SS.plan(cfg, tmp_path, labels=[lab, "Sol0474_S026D0850"], companions=pairs, block_cameras="NF", terrain="block")
-    assert [r["label"] for r in runs] == [lab, zlab, "Sol0474_S026D0850"]
+    runs = SS.plan(cfg, tmp_path, labels=[lab, "Sol0474"], companions=pairs, block_cameras="NF", terrain="block")
+    assert [r["label"] for r in runs] == [lab, zlab, "Sol0474"]
     assert not any(c["step"] == "depthmaps" for c in runs[1]["commands"])
     zods = next(c["argv"] for c in runs[1]["commands"] if c["step"] == "ods")
     assert "--images" in zods and "--sols" in zods
@@ -426,38 +426,38 @@ def test_zcam_360_over_two_sols_uses_both(tmp_path, monkeypatch):
         z += [f"Z{e}0_{sol:04d}_07300{i:05d}_000RAD_N0261222ZCAM08{sol:03d}_0340LMJ01.png" for i in range(n) for e in "LR"]
     monkeypatch.setattr(SS, "block_aligned", lambda w: True)
     pairs = SS.zcam_companions(cfg, tmp_path, names_of=lambda work: z)
-    ro, wi = pairs["Sol0180_S007D0000"], pairs["Sol0502_S026D1222"]
-    assert ro == "Sol0181_S007D0000_Z34" and wi == "Sol0518_S026D1222_Z34"
+    ro, wi = pairs["Sol0180"], pairs["Sol0502"]
+    assert ro == "Sol0181_Z34" and wi == "Sol0518_Z34"
     for lab, sols, n in ((ro, ["181", "182"], 2 * 95), (wi, ["518", "530"], 2 * 110)):
         oa = cfg["stations"][lab]["ods_args"]
         assert oa[oa.index("--sols") + 1:oa.index("--zcam-scale")] == sols
         imgs = oa[oa.index("--images") + 1:]
         assert len(imgs) == n and sorted({x[4:8] for x in imgs}) == [s.zfill(4) for s in sols]   # sol 520 left out
-    st = cfg["stations"]["Sol0072_S003D2346"]
+    st = cfg["stations"]["Sol0072"]
     assert st["station"] == "3_2346" and len(st["frames"]["images"]) == 10
     labs = SS.sol_order(list(cfg["stations"]))
-    assert labs.index("Sol0072_S003D2346") < labs.index("Sol0073_S003D2430")
+    assert labs.index("Sol0072") < labs.index("Sol0073")
 
 
 def test_skip_done_leaves_out_stations_already_made(tmp_path):
     """0.99.47 (Christian, 19 Nov 2026: "recolor_rpv.bat should skip sites already processed"): any code version."""
     import json
     from rpp.ibr import single_sites as SS
-    run = {"label": "Sol0009_S003D0000", "out": str(tmp_path / "Sol0009_S003D0000"), "variants": ["rover", "masked"],
+    run = {"label": "Sol0009", "out": str(tmp_path / "Sol0009"), "variants": ["rover", "masked"],
            "commands": [{"step": "ods", "variant": "rover", "argv": []}]}
     assert not SS.station_done(run)
     code = SS.code_key()
     for sub in ("with_rover", ""):
-        d = tmp_path / "Sol0009_S003D0000" / sub
+        d = tmp_path / "Sol0009" / sub
         d.mkdir(parents=True, exist_ok=True)
         (d / "step_ods.json").write_text(json.dumps({"key": "old", "exit": 0, "code": code, "finished": "2026-11-19T18:24:54"}))
     assert not SS.station_done(run)                                # no ods.json in the folders yet
     for sub in ("with_rover", ""):
-        (tmp_path / "Sol0009_S003D0000" / sub / "ods.json").write_text("{}")
+        (tmp_path / "Sol0009" / sub / "ods.json").write_text("{}")
     assert SS.station_done(run)
-    (tmp_path / "Sol0009_S003D0000" / "step_ods.json").write_text(json.dumps({"key": "x", "exit": 0, "code": "other"}))
+    (tmp_path / "Sol0009" / "step_ods.json").write_text(json.dumps({"key": "x", "exit": 0, "code": "other"}))
     assert not SS.station_done(run)                                # 0.99.51: made by other code: made again
-    (tmp_path / "Sol0009_S003D0000" / "step_ods.json").write_text(json.dumps({"key": "x", "exit": 1, "code": code}))
+    (tmp_path / "Sol0009" / "step_ods.json").write_text(json.dumps({"key": "x", "exit": 1, "code": code}))
     assert not SS.station_done(run)                                # the masked one failed: made again
 
 
@@ -491,13 +491,13 @@ def test_stations_in_sol_order_butler_z34_and_rose_river_falls():
     runs = SS.plan(cfg, "/r", labels=None)
     labs = [r["label"] for r in runs]
     sols = [int(l[3:7]) for l in labs]
-    assert sols == sorted(sols) and labs[0] == "Sol0009_S003D0000"
-    runs = SS.plan(cfg, "/r", labels=SS.sol_order(list(cfg["stations"])), companions={"Sol0009_S003D0000": "Sol0011_S003D0000_Z34"})
+    assert sols == sorted(sols) and labs[0] == "Sol0009"
+    runs = SS.plan(cfg, "/r", labels=SS.sol_order(list(cfg["stations"])), companions={"Sol0009": "Sol0011_Z34"})
     labs = [r["label"] for r in runs]
-    assert labs[:2] == ["Sol0009_S003D0000", "Sol0011_S003D0000_Z34"]
+    assert labs[:2] == ["Sol0009", "Sol0011_Z34"]
     z = next(c["argv"] for c in runs[1]["commands"] if c["step"] == "ods")
     assert "Z?0_0011_*_N0030000ZCAM*_034*" in z and not any(c["step"] == "depthmaps" for c in runs[1]["commands"])
-    assert cfg["stations"]["Sol0449_S026D0000"]["work"] == "mars2020_sol_0449_rose_river_falls_zcam"
+    assert cfg["stations"]["Sol0449"]["work"] == "mars2020_sol_0449_rose_river_falls_zcam"
     import json as _json
     from rpp.waypoints.sites import load_site_table
     g = load_site_table().get("groups") or _json.loads((__import__("pathlib").Path(SS.__file__).resolve().parents[1] / "data" / "sites.json").read_text())["groups"]
@@ -580,14 +580,14 @@ def test_freeze3_root_block_order_busy_and_recolor(tmp_path):
     assert SS.block_folder({"site": "rockytop", "station": "99_1"}, root).name == "mars2020_sol_0460_rockytop"   # no frames
     w = str(root / "mars2020_sol_0460_rockytop_zcam")
     runs = [{"label": lab, "work": wk, "out": str(tmp_path / "out" / lab), "variants": ["rover", "masked"], "commands": []}
-            for lab, wk in (("Sol0009_S003D0000", "x/mars2020_sol_0001_butler_landing_zcam"), ("Sol0461_S026D0630", w),
-                            ("Sol1955_S091D0124", "x/b"), ("Sol0477_S026D1004", w), ("Sol0484_S026D1004_Z34", w),
-                            ("Sol0670_S032D0672", "x/c"), ("Sol0670_S032D0672_Z34", "x/c"))]
-    order = [r["label"] for r in SS.run_order(runs, {"Sol0477_S026D1004": "Sol0484_S026D1004_Z34",
-                                                     "Sol0670_S032D0672": "Sol0670_S032D0672_Z34"},
+            for lab, wk in (("Sol0009", "x/mars2020_sol_0001_butler_landing_zcam"), ("Sol0461", w),
+                            ("Sol1955", "x/b"), ("Sol0477", w), ("Sol0484_S026D1004_Z34", w),
+                            ("Sol0670", "x/c"), ("Sol0670_Z34", "x/c"))]
+    order = [r["label"] for r in SS.run_order(runs, {"Sol0477": "Sol0484_S026D1004_Z34",
+                                                     "Sol0670": "Sol0670_Z34"},
                                               first=["rockytop"], reverse=True)]
-    assert order == ["Sol0461_S026D0630", "Sol0477_S026D1004", "Sol0484_S026D1004_Z34", "Sol1955_S091D0124",
-                     "Sol0670_S032D0672", "Sol0670_S032D0672_Z34", "Sol0009_S003D0000"]
+    assert order == ["Sol0461", "Sol0477", "Sol0484_S026D1004_Z34", "Sol1955",
+                     "Sol0670", "Sol0670_Z34", "Sol0009"]
     assert SS._made_by_0p99({"rpp": "0.99.50"}) and not SS._made_by_0p99({"rpp": "0.98.31"})
     assert SS._made_by_0p99({"finished": "2026-11-19T18:24:54"}) and not SS._made_by_0p99({"finished": "2026-11-10T01:00:00"})
     r = runs[1]
@@ -601,7 +601,7 @@ def test_freeze3_root_block_order_busy_and_recolor(tmp_path):
     assert not SS.has_16bit(r)
     for sub in ("with_rover", ""):
         (Path(r["out"]) / sub).mkdir(parents=True, exist_ok=True)
-        (Path(r["out"]) / sub / "Sol0461_S026D0630_ods_right_16.png").write_bytes(b"x")
+        (Path(r["out"]) / sub / "Sol0461_ods_right_16.png").write_bytes(b"x")
     assert SS.has_16bit(r)
     assert not SS.freeze_alive(root)
     (root / "mppp_pipeline").mkdir()
@@ -651,19 +651,19 @@ def test_small_hidden_patches_keep_the_disc_and_borders_take_their_colors():
 
 
 def test_unpublish_and_no_navcam(tmp_path):
-    """0.99.51 (Christian, 20 Nov 2026: "Sol0362_S011D0108 should be taken down until it is regenerated"; its Navcam
+    """0.99.51 (Christian, 20 Nov 2026: "Sol0362 should be taken down until it is regenerated"; its Navcam
     frames are no 360: only its Mastcam-Z version is made)."""
     import json
     from rpp.ibr import single_sites as SS
-    (tmp_path / "panos.json").write_text(json.dumps({"panos": [{"id": "welcome"}, {"id": "Sol0362_S011D0108"}, {"id": "Sol0086_S004D0048"}]}))
+    (tmp_path / "panos.json").write_text(json.dumps({"panos": [{"id": "welcome"}, {"id": "Sol0362"}, {"id": "Sol0086"}]}))
     r = SS.unpublish(tmp_path, ["sol0362_s011d0108", "Sol9999_S000D0000"])
-    assert r["removed"] == ["Sol0362_S011D0108"] and r["left"] == 2
-    assert [p["id"] for p in json.loads((tmp_path / "panos.json").read_text())["panos"]] == ["welcome", "Sol0086_S004D0048"]
+    assert r["removed"] == ["Sol0362"] and r["left"] == 2
+    assert [p["id"] for p in json.loads((tmp_path / "panos.json").read_text())["panos"]] == ["welcome", "Sol0086"]
     cfg = SS.load_config()
-    assert cfg["stations"]["Sol0362_S011D0108"]["no_navcam"]
-    runs = SS.plan(cfg, tmp_path, labels=["Sol0362_S011D0108", "Sol0086_S004D0048"],
-                   companions={"Sol0362_S011D0108": "Sol0086_S004D0048"})
-    assert [r_["label"] for r_ in runs] == ["Sol0086_S004D0048"]
+    assert cfg["stations"]["Sol0362"]["no_navcam"]
+    runs = SS.plan(cfg, tmp_path, labels=["Sol0362", "Sol0086"],
+                   companions={"Sol0362": "Sol0086"})
+    assert [r_["label"] for r_ in runs] == ["Sol0086"]
 
 
 def test_two_runs_take_turns_by_station_locks(tmp_path):
@@ -673,7 +673,7 @@ def test_two_runs_take_turns_by_station_locks(tmp_path):
     import subprocess, sys
     from pathlib import Path
     from rpp.ibr import single_sites as SS
-    base = tmp_path / "Sol0009_S003D0000"
+    base = tmp_path / "Sol0009"
     base.mkdir()
     holder = subprocess.Popen([sys.executable, "-c", "import sys, time; sys.path.insert(0, %r); "
                                "from rpp.ibr.single_sites import FileLock; l = FileLock(%r); l.acquire(); "
@@ -681,10 +681,10 @@ def test_two_runs_take_turns_by_station_locks(tmp_path):
                               stdout=subprocess.PIPE, text=True)
     try:
         assert holder.stdout.readline().strip() == "held"
-        runs = [{"label": "Sol0009_S003D0000", "out": str(base), "work": str(tmp_path / "b"), "note": "",
+        runs = [{"label": "Sol0009", "out": str(base), "work": str(tmp_path / "b"), "note": "",
                  "variants": ["masked"], "commands": []}]
         SS.run_all(runs, tmp_path)
-        assert SS.BUSY_SKIPPED == ["Sol0009_S003D0000"]
+        assert SS.BUSY_SKIPPED == ["Sol0009"]
         assert not SS.FileLock(base / SS.STATION_LOCK).acquire(blocking=False)
     finally:
         holder.kill(); holder.wait()
@@ -779,14 +779,65 @@ def test_belva_crater_from_sol_770_and_the_sol_784_context(monkeypatch):
     site = load_site_table()["sites"]["belva_crater_large"]
     assert site["sols"] == [[770, 821]] and site["settings"].get("NEARBY_FROM_FIRST_SOL") is True
     cfg = SS.load_config()
-    st = cfg["stations"]["Sol0784_S039D0926"]
+    st = cfg["stations"]["Sol0784"]
     assert len(st["context"]) == 6 and {n[:3] for n in st["context"]} == {"NLF", "NRF"}
     assert any("NCAM03795" in n for n in st["context"]) and any("NCAM02797" in n for n in st["context"])
     names = [f"ZL0_0789_07369{i:05d}_803RAD_N0390926ZCAM08808_0340LMA01.png" for i in range(40)] + \
             ["ZL0_0805_0738401589_803RAD_N0391170ZCAM08826_0340LMA03.png"]
     monkeypatch.setattr(SS, "block_aligned", lambda w: True)
-    one = {"stations": {"Sol0784_S039D0926": st}}
+    one = {"stations": {"Sol0784": st}}
     pairs = SS.zcam_companions(one, "/blocks", names_of=lambda w: names)
-    z = one["stations"][pairs["Sol0784_S039D0926"]]
-    assert pairs["Sol0784_S039D0926"] == "Sol0789_S039D0926_Z34" and "Z?0_*ZCAM08826_034*.png" in z["context"]
-    assert "ZCAM08826" not in str(SS.plan(cfg, "/blocks", labels=["Sol0784_S039D0926"], steps=("ods",))[0]["commands"])
+    z = one["stations"][pairs["Sol0784"]]
+    assert pairs["Sol0784"] == "Sol0789_Z34" and "Z?0_*ZCAM08826_034*.png" in z["context"]
+    assert "ZCAM08826" not in str(SS.plan(cfg, "/blocks", labels=["Sol0784"], steps=("ods",))[0]["commands"])
+
+
+def test_station_names_are_the_sol_alone(tmp_path):
+    """1.0 (Christian, 20 Nov 2026: "let's shorten the rpv_process site names to just the Sol numbers"): Sol0052 and
+    Sol0789_Z34; the old names still name them (single-sites, --unpublish), a config of old names is read with the new,
+    the viewer lists a station once - by its new name - and places it on the map from its station.json."""
+    import json
+    from rpp.ibr import single_sites as SS
+    from rpp.ibr import web
+    assert SS.short_label("Sol0052_S003D2046") == "Sol0052" and SS.short_label("Sol0011_S003D0000_Z34") == "Sol0011_Z34"
+    assert SS.short_label("Sol0052") == "Sol0052" and SS.short_label("welcome") == "welcome"
+    cfg = SS.load_config()
+    assert all(not __import__("re").search(r"_S\d{3}D\d{4}", k) for k in cfg["stations"])
+    assert cfg["stations"]["Sol0052"]["old_label"] == "Sol0052_S003D2046"
+    assert SS.station_code_of(cfg["stations"]["Sol0052"], "Sol0052") == "S003D2046"
+    for name in ("Sol0052_S003D2046", "S003D2046", "Sol0052"):
+        assert [r["label"] for r in SS.plan(cfg, tmp_path, labels=[name], steps=("ods",))] == ["Sol0052"]
+    old = {"stations": {"Sol0052_S003D2046": {"site": "x", "station": "3_2046"},
+                        "Sol0100_S001D0001": {"site": "x", "station": "1_1"}, "Sol0100_S001D0002": {"site": "x", "station": "1_2"}}}
+    (tmp_path / "old.json").write_text(json.dumps(old))
+    c2 = SS.load_config(tmp_path / "old.json")
+    assert sorted(c2["stations"]) == ["Sol0052", "Sol0100_S001D0001", "Sol0100_S001D0002"]    # two of one sol: kept long
+    # the viewer: Sol0052 published while Sol0052_S003D2046 is listed - one entry; the map from station.json
+    out = tmp_path / "out" / "Sol0052"
+    out.mkdir(parents=True)
+    import cv2
+    import numpy as np
+    cv2.imwrite(str(out / "Sol0052_360_3DTD.jpg"), np.zeros((64, 64, 3), np.uint8))
+    (out / "station.json").write_text(json.dumps({"key": "S003D2046", "label": "Sol0052_S003D2046"}))
+    assert web.station_code_in(out) == "S003D2046"
+    w = tmp_path / "web"
+    w.mkdir()
+    (w / "panos.json").write_text(json.dumps({"panos": [{"id": "Sol0052_S003D2046", "variants": [{"key": "masked", "views": {"standard": "a.jpg"}}]}]}))
+    doc = web.publish(tmp_path / "out", w, width=64)
+    ids = [p["id"] for p in doc["panos"]]
+    assert "Sol0052" in ids and "Sol0052_S003D2046" not in ids
+    entry = next(p for p in doc["panos"] if p["id"] == "Sol0052")
+    assert entry.get("map")
+
+
+def test_charts_take_a_triangle_without_area():
+    """1.0 (Van Zyl, 20 Nov 2026: "ods: the station mesh's part was not made (OverflowError: int too big to convert)"):
+    a triangle of no area (its normal 0 or NaN) gets a chart like any other - the layout's sizes stay finite."""
+    from rpp.ibr import station_mesh as SM
+    V, F, N = _box_mesh()
+    V = np.vstack([V, [[0.0, 0.0, 0.0]] * 3])
+    F = np.vstack([F, [[len(V) - 3, len(V) - 2, len(V) - 1]]])               # three times the same point
+    N = np.vstack([N, [[np.nan, np.nan, np.nan]]])
+    areas = np.r_[np.full(len(F) - 1, 0.5 * (0.3 / 6) ** 2), 0.0]
+    cells = SM.layout_charts(V, F, N, areas, 256)
+    assert np.isfinite(cells["uv"]).all() and cells["charts"] >= 7 and (cells["wh"] < 256).all()

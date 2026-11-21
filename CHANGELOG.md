@@ -90,6 +90,16 @@ still those of 0.99; 1.0.0 will carry the models of the third freeze run.
 - `rpp dense --add-images` takes name patterns (`N?F_*_N0390926NCAM*.png`), as `rpp ods --context-images` does, so
   a Mastcam-Z version run with `--terrain own` meshes its station and context frames. A pattern that matches nothing
   is left out with a note.
+- **A station is named by its sol** (Christian, 20 Nov 2026: "there cannot be two eod locations on one sol"):
+  `Sol0052`, not `Sol0052_S003D2046`; a Mastcam-Z version is `Sol0789_Z34`. The site and drive stay in the station
+  list's `"station"` field and in `station.json`. The old names still select a station (`rpv_process.bat
+  Sol0052_S003D2046`, `--unpublish`), a station list with old names is read with the new ones (two stations of one
+  sol keep their long names), the viewer lists a station once under its new name, and old viewer links
+  (`#Sol0052_S003D2046/...`) open the renamed station.
+- The full 3D model's texture charts take triangles without area (Van Zyl: "the station mesh's part was not made
+  (OverflowError: int too big to convert)").
+- The release v1.0.0rc1 is archived on Zenodo: doi:10.5281/zenodo.24408630 (README badge, `CITATION.cff`,
+  `docs/citing.md`).
 
 ### Removed
 

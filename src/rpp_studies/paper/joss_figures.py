@@ -458,15 +458,15 @@ def figure2_navcam(block: Path, names: Sequence[str], out_png: Path, scale: int 
 # =========================================================================================== figure 3
 FIGURE3 = {
     "butler_landing": dict(block="mars2020_sol_0001_butler_landing*", freeze=True, cloud="colmap/dense_block_FN/fused.ply",
-                           mesh="single_sites/Sol0009_S003D0000", clean=False, half=10.0, res=0.02, minc=4, fill=3,
+                           mesh=("single_sites/Sol0009", "single_sites/Sol0009_S003D0000"), clean=False, half=10.0, res=0.02, minc=4, fill=3,
                            spike=0.04, exag=3.0, c0=(0, 0.0), eye=(0.0, -17.0, 4.6), tgt=(0.0, 2.0, -1.6), focal=2450.0,
                            bar=4, what="Dense point cloud", splat=1, exclude=("S003D0028",)),
     "van_zyl_overlook": dict(block="mars2020_sol_0015_van_zyl_overlook*", freeze=False, cloud="colmap/dense_S003D2046/fused.ply",
-                             mesh="single_sites/Sol0052_S003D2046", clean=True, half=15.0, res=0.03, minc=3, fill=3,
-                             spike=0.08, exag=2.0, c0=(0, 0.0), center_station="single_sites/Sol0052_S003D2046",
+                             mesh=("single_sites/Sol0052", "single_sites/Sol0052_S003D2046"), clean=True, half=15.0, res=0.03, minc=3, fill=3,
+                             spike=0.08, exag=2.0, c0=(0, 0.0), center_station=("single_sites/Sol0052", "single_sites/Sol0052_S003D2046"),
                              center=(29.925, 6.905), cameras_within_m=16.0, cloud_within_m=60.0, eye=(0.0, -24.0, 7.5),
                              tgt=(0.0, 4.0, -1.0), focal=3000.0, bar=5, what="Dense point cloud", splat=1, exclude=(), ztop=1.0),
-    "rockytop": dict(block="mars2020_sol_0460_rockytop*", freeze=True, cloud=None, mesh="single_sites/Sol0461_S026D0630",
+    "rockytop": dict(block="mars2020_sol_0460_rockytop*", freeze=True, cloud=None, mesh=("single_sites/Sol0461", "single_sites/Sol0461_S026D0630"),
                      clean=True, half=24.0, res=0.06, minc=2, fill=5, spike=0.15, exag=1.5, c0=(0, 2.0), eye=(0.0, -60.0, 22.0),
                      tgt=(0.0, 6.0, 0.8), focal=4000.0, bar=10, what="Tie points", splat=2, exclude=()),
 }
@@ -595,7 +595,8 @@ def figure3_block(key: str, roots: Dict[str, Optional[Path]], out_png: Path, dpi
     C, fam = cams["C"], cams["family"]
     center = None
     if cfg.get("center_station"):
-        sj = base / cfg["center_station"] / "station.json"
+        sj = next((base / c / "station.json" for c in cfg["center_station"] if (base / c / "station.json").is_file()),
+                  base / cfg["center_station"][0] / "station.json")
         try:
             center = np.array(json.loads(sj.read_text(encoding="utf-8"))["pivot_block_m"][:2], float)
         except (OSError, ValueError, KeyError):
@@ -717,7 +718,9 @@ def figure3_block(key: str, roots: Dict[str, Optional[Path]], out_png: Path, dpi
     tv, td, _ = splat(V_, X[k3], RGB[k3], size=cfg["splat"], fill=4)
     panel_c = with_rovers(tv, td)
     panel_d = None
-    mesh_dir = base / cfg["mesh"] if cfg.get("mesh") else None
+    # the station's folder by its 1.0 name (Sol0009), else by its 0.99 name (Sol0009_S003D0000)
+    mesh_dir = next((base / m for m in cfg.get("mesh") or () if (base / m / "mesh.ply").is_file()),
+                    base / cfg["mesh"][0] if cfg.get("mesh") else None)
     if mesh_dir is not None:
         mesh = _station_mesh(mesh_dir, c0, RMAX_M)
         if mesh is not None and len(mesh[1]):
@@ -795,9 +798,9 @@ def figure3_block(key: str, roots: Dict[str, Optional[Path]], out_png: Path, dpi
 
 
 # =========================================================================================== figure 4
-FIGURE4 = {"sol0009": ("Sol0009_S003D0000", ("freeze:single_sites",)),
-           "sol0461": ("Sol0461_S026D0630", ("freeze:single_sites", "root:single_sites_8k")),
-           "sol0052": ("Sol0052_S003D2046", ("freeze:single_sites", "root:single_sites"))}
+FIGURE4 = {"sol0009": (("Sol0009", "Sol0009_S003D0000"), ("freeze:single_sites",)),
+           "sol0461": (("Sol0461", "Sol0461_S026D0630"), ("freeze:single_sites", "root:single_sites_8k")),
+           "sol0052": (("Sol0052", "Sol0052_S003D2046"), ("freeze:single_sites", "root:single_sites"))}   # 1.0 name, 0.99 name
 FIG4_PX = 1600
 FIG4_FOV_DEG = 90.0
 
@@ -870,19 +873,14 @@ def render_scape(parts: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray, np.n
     return cv2.resize(img, (view.W, view.H), interpolation=cv2.INTER_AREA)
 
 
-def _station_folder(label: str, places: Sequence[str], roots: Dict[str, Optional[Path]]) -> Optional[Path]:
+def _station_folder(labels: Sequence[str], places: Sequence[str], roots: Dict[str, Optional[Path]]) -> Optional[Path]:
+    """The first station folder with a full 3D model: the places in order, each with the 1.0 name, then the 0.99 one."""
     for p in places:
         which, sub = p.split(":", 1)
         r = roots.get(which)
-        if r and (Path(r) / sub / label / f"{label}_station_scape.glb").is_file():
-            return Path(r) / sub / label
-    for p in places:
-        which, sub = p.split(":", 1)
-        r = roots.get(which)
-        if r:
-            g = sorted((Path(r) / sub / label).glob("*_station_scape.glb"))
-            if g:
-                return g[0].parent
+        for label in labels:
+            if r and sorted((Path(r) / sub / label).glob("*_station_scape.glb")):
+                return Path(r) / sub / label
     return None
 
 
@@ -892,10 +890,11 @@ def figure4_station(key: str, roots: Dict[str, Optional[Path]], out_png: Path, d
     from PIL import Image
     Image.MAX_IMAGE_PIXELS = None
     plt = _plt()
-    label, places = FIGURE4[key]
-    d = _station_folder(label, places, roots)
+    labels, places = FIGURE4[key]
+    label = labels[0]
+    d = _station_folder(labels, places, roots)
     if d is None:
-        raise Skip(f"no full 3D model ({label}_station_scape.glb) of {label} under "
+        raise Skip(f"no full 3D model (*_station_scape.glb) of {label} under "
                    + ", ".join(f"{roots.get(p.split(':')[0])}\\{p.split(':')[1]}" for p in places))
     glb = next(iter(sorted(d.glob("*_station_scape.glb"))))
     pre = glb.name[:-len("_station_scape.glb")]
@@ -946,7 +945,7 @@ def figure4_station(key: str, roots: Dict[str, Optional[Path]], out_png: Path, d
         ax.set_title(lab, fontsize=11, loc="left", pad=3)
     fig.savefig(out_png, dpi=dpi, bbox_inches="tight", facecolor="white")
     plt.close(fig)
-    return {"station": label, "folder": str(d), "files": [pano_f.name, Path(rover_f).name, tex_f.name, glb.name],
+    return {"station": d.name, "folder": str(d), "files": [pano_f.name, Path(rover_f).name, tex_f.name, glb.name],
             "render": {"eye_m": [round(float(v), 3) for v in eye], "fov_deg": FIG4_FOV_DEG}}
 
 

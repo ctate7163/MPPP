@@ -41,7 +41,7 @@ stations through their locks. Stop station runs of 0.99.52 or older first: they 
 D:\code\RPP\scripts\windows\rpv_process.bat
 D:\code\RPP\scripts\windows\rpv_process.bat --recolor
 D:\code\RPP\scripts\windows\rpv_process.bat --dry-run
-D:\code\RPP\scripts\windows\rpv_process.bat --unpublish Sol0362_S011D0108
+D:\code\RPP\scripts\windows\rpv_process.bat --unpublish Sol0362
 ```
 
 `--recolor` does no meshing, projection or rendering: it remakes the colors of every made station from its 16-bit

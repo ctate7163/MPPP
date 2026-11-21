@@ -83,7 +83,7 @@ The welcome view lists the same controls.
 A link can name one station, variant and view:
 
 ```text
-https://ctate7163.github.io/rpv/#Sol0052_S003D2046/rover/enhanced
+https://ctate7163.github.io/rpv/#Sol0052/rover/enhanced
 ```
 
 `?experimental=1` before the `#` shows features that are still being tried, such as the simulated rover drive.

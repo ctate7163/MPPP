@@ -21,7 +21,7 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
   panorama whose left edge looks north with azimuth growing eastward.
   Hosted at https://ctate7163.github.io/rpv/ (the repository ctate7163/rpv; 0.98.29, lower case since 0.99.13) - a copy of this file that
   rpp single-sites --upload installs there (this file is rpp/viewer/index.html of the RPP package).
-  Link to one view:   https://ctate7163.github.io/rpv/#<station>/<variant>/<view>      e.g.  #Sol0052_S003D2046/rover/enhanced
+  Link to one view:   https://ctate7163.github.io/rpv/#<station>/<variant>/<view>      e.g.  #Sol0052/rover/enhanced (a 0.99 link #Sol0052_S003D2046/... still opens it)
   Another image list: .../rpv/?index=https://<same origin or CORS-enabled host>/panos.json
   0.99.40: the menu is the terrain - terrain stereo (the panoramas), terrain local 3D (the textured terrain within 20 m
   in front of the terrain-only panorama), terrain full 3D (one textured surface to the horizon and the sky, no
@@ -1227,7 +1227,11 @@ $('driveBtn').onclick = driveToggle;
 
 function fromHash() {
   const [sid, vkey, wkey, rk] = decodeURIComponent(location.hash.slice(1)).split('/');
-  const s = panos.findIndex(p => p.id === sid);
+  let s = panos.findIndex(p => p.id === sid);
+  if (s < 0 && sid) {                                              // 1.0: a link of 0.99 (Sol0052_S003D2046) to Sol0052
+    const short = sid.replace(/^(Sol\d{4})_S\d{3}D\d{4}/, '$1');
+    s = panos.findIndex(p => p.id === short);
+  }
   if (s < 0) return;
   cur.s = s;
   const v = variants(panos[s]).findIndex(q => q.key === vkey);

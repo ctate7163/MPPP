@@ -195,7 +195,7 @@ meet without a step. `ods.json` records it (`far_field`: the share decided, the 
 `far_field.npz` holds the field, and the depth products show it. `rpp ods --no-far-field` keeps the one sphere.
 
 Files (the prefix is the station's code, with `_rover` for the with-rover variant). The code is
-`Sol<sol, 4 digits>_S<site, 3>D<drive, 4>`, for example `Sol0052_S003D2046`: the first sol of the frames the
+`Sol<sol, 4 digits>_S<site, 3>D<drive, 4>`, for example `Sol0052`: the first sol of the frames the
 panorama is made from, then the rover's site and drive counters. The station's dense workspace in the block keeps
 the place alone (`dense_S003D2046`), and `--station` takes either form.
 
@@ -283,7 +283,7 @@ the device can show (maximum texture size, compressed-texture formats).
 
 - On the documentation site: [https://ctate7163.github.io/rpv/](https://ctate7163.github.io/rpv/){target="_blank" rel="noopener"}
   (opens in a new tab from these pages; GitHub's own rendering of the README does not allow that).
-- To add stations: `rpp single-sites Sol0052_S003D2046 --publish D:\code\RPV --upload --publish-only` puts the stereo JPEGs
+- To add stations: `rpp single-sites Sol0052 --publish D:\code\RPV --upload --publish-only` puts the stereo JPEGs
   (reduced to 8192) on Hugging Face (`--host hf`, the default) and lists them in the viewer checkout's `panos.json`, then
   commits and pushes that checkout (`--host github`: the pictures into its `panos/`, as before 0.99.3). Since 0.99.10 the
   pipeline's repository holds the page and `vendor/` only (`src/rpp/viewer` since 1.0): the panoramas and their list live in `ctate7163/rpv`.
@@ -415,7 +415,7 @@ from any viewpoint and its edges are the model's. `<prefix>_rover_surface.json` 
 seen from the pivot. To build it again from a folder that already has the center panorama:
 
 ```
-python -m rpp.ibr.rover_surface D:\rover_blocks\single_sites\Sol0052_S003D2046\with_rover
+python -m rpp.ibr.rover_surface D:\rover_blocks\single_sites\Sol0052\with_rover
 ```
 
 **The rover in the 3D terrain modes** (the station mesh's rover part, `station_mesh_rover`) has its own 4096² texture.
@@ -429,7 +429,7 @@ model's parallax. (0.98.2-0.98.13: a grid mesh cut from the panorama's depth, wi
 
 ## Experimental: a Mastcam-Z panorama on the Navcam terrain (0.98.2)
 
-`python -m rpp single-sites Sol0690_S032D1184_Z34` renders the 34 mm frames of sol 690 at Three Forks onto the
+`python -m rpp single-sites Sol0690_Z34` renders the 34 mm frames of sol 690 at Three Forks onto the
 terrain made from the station's Navcam frames. Stations marked `"experimental": true` in `single_sites.json` run only
 when named.
 

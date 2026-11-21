@@ -549,7 +549,21 @@ def _adjacency(F: np.ndarray, V: np.ndarray, weld_m: float = WELD_M) -> List[Lis
     return adj
 
 
+def _clean_normals(normals: np.ndarray) -> np.ndarray:
+    """1.0 (Van Zyl, 20 Nov 2026: "the station mesh's part was not made (OverflowError: int too big to convert)"): a
+    triangle of no area has no normal (0 or NaN) - it takes +z, so its chart's size is not NaN."""
+    nk = np.nan_to_num(np.asarray(normals, float), nan=0.0, posinf=0.0, neginf=0.0)
+    bad = np.linalg.norm(nk, axis=1) < 1e-12
+    if bad.any():
+        nk = nk.copy()
+        nk[bad] = (0.0, 0.0, 1.0)
+    return nk
+
+
 def _plane_basis(n: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    n = np.nan_to_num(np.asarray(n, float))
+    if float(np.linalg.norm(n)) < 1e-12:
+        n = np.array([0.0, 0.0, 1.0])
     a = np.asarray(n, float) / max(float(np.linalg.norm(n)), 1e-15)
     h = np.array([1.0, 0.0, 0.0]) if abs(a[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
     u = np.cross(a, h)
@@ -570,7 +584,7 @@ def triangle_charts(V: np.ndarray, F: np.ndarray, normals: np.ndarray, areas: np
     if m == 0:
         return []
     VF = np.asarray(V, float)[np.asarray(F)]                     # (m, 3, 3)
-    nk = np.asarray(normals, float)
+    nk = _clean_normals(normals)
     adj = _adjacency(np.asarray(F), V)
     cosmax = float(np.cos(np.radians(max_deg)))
     owner = np.full(m, -1, np.int64)
@@ -649,7 +663,8 @@ def layout_charts(V: np.ndarray, F: np.ndarray, normals: np.ndarray, areas: np.n
     if m == 0:
         return empty
     VF = np.asarray(V, float)[np.asarray(F)]
-    nk = np.asarray(normals, float)
+    nk = _clean_normals(normals)
+    areas = np.nan_to_num(np.asarray(areas, float))
     charts = triangle_charts(V, F, nk, areas, max_deg, max_m)
     P2, lo, ext = [], [], []
     for c in charts:
@@ -657,7 +672,7 @@ def layout_charts(V: np.ndarray, F: np.ndarray, normals: np.ndarray, areas: np.n
         P2.append(p)
         lo.append(p.reshape(-1, 2).min(axis=0))
         ext.append(p.reshape(-1, 2).max(axis=0) - lo[-1])
-    lo, ext = np.asarray(lo), np.asarray(ext)
+    lo, ext = np.nan_to_num(np.asarray(lo)), np.nan_to_num(np.asarray(ext), nan=0.0, posinf=0.0, neginf=0.0)
     g = GUTTER_PX
     free = size * size - sum(r[2] * r[3] for r in reserved)
     t = float(np.sqrt(max(1.3 * float((ext[:, 0] * ext[:, 1]).sum()), 1e-12) / max(fill * free, 1.0)))
