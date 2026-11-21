@@ -841,3 +841,31 @@ def test_charts_take_a_triangle_without_area():
     areas = np.r_[np.full(len(F) - 1, 0.5 * (0.3 / 6) ** 2), 0.0]
     cells = SM.layout_charts(V, F, N, areas, 256)
     assert np.isfinite(cells["uv"]).all() and cells["charts"] >= 7 and (cells["wh"] < 256).all()
+
+
+def test_full_3d_sky_ends_at_one_skyline():
+    """1.0 (Van Zyl: "the van zyl sky looks really bad here too"): in the fifth mode's texture the white sky ends at one
+    skyline per azimuth - a white hole in the hills is filled from them, a hill patch standing alone in the sky is white."""
+    from rpp.ibr import station_mesh as SM
+    size, rpx = 400, 200.0
+    knee = (np.radians(100.0), 0.8)                                  # the knee at 10 deg above the horizon
+    yy, xx = np.mgrid[0:size, 0:size]
+    rho = np.hypot(xx + 0.5 - size / 2, size / 2 - (yy + 0.5))
+    rho2 = (rho ** 2).astype(np.float32)
+    in_disc = rho < rpx
+    r_h = float(SM._rho_of_theta(np.array([np.pi / 2]), rpx, np.pi, knee)[0])
+    r_4 = float(SM._rho_of_theta(np.array([np.pi / 2 + np.radians(4.0)]), rpx, np.pi, knee)[0])
+    far = in_disc & (rho > r_h)
+    hill = far & (rho <= r_4)
+    sky = far & ~hill
+    hole = hill & (np.abs(xx - 347) < 2) & (np.abs(yy - 200) < 2)
+    sky0 = sky | hole                                                # a white hole in the hills
+    lone = far & (np.abs(xx - 200) < 3) & (yy > 10) & (yy < 25)
+    sky0 &= ~lone                                                    # a patch taken for hill, alone in the sky
+    rgb = np.where(hill[..., None], 80.0, 220.0).astype(np.float32) * np.ones((1, 1, 3), np.float32)
+    have = in_disc.copy()
+    out = SM.one_skyline(rgb, sky0, far, have, in_disc, rho2, size, rpx, knee)
+    assert not out[hole].any() and rgb[hole].max() < 120                          # filled from the hills
+    assert out[lone].all()                                                         # white now
+    assert not (out & ~far).any()                                                  # the mesh is never sky
+    assert hole.any() and lone.any()

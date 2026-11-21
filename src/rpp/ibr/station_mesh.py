@@ -485,7 +485,54 @@ def sky_texels(rgb: np.ndarray, far: np.ndarray, have: np.ndarray, in_disc: np.n
         stands[np.unique(comp2[near & (rest > 0)])] = True
         stands[0] = True
         out |= ~stands[comp2] & (rest > 0)
+    if SKYLINE_ONE:
+        out = one_skyline(rgb, out, far, have, in_disc, rho2, size, rpx, knee)
     return out
+
+
+# 1.0 (Christian, 20 Nov 2026, Van Zyl: "the van zyl sky looks really bad here too" - the far hills' tops torn, white
+# holes in them and hill patches standing in the sky; "Make sure to improve the horizon and sky boundary problem"):
+# the white sky of the fifth mode's texture ends at ONE skyline - per SKYLINE_BIN_DEG of azimuth the highest texel that
+# is not sky (the mesh, or a far hill), median filtered over SKYLINE_MEDIAN_BINS: above it every far texel is white,
+# below it none is, and a far texel below it that was taken for sky takes the colors of the hills around it
+SKYLINE_ONE = True
+SKYLINE_BIN_DEG = 0.25
+SKYLINE_MEDIAN_BINS = 9          # 2.25 deg
+SKYLINE_LOW_EL_DEG = -5.0        # the skyline is looked for above this elevation
+
+
+def one_skyline(rgb: np.ndarray, sky: np.ndarray, far: np.ndarray, have: np.ndarray, in_disc: np.ndarray,
+                rho2: np.ndarray, size: int, rpx: float, knee) -> np.ndarray:
+    """The sky texels of :func:`sky_texels` made to end at one skyline (above); the far texels below it that were sky
+    are filled from the hills (``rgb`` in place).  Returns the new sky mask."""
+    from scipy.ndimage import median_filter
+    lo = float(_rho_of_theta(np.array([np.pi / 2 + np.radians(SKYLINE_LOW_EL_DEG)]), rpx, np.pi, knee)[0])
+    hi = (knee[1] * rpx + 1.0) if knee else rpx
+    band = in_disc & (rho2 > np.float32(lo * lo)) & (rho2 < np.float32(hi * hi))
+    ys, xs = np.nonzero(band & ~sky)
+    if len(ys) < 100:
+        return sky
+    nb = int(round(360.0 / SKYLINE_BIN_DEG))
+    c = size / 2.0
+
+    def bins(yy, xx):
+        return (((np.arctan2(c - (yy + 0.5), (xx + 0.5) - c) + np.pi) / (2 * np.pi) * nb).astype(np.int64)) % nb
+    top = np.full(nb, lo, np.float64)
+    np.maximum.at(top, bins(ys, xs), np.sqrt(rho2[ys, xs].astype(np.float64)))
+    top = median_filter(top, size=SKYLINE_MEDIAN_BINS, mode="wrap")
+    by, bx = np.nonzero(band | (far & in_disc & (rho2 >= np.float32(hi * hi))))
+    above = np.sqrt(rho2[by, bx].astype(np.float64)) > top[bins(by, bx)]
+    new = sky.copy()
+    keep_far = far[by, bx]
+    new[by[above & keep_far], bx[above & keep_far]] = True        # above the skyline: every far texel is sky
+    new[by[~above], bx[~above]] = False                          # below it: none is
+    holes = sky & ~new
+    if holes.any():                                              # far texels below the skyline taken for sky: the hills'
+        src = in_disc & have & ~new & ~holes                     # colors (all the texture's ground, pulled coarse to fine)
+        push_pull(rgb, src, holes)
+    log.info("station mesh: one skyline - %d far texels above it white, %d below it from the hills",
+             int((new & ~sky).sum()), int(holes.sum()))
+    return new
 
 
 def push_pull(rgb: np.ndarray, have: np.ndarray, region: np.ndarray) -> np.ndarray:

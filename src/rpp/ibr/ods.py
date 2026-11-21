@@ -1374,11 +1374,12 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
     sky = fill_sky(rgb, source, label) if sky_fill else np.zeros(label.shape, bool)
     evened = even_sky(rgb, label) if sky_fill else {}
     healed = heal_sky(rgb, evened.get("weight"), label) if sky_fill else {}       # 0.98.4: the last check on the sky
+    skyline = skyline_sky(rgb, label, source) if sky_fill and SKYLINE_SKY else {}   # 1.0: one skyline, one smooth sky
     pole = blend_pole(rgb) if sky_fill else {}           # 0.99.52: no discolored point at the zenith
     if checked:                                              # and any surface still without a source
         _brown((source == -1) & ((label == LABEL_MESH) | (label == LABEL_PLANE)))
     return {"brown_filled": brown, "rover": rover_px, "rgb": rgb, "source": source, "label": label, "range": rng, "hidden_fallback": hidden, "filled": filled,
-            "sky_filled": sky, "sky_evened": evened, "sky_healed": healed, "sky_pole": pole, "ground_filled": gfill, "surface_check_rejected": rej, "provenance": prov,
+            "sky_filled": sky, "sky_evened": evened, "sky_healed": healed, "sky_pole": pole, "skyline": skyline, "ground_filled": gfill, "surface_check_rejected": rej, "provenance": prov,
             "sky_weight": evened.pop("weight", None), "effective_frames": _effective_frames(neff_vals)}
 
 
@@ -1431,6 +1432,133 @@ POLE_SIGMA_DEG = 6.0             # ... a Gaussian of this many degrees on the sk
 #                                   cross-fade a smoothstep from 0 at POLE_BLEND_FROM_DEG to 1 at the zenith, where
 #                                   every column has one color
 POLE_TOP_DEG = 88.0              # the rows above this all take the mean of the rows above it
+
+
+# 1.0 (Christian, 20 Nov 2026, Van Zyl: "the van zyl sky still has artifacts"; "Make sure to improve the horizon and sky
+# boundary problem"): the sky of an eye is one smooth sky above one skyline.
+# * THE SKYLINE is one row per column - the highest terrain: a pixel of the mesh or the ground plane, or a far pixel
+#   (beyond them: the sky or the hills) darker than midway (log) between the sky and the ground.  It is median
+#   filtered over SKYLINE_MEDIAN_DEG of azimuth, so a lone floater above the hills or a notch of sky in them goes.
+# * THE SKY above it is a fit to its own pixels (away from the skyline): per channel, the log of the color as a smooth
+#   function of elevation (a cubic) and azimuth (to the third harmonic, fading to none at the zenith).  The frames'
+#   footprints (taken minutes apart, other exposures), their edges and the fills' seams are gone; the Martian sky has
+#   nothing finer to lose, apart from a rare cloud.
+# * BELOW it, far pixels as bright as the sky (specks of sky between the hills' tops, sky colors carried over the
+#   skyline) take the terrain's colors from the same row on either side.
+SKYLINE_SKY = True
+SKYLINE_MAX_EL_DEG = 30.0        # terrain is looked for below this elevation (and at most SKYLINE_BELOW_DEG below the horizon)
+SKYLINE_BELOW_DEG = 3.0
+SKYLINE_MEDIAN_DEG = 1.0         # the skyline's median filter, in azimuth
+SKY_MODEL_MARGIN_DEG = 0.8       # sky pixels this close above the skyline are not fitted (the frames' haze at the hills)
+SKY_MODEL_EL_DEGREE, SKY_MODEL_AZ_ORDER = 3, 3
+SKYLINE_SPECK_DEG = 4.0          # the band below the skyline where sky-bright far pixels take the terrain's colors
+SKYLINE_GAP_DEG = 0.3            # gaps in the terrain up to this tall are bridged (sky specks between the hills)
+
+
+def _sky_basis(el: np.ndarray, az: np.ndarray) -> np.ndarray:
+    e = np.asarray(el, float)
+    ce = np.cos(e)
+    cols = []
+    for k in range(SKY_MODEL_EL_DEGREE + 1):
+        ek = e ** k
+        cols.append(ek)
+        for m in range(1, SKY_MODEL_AZ_ORDER + 1):
+            cols.append(ek * ce * np.cos(m * az))
+            cols.append(ek * ce * np.sin(m * az))
+    return np.stack(cols, axis=-1)
+
+
+def skyline_sky(rgb: np.ndarray, label: np.ndarray, source: Optional[np.ndarray] = None) -> Dict[str, Any]:
+    """The sky of one equirectangular eye (row 0 the zenith, column 0 north) made one smooth sky above one skyline, in
+    place (see the constants above).  Returns {"skyline_rows", "sky_px", "specks_px", "fit_rms_log"} or {} when there
+    is too little sky or ground to tell them apart."""
+    from scipy.ndimage import median_filter
+    H, W = label.shape
+    rows = np.arange(H)
+    el_deg = 90.0 - (rows + 0.5) / H * 180.0
+    top = float(np.iinfo(rgb.dtype).max) if np.issubdtype(rgb.dtype, np.integer) else float(np.nanmax(rgb))
+    lum = np.log1p(rgb.astype(np.float32).mean(axis=2))
+    far = label == LABEL_FAR
+    surf = (label == LABEL_MESH) | (label == LABEL_PLANE)
+    seen = np.ones(label.shape, bool) if source is None else source >= 0
+    hi = far & seen & (el_deg >= 20.0)[:, None]
+    lo = surf & seen & ((el_deg < 0.0) & (el_deg > -30.0))[:, None]
+    if hi.sum() < 500 or lo.sum() < 500:
+        return {}
+    cut = 0.5 * (float(np.median(lum[hi][::7])) + float(np.median(lum[lo][::7])))
+    band = ((el_deg < SKYLINE_MAX_EL_DEG) & (el_deg > -SKYLINE_BELOW_DEG))[:, None]
+    terrain = band & (surf | (far & (lum < cut)))
+    r_h = int(np.searchsorted(-el_deg, 0.0))                     # the first row below the horizon
+    # the terrain that stands on the ground: per column, up from SKYLINE_BELOW_DEG below the horizon while the pixels are
+    # terrain (gaps of up to SKYLINE_GAP_DEG); a dark band afloat in the sky (a frame's top edge) is not reached
+    r_bot = int(np.searchsorted(-el_deg, SKYLINE_BELOW_DEG)) - 1
+    r_top = int(np.searchsorted(-el_deg, -SKYLINE_MAX_EL_DEG))
+    gmax = max(1, int(round(SKYLINE_GAP_DEG / 180.0 * H)))
+    alive = np.ones(W, bool)
+    gap = np.zeros(W, np.int64)
+    first = np.full(W, r_h, np.int64)
+    for r in range(min(H - 1, r_bot), max(0, r_top) - 1, -1):
+        t_r = terrain[r]
+        gap = np.where(t_r, 0, gap + 1)
+        alive &= gap <= gmax
+        first = np.where(alive & t_r, r, first)
+        if not alive.any():
+            break
+    k = max(3, int(round(SKYLINE_MEDIAN_DEG / 360.0 * W)) | 1)
+    sk = median_filter(first.astype(np.int64), size=k, mode="wrap")
+    sky = rows[:, None] < sk[None, :]
+    margin = max(1, int(round(SKY_MODEL_MARGIN_DEG / 180.0 * H)))
+    fit = sky & (rows[:, None] < (sk - margin)[None, :]) & seen
+    step = max(1, int(np.sqrt(fit.sum() / 200000.0)))
+    fr, fc = np.nonzero(fit[::step, ::step])
+    fr, fc = fr * step, fc * step
+    if len(fr) < 200:
+        return {}
+    az = (np.arange(W) + 0.5) / W * 2.0 * np.pi
+    elr = np.radians(el_deg)
+    B = _sky_basis(elr[fr], az[fc])
+    Y = np.log1p(rgb[fr, fc].astype(np.float64))
+    keep = np.ones(len(fr), bool)
+    for _ in range(2):                                           # one refit without the outliers (a bright frame edge)
+        coef, *_ = np.linalg.lstsq(B[keep], Y[keep], rcond=None)
+        res = np.abs(Y - B @ coef).mean(axis=1)
+        mad = float(np.median(res[keep])) + 1e-6
+        keep = res < 4.0 * mad
+    rms = float(np.sqrt(np.mean(((Y - B @ coef)[keep]) ** 2)))
+    # the fit, row by row (a 16k eye's sky is tens of millions of pixels): within a row the elevation terms are one number
+    nb = 1 + 2 * SKY_MODEL_AZ_ORDER
+    A = np.ones((W, nb))
+    for m in range(1, SKY_MODEL_AZ_ORDER + 1):
+        A[:, 2 * m - 1], A[:, 2 * m] = np.cos(m * az), np.sin(m * az)
+    C = coef.reshape(SKY_MODEL_EL_DEGREE + 1, nb, -1)
+    n_sky = 0
+    for r in range(int(sk.max())):
+        cols = np.flatnonzero(sk > r)
+        if not len(cols):
+            continue
+        e, ce = float(elr[r]), float(np.cos(elr[r]))
+        w = sum((e ** k) * C[k] * np.r_[1.0, np.full(nb - 1, ce)][:, None] for k in range(SKY_MODEL_EL_DEGREE + 1))
+        rgb[r, cols] = np.clip(np.expm1(A[cols] @ w), 0, top).astype(rgb.dtype)
+        n_sky += len(cols)
+    # specks of sky below the skyline: the row's terrain on either side
+    sb = max(1, int(round(SKYLINE_SPECK_DEG / 180.0 * H)))
+    below = (rows[:, None] >= sk[None, :]) & (rows[:, None] < (sk + sb)[None, :])
+    speck = below & far & (lum >= cut)
+    n_speck = 0
+    for r in np.unique(np.nonzero(speck)[0]):
+        bad = speck[r]
+        good = below[r] & ~bad & (surf[r] | (far[r] & (lum[r] < cut)))
+        if good.sum() < 2:
+            continue
+        g = np.flatnonzero(good)
+        b = np.flatnonzero(bad)
+        for ch in range(rgb.shape[2]):
+            rgb[r, b, ch] = np.interp(b, g, rgb[r, g, ch].astype(np.float64), period=W).astype(rgb.dtype)
+        n_speck += len(b)
+    log.info("ods: one skyline, the sky above it a smooth fit (rms %.3f in log) - %d sky pixels, %d specks below it",
+             rms, n_sky, n_speck)
+    return {"skyline_rows": [int(sk.min()), int(sk.max())], "sky_px": int(n_sky), "specks_px": int(n_speck),
+            "fit_rms_log": round(rms, 4)}
 
 
 def blend_pole(rgb: np.ndarray, from_deg: float = POLE_BLEND_FROM_DEG, sigma_deg: float = POLE_SIGMA_DEG) -> Dict[str, Any]:

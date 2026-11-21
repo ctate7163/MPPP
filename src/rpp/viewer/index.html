@@ -342,7 +342,9 @@ const NORMAL_FRAG = `
   uniform vec2 fade;
   void main() {
     vec3 n = normalize(cross(dFdx(vP), dFdy(vP)));
-    vec3 c = length(vP) > 1500.0 ? vec3(0.0) : 0.5 * (1.0 + vec3(n.x, -n.z, n.y));
+    // 1.0 (Christian, 20 Nov 2026: "the full-3d normal map should not show anything beyond 100 m"): beyond 100 m from
+    // the mast axis (the far shell: rings of hills and sky, whose normals say nothing of the ground) black, as the sky
+    vec3 c = vR > 100.0 ? vec3(0.0) : 0.5 * (1.0 + vec3(n.x, -n.z, n.y));
     gl_FragColor = vec4(c, fade.y > fade.x ? 1.0 - smoothstep(fade.x, fade.y, vR) : 1.0);
   }`;
 // 0.99.41 (Christian, 19 Nov 2026: "The different color skins for the terrain should be visible in both modes ... the
