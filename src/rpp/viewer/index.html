@@ -26,7 +26,8 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
   0.99.40: the menu is the terrain - terrain stereo (the panoramas), terrain local 3D (the textured terrain within 20 m
   in front of the terrain-only panorama), terrain full 3D (one textured surface to the horizon and the sky, no
   panorama); the rover button / R shows or hides the rover (in stereo the with-rover panorama, in 3D the 3D rover);
-  the drive (the full 3D terrain and the rover) is the steering wheel above the rover button, with ?experimental=1 only.
+  the drive (the full 3D terrain and the rover) is the steering wheel above the rover button (1.0: shown wherever the
+  station has it; ?experimental=1 only in 0.99.40-0.99.53).
   A link may end in /no-rover (a 3D mode with the rover hidden).
   Keys: left / right arrows = station (in the drive the arrows drive the rover), V = terrain, E or space = view
   (0.99.37: space, Shift+space back), R = the rover on / off as the rover button (0.99.37), I = info,
@@ -48,7 +49,8 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
   (no panorama behind it); the near terrain fades out at its rim; on a screen the eye moves a little (in front of the
   turning point, with the pointer, and a slow sway when left alone; P turns that off).
   0.99.33: a sixth, "Drive the rover (simulation)" - the fifth mode's surface with the rover moved over it by the two
-  thumbsticks (forward / back: the track on that side; on a screen the arrow keys); the viewer rides at the mast.
+  thumbsticks (forward / back: the track on that side; 1.0: left / right turns the rover, not the view; on a screen
+  the arrow keys); the viewer rides at the mast.
   0.99.26: 3D terrain and rover - the terrain within 10 m (20 m from 0.99.39) and the rover as textured surfaces (true parallax), the
   terrain-only panorama beyond; the head may move 1 m from where the mode started, then the surface comes along.
 -->
@@ -123,7 +125,7 @@ if (location.hostname === 'ctate7163.github.io' && (/^\/(RPP|MPPP)\/ods(\/|$)/i.
 </div>
 <div id="nav">
   <button id="prevSt" title="previous station (left arrow)" aria-label="previous station"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5 8 12l7 7"/></svg></button>
-  <span id="roverWrap"><span id="driveBeta" title="an experimental feature">Beta</span><button id="driveBtn" title="drive the rover - an experimental simulation on the full 3D terrain (the arrow keys)" aria-label="drive the rover"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><!-- a steering wheel: the rim, the hub, three spokes --><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M10 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M3.4 10.6 10 11.6M20.6 10.6 14 11.6M12 14v6.9"/></svg></button><button id="roverBtn" title="the rover shown / hidden (R; headset: left grip)" aria-label="rover shown or hidden"><svg width="34" height="26" viewBox="0 0 34 26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><!-- a Curiosity-class rover from the side: the deck, the RTG at the back, the mast and its camera head, the arm, six wheels on the rocker-bogie (three seen) --><rect x="9" y="11" width="15" height="4" rx="0.6"/><path d="M9 12.2 5.2 9.6M9 14 4.6 12.4M5.2 9.6 4.6 12.4"/><path d="M20.5 11V4.2"/><rect x="18.2" y="1.6" width="6.4" height="2.6" rx="0.6"/><path d="M24 12.6 28.6 10.4 30.2 13.6"/><path d="M7 21.5 11 15.6 15 18.2 17 21.5M15 18.2 13 21.5M27 21.5 22.6 15.6"/><circle cx="7" cy="21.5" r="2.3"/><circle cx="17" cy="21.5" r="2.3"/><circle cx="27" cy="21.5" r="2.3"/></svg></button></span>
+  <span id="roverWrap"><span id="driveBeta" title="an experimental feature">Beta</span><button id="driveBtn" title="drive the rover - a simulation on the full 3D terrain (beta): up / down arrows drive, left / right turn" aria-label="drive the rover"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><!-- a steering wheel: the rim, the hub, three spokes --><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M10 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M3.4 10.6 10 11.6M20.6 10.6 14 11.6M12 14v6.9"/></svg></button><button id="roverBtn" title="the rover shown / hidden (R; headset: left grip)" aria-label="rover shown or hidden"><svg width="34" height="26" viewBox="0 0 34 26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><!-- a Curiosity-class rover from the side: the deck, the RTG at the back, the mast and its camera head, the arm, six wheels on the rocker-bogie (three seen) --><rect x="9" y="11" width="15" height="4" rx="0.6"/><path d="M9 12.2 5.2 9.6M9 14 4.6 12.4M5.2 9.6 4.6 12.4"/><path d="M20.5 11V4.2"/><rect x="18.2" y="1.6" width="6.4" height="2.6" rx="0.6"/><path d="M24 12.6 28.6 10.4 30.2 13.6"/><path d="M7 21.5 11 15.6 15 18.2 17 21.5M15 18.2 13 21.5M27 21.5 22.6 15.6"/><circle cx="7" cy="21.5" r="2.3"/><circle cx="17" cy="21.5" r="2.3"/><circle cx="27" cy="21.5" r="2.3"/></svg></button></span>
   <button id="nextSt" title="next station (right arrow)" aria-label="next station"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg></button>
 </div>
 <div id="msg">loading the list ...</div>
@@ -450,7 +452,7 @@ function driveStart(dv) {                                        // dv: the entr
   DRIVE.fit0 = driveFit();
   DRIVE.tilt.identity();
   DRIVE.on = true;
-  const hint = 'a simulation: the arrow keys drive the rover (in a headset the two thumbsticks, forward / back: the track on that side)';
+  const hint = 'a simulation: the arrow keys drive the rover (in a headset the thumbsticks: forward / back the track on that side, left / right turns the rover)';
   msg(hint);
   setTimeout(() => { if ($('msg').textContent === hint) msg(''); }, 8000);     // for a while, then out of the way
 }
@@ -768,13 +770,14 @@ function showWelcome(on) {
     ctlHeadset = place(textPanel([{ text: 'trigger: next site   |   left trigger: back   |   stick: turn', px: 84, weight: 600 },
                                  { text: 'X: info and map   |   Y: home   |   A: view', px: 84, weight: 600 },
                                  { text: 'B: stereo / 3D   |   grip: rover on / off   |   hold Y: leave VR', px: 84, weight: 600 },
-                                 { text: 'stick click: drive the rover (beta)   |   in the drive: sticks forward / back', px: 84, weight: 600 }],
+                                 { text: 'stick click: drive (beta)   |   driving: sticks forward / back, left / right turn', px: 84, weight: 600 }],
                                 { back: 'rgba(0,0,0,0.35)', uniform: true }), WELCOME_AZ_DEG, -6, 5, 3.6);   // 0.99.14: one size
     // 0.99.37 (Christian, 19 Nov 2026: "In the browser 2d version. Show a differ set of controls, including using the
     // space bar to change the color map"): on a screen the keys and the mouse instead
     ctlScreen = place(textPanel([{ text: '\u2190 \u2192: site   |   space: color map   |   R: rover on / off   |   V: terrain', px: 84, weight: 600 },
                                  { text: 'drag or W A S D: look   |   wheel: zoom   |   N E S W O: face   |   L: eye', px: 84, weight: 600 },
-                                 { text: 'I: info and map   |   H: home   |   B: stereo / full 3D   |   P: motion on / off', px: 84, weight: 600 }],
+                                 { text: 'I: info and map   |   H: home   |   B: stereo / full 3D   |   P: motion on / off', px: 84, weight: 600 },
+                                 { text: 'steering wheel button: drive the rover (beta)   |   driving: the arrow keys', px: 84, weight: 600 }],
                                 { back: 'rgba(0,0,0,0.35)', uniform: true }), WELCOME_AZ_DEG, -6, 5, 3.6);
     welcome.add(ctlHeadset, ctlScreen);
   }
@@ -962,7 +965,6 @@ const TERRAIN_MODES = [['stereo', 'terrain stereo'], ['full', 'terrain 3D']];
 const MODE_OF = { masked: 'stereo', rover: 'stereo', rover3d: 'stereo', terrain3d: 'full', scape3d: 'full', drive3d: 'drive' };
 const MODE_KEYS = { full: ['scape3d', 'terrain3d'], drive: ['drive3d'] };
 const MODE_FALLBACK = { drive: 'full', full: 'stereo' };   // where a station lacks the mode
-const EXPERIMENTAL = new URLSearchParams(location.search).get('experimental') === '1';
 let mode = 'stereo';
 const modeKeys = m => m === 'stereo' ? (roverOn ? ['rover', 'rover3d'] : ['masked']) : MODE_KEYS[m] || [];
 function modesOf(p) {                            // the terrain modes this station has
@@ -1218,7 +1220,9 @@ function updateNav() {
   b.disabled = mode === 'drive' || (mode === 'stereo' && !(vs.some(q => q.key === 'masked') && vs.some(q => MODE_OF[q.key] === 'stereo' && isRoverVariant(q))));
   b.style.opacity = b.disabled ? 0.4 : 1;
   const d = $('driveBtn');
-  d.style.display = EXPERIMENTAL && vs.some(q => q.key === 'drive3d') ? 'inline-flex' : 'none';
+  // 1.0 (Christian, 20 Nov 2026: "please re-enable driving mode using a button on the 2d browser"): the steering wheel
+  // wherever the station has the drive, no longer behind ?experimental=1
+  d.style.display = vs.some(q => q.key === 'drive3d') ? 'inline-flex' : 'none';
   $('driveBeta').style.display = d.style.display === 'none' ? 'none' : 'inline-block';
   d.classList.toggle('on', mode === 'drive');
 }
@@ -1385,7 +1389,7 @@ function pressed(src, i) {                       // button i of this controller 
   held.set(key, is);
   return is && !was;
 }
-let stickL = 0, stickR = 0, yDown = 0, yDone = false;
+let stickL = 0, stickR = 0, stickTurn = 0, yDown = 0, yDone = false;
 function buttons(dt) {                           // xr-standard: button 4 is A (right) / X (left), button 5 is B (right) / Y (left)
   const session = renderer.xr.getSession();
   if (!session) return;
@@ -1413,7 +1417,11 @@ function buttons(dt) {                           // xr-standard: button 4 is A (
       if (left) stickL = t; else stickR = t;
     }
     const x = gp.axes.length >= 4 ? gp.axes[2] : (gp.axes[0] || 0);                          // thumbstick left / right
-    if (Math.abs(x) > STICK_DEAD) {                                                          // right: the view turns to the right
+    // 1.0 (Christian, 20 Nov 2026: "the left and right joystick should turn the rover instead of turn the view"): in the
+    // drive either stick's left / right turns the rover (one track against the other); the viewer rides along with it
+    if (DRIVE.on) {
+      if (Math.abs(x) > STICK_DEAD) stickTurn += Math.sign(x) * (Math.abs(x) - STICK_DEAD) / (1 - STICK_DEAD);
+    } else if (Math.abs(x) > STICK_DEAD) {                                                   // right: the view turns to the right
       turn += THREE.MathUtils.degToRad(TURN_DEG_S) * dt * Math.sign(x) * (Math.abs(x) - STICK_DEAD) / (1 - STICK_DEAD);
       world.rotation.y = yaw0 + turn;
     }
@@ -1462,9 +1470,10 @@ renderer.setAnimationLoop(() => {
       const off = wholeScene ? 0 : offHead.subVectors(head, fixed.position).length();   // fourth mode's terrain no longer
       meshFade.set(Math.max(3, fadeBase.x - 5 * off), Math.max(4.5, fadeBase.y - 4 * off));   // fits its rim: the fade starts nearer
     }
-    stickL = stickR = 0;
+    stickL = stickR = stickTurn = 0;
     buttons(dt);
-    driveStep(dt, stickL, stickR);
+    const tt = Math.max(-1, Math.min(1, stickTurn));             // right (> 0): the left track forward, the right one back
+    driveStep(dt, Math.max(-1, Math.min(1, stickL + tt)), Math.max(-1, Math.min(1, stickR - tt)));
   } else {                                                       // on a screen: ?head=x,y,z (m: east, up, south) moves the eye off
     camera.updateMatrixWorld();
     camera.position.copy(headOffset).add(screenEye3(dt));        // the pivot (0.98.14) and the screen's eye movement (0.99.32)
