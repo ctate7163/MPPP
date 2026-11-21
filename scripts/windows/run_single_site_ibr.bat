@@ -9,10 +9,10 @@ REM    0.97.0: the Perseverance model in the rover mesh, the panorama blended in
 REM    station for the rover-shown and rover-masked versions (<station>\tone_levels.json), the per-image pictures as
 REM    jpg in photometry_jpg (rad, depth linear / log, normal, incidence, emission, phase, shadow), a center panorama
 REM    with its depth, the viewpoint on the azimuth axis at the Mastcam-Z height
-REM    examples:  run_single_site_ibr.bat Sol0052_S003D2046            one station
+REM    examples:  run_single_site_ibr.bat Sol0052            one station
 REM               run_single_site_ibr.bat --steps ods          the panoramas again (mesh and maps kept)
 REM               run_single_site_ibr.bat --dry-run            the commands, not run
-REM               run_single_site_ibr.bat Sol0052_S003D2046 --no-upload  the run without the upload at its end
+REM               run_single_site_ibr.bat Sol0052 --no-upload  the run without the upload at its end
 REM               run_single_site_ibr.bat --publish-only                 no rendering: publish and push what is there
 REM    0.97.24: when the run is done its panoramas are published and uploaded (--upload is given here; --no-upload
 REM    after it wins).  0.99.3: the pictures go to the Hugging Face dataset ctate7163/rpp-rpv, station by station,

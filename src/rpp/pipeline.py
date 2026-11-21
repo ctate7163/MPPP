@@ -272,8 +272,7 @@ class Settings:
                 # 0.95.1: and the zoom entries and every Mastcam-Z pattern ("*ZCAM10008_110*")
                 d["exclude"] = [e for e in d["exclude"] if not str(e).strip().lower().startswith(("seq:zcam", "zoom:"))
                                 and "ZCAM" not in str(e).upper()]
-        if isinstance(d.get("mask_checkpoint"), str) and d["mask_checkpoint"]:
-            d["mask_checkpoint"] = _key_mask_name(d["mask_checkpoint"])   # 0.99.0: the keys stay what they were
+        d["mask_checkpoint"] = _key_mask(d.get("mask_checkpoint"))
         return d
 
 
@@ -309,6 +308,27 @@ def hazcam_families(v: Any) -> Tuple[str, ...]:
         else:
             raise ValueError(f"hazcams = {v!r}: use 'F' (front), 'R' (rear) or both")
     return tuple(f for f in ("F", "R") if f in out)
+KEY_DEFAULT_MASK = "rpp_mask_v3"       # the model a run key without a mask name has meant since the keys began
+
+
+def _key_mask(spec: Optional[str]) -> Optional[str]:
+    """The mask model as a run key hashes it.  Until 0.99 the registry default was ``rpp_mask_v3`` and a key held no
+    name for it.  1.0 changed the default (``rpp_mask_v5``), so the key must say which model made the masks:
+
+    * no name: the registry default, by name - unless that is :data:`KEY_DEFAULT_MASK`, which stays unnamed;
+    * :data:`KEY_DEFAULT_MASK` by name (or its name before 0.99): unnamed, the key of every block made with it as
+      the default - ``--set mask_checkpoint=rpp_mask_v3`` reuses those blocks;
+    * another released model: its name before 0.99 where it had one (:func:`_key_mask_name`);
+    * a path or a file name: as written."""
+    from .mask_names import _registry, canonical
+    if not (isinstance(spec, str) and spec):
+        try:
+            spec = _registry().get("default")
+        except (OSError, ValueError):
+            return None
+    return None if canonical(spec) == KEY_DEFAULT_MASK else _key_mask_name(spec)
+
+
 def _key_mask_name(spec: str) -> str:
     """A released mask model in a run key under the name it had before 0.99 (``rpp_mask_v4`` and ``mppp_mask_v4``
     both hash as ``mppp_mask_v4``), so the rename MPPP -> RPP changes no block's run key; anything else as it is."""

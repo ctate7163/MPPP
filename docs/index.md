@@ -1,75 +1,85 @@
-# RPP
+# RPP: Rover Photogrammetry Pipeline
 
-RPP (Rover Photogrammetry Pipeline) turns Mars 2020 Perseverance **Navcam** and **Mastcam-Z** PDS
-products (`*.IMG`, RAD) into aligned structure-from-motion blocks in **COLMAP**, and into inputs for **Agisoft
-Metashape**.
+**Mars rover images to true-scale 3D, across many rover stops.**
 
-**Formerly MPPP.** Until 0.98 the pipeline was called MPPP (Mars Photogrammetry Preprocessing Pipeline). Since 0.99
-it is RPP: `import rpp`, the `rpp` command, the `RPP_*` environment variables, the mask models `rpp_mask_v*` and the
-PyPI distribution `rover-photogrammetry`. The old names still work in 0.99 (`import mppp`, `python -m mppp`,
-the `MPPP_*` variables, `mppp_mask_v3`), and WORK folders keep their file names (`mppp_manifest_*.json`,
-`mppp_status.json`, ...), so blocks made by MPPP are reused as they are (`rpp.ondisk` lists the names that stay).
+RPP turns the public Mars rover images of NASA's Planetary Data System (PDS) into aligned structure-from-motion
+projects that combine the images of many rover stops. The result is in meters, with north and up known, and opens in
+COLMAP, Agisoft Metashape and Nerfstudio.
 
-The Mars 2020 images and their metadata are public in NASA's Planetary Data System (PDS), in a format that common 3D
-reconstruction software cannot read directly. Fixed-baseline stereo gives each rover stop its own range map; RPP lets
-the images from nearby stops triangulate together. A **block** (or **site**) is a set of rover stations within a few
-tens of meters of each other.
+Every time a rover stops, it sees the terrain from a new viewpoint. The mission's stereo products use one stop at a
+time, with a fixed baseline between the two eyes of a camera. RPP lets the images from nearby stops triangulate
+together. A **block** is a set of rover stations within a few tens of meters of each other.
+
+[Install RPP](installation.md){ .md-button .md-button--primary }
+[Run the example](quickstart.md){ .md-button }
+[Open the viewer](https://ctate7163.github.io/rpv/){ .md-button target="_blank" rel="noopener" }
 
 ## What it does
 
-Five processes take a block from PDS inputs to SfM outputs:
+1. **Images.** PDS radiance products (`*.IMG`) become 16-bit linear images that keep their PDS names, with the colors
+   of the cameras brought into one color space.
+2. **Masks.** A neural network marks the rover hardware and the rover's shadow in every image. The sky is not
+   masked. See [Rover masks](masks.md).
+3. **Cameras and stations.** RPP applies its own in-flight camera models, which vary with temperature, focus, zoom
+   and sol, or converts the mission's CAHV, CAHVOR and CAHVORE models. Each station is placed from the rover's
+   localization in a local east-north-up frame. See [Camera models and calibration](calibration.md).
+4. **Alignment.** COLMAP features and matching, then RPP's weighted bundle adjustment with position and attitude
+   priors and the stereo rigs. See [Pipeline](pipeline.md).
+5. **Health report and exports.** A report says how well the block aligned. See [Downstream exports](exports.md).
 
-1. **Images**: radiometrically linear 16-bit images (and 8-bit previews) that keep their PDS file names and are
-   traceable to the PDS radiance.
-2. **Masks**: rover hardware and rover shadows (the sky is not masked), from a fine-tuned ConvNeXt-tiny segmentation
-   model downloaded on first use.
-3. **Cameras and stations**: the label CAHV/CAHVOR/CAHVORE models converted to COLMAP cameras, or the promoted
-   calibrations of `rpp.calib`; each station placed in a local East-North-Up frame (meters) from the rover
-   waypoints.
-4. **Alignment**: a COLMAP project with stereo rigs, SIFT features, matching, and a prior-weighted bundle adjustment
-   on pyceres.
-5. **Health and exports**: an alignment health report and the measurements for the reconstruction error analysis.
+From an aligned block, RPP also makes the products of one rover station: a terrain mesh, depth and normal maps for
+every image, a stereo 360° panorama and a 3D station model. The
+[Rover Photogrammetry Viewer](viewer.md) (RPV) shows them in a browser or a VR headset.
 
-A finished block also goes on to COLMAP's dense reconstruction, an Agisoft Metashape project and Nerfstudio's
-Gaussian splatting (see [Downstream exports](exports.md)).
+## Who it is for
 
-From a finished block RPP also makes the products of one rover station: a cleaned mesh with a model of the rover,
-per-image depth and photometric maps, and a stereoscopic 360 degree panorama for a headset (see
-[Station products and the stereo panorama viewer](station-products.md)). The panoramas can be looked at on the
-[stereo panorama page](ods/index.html){target="_blank" rel="noopener"} (prototype).
-
-The alignments also measure the cameras. RPP versions the refined camera models, checks them across blocks and uses
-them as the default cameras for the next run (see [Camera models and calibration](calibration.md)).
+- **Scientists** who want to see rocks in their context, measure on a model with a known scale, or start their own
+  reconstruction from clean inputs.
+- **Photogrammetry and 3D graphics users** who want Mars rover images in a form that COLMAP, Metashape and
+  Nerfstudio can read, with masks, cameras and poses.
+- **Mission teams** who want in-flight camera models that are fitted across the mission and checked independently.
 
 ## Where to start
 
-- [Installation](installation.md): the package, its optional dependency groups and the environment variables.
-- [Quick start](quickstart.md): fetch the Rockytop example data and run one block.
-- [Pipeline](pipeline.md): the stages and their outputs.
-- [Downstream exports](exports.md): dense reconstruction, Metashape, Nerfstudio.
-- `notebooks/van_zyl_ods_example.ipynb`: one station from the PDS download to the panoramas, the 3D models and the
-  viewer, with the design explained along the way.
-- [Station products and viewer](station-products.md): the station mesh, depth and photometric maps, the stereo
-  panorama and the web viewer.
-- [Rover model](rover-model.md): the Perseverance model used in the station mesh, its source and its changes.
-- [Rover masks](masks.md): the mask models, training a new one, the Hugging Face releases.
-- [Command line](cli.md): every `rpp` subcommand and its options.
-- [API reference](api.md): the importable functions (`rpp.pipeline.Settings`, `process_site`, `align`, `run_site`).
-- [Methods](methods.md): conventions, equations and flagged assumptions.
-- [Roadmap](roadmap.md): the freeze run, the panoramas and what follows.
+| If you want to | Read |
+|---|---|
+| install RPP | [Installation](installation.md) |
+| run a first block | [Quick start](quickstart.md) |
+| know what you can rely on | [What is validated and what is experimental](status.md) |
+| understand each step and its outputs | [Pipeline](pipeline.md) |
+| take a block into another program | [Downstream exports](exports.md) |
+| make panoramas and 3D station models | [Station products](station-products.md), [Viewer](viewer.md) |
+| look up a command | [Command line](cli.md) |
+| call RPP from Python | [API reference](api.md) |
+| see the equations and conventions | [Methods](methods.md) |
+| know what is planned | [Roadmap](roadmap.md) |
 
-## Scope
+Two notebooks in the repository run the pipeline from Python:
+[`pipeline_example.ipynb`](https://github.com/ctate7163/rpp/blob/main/notebooks/pipeline_example.ipynb) (the Rockytop
+example) and
+[`van_zyl_ods_example.ipynb`](https://github.com/ctate7163/rpp/blob/main/notebooks/van_zyl_ods_example.ipynb) (one
+station from the PDS download to the viewer).
 
-Models shipped with the package (`rpp cmods list`): Navcam (a temperature-dependent tied joint, with a stereo rig
-that drifts with sol and has a knee at sol 250 in pitch), front and rear Hazcam, and Mastcam-Z at 34, 63 and 110 mm.
-The Mastcam-Z joints at 34 to 110 mm and the rigs are being calibrated again in the current freeze run; its models
-are not in the package yet (see [Camera models and calibration](calibration.md)). Scale comes from the Navcam stereo
-baseline together with the waypoint position priors. The alignment-health thresholds are provisional.
+## Supported cameras
 
-## License and data
+| Rover | Camera | Status in 1.0 |
+|---|---|---|
+| Mars 2020 Perseverance | Navcam (left, right) | calibrated in flight: temperature, sol, stereo rig |
+| Mars 2020 Perseverance | Mastcam-Z 34 mm and 110 mm | calibrated in flight: focus, focus-motor backlash state |
+| Mars 2020 Perseverance | Mastcam-Z 26, 48, 63, 79, 100 mm | first models, from one to a few blocks each |
+| Mars 2020 Perseverance | Front and rear Hazcam | first models |
+| MSL Curiosity | Navcam, front Hazcam | experimental (a research study in the source repository) |
 
-RPP is released under the Apache-2.0 license. All Mars 2020 images used by RPP are public PDS products (Navcam:
-NASA/JPL-Caltech; Mastcam-Z: NASA/JPL-Caltech/ASU/MSSS). The rover model is derived from NASA's Perseverance model
-(credit NASA/JPL-Caltech; see [Rover model](rover-model.md)). Source code:
+`rpp cmods list` prints the camera models in use.
+
+## License, credits and citation
+
+RPP is released under the Apache-2.0 license. Source code:
 [github.com/ctate7163/rpp](https://github.com/ctate7163/rpp). To cite RPP, see [Citing](citing.md).
 
+All images RPP uses are public PDS products. Image credits: Navcam and Hazcam NASA/JPL-Caltech; Mastcam-Z
+NASA/JPL-Caltech/ASU/MSSS. The rover model is derived from NASA's Perseverance model (credit NASA/JPL-Caltech; see
+[Rover model](rover-model.md)).
+
+Until version 0.98 the package was called MPPP (Mars Photogrammetry Preprocessing Pipeline). Work folders made by
+MPPP are read as they are; `rpp.ondisk` lists the file names that keep the old spelling.

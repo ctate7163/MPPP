@@ -554,6 +554,22 @@ def test_dense_subset_prepare_and_fusion_write_fused_ply(tmp_path, monkeypatch):
     assert (ws / "fused.ply").is_file() and out["steps"]["fusion"]["points"] > 1000
     pts = np.asarray(o3d.io.read_point_cloud(str(ws / "fused.ply")).points)
     assert np.median(np.abs(pts[:, 2])) < 0.01                           # on the plane z = 0
+    # 1.0: the strict second pass and the merge - every strict point, the loose ones only away from them; the .vis
+    # (COLMAP's visibility, for its Delaunay mesher) goes with its points; a second merge starts from the loose cloud
+    from rpp.sfm.dense import FUSED_LOOSE_PLY, FUSED_STRICT_PLY, merge_fusions, read_ply_vertices, read_vis
+    out = run_dense(proj, workspace=ws, steps=("fusion",), max_image_size=400, images=res["subset"],
+                    fusion_strict={"min_num_pixels": 1, "max_reproj_error": 0.5})
+    n_loose, n_strict = out["steps"]["fusion"]["points"], out["steps"]["fusion_strict"]["points"]
+    assert 0 < n_strict <= n_loose
+    m = merge_fusions(ws)
+    assert (ws / FUSED_LOOSE_PLY).is_file() and (ws / FUSED_STRICT_PLY).is_file()
+    assert m["loose_points"] == n_loose and m["strict_points"] == n_strict and m["loose_kept"] < n_loose
+    head, data = read_ply_vertices(ws / "fused.ply")
+    assert len(data) == m["points"] == n_strict + m["loose_kept"] and {"x", "nx", "red"} <= set(data.dtype.names)
+    assert len(o3d.io.read_point_cloud(str(ws / "fused.ply")).points) == m["points"]
+    if m["vis"]:
+        assert len(read_vis(ws / "fused.ply.vis")) == m["points"]
+    assert merge_fusions(ws)["points"] == m["points"]                    # again: from fused_loose.ply, the same cloud
 
 
 def test_dense_stereo_goes_to_the_pipelines_gpu_python(tmp_path, monkeypatch):
@@ -581,21 +597,45 @@ def test_dense_stereo_goes_to_the_pipelines_gpu_python(tmp_path, monkeypatch):
     py, step, kw = calls[0]
     assert py == "/envs/rpp_gpu/python.exe" and step == "dense" and kw["steps"] == ["stereo", "fusion"]
     assert kw["workspace"].endswith("dense_S003D0010") and len(kw["images"]) == 4
-    from rpp.sfm.dense import STATION_FUSION_OPTIONS, STATION_STEREO_OPTIONS
-    assert kw["stereo_options"] == STATION_STEREO_OPTIONS and kw["fusion_options"] == STATION_FUSION_OPTIONS
+    from rpp.sfm.dense import (PATCH_MATCH_SOURCES, STATION_FUSION_OPTIONS, STATION_FUSION_STRICT, STATION_STEREO_FAST,
+                               STATION_STEREO_OPTIONS, STEREO_RECORD)
+    fast = {**STATION_STEREO_OPTIONS, **STATION_STEREO_FAST}           # 1.0: new maps with the sparser window,
+    assert kw["stereo_options"] == fast and kw["fusion_options"] == STATION_FUSION_OPTIONS
+    assert kw["sources"] == PATCH_MATCH_SOURCES and kw["fusion_strict"] is None    # 12 sources; one fusion by default
+    calls.clear()
+    assert rpp_main(["dense", str(root.parent), "--station", "3_10", "--fusion", "--two-pass-fusion"]) == 0
+    assert calls[0][2]["fusion_strict"] == STATION_FUSION_STRICT                   # the strict pass on request
     calls.clear()
     assert rpp_main(["dense", str(root.parent), "--station", "3_10", "--stereo", "--min-angle", "1.5", "--min-views", "3"]) == 0
     kw = calls[0][2]
     assert kw["stereo_options"] == {"min_triangulation_angle": 1.0, "filter_min_triangulation_angle": 1.5,
-                                    "filter_min_num_consistent": 2}
+                                    "filter_min_num_consistent": 2, **STATION_STEREO_FAST}
     assert kw["fusion_options"] == {"min_num_pixels": 3}
     # 0.98.14: --whole-block - the block's frames in one shared workspace, the station's own frames recorded beside it
     calls.clear()
     assert rpp_main(["dense", str(root.parent), "--station", "3_10", "--whole-block", "--stereo", "--fusion"]) == 0
     kw = calls[0][2]
-    assert kw["workspace"].endswith("dense_block_N") and len(kw["images"]) == len(rows) and kw["stereo_options"] == STATION_STEREO_OPTIONS
+    assert kw["workspace"].endswith("dense_block_N") and len(kw["images"]) == len(rows) and kw["stereo_options"] == fast
     stub = json.loads((root / "dense_S003D0010_block" / "mppp_dense.json").read_text(encoding="utf-8"))
     assert len(stub["subset"]) == 4 and stub["terrain"] == "block" and stub["points"].endswith("fused.ply")
+    # 1.0: a workspace with depth maps of 0.99 (COLMAP's 20 sources, the full window) resumes with those options, so no
+    # map is made again; --restereo, --sources and --window-step still choose
+    wsb = Path(kw["workspace"])
+    (wsb / "stereo" / "depth_maps").mkdir(parents=True, exist_ok=True)
+    (wsb / "stereo" / "depth_maps" / "NLF_1.png.geometric.bin").write_bytes(b"0")
+    (wsb / "stereo" / STEREO_RECORD).write_text(json.dumps({"options": STATION_STEREO_OPTIONS, "geom_consistency": True,
+                                                             "max_image_size": 2000, "full_fov": False}))
+    calls.clear()
+    assert rpp_main(["dense", str(root.parent), "--station", "3_10", "--whole-block", "--stereo", "--fusion"]) == 0
+    kw = calls[0][2]
+    assert kw["stereo_options"] == STATION_STEREO_OPTIONS and kw["sources"] is None
+    calls.clear()
+    assert rpp_main(["dense", str(root.parent), "--station", "3_10", "--whole-block", "--stereo", "--restereo"]) == 0
+    assert calls[0][2]["stereo_options"] == fast and calls[0][2]["sources"] == PATCH_MATCH_SOURCES
+    calls.clear()
+    assert rpp_main(["dense", str(root.parent), "--station", "3_10", "--stereo", "--sources", "0", "--window-step", "1"]) == 0
+    kw = calls[0][2]
+    assert kw["sources"] is None and kw["stereo_options"]["window_step"] == 1 and kw["fusion_strict"] is None
 
 
 def test_station_dense_options_reach_the_mesh_radius_and_are_set_on_pycolmap():
@@ -1102,34 +1142,34 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     installed batch file names no version."""
     from rpp.ibr import single_sites as SS
     cfg = SS.load_config()
-    assert cfg["stations"]["Sol0690_S032D1184_Z34"]["experimental"] is True      # 0.98.2: runs only when named
-    Z34 = {"Sol0690_S032D1184_Z34", "Sol0670_S032D0672_Z34"}                     # 0.99.16: Three Forks South too
-    assert {r["label"] for r in SS.plan(cfg, tmp_path)} == set(cfg["stations"]) - Z34
-    zs = cfg["stations"]["Sol0670_S032D0672_Z34"]                                # the Z34 360 of the Navcam 360's own sol
+    assert cfg["stations"]["Sol0690_Z34"]["experimental"] is True      # 0.98.2: runs only when named
+    Z34 = {"Sol0690_Z34", "Sol0670_Z34"}                     # 0.99.16: Three Forks South too
+    assert {r["label"] for r in SS.plan(cfg, tmp_path)} == set(cfg["stations"]) - Z34 - {"Sol0362"}   # 0.99.51: no_navcam
+    zs = cfg["stations"]["Sol0670_Z34"]                                # the Z34 360 of the Navcam 360's own sol
     assert zs["experimental"] is True and zs["ods_args"][2:5] == ["--sols", "670", "670"] and zs["terrain"] == "block"
-    assert set(cfg["stations"]["Sol0670_S032D0672"]["frames"]["images"]) <= set(zs["context"])
-    z = SS.plan(cfg, tmp_path, labels=["Sol0690_S032D1184_Z34"])[0]["commands"]
+    assert set(cfg["stations"]["Sol0670"]["frames"]["images"]) <= set(zs["context"])
+    z = SS.plan(cfg, tmp_path, labels=["Sol0690_Z34"])[0]["commands"]
     zm = [c for c in z if c["variant"] == "masked"]                              # 0.98.22: + the rover variant
     assert len(zm) == 4 and {c["variant"] for c in z} == {"masked", "rover"}
     assert "--context-images" in zm[-1]["argv"] and zm[-1]["argv"][-11:] == ["--cameras", "Z", "--sols", "690", "692", "--zcam-scale", "0.5", "--fill-cameras", "NF", "--no-gains", "--rover-zcam"]   # 0.98.30: + the sol 692 deck pan; 0.99.13: no gains; 0.99.46: its deck pan colors the rover
-    rs = [c for c in SS.plan(cfg, tmp_path, labels=["Sol0052_S003D2046"], rover_surface=True)[0]["commands"] if c["step"] == "ods"]
+    rs = [c for c in SS.plan(cfg, tmp_path, labels=["Sol0052"], rover_surface=True)[0]["commands"] if c["step"] == "ods"]
     assert [c["argv"][-4:] == ["--eyes", "left", "right", "center"] for c in rs] == [c["variant"] == "rover" for c in rs]
-    new98p6 = {"Sol0009_S003D0000", "Sol0180_S007D0000", "Sol0204_S007D1836", "Sol0248_S008D0000", "Sol0361_S011D0000", "Sol0565_S029D0000", "Sol1955_S091D0124", "Sol1965_S091D0806", "Sol1189_S054D1152"}      # 0.98.6, 0.98.7: eight more stations (Christian, 14 Nov 2026)
+    new98p6 = {"Sol0009", "Sol0180", "Sol0204", "Sol0248", "Sol0361", "Sol0565", "Sol1955", "Sol1965", "Sol1189"}      # 0.98.6, 0.98.7: eight more stations (Christian, 14 Nov 2026)
     assert new98p6 <= set(cfg["stations"]) and all(cfg["stations"][k]["frames"]["images"] and cfg["stations"][k]["context"] for k in new98p6)
-    assert len(cfg["stations"]["Sol0474_S026D0850"]["context"]) == 68   # 0.98.19
-    new98p30 = {"Sol0073_S003D2430", "Sol0449_S026D0000", "Sol0670_S032D0672", "Sol0784_S039D0926", "Sol0816_S039D1418",
-                "Sol1601_S078D4716", "Sol1615_S079D0198", "Sol1883_S088D1722"}   # 0.98.30: a Navcam panorama at every Z34 360
+    assert len(cfg["stations"]["Sol0474"]["context"]) == 68   # 0.98.19
+    new98p30 = {"Sol0073", "Sol0449", "Sol0670", "Sol0784", "Sol0816",
+                "Sol1601", "Sol1615", "Sol1883"}   # 0.98.30: a Navcam panorama at every Z34 360
     assert all(cfg["stations"][k]["terrain"] == "block" and cfg["stations"][k]["work"].endswith("_zcam") for k in new98p30)
-    new99p46 = {"Sol0011_S003D0000_Z34", "Sol0086_S004D0048", "Sol0362_S011D0108", "Sol0422_S024D0000", "Sol0797_S039D1170",
-                "Sol0960_S047D0000", "Sol1154_S052D2644", "Sol1155_S052D2644_Z48"}    # 0.99.46: a Navcam station at every Z 360
+    new99p46 = {"Sol0011_Z34", "Sol0086", "Sol0362", "Sol0422", "Sol0797",
+                "Sol0960", "Sol1154", "Sol1155_Z48"}    # 0.99.46: a Navcam station at every Z 360
     assert all(cfg["stations"][k]["work"].endswith("_zcam") and cfg["stations"][k]["frames"]["images"] for k in new99p46)
-    new99p47 = {"Sol0072_S003D2346"}                     # 0.99.47: "Add sol 72 to the site list"
-    assert cfg["stations"]["Sol0072_S003D2346"]["work"].endswith("_zcam") and cfg["stations"]["Sol0072_S003D2346"]["context"]
-    assert set(cfg["stations"]) - Z34 - new98p6 - new99p46 - new99p47 == {"Sol0052_S003D2046", "Sol0461_S026D0630", "Sol0686_S032D1184", "Sol0474_S026D0850",
-                                    "Sol1635_S079D0732", "Sol1411_S068D0142", "Sol1792_S087D0000", "Sol1454_S071D0056", "Sol0477_S026D1004", "Sol0502_S026D1222", "Sol2009_S092D0000", "Sol2022_S093D0000", "Sol1947_S091D0000",
-                                    "Sol1177_S054D0000", "Sol1183_S054D0866", "Sol1308_S061D1678", "Sol0609_S030D1172", "Sol0116_S004D1250"} | new98p30   # 0.98.19: + Skinner Ridge, Wildcat Ridge, Hippo Pools 1947 / 2009 / 2022, Bright Angel 1177 / 1183, Pico Turquino 1308, Hidden Harbor 609
-    assert len(cfg["stations"]["Sol0052_S003D2046"]["frames"]["images"]) == 12
-    sa = cfg["stations"]["Sol1411_S068D0142"]                                 # 0.97.14: South Arm, sol 1411
+    new99p47 = {"Sol0072"}                     # 0.99.47: "Add sol 72 to the site list"
+    assert cfg["stations"]["Sol0072"]["work"].endswith("_zcam") and cfg["stations"]["Sol0072"]["context"]
+    assert set(cfg["stations"]) - Z34 - new98p6 - new99p46 - new99p47 == {"Sol0052", "Sol0461", "Sol0686", "Sol0474",
+                                    "Sol1635", "Sol1411", "Sol1792", "Sol1454", "Sol0477", "Sol0502", "Sol2009", "Sol2022", "Sol1947",
+                                    "Sol1177", "Sol1183", "Sol1308", "Sol0609", "Sol0116"} | new98p30   # 0.98.19: + Skinner Ridge, Wildcat Ridge, Hippo Pools 1947 / 2009 / 2022, Bright Angel 1177 / 1183, Pico Turquino 1308, Hidden Harbor 609
+    assert len(cfg["stations"]["Sol0052"]["frames"]["images"]) == 12
+    sa = cfg["stations"]["Sol1411"]                                 # 0.97.14: South Arm, sol 1411
     assert sa["site"] == "witch_hazel_large" and sa["station"] == "68_142" and len(sa["frames"]["images"]) == 18
     assert all("_1411_" in n and "N0680142" in n for n in sa["frames"]["images"])
     root = tmp_path / "rb"
@@ -1139,10 +1179,10 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     sols = [int(r["label"][3:7]) for r in runs]
     assert sols == sorted(sols)                          # 0.99.46: in sol order (0.98.3-0.99.45: the config's last first)
     by = {r["label"]: Path(r["work"]).name for r in runs}
-    assert by["Sol0052_S003D2046"] == "mars2020_sol_0015_van_zyl_overlook_huge" and by["Sol0461_S026D0630"] == "mars2020_sol_0460_rockytop"
-    assert by["Sol0686_S032D1184"] == "mars2020_sol_0413_threeforks_large" and by["Sol0009_S003D0000"] == "mars2020_sol_0001_butler_landing_zcam"
-    assert by["Sol1411_S068D0142"] == "mars2020_sol_1355_witch_hazel_large" and by["Sol0180_S007D0000"] == "mars2020_sol_0178_rochette_zcam"
-    r0 = next(r for r in runs if r["label"] == "Sol0052_S003D2046")
+    assert by["Sol0052"] == "mars2020_sol_0015_van_zyl_overlook_huge" and by["Sol0461"] == "mars2020_sol_0460_rockytop"
+    assert by["Sol0686"] == "mars2020_sol_0413_threeforks_large" and by["Sol0009"] == "mars2020_sol_0001_butler_landing_zcam"
+    assert by["Sol1411"] == "mars2020_sol_1355_witch_hazel_large" and by["Sol0180"] == "mars2020_sol_0178_rochette_zcam"
+    r0 = next(r for r in runs if r["label"] == "Sol0052")
     steps = [(c["variant"], c["step"]) for c in r0["commands"]]
     assert steps == [("masked", "dense"), ("rover", "mesh"), ("rover", "ods"),             # 0.97.14: the maps for the
                      ("masked", "mesh"), ("masked", "depthmaps"), ("masked", "ods")]          # terrain only, no photometry
@@ -1154,30 +1194,30 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
     assert dense[:4] == ["dense", r0["work"], "--station", "3_2046"] and dense.count("--images") == 1 and "--stereo" in dense
     rover_ods = r0["commands"][2]["argv"]
     assert "--mask-rover" in r0["commands"][-1]["argv"]
-    assert "--rover" in rover_ods and rover_ods[rover_ods.index("--out") + 1].endswith(str(Path("Sol0052_S003D2046") / "with_rover"))
+    assert "--rover" in rover_ods and rover_ods[rover_ods.index("--out") + 1].endswith(str(Path("Sol0052") / "with_rover"))
     assert rover_ods[-4:] == ["--bits", "16", "--fill-cameras", "F"]   # 0.97.7: the front Hazcams fill in
-    assert rover_ods[rover_ods.index("--prefix") + 1] == "Sol0052_S003D2046_rover"           # 0.97.14: the files' names
+    assert rover_ods[rover_ods.index("--prefix") + 1] == "Sol0052_rover"           # 0.97.14: the files' names
     assert rover_ods[rover_ods.index("--site-name") + 1] == "Van Zyl Overlook"              # 0.97.7: for the nadir mark
     from rpp.ibr.nadir import block_name                                                    # 0.97.17: the block's name
     assert block_name("van_zyl_overlook_huge") == "Van Zyl Overlook" and block_name("witch_hazel_large") == "Witch Hazel Hill"
     assert block_name("taylorfjellet_large") == "Taylorfjellet" and block_name("rockytop") == "Rockytop"
     assert block_name("not_a_site_tiny") == "Not A Site" and block_name(None) is None
-    assert all("name" not in v for k, v in cfg["stations"].items() if k not in ("Sol0477_S026D1004", "Sol0502_S026D1222", "Sol0686_S032D1184", "Sol0690_S032D1184_Z34", "Sol0670_S032D0672_Z34", "Sol0116_S004D1250", "Sol0011_S003D0000_Z34", "Sol1155_S052D2644_Z48"))   # 0.98.19: these two are not "Rockytop"; 0.98.31: the Z34 station has no site to name it
+    assert all("name" not in v for k, v in cfg["stations"].items() if k not in ("Sol0477", "Sol0502", "Sol0686", "Sol0690_Z34", "Sol0670_Z34", "Sol0116", "Sol0011_Z34", "Sol1155_Z48"))   # 0.98.19: these two are not "Rockytop"; 0.98.31: the Z34 station has no site to name it
     names = {k: next(c["argv"][c["argv"].index("--site-name") + 1] for c in r["commands"] if c["step"] == "ods") for k, r in
              ((r["label"], r) for r in runs)}
-    assert names["Sol0474_S026D0850"] == "Rockytop" and names["Sol1411_S068D0142"] == "Witch Hazel Hill"
+    assert names["Sol0474"] == "Rockytop" and names["Sol1411"] == "Witch Hazel Hill"
     assert not any(w in n.lower().split() for n in names.values() for w in ("large", "huge", "tiny", "small"))
-    tl = str(root / "single_sites" / "Sol0052_S003D2046" / "tone_levels.json")                     # 0.97.0: one scaling per station
+    tl = str(root / "single_sites" / "Sol0052" / "tone_levels.json")                     # 0.97.0: one scaling per station
     assert rover_ods[rover_ods.index("--tone-levels") + 1] == tl
     assert r0["commands"][-1]["argv"][r0["commands"][-1]["argv"].index("--tone-levels") + 1] == tl
     assert SS.plan(cfg, root, labels=["S026D0630"], steps=["ods"], variants=["masked"])[0]["commands"] == [
         {"variant": "masked", "step": "ods", "argv": ["ods", str(root / "mars2020_sol_0460_rockytop"), "--station", "26_630",
-                                                      "--mask-rover", "--out", str(root / "single_sites" / "Sol0461_S026D0630"),
-                                                      "--context-images", *cfg["stations"]["Sol0461_S026D0630"]["context"],
+                                                      "--mask-rover", "--out", str(root / "single_sites" / "Sol0461"),
+                                                      "--context-images", *cfg["stations"]["Sol0461"]["context"],
                                                       "--exclude", "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01",
                                                       "NRF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01",
-                                                      "--tone-levels", str(root / "single_sites" / "Sol0461_S026D0630" / "tone_levels.json"),
-                                                      "--prefix", "Sol0461_S026D0630",
+                                                      "--tone-levels", str(root / "single_sites" / "Sol0461" / "tone_levels.json"),
+                                                      "--prefix", "Sol0461",
                                                       "--site-name", "Rockytop", "--bits", "16", "--fill-cameras", "F"]}]
     with pytest.raises(KeyError):
         SS.plan(cfg, root, labels=["S999D9999"])
@@ -1196,16 +1236,16 @@ def test_single_sites_config_plan_run_and_installed_bat(tmp_path, monkeypatch):
             (out / "Sol0091_S003D0010_360_3DTD.jpg").write_bytes(b"x")
         return 0
     monkeypatch.setattr(SS, "_run", fake_run)
-    runs = [next(r for r in runs if r["label"] == k) for k in ("Sol0052_S003D2046", "Sol0461_S026D0630", "Sol0686_S032D1184")]
+    runs = [next(r for r in runs if r["label"] == k) for k in ("Sol0052", "Sol0461", "Sol0686")]
     rc = SS.run_all(runs, root / "single_sites")
     assert rc == 1                                                                     # one station failed
     rock = [c for c in calls if "26_630" in c]
     assert rock == [runs[1]["commands"][0]["argv"]]                                    # its dense step only
     assert sum(1 for c in calls if "3_2046" in c) == 6 and sum(1 for c in calls if "32_1184" in c) == 6   # 0.97.14: maps for the terrain only
     summary = (root / "single_sites" / "single_sites_summary.md").read_text(encoding="utf-8")
-    assert summary.count("| Sol0052_S003D2046 |") == 2 and "| Sol0461_S026D0630 | masked | dense 1 |" in summary
+    assert summary.count("| Sol0052 |") == 2 and "| Sol0461 | masked | dense 1 |" in summary
     assert "mesh 20 %, plane 30 %, far 50 %" in summary
-    assert (root / "single_sites" / "Sol0052_S003D2046" / "single_site_log.txt").exists()
+    assert (root / "single_sites" / "Sol0052" / "single_site_log.txt").exists()
     f = SS.install(tmp_path / "inst")
     b = f.read_bytes()
     assert f.name == "run_single_site_ibr.bat" and b"\r\n" in b and b"python -m rpp single-sites --upload %*" in b
@@ -1341,7 +1381,7 @@ def test_exclude_pairs_and_prefix(tmp_path):
     from rpp.ibr.ods import ods_file, ods_prefix, find_prefix, stack_file
     a, b = "NLF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01", "NRF_0461_0707875039_745RAD_N0260630NCAM13461_0A0195J01"
     assert _pair_key(a) == _pair_key(b + ".png") and _pair_key(a) != _pair_key(a.replace("0707875039", "0707875040"))
-    st = SimpleNamespace(label="Sol0461_S026D0630", key="S026D0630", images=[a + ".png", b + ".png", "NLF_0461_1_x.png", "NRF_0461_1_x.png"])
+    st = SimpleNamespace(label="Sol0461", key="S026D0630", images=[a + ".png", b + ".png", "NLF_0461_1_x.png", "NRF_0461_1_x.png"])
     proj = SimpleNamespace(root=tmp_path)
     got = _frames(proj, st, SimpleNamespace(images=None, sols=None, exclude=[a]))
     assert got == ["NLF_0461_1_x.png", "NRF_0461_1_x.png"]
@@ -2063,7 +2103,7 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
     both = web.publish(r, tmp_path / "web2", width=128, views=("standard", "enhanced"))["panos"][0]         # on request
     assert both["variants"][1]["views"]["enhanced"] == "panos/S1_rover_enh_360_3DTD.jpg"
     assert not (tmp_path / "web2" / "panos" / "S1_enhlocal_360_3DTD.jpg").exists()
-    page = (Path(web.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    page = (Path(web.__file__).resolve().parents[1] / "viewer" / "index.html").read_text(encoding="utf-8")
     assert 'id="eye"' in page and "sessionstart" in page and "setEye" in page                  # the eye shown on a screen
     # 0.99.36 (Christian, 19 Nov 2026: "include center with the left and right eye if center is available")
     cv2.imwrite(str(r / "S1" / "with_rover" / "S1_rover_ods_center.png"), np.full((128, 256, 3), 70, np.uint8))
@@ -2082,7 +2122,7 @@ def test_web_publish_lists_the_stereo_jpegs_and_reduces_them(tmp_path):
     assert im.shape == (512, 512, 3)
     b, g, rr = im[:256].reshape(-1, 3).astype(int).sum(0)       # the top half carries the blue "LEFT EYE" (BGR)
     assert b > rr
-    repo = Path(web.__file__).resolve().parents[3] / "docs" / "ods"
+    repo = Path(web.__file__).resolve().parents[1] / "viewer"
     if repo.is_dir():
         assert (repo / "index.html").is_file() and (repo / "vendor" / "three.module.min.js").is_file()
 
@@ -2193,8 +2233,8 @@ def test_nadir_mark_lines_credit_and_disc():
     assert nadir.site_name("van_zyl_overlook_huge") == "Van Zyl Overlook" and nadir.site_name(None) is None
     lines = nadir.mark_lines(nav, "Rockytop")
     assert lines == ["Mars 2020 Perseverance Rover", "Sol 461 - Rockytop", "Image credit: NASA/JPL-Caltech/MSSS", "made by C. Tate"]
-    assert nadir.mark_lines(["NLF_0686_a", "NLF_0688_a"])[1] == "Sols 686, 688"
-    assert nadir.mark_lines(["NLF_0686_a", "NLF_0687_a"])[1] == "Sols 686-687"
+    assert nadir.mark_lines(["NLF_0686_a", "NLF_0688_a"])[1] == "Sol 686"           # 0.99.51: the first sol only
+    assert nadir.mark_lines(["NLF_0686_a", "NLF_0687_a"], sols=[687, 686])[1] == "Sol 686"
     # 0.99.36: with Mastcam-Z frames the first sol of those alone (the Navcam fill frames' sols not either)
     assert nadir.mark_lines(["ZL0_0690_a", "ZR0_0692_a", "NLF_0686_a"], "Three Forks North")[1] == "Sol 690 - Three Forks North"
     W, H = 4096, 2048
@@ -2512,11 +2552,13 @@ def test_near_blend_is_gradual_and_the_provenance_is_a_mix(tmp_path):
     assert tuple(int(x) for x in q[1, 0]) in pure and tuple(q[0, 0]) == (128, 128, 128)
 
 
-def test_nadir_mark_lies_on_the_ground_and_its_first_row_is_larger(tmp_path):
+def test_nadir_mark_lies_on_the_ground_and_its_first_row_is_larger(tmp_path, monkeypatch):
     """0.97.13: the first row is taller than the second; each eye sees the disc on the plane below the pivot, so the
-    eyes' pictures of it differ by that plane's disparity, and from the pivot it is the drawing itself."""
+    eyes' pictures of it differ by that plane's disparity, and from the pivot it is the drawing itself.  0.99.53: the
+    panoramas carry it only with MARK_IN_PANORAMA (the viewer's disc otherwise)."""
     import cv2
     from rpp.ibr import nadir
+    monkeypatch.setattr(nadir, "MARK_IN_PANORAMA", True)
     W, H = 4096, 2048
     m = nadir.make_mark(W, H, nadir.mark_lines(["NLF_0052_a"], "Van Zyl Overlook"), center_azimuth_deg=180.0)
     assert m["rows"][1]["height_px"] >= m["rows"][0]["height_px"] and m["rows"][0]["span_deg"] <= 180.5    # 0.98.14: no longer the larger
@@ -2537,12 +2579,37 @@ def test_nadir_mark_lies_on_the_ground_and_its_first_row_is_larger(tmp_path):
     nadir.apply_mark(img, dict(m, row0=0, alpha=got["left"][0], inside=got["left"][1]), (238, 212, 176))
     assert (img[~got["left"][1]] == 90).all() and (img[got["left"][1]] != 90).any()
     proj, rec, st, scene, Pp, colors = _station_scene(tmp_path)
+    monkeypatch.setattr(nadir, "MARK_IN_PANORAMA", True)                     # 0.97.7-0.99.52: drawn into the eyes
     rep = O.render_station(proj, rec, st, scene, tmp_path / "ods_mark", width=1024, ipd_m=0.064, scale=1.0, rows_per_chunk=64)
     assert abs(rep["nadir_mark"]["depth_below_pivot_m"] - Pp[2]) < 0.05       # the plane z = 0 under the pivot
     L = cv2.imread(str(tmp_path / "ods_mark" / "Sol0091_S003D0010_ods_left.png"))
     Rr = cv2.imread(str(tmp_path / "ods_mark" / "Sol0091_S003D0010_ods_right.png"))
     band = slice(rep["nadir_mark"]["first_row"], None)
     assert (L[band] != Rr[band]).any(axis=2).mean() > 0.001                  # the text is shifted between the eyes
+    assert rep["nadir_mark"]["in_panorama"] is True
+
+
+def test_the_eye_panoramas_carry_no_nadir_mark(tmp_path):
+    """1.0 (Christian, 20 Nov 2026: "Do not include the blue circle and text in the 360 images. That should only enter
+    as the nadir_mark disk"; 0.99.53 nadir.MARK_IN_PANORAMA): the eyes are the same pixels as a render without the mark; the mark is its picture alone
+    (``<prefix>_nadir_mark.png``), recorded for the viewer's disc."""
+    import cv2
+    from rpp.ibr import nadir
+    assert nadir.MARK_IN_PANORAMA is False
+    proj, rec, st, scene, Pp, colors = _station_scene(tmp_path)
+    kw = dict(width=512, ipd_m=0.064, scale=1.0, rows_per_chunk=64)
+    rep = O.render_station(proj, rec, st, scene, tmp_path / "with", **kw)
+    O.render_station(proj, rec, st, scene, tmp_path / "without", nadir_mark=False, **kw)
+    nm = rep["nadir_mark"]
+    assert nm["in_panorama"] is False and "no panorama carries it" in nm["note"]
+    assert (tmp_path / "with" / nm["texture"]).is_file() and nm["radius_m"] > 0 and nm["depth_below_pivot_m"] > 0
+    for eye in ("left", "right"):
+        a = cv2.imread(str(tmp_path / "with" / f"Sol0091_S003D0010_ods_{eye}.png"))
+        b = cv2.imread(str(tmp_path / "without" / f"Sol0091_S003D0010_ods_{eye}.png"))
+        assert a is not None and a.shape == b.shape and (a == b).all(), eye
+    bg = np.asarray(nadir.BACKGROUND_RGB)[::-1]
+    band = a[nm["first_row"]:]
+    assert (np.abs(band.astype(float) - bg).max(axis=-1) < 3).mean() < 0.2      # no light blue disc
 
 
 def test_enhanced_views_smooth_the_sky(tmp_path):
@@ -2656,9 +2723,9 @@ def test_block_settings_reach_the_16bit_frames_and_the_terrain_is_reused(tmp_pat
     V, F = _terrain(n=5, size=4.0)
     M.write_mesh(src / "mesh.ply", V, F)
     (src / "ground_plane.json").write_text(json.dumps({"normal": [0, 0, 1], "offset": 0.0, "centre": [0, 0, 2], "up": [0, 0, 1], "radius_m": 100.0}))
-    st = SimpleNamespace(label="Sol0052_S003D2046", key="S003D2046")
+    st = SimpleNamespace(label="Sol0052", key="S003D2046")
     a = SimpleNamespace(mesh_radius=75.0, no_fill=False)
-    for station in ({"station": "S003D2046", "site": 3}, {"station": "Sol0052_S003D2046", "key": "S003D2046"}):   # a 0.97.12 report, a new one
+    for station in ({"station": "S003D2046", "site": 3}, {"station": "Sol0052", "key": "S003D2046"}):   # a 0.97.12 report, a new one
         (src / "mesh_report.json").write_text(json.dumps({"station": station, "scene": {"mesh_radius_m": 75.0}, "fill": {"cells": 1}}))
         r = C._mesh_on_terrain(src, out, None, st, a, None)
         assert r is not None and r["terrain_from"] == str(src) and (out / "mesh.ply").is_file()
@@ -2695,31 +2762,31 @@ def test_context_frames_are_masked_fill_only_and_stay_off_the_rover(tmp_path):
     assert rep["context_sources"] == [ctx] and ctx in rep["fill_only_sources"] and ctx not in rep["sources"][:3]
     cfg = SS.load_config()
     root = tmp_path / "rb"
-    run = SS.plan(cfg, root, labels=["Sol1454_S071D0056"])[0]
+    run = SS.plan(cfg, root, labels=["Sol1454"])[0]
     assert Path(run["work"]).name == "mars2020_sol_1431_bell_island_large"
     dense = run["commands"][0]["argv"]
     ods = [c_["argv"] for c_ in run["commands"] if c_["step"] == "ods"]
-    cx = cfg["stations"]["Sol1454_S071D0056"]["context"]
-    assert len(cx) == 8 and "--whole-block" in dense and len(cfg["stations"]["Sol1454_S071D0056"]["frames"]["images"]) == 16   # 0.99.20: the block's terrain (the context frames are in it)
+    cx = cfg["stations"]["Sol1454"]["context"]
+    assert len(cx) == 8 and "--whole-block" in dense and len(cfg["stations"]["Sol1454"]["frames"]["images"]) == 16   # 0.99.20: the block's terrain (the context frames are in it)
     for a in ods:                                                             # both variants
         i = a.index("--context-images")
         assert a[i + 1:i + 9] == cx
-    s87 = cfg["stations"]["Sol1792_S087D0000"]
+    s87 = cfg["stations"]["Sol1792"]
     assert len(s87["frames"]["images"]) == 18 and len(s87["context"]) == 2 and all("N0860700" in n for n in s87["context"])
-    cfg1 = json.loads(json.dumps(cfg)); cfg1["stations"]["Sol1454_S071D0056"]["terrain"] = "own"   # 0.99.20: the station's own
-    dense = SS.plan(cfg1, root, labels=["Sol1454_S071D0056"])[0]["commands"][0]["argv"]            # frames when asked for
+    cfg1 = json.loads(json.dumps(cfg)); cfg1["stations"]["Sol1454"]["terrain"] = "own"   # 0.99.20: the station's own
+    dense = SS.plan(cfg1, root, labels=["Sol1454"])[0]["commands"][0]["argv"]            # frames when asked for
     i = dense.index("--add-images")                                           # 0.97.19: the dense step's own option
     assert dense[i + 1:i + 9] == cx and dense.index("--images") < i
-    rt = SS.plan(cfg, root, labels=["Sol0461_S026D0630"])[0]                  # a station chosen by --scale has them too
+    rt = SS.plan(cfg, root, labels=["Sol0461"])[0]                  # a station chosen by --scale has them too
     d2 = rt["commands"][0]["argv"]
-    assert "--scale" in d2 and "--images" not in d2 and len(cfg["stations"]["Sol0461_S026D0630"]["context"]) == 69   # 0.98.19: by distance and local time
+    assert "--scale" in d2 and "--images" not in d2 and len(cfg["stations"]["Sol0461"]["context"]) == 69   # 0.98.19: by distance and local time
     assert "--whole-block" in d2 and "--add-images" not in d2          # 0.98.14: Rockytop's terrain is the whole block's (they are in it)
-    cfg2 = json.loads(json.dumps(cfg)); cfg2["stations"]["Sol0461_S026D0630"]["terrain"] = "own"
-    d2 = SS.plan(cfg2, root, labels=["Sol0461_S026D0630"])[0]["commands"][0]["argv"]
-    assert d2[d2.index("--add-images") + 1:d2.index("--add-images") + 1 + len(cfg["stations"]["Sol0461_S026D0630"]["context"])] == cfg["stations"]["Sol0461_S026D0630"]["context"]
-    assert cfg["stations"]["Sol0052_S003D2046"]["context"][:2] == ["NLF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png",
+    cfg2 = json.loads(json.dumps(cfg)); cfg2["stations"]["Sol0461"]["terrain"] = "own"
+    d2 = SS.plan(cfg2, root, labels=["Sol0461"])[0]["commands"][0]["argv"]
+    assert d2[d2.index("--add-images") + 1:d2.index("--add-images") + 1 + len(cfg["stations"]["Sol0461"]["context"])] == cfg["stations"]["Sol0461"]["context"]
+    assert cfg["stations"]["Sol0052"]["context"][:2] == ["NLF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png",
                                                                    "NRF_0052_0671561864_884RAD_N0032016NCAM00301_0A0295J01.png"]
-    assert all("_0033_" in n for n in cfg["stations"]["Sol0052_S003D2046"]["context"][2:])      # 0.98.19: + sol 33
+    assert all("_0033_" in n for n in cfg["stations"]["Sol0052"]["context"][2:])      # 0.98.19: + sol 33
 
 
 def test_geometry_panoramas_masked_black_and_image_copies(tmp_path):
@@ -2733,22 +2800,16 @@ def test_geometry_panoramas_masked_black_and_image_copies(tmp_path):
     assert sorted(files) == ["normal", "range_linear", "range_log"]
     assert Path(files["range_log"]).name == "Sol0091_S003D0010_range_log_360_3DTD.jpg"
     rl, nm = cv2.imread(files["range_log"]), cv2.imread(files["normal"])
-    assert rl.shape == (256, 256, 3) and nm.shape == rl.shape                 # the left eye on top of the right
-    g = nm[128 - 30, 10].astype(int)                                          # looking down at the flat ground: up
+    assert rl.shape == (128, 128, 3) and nm.shape == rl.shape                 # 0.99.51: half the color width
+    g = nm[64 - 15, 5].astype(int)                                            # looking down at the flat ground: up
     assert abs(g[0] - 255) < 12 and abs(g[1] - 128) < 12 and abs(g[2] - 128) < 12, g      # BGR: up in blue
-    near, far = rl[128 - 6, 10].astype(int), rl[64 + 12, 10].astype(int)      # steeply down against near the horizon
+    near, far = rl[64 - 3, 5].astype(int), rl[32 + 6, 5].astype(int)          # steeply down against near the horizon
     assert not np.array_equal(near, far)
     from rpp.ibr import web as W
     assert sorted(W.station_files(out)) == ["distance map", "distance map linear", "normal map", "standard"]   # 0.98.30 names
     rep2 = O.render_station(proj, rec, st, scene, tmp_path / "o2", width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32, geometry=False)
     assert "geometry" not in rep2 and not list((tmp_path / "o2").glob("*range*"))
-    old, O.GEOMETRY_WIDTH = O.GEOMETRY_WIDTH, 128                             # 0.98.12: the range and normal at most 4k
-    try:
-        rep3 = O.render_station(proj, rec, st, scene, tmp_path / "o3", width=256, ipd_m=0.064, scale=0.5, rows_per_chunk=32)
-    finally:
-        O.GEOMETRY_WIDTH = old
-    assert cv2.imread(rep3["geometry"]["files"]["normal"]).shape == (128, 128, 3) and rep3["geometry"]["width"] == 128
-    assert O.GEOMETRY_WIDTH == 4096
+    assert rep["geometry"]["width"] == 128 and O.geometry_width(16384) == 8192 and O.geometry_width(8192) == 4096
     lab = np.full((8, 8), RC.LABEL_MESH, np.uint8)
     lab[:4] = RC.LABEL_MASKED
     for mode in ("log", "linear"):
@@ -2839,7 +2900,7 @@ def test_ground_mark_published_and_upload_keeps_a_failed_push_for_the_next_one(t
     # 0.99.36: the page goes up with the panoramas (the live viewer stayed at 17 Nov's page while only these went up)
     assert "docs/ods/index.html" in names and "page and panoramas" in subprocess.run(
         ["git", "-C", str(repo), "log", "--format=%s"], capture_output=True, text=True).stdout
-    page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    page = (Path(SS.__file__).resolve().parents[1] / "viewer" / "index.html").read_text(encoding="utf-8")
     assert "ground_mark" in page and "CircleGeometry" in page
     assert "single-sites --upload %*" in SS.BAT and "--no-upload" in SS.BAT
     a = SS.build_parser().parse_args(["--upload", "--no-upload"]) if hasattr(SS, "build_parser") else None
@@ -3048,16 +3109,16 @@ def test_block_terrain_station_plan():
     cfg = SS.load_config()
     # 0.98.19 (Christian, 16 Nov 2026): the four Rockytop stations share the terrain set "rockytop" - the half-res
     # end-of-drive 360s and the quarter-res mid-drive pairs
-    rt = ("Sol0461_S026D0630", "Sol0474_S026D0850", "Sol0477_S026D1004", "Sol0502_S026D1222")
+    rt = ("Sol0461", "Sol0474", "Sol0477", "Sol0502")
     assert all(cfg["stations"][k]["terrain"] == "block:rockytop" for k in rt)
     tset = cfg["terrain_sets"]["rockytop"]["images"]
     assert len(tset) == 119 and all("_0A0295J" in n or "_0A0195J" in n or "_0A1195J" in n for n in tset)
     assert sum("NCAM00301" in n for n in tset) == 6
-    assert cfg["stations"]["Sol0477_S026D1004"]["name"] == "Skinner Ridge" and cfg["stations"]["Sol0502_S026D1222"]["name"] == "Wildcat Ridge"
+    assert cfg["stations"]["Sol0477"]["name"] == "Skinner Ridge" and cfg["stations"]["Sol0502"]["name"] == "Wildcat Ridge"
     for k in rt:                                    # context frames are not the station's own
         own = set(cfg["stations"][k]["frames"].get("images") or [])
         assert cfg["stations"][k]["context"] and not own & set(cfg["stations"][k]["context"])
-    cmds = SS.plan(cfg, "R", labels=["Sol0474_S026D0850"])[0]["commands"]
+    cmds = SS.plan(cfg, "R", labels=["Sol0474"])[0]["commands"]
     dense = next(c["argv"] for c in cmds if c["step"] == "dense")
     assert "--whole-block" in dense and "--add-images" not in dense and "--nearby-m" not in dense and dense[dense.index("--scale") + 1] == "0.5"
     assert dense[dense.index("--block-name") + 1] == "rockytop" and len(dense) - dense.index("--block-images") - 1 >= 119
@@ -3071,25 +3132,25 @@ def test_block_terrain_station_plan():
     # "Whole-block terrain to 75 m"): the block terrain is the default of every station; "terrain": "own" asks for the
     # station's own frames
     assert cfg["terrain"] == "block"
-    other = SS.plan(cfg, "R", labels=["Sol0052_S003D2046"])[0]["commands"]
+    other = SS.plan(cfg, "R", labels=["Sol0052"])[0]["commands"]
     assert any("--whole-block" in c["argv"] for c in other) and any("--points" in c["argv"] for c in other)
-    own = SS.plan(dict(cfg, stations={"X": dict(cfg["stations"]["Sol0052_S003D2046"], terrain="own")}), "R", labels=["X"])[0]["commands"]
+    own = SS.plan(dict(cfg, stations={"X": dict(cfg["stations"]["Sol0052"], terrain="own")}), "R", labels=["X"])[0]["commands"]
     assert not any("--whole-block" in c["argv"] or "--points" in c["argv"] for c in own)
     # a plain "block" is every Navcam frame of the block, as in 0.98.14
-    cfg2 = dict(cfg, stations={"X": dict(cfg["stations"]["Sol0474_S026D0850"], terrain="block")})
+    cfg2 = dict(cfg, stations={"X": dict(cfg["stations"]["Sol0474"], terrain="block")})
     d2 = next(c["argv"] for c in SS.plan(cfg2, "R", labels=["X"])[0]["commands"] if c["step"] == "dense")
     assert "--whole-block" in d2 and "--block-images" not in d2
     with pytest.raises(KeyError):
-        SS.plan(dict(cfg, stations={"X": dict(cfg["stations"]["Sol0474_S026D0850"], terrain="block:nope")}), "R", labels=["X"])
+        SS.plan(dict(cfg, stations={"X": dict(cfg["stations"]["Sol0474"], terrain="block:nope")}), "R", labels=["X"])
     # Hippo Pools: one terrain set for its three stations
-    hp = ("Sol1955_S091D0124", "Sol2009_S092D0000", "Sol2022_S093D0000", "Sol1947_S091D0000")
-    assert len(cfg["stations"]["Sol1947_S091D0000"]["context"]) == 26 and all(f in cfg["terrain_sets"]["hippo_pools"]["images"] for f in cfg["stations"]["Sol1947_S091D0000"]["frames"]["images"])
+    hp = ("Sol1955", "Sol2009", "Sol2022", "Sol1947")
+    assert len(cfg["stations"]["Sol1947"]["context"]) == 26 and all(f in cfg["terrain_sets"]["hippo_pools"]["images"] for f in cfg["stations"]["Sol1947"]["frames"]["images"])
     assert all(cfg["stations"][k]["terrain"] == "block:hippo_pools" and cfg["stations"][k]["context"] for k in hp)
     assert len(cfg["terrain_sets"]["hippo_pools"]["images"]) == 92
-    assert not any("_2010_" in n for n in cfg["stations"]["Sol2009_S092D0000"]["frames"]["images"])
-    assert sum("_2010_" in n for n in cfg["stations"]["Sol2009_S092D0000"]["context"]) == 6
+    assert not any("_2010_" in n for n in cfg["stations"]["Sol2009"]["frames"]["images"])
+    assert sum("_2010_" in n for n in cfg["stations"]["Sol2009"]["context"]) == 6
     # Rochette: the whole end-of-drive 360 of sol 178 at S006D2666 as context
-    r = cfg["stations"]["Sol0180_S007D0000"]["context"]
+    r = cfg["stations"]["Sol0180"]["context"]
     assert sum("N0062666NCAM0" in n and n.startswith(("NLF_0178", "NRF_0178")) for n in r) == 10
 
 
@@ -3174,7 +3235,7 @@ def test_rover_variant_gets_a_turning_disc_and_the_page_faces(tmp_path):
     vs = {v["key"]: v for v in doc["panos"][-1]["variants"]}
     assert vs["rover"]["ground_mark"]["file"] == vs["masked"]["ground_mark"]["file"]
     assert web.WELCOME_YAW_DEG == 270.0
-    page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    page = (Path(SS.__file__).resolve().parents[1] / "viewer" / "index.html").read_text(encoding="utf-8")
     assert "const VIEWER_NAME = 'Rover Photogrammetry Viewer (RPV)';" in page and "RPP stereo viewer" not in page and "WELCOME_AZ_DEG = 270" in page
     assert all(f'id="face{k}"' in page for k in "NESWO") and "lookKeys" in page   # O looks level since 0.98.28
 
@@ -3202,7 +3263,7 @@ def test_o_looks_along_the_rover_x_and_y_b_home_buttons(tmp_path):
     assert web.rover_forward_azimuth({"text_centre_azimuth_deg": 100.0}) == 325.0
     assert web.rover_forward_azimuth({"rover_forward_azimuth_deg": 370.0, "text_centre_azimuth_deg": 1.0}) == 10.0
     assert web.rover_forward_azimuth({}) is None
-    page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    page = (Path(SS.__file__).resolve().parents[1] / "viewer" / "index.html").read_text(encoding="utf-8")
     assert "#compass { position: fixed; right: 12px; top: 8px;" in page and "-Math.PI / 4" not in page
     assert "TEXT_FROM_FORWARD_DEG = 135" in page and "rover_forward_azimuth_deg" in page
     assert 'id="home"' in page and "goHome" in page and "faceAfterLoad = 270" in page
@@ -3221,9 +3282,9 @@ def test_viewer_moves_to_its_own_repository(tmp_path, monkeypatch):
     assert web.viewer_dir() == tmp_path / "RPV"
     monkeypatch.delenv("RPP_VIEWER_DIR")
     home = Path(web.__file__).resolve().parents[3]
-    assert web.viewer_dir() in (home.parent / "rpv", home.parent / "RPV", home / "docs" / "ods")
+    assert web.viewer_dir() in (home.parent / "rpv", home.parent / "RPV", Path.cwd() / "rpv")
     assert web.VIEWER_URL == "https://ctate7163.github.io/rpv/"        # 0.99.13: lower case
-    page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    page = (Path(SS.__file__).resolve().parents[1] / "viewer" / "index.html").read_text(encoding="utf-8")
     head = page[:page.index("</head>")]
     assert "location.replace('https://ctate7163.github.io/rpv/' + location.search + location.hash)" in head
     assert "/^\\/RPV(\\/|$)/.test(location.pathname)" in head      # 0.99.13: a copy still served at /RPV/ sends on too
@@ -3270,8 +3331,8 @@ def test_info_map_is_the_blank_panel_d_and_the_menu_says_sol_then_name(tmp_path,
     (root / "dem" / "msr_trn" / "DTM_new.tif").write_bytes(b"x")
     web.traverse_dtm(wp, tr, w, root=root)                      # another DTM: drawn again
     assert called
-    page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
-    assert "menuLabel(q)" in page and "Sol ${String(sols[0]).padStart(4, '0')} ${siteName(p)}" in page
+    page = (Path(SS.__file__).resolve().parents[1] / "viewer" / "index.html").read_text(encoding="utf-8")
+    assert "menuLabel(q)" in page and "Sol ${String(sols[0]).padStart(4, '0')} ${nm}" in page
     assert "Site ${parseInt(sd[1], 10)}, Drive ${parseInt(sd[2], 10)}" in page and "#ff9500" in page and "strokeRect(mx - r, my - r" in page and "traverse.dtm" in page
     study = Path(SS.__file__).resolve().parents[2] / "rpp_studies" / "sites" / "m20_sites"
     src = (study / "mapplot3.py").read_text(encoding="utf-8")
@@ -3286,16 +3347,16 @@ def test_stations_of_16_nov_and_context_patterns(tmp_path):
     from rpp.ibr.ods import expand_names
     cfg = SS.load_config()
     st = cfg["stations"]
-    assert len(st["Sol1177_S054D0000"]["frames"]["images"]) == 12 and any("N0530198NCAM00301" in n for n in st["Sol1177_S054D0000"]["context"])
-    c = st["Sol1183_S054D0866"]["context"]
+    assert len(st["Sol1177"]["frames"]["images"]) == 12 and any("N0530198NCAM00301" in n for n in st["Sol1177"]["context"])
+    c = st["Sol1183"]["context"]
     assert any("_1182_" in n for n in c) and any("_1185_" in n and "N0541010" in n for n in c) and len(c) == 32
-    c = st["Sol1308_S061D1678"]["context"]
+    c = st["Sol1308"]["context"]
     assert {n.split("_")[1] for n in c} == {"1307", "1308"} and sum("NCAM00301" in n for n in c) == 4 and len(c) == 22
-    assert st["Sol0609_S030D1172"]["site"] == "hidden_harbor" and st["Sol0609_S030D1172"]["context"] == ["N?F_0606_*RAD_N0301096NCAM*"]
-    assert sum("_0033_" in n for n in st["Sol0052_S003D2046"]["context"]) == 10
+    assert st["Sol0609"]["site"] == "hidden_harbor" and st["Sol0609"]["context"] == ["N?F_0606_*RAD_N0301096NCAM*"]
+    assert sum("_0033_" in n for n in st["Sol0052"]["context"]) == 10
     have = {"NLF_0606_0001_222RAD_N0301096NCAM03606_0A0195J01.png", "NLF_0609_0002_222RAD_N0301172NCAM03609_0A0195J01.png"}
     assert expand_names(["N?F_0606_*RAD_N0301096NCAM*.png", "nope*.png"], have) == ["NLF_0606_0001_222RAD_N0301096NCAM03606_0A0195J01.png", "nope*.png"]
-    runs = SS.plan(cfg, tmp_path, labels=["Sol0609_S030D1172"])
+    runs = SS.plan(cfg, tmp_path, labels=["Sol0609"])
     assert Path(runs[0]["work"]).name == "mars2020_sol_0606_hidden_harbor"
     bat = (Path(SS.__file__).resolve().parents[3] / "scripts" / "windows" / "run_sites.bat").read_bytes()
     assert b'findstr /i /c:"--sites" /c:"--group" >nul && set "WHICH="' in bat and bat.count(b"\n") == bat.count(b"\r\n")
@@ -3361,15 +3422,15 @@ def test_16bit_sources_are_looked_for_in_the_zcam_archive_beside_the_navcam_one(
 
 def test_z34_station_has_a_name_for_the_menu():
     """0.98.31 (Christian, 16 Nov 2026: "how does the z34 show up in the list of ods?"): without a name its menu entry
-    read "Sol 0690 Sol0690_S032D1184_Z34"; now "Sol 0690 Three Forks (Mastcam-Z 34 mm)", beside the Navcam station's
+    read "Sol 0690 Sol0690_Z34"; now "Sol 0690 Three Forks (Mastcam-Z 34 mm)", beside the Navcam station's
     "Sol 0686 Three Forks"."""
     import json
     from rpp.ibr import single_sites as SS
     cfg = json.loads((Path(SS.__file__).resolve().parent.parent / "data" / "single_sites.json").read_text(encoding="utf-8"))
     st = cfg.get("stations", cfg)
     # Christian, 14:52: "Make both Three Forks North and the zcam one should have an extra (Z34) after it"
-    assert st["Sol0686_S032D1184"]["name"] == "Three Forks North"
-    assert st["Sol0690_S032D1184_Z34"]["name"] == "Three Forks North (Z34)"
+    assert st["Sol0686"]["name"] == "Three Forks North"
+    assert st["Sol0690_Z34"]["name"] == "Three Forks North (Z34)"
 
 
 def test_viewer_station_arrows_rover_button_and_title():
@@ -3379,7 +3440,7 @@ def test_viewer_station_arrows_rover_button_and_title():
     viewer (RPV)" instead of" the old list title'); the disc of a Mastcam-Z station named as its Navcam one; the
     Z34 panorama blended without per-image gains."""
     from rpp.ibr import web, single_sites as SS
-    page = (Path(SS.__file__).resolve().parents[3] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    page = (Path(SS.__file__).resolve().parents[1] / "viewer" / "index.html").read_text(encoding="utf-8")
     nav = page[page.index('<div id="nav">'):page.index('<div id="msg">')]
     assert nav.index('id="prevSt"') < nav.index('id="roverBtn"') < nav.index('id="nextSt"')
     assert "#nav { position: fixed; right: 12px; bottom: 12px;" in page
@@ -3393,8 +3454,8 @@ def test_viewer_station_arrows_rover_button_and_title():
     assert SS.mark_name({"name": "Three Forks North (Z34)"}) == "Three Forks North"
     assert SS.mark_name({"name": "Three Forks North", "mark_name": "TFN"}) == "TFN"
     cfg = SS.load_config()
-    z = cfg["stations"]["Sol0690_S032D1184_Z34"]
-    assert "--no-gains" in z["ods_args"] and SS.mark_name(z) == cfg["stations"]["Sol0686_S032D1184"]["name"]
+    z = cfg["stations"]["Sol0690_Z34"]
+    assert "--no-gains" in z["ods_args"] and SS.mark_name(z) == cfg["stations"]["Sol0686"]["name"]
 
 
 def test_viewer_keeps_north_across_stations_and_its_name_in_the_bar():
@@ -3402,7 +3463,7 @@ def test_viewer_keeps_north_across_stations_and_its_name_in_the_bar():
     the top banner that still says Mars rover panorama viewer (RPV)"): the start heading is set once (the first panorama),
     a station change leaves the world's rotation alone; the bar and tab carry the viewer's name, which a list title of the
     viewer's own names does not replace."""
-    page = (Path(__file__).resolve().parents[1] / "docs" / "ods" / "index.html").read_text(encoding="utf-8")
+    page = (Path(__file__).resolve().parents[1] / "src" / "rpp" / "viewer" / "index.html").read_text(encoding="utf-8")
     show = page[page.index("async function show()"):page.index("function color(k)")]
     assert "if (!headingSet) {" in show and "headingSet = true;" in show
     assert show.count("world.rotation.y = yaw0 + turn;") == 1                       # inside the once-only block
@@ -3549,14 +3610,14 @@ def test_viewer_names_three_forks_and_zcam():
     from rpp.ibr import single_sites as ss
     cfg = _json.loads((Path(ss.__file__).resolve().parents[1] / "data" / "single_sites.json").read_text(encoding="utf-8"))
     names = {k: ss.viewer_name(v, k) for k, v in cfg["stations"].items()}
-    assert names["Sol0690_S032D1184_Z34"] == "Three Forks North (zcam)" and names["Sol0686_S032D1184"] == "Three Forks North"
-    assert names["Sol0670_S032D0672_Z34"] == "Three Forks South (zcam)" and names["Sol0670_S032D0672"] == "Three Forks South"
+    assert names["Sol0690_Z34"] == "Three Forks North (zcam)" and names["Sol0686"] == "Three Forks North"
+    assert names["Sol0670_Z34"] == "Three Forks South (zcam)" and names["Sol0670"] == "Three Forks South"
     for k, n in names.items():                                   # no station is the whole Three Forks area
         assert not n.startswith("Three Forks") or "North" in n or "South" in n, (k, n)
         assert ("(zcam)" in n) == ss.is_zcam_station(cfg["stations"][k]), (k, n)
-    assert ss.viewer_sols(cfg["stations"]["Sol0690_S032D1184_Z34"], "Sol0690_S032D1184_Z34") == [690]
-    assert ss.viewer_sols(cfg["stations"]["Sol0686_S032D1184"], "Sol0686_S032D1184") is None
-    assert ss.mark_name(cfg["stations"]["Sol0690_S032D1184_Z34"]) == "Three Forks North"       # the disc: no tag (0.99.13)
+    assert ss.viewer_sols(cfg["stations"]["Sol0690_Z34"], "Sol0690_Z34") == [690]
+    assert ss.viewer_sols(cfg["stations"]["Sol0686"], "Sol0686") == [686]   # 0.99.51: one sol
+    assert ss.mark_name(cfg["stations"]["Sol0690_Z34"]) == "Three Forks North"       # the disc: no tag (0.99.13)
     assert "web.py" in ss.NOT_IN_CODE_KEY and "hf.py" in ss.NOT_IN_CODE_KEY and "ods.py" not in ss.NOT_IN_CODE_KEY
 
 
@@ -3602,6 +3663,13 @@ def test_color_products_raw_tone_dcs(tmp_path):
     y = (g - np.asarray(P["dcs"]["mean_bgr"])) @ np.asarray(P["dcs"]["matrix_bgr"]).T
     assert np.allclose(np.cov(y.T), CP.DCS_SIGMA ** 2 * np.eye(3), atol=0.25 * CP.DCS_SIGMA ** 2)   # equal, uncorrelated
     assert np.abs(dcs[:H][mark_row + 2:].astype(int) - std[mark_row + 2:].astype(int)).mean() < 4   # the disc as standard
+    # 0.99.53: with eyes that carry no disc (in_panorama false) nothing is copied from the standard view
+    rec = json.loads((tmp_path / "ods.json").read_text())
+    rec["nadir_mark"]["in_panorama"] = False
+    (tmp_path / "ods.json").write_text(json.dumps(rec))
+    r2 = CP.write_color_products(tmp_path, "S1", levels_file=tmp_path / "levels2.json")
+    dcs2 = cv2.imread(r2["files"]["dcs"])
+    assert np.abs(dcs2[:H][mark_row + 2:].astype(int) - std[mark_row + 2:].astype(int)).mean() > 10
     assert 0 < tone[:H][t].mean() < 255 and r["parameters_from"] == "computed"
     assert "color_products_parameters_v2" in json.loads(f.read_text())
     r2 = CP.write_color_products(tmp_path, "S1", levels_file=f)
@@ -3658,6 +3726,36 @@ def test_height_field_drops_spikes_fills_sparse_cells_and_leaves_rock_faces_to_p
     assert on_block.sum() > 20                                      # the block's top is there, from Poisson
 
 
+def test_height_field_no_poisson_squares_on_flat_ground_and_no_crack():
+    """0.99.51 (Christian, 20 Nov 2026: "why does the mesh have these squares of low res triangles?"; "the normal map also
+    has these strange square artifacts"): a lone cell off its neighbors is smoothed instead of making a Poisson square;
+    a real face still goes to Poisson, and the patch's ring is put on the height field."""
+    from rpp.ibr import mesh as M
+    rng = np.random.default_rng(7)
+    g = np.mgrid[-2:2:0.005, -2:2:0.005].reshape(2, -1).T
+    z = 0.002 * rng.normal(size=len(g))
+    keep = np.ones(len(g), bool)
+    bumps = []
+    for k in range(40):                                            # lone bumps: one cell 8-20 cm up (its own points)
+        c = (np.floor(rng.uniform(-1.8, 1.8, 2) / 0.015) + 0.5) * 0.015
+        keep &= ~((np.abs(g[:, 0] - c[0]) < 0.0075) & (np.abs(g[:, 1] - c[1]) < 0.0075))
+        bumps.append(np.c_[np.tile(c, (4, 1)) + 0.001 * rng.normal(size=(4, 2)), [rng.uniform(0.08, 0.2)] * 4])
+    pts = np.vstack([np.c_[g[keep], z[keep]], *bumps])
+    P = np.array([0.0, 0.0, 2.0])
+    st = {}
+    V, F, how = M.height_field_arrays(pts, P, (0, 0, 1), 1.9, steep=st)
+    assert st["cells"] == 0 and how["outliers_smoothed"] + how["spikes_dropped"] >= 30, how
+    assert np.abs(V[:, 2]).max() < 0.03
+    box = (np.abs(g[:, 0] - 1.0) < 0.3) & (np.abs(g[:, 1]) < 0.3)  # a 0.6 m block, 0.3 m tall: a face
+    pts2 = np.vstack([np.c_[g[~box], z[~box]], np.c_[g[box], np.full(box.sum(), 0.3)]])
+    st2 = {}
+    V2, F2, how2 = M.height_field_arrays(pts2, P, (0, 0, 1), 1.9, steep=st2)
+    assert st2["cells"] > 0
+    q = np.array([[1.0, 0.0, 0.31], [1.0 + 0.3 + 10.5 * how2["cell_m"], 0.0, 0.05]])   # on the block; outside the faces
+    s_ = st2["snap"](q)
+    assert abs(s_[0, 2] - 0.31) < 1e-9 and abs(s_[1, 2]) < 0.01                       # the ring point on the ground
+
+
 def test_ods_width_from_the_stations_own_frames():
     """0.99.40 (Christian, 19 Nov 2026: "ncam medium res station can be at 8k. Only ncam highres and z34 sites need to be
     16k"): without --width, 16384 for a Mastcam-Z station and for frames finer than 0.5 mrad a pixel, else 8192."""
@@ -3703,3 +3801,64 @@ def test_frames_fall_back_to_the_stations_own_frames_of_the_sols(tmp_path):
     proj = NS(root=tmp_path)
     assert _frames(proj, st, NS(images=None, sols=[11], exclude=None)) == z[:2]
     assert _frames(proj, st, NS(images=None, sols=[9], exclude=None)) == nav
+
+
+def test_blend_pole_one_color_at_the_zenith():
+    """0.99.52 (Christian, 20 Nov 2026: "the top pole in the ods and full 3d models are visible as a convergent
+    discolored point. Make sure that the sky at the pole is blended")."""
+    from rpp.ibr import ods as O
+    H, W = 180, 360
+    rgb = np.zeros((H, W, 3), np.float32)
+    rgb[:, :W // 2] = (100, 120, 140)                                # two halves of different sky up to the pole
+    rgb[:, W // 2:] = (60, 80, 100)
+    before = rgb.copy()
+    r = O.blend_pole(rgb)
+    assert r["rows"] == 20
+    assert np.ptp(rgb[0], axis=0).max() < 1e-3                       # the top row: one color
+    assert np.allclose(rgb[25], before[25])                          # below 70 deg: untouched
+    assert np.ptp(rgb[5], axis=0).max() < np.ptp(rgb[15], axis=0).max() <= np.ptp(before[15], axis=0).max()
+    u8 = np.zeros((H, W, 3), np.uint8)
+    u8[:, ::2] = 200
+    O.blend_pole(u8)
+    assert u8.dtype == np.uint8 and np.ptp(u8[0].astype(int), axis=0).max() <= 1
+
+
+def test_patch_match_sources_are_set_in_the_cfg(tmp_path):
+    """1.0: new depth maps match each image against its 12 best-connected images, not COLMAP's 20."""
+    from rpp.sfm.dense import set_source_images, stereo_record, workspace_stereo_record
+    st = tmp_path / "stereo"
+    st.mkdir()
+    (st / "patch-match.cfg").write_text("NLF_1.png\n__auto__, 20\nNLF_2.png\n__auto__, 20\nNLF_3.png\nNLF_1.png, NLF_2.png\n")
+    assert set_source_images(tmp_path, 12) == 2
+    assert (st / "patch-match.cfg").read_text().splitlines() == ["NLF_1.png", "__auto__, 12", "NLF_2.png", "__auto__, 12",
+                                                                  "NLF_3.png", "NLF_1.png, NLF_2.png"]
+    assert set_source_images(tmp_path, 12) == 0
+    assert "sources" not in stereo_record(tmp_path, {}, True, 2000, None)[2]      # 0.99's records stay as they were
+    assert "sources" not in stereo_record(tmp_path, {}, True, 2000, 20)[2]
+    assert stereo_record(tmp_path, {}, True, 2000, 12)[2]["sources"] == 12
+    assert workspace_stereo_record(tmp_path) is None                              # no maps yet
+
+
+def test_dense_add_images_takes_patterns(tmp_path, monkeypatch):
+    """1.0: rpp dense --add-images expands patterns over the block's frames (the Z34 versions' context: N?F_*NCAM*,
+    Z?0_*ZCAM08826_034*), and a pattern that matches nothing is left out instead of failing the step."""
+    import rpp.sfm.gpu as G
+    from rpp.cli import main as rpp_main
+    from rpp.sfm.project import SfmProject
+    proj0, rec, st, scene, P, colors = _station_scene(tmp_path)
+    root = proj0.root
+    (root / "gui_native" / "sparse").mkdir(parents=True)
+    rec.write(str(root / "gui_native" / "sparse"))
+    rows = json.loads((root / "project.json").read_text(encoding="utf-8"))["images"]
+    for r in rows:
+        r.update(station="Sol0091_S003D0010", sequence="NCAM00001", downsample_scale=1.0)
+    SfmProject(root, rows, {}, {}, [0.0, 0.0, 0.0], {"world_frame": "site3_enu"}).save()
+    calls = []
+    monkeypatch.setattr(pycolmap, "has_cuda", False, raising=False)
+    import rpp.pipeline as PL
+    monkeypatch.setattr(PL, "_default_gpu_python", lambda: "/envs/rpp_gpu/python.exe")
+    monkeypatch.setattr(G, "run_step", lambda py, step, proj, **kw: calls.append(kw) or {"steps": {}})
+    assert rpp_main(["dense", str(root.parent), "--images", "NLF_1.png", "--add-images", "NLF_[23]*", "Z?0_*ZCAM08826*",
+                     "--stereo"]) == 0
+    assert sorted(calls[0]["images"]) == ["NLF_1.png", "NLF_2.png", "NLF_3.png"]
+    assert rpp_main(["dense", str(root.parent), "--images", "NLF_1.png", "--add-images", "NLF_9.png", "--stereo"]) == 2

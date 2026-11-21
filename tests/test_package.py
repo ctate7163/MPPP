@@ -37,9 +37,14 @@ def test_studies_are_outside_the_package():
     for gone in ("calibration.py", "navcal.py", "navcal_consensus.py", "navcal_report.py", "navcal_tied.py",
                  "zcam_calib.py", "zcam_lines.py", "diagnose.py", "sites.py", "cmods_form.py"):
         assert not (pkg / "sfm" / gone).exists(), gone
-    # 0.96.0: the studies are the package rpp_studies; the old calibration scripts sit in its misc part
-    for f in ("misc/calibration_old/navcal_consensus.py", "misc/calibration_old/zcam_calib.py", "sites/prototype.py"):
-        assert (ROOT / "src" / "rpp_studies" / f).is_file(), f
+    # 0.96.0: the studies are the package rpp_studies.  1.0: the old calibration scripts, experiments and notes that
+    # sat in its misc part are gone from the tree (the tag pre-v1.0-archive has them); the live studies stay
+    assert (ROOT / "src" / "rpp_studies" / "sites" / "prototype.py").is_file()
+    for gone in ("calibration_old", "calibration_old_tests", "navcal_v0p52", "navcal_v0p53", "experiments",
+                 "analyses_tests", "m20_sites_tests", "rover_frame_tests"):
+        d = ROOT / "src" / "rpp_studies" / "misc" / gone        # a folder with only __pycache__ may stay on a PC
+        assert not d.exists() or not list(d.rglob("*.py")), gone
+    assert (ROOT / "src" / "rpp_studies" / "calibration" / "zcam_lines.py").is_file()   # still used by the joint's figures
     assert not (ROOT / "studies").exists()
     assert not (pkg / "scapes.py").exists()
     for f in ("tests/data/legacy_expected_ZL0.npz", "tests/data/legacy_expected_NLF.npz"):
@@ -83,7 +88,7 @@ def test_cmods_dir_is_the_default_camera_folder(monkeypatch, tmp_path):
 
 def test_version():
     import rpp
-    assert rpp.__version__ == "0.99.48" and rpp.VERSION_TAG == "v0p99"
+    assert rpp.__version__ == "1.0.0rc1" and rpp.VERSION_TAG == "v1p0"
     cff = (ROOT / "CITATION.cff").read_text()
     assert f"version: {rpp.__version__}" in cff
     assert f"## {rpp.__version__}" in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -159,8 +164,15 @@ def test_pypi_packaging():
     assert pr["optional-dependencies"]["all"][0].startswith("rover-photogrammetry[")
     assert not any(p.endswith((".pt", ".safetensors")) or "checkpoint" in p or "runs" in p
                    for p in pp["tool"]["setuptools"]["package-data"]["rpp"])     # no model weights or run folders in the wheel
-    assert pr["scripts"] == {"rpp": "rpp.cli:main", "mppp": "mppp:cli_main"}      # 0.99: the mppp command too
-    assert pp["tool"]["setuptools"]["packages"]["find"]["include"] == ["rpp*", "mppp*"]
+    assert pr["scripts"] == {"rpp": "rpp.cli:main"}                               # 1.0: the old command is gone
+    # 1.0: the wheel is the pipeline and the viewer page; the studies come with a source checkout
+    assert pp["tool"]["setuptools"]["packages"]["find"]["include"] == ["rpp", "rpp.*"]
+    assert "rpp_studies" not in pp["tool"]["setuptools"]["package-data"]
+    assert {"viewer/*.html", "viewer/vendor/*"} <= set(pp["tool"]["setuptools"]["package-data"]["rpp"])
+    assert (root / "src" / "rpp" / "viewer" / "index.html").is_file() and not (root / "docs" / "ods" / "vendor").exists()
+    extras = pr["optional-dependencies"]
+    assert extras["pipeline"] == ["rover-photogrammetry[mask,sfm,plots]"] and extras["ibr"] == ["rover-photogrammetry[stations]"]
+    assert "Development Status :: 5 - Production/Stable" in pr["classifiers"]
     # every data file is in the wheel's package data
     import fnmatch
     pats = pp["tool"]["setuptools"]["package-data"]["rpp"]
@@ -181,11 +193,11 @@ def test_pypi_packaging():
         assert md.metadata("rover-photogrammetry")["Name"] == "rover-photogrammetry"
     except md.PackageNotFoundError:
         pass
-    assert "pip install \"rover-photogrammetry[mask,sfm,plots]\"" in (root / "README.md").read_text(encoding="utf-8")
     readme = (root / "README.md").read_text(encoding="utf-8")
     import re
-    assert 'pip install -e ".[mask,sfm,plots]"' in readme and "conda create -n rpp" in readme   # 0.99.38: a conda env, the clone
-    for block in re.findall(r"```bash\n(.*?)```", readme[readme.index("## Install"):readme.index("## Example data")], re.S):
+    assert 'pip install "rover-photogrammetry[pipeline]"' in readme and "conda create -n rpp" in readme   # a conda env
+    assert 'pip install -e ".[all]"' in readme                                                            # the clone
+    for block in re.findall(r"```bash\n(.*?)```", readme[readme.index("## Install"):readme.index("## First run")], re.S):
         assert "#" not in block, block                    # 0.99.38: no comments in the commands (cmd passes them to pip)
     import re
     assert not re.findall(r"\]\((?!https?://|#|mailto:)[^)]+\)", readme)       # relative links break on PyPI

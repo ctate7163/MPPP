@@ -1,63 +1,75 @@
 # Roadmap
 
-What is being worked on and planned. Release notes are in the
-[changelog](https://github.com/ctate7163/rpp/blob/main/CHANGELOG.md).
+Where RPP and RPV are going. The [changelog](https://github.com/ctate7163/rpp/blob/main/CHANGELOG.md) says what
+changed in each release, and [What is validated and what is experimental](status.md) says where each part stands
+today.
 
-## Now: the freeze run
+The goal of the 1.x series is that someone outside the Mars 2020 team can install RPP, make a true-scale model of a
+place on Mars, trust it, and show it to others.
 
-The camera models and the alignment rules are frozen, and every block is aligned again from scratch with them:
+## 1.0: the validated pipeline, an experimental viewer
 
-- the Navcam tied joint and its stereo rig (drift with sol, a knee at sol 250);
-- the Mastcam-Z joints per zoom: 34, 48, 63, 79 and 110 mm, with their two focus-backlash states;
-- the Hazcam fit;
-- the combined Navcam + Mastcam-Z 34 mm check, and the deck-fiducial adjustment that gives the rigs and the scale.
+- The pipeline from PDS products to an aligned, true-scale block, on PyPI as `rover-photogrammetry`.
+- Camera, rig and mast models from the third freeze run, in which every Mars 2020 block is aligned again with one
+  version of the code and the models. The model forms are close to final.
+- The rover mask model `rpp_mask_v5` as the default.
+- Station products and RPV as experimental parts.
+- A citable release: a DOI for the software and a software paper.
 
-The results of that run are the basis of the papers, and its models replace the ones shipped with the package.
+## 1.x: make it easy to use
 
-## Now: station panoramas
+**Install and first run**
 
-The station products are in place (see [Station products and the stereo panorama viewer](station-products.md)): a
-cleaned mesh with the rover model, per-image depth and photometric maps, a stereo panorama (8K, or 16K on request), and a prototype web
-viewer. Open:
+- Tests on Linux and Windows for every change.
+- A first run that needs no settings: download, process, align, look.
+- Clearer messages when a download, a GPU or a model is missing.
 
-- the viewer checked in a headset; tiled 16K / 32K images and zoom;
-- Mastcam-Z 34 mm frames in the panorama (they need the combined Navcam + Mastcam-Z block);
-- the rover model following the arm, the antenna and the suspension from the image labels
-  (see [Rover model](rover-model.md));
-- rendering the two variants in parallel.
+**Trust**
 
-## Next: beyond the stereo 360 - a station in six degrees of freedom
+- Published validation against the mission's own terrain meshes and against orbital (HiRISE) terrain models.
+- The independent checks of the camera models, with their numbers, in the documentation.
+- An uncertainty for every measurement: the reconstruction-error maps as a product.
 
-The goal is one rover station that a viewer can move around in. The terrain within about 5 m is a textured mesh under
-the 3D rover, and the terrain from 5 to 75 m is a coarse mesh. The stereo 360 carries only the sky and the far field.
-RPV runs it on a Quest 3 at 72 frames per second.
+**Viewer (RPV)**
 
-Why the mesh goes out to 75 m: a mesh that fades into the 360 at 5 m is out of step with it by about 40 display pixels
-when the head moves 15 cm. At 75 m the step is about 3 pixels. The 5-75 m ring costs few triangles, because the
-tolerated depth error grows with the square of the range.
+- **Faster loading of the 3D stations** (first). A station's full 3D terrain is a 41-48 MB model with an 8192² JPEG
+  texture inside, and each color view adds a 10-27 MB JPEG; on the GPU one 8192² texture takes about 340 MB, and
+  decoding it stalls a headset for seconds. In order:
+  1. GPU-compressed textures: KTX2 with Basis Universal (UASTC for the terrain color, ETC1S tried for the color
+     views), the mipmaps in the file, the JPEG kept as a fallback. three.js transcodes them to ASTC on a Quest and
+     to BC7 on a desktop; they stay compressed on the GPU.
+  2. The terrain texture out of the model file; the terrain, the far shell and the rover fetched in parallel; a
+     loading indicator in VR as well as on a screen.
+  3. Compressed geometry (meshopt with quantized positions and texture coordinates).
+  4. A small texture first, the full one after it; the next station loaded in the background.
+- Measurement: distance, height, slope, and the dip and strike of a plane, each with its uncertainty.
+- Click to source: pick a pixel and open the PDS product it came from.
+- Information per station: which cameras it is made from, and their local times.
+- A map of the traverse to choose a station from.
 
-1. **RPV groundwork.**
-   - three.js r180 or later (Spark needs it), and the KTX2 loader.
-   - A performance readout in the headset: frame rate, triangles, draw calls, texture memory.
-   - KTX2 textures for the panoramas.
-2. **The mesh, textured from the pivot panorama.**
-   - The station mesh, cropped and simplified by screen-space error: about 0.3-0.5 M triangles within 5 m and about
-     50 k from 5 to 75 m.
-   - Textured in the shader from the pivot's 16K panorama and its range, as the 3D rover is.
-   - A fourth viewing mode.
-3. **A texture atlas baked from the frames.**
-   - A UV atlas (xatlas). Each texel is colored by the panorama's blending, with provenance and no-data kept.
-   - An 8K KTX2 atlas: about 85 MB on the GPU.
-   - Mastcam-Z tiles where they cover the near field, for leaning in.
-4. **Gaussian splats, as an experiment.**
-   - Nerfstudio splatfacto from the block's export, with the tight masks and the ray-cast depth maps as supervision.
-   - Cropped to 10 m, at most 0.5-1 M splats, stored as SPZ, and drawn with Spark in RPV.
-   - Checked in the headset in the same way as the mesh.
-5. **Whole blocks:** tiles and streaming (the browser viewer below).
+**Data**
+
+- Downloads for every station: the mesh, the terrain model, the panoramas and their records, as a versioned data
+  release with a DOI.
+- A catalog of the end-of-drive stations along the traverse.
+
+**More cameras and rovers**
+
+- Curiosity: the Navcam and Hazcam models from more of the mission, then the Mastcam (34 and 100 mm).
+- Mastcam-Z at 26, 48, 63, 79 and 100 mm from more blocks.
+- The mast as a versioned model file next to the camera models, so that a camera pose can be built from the mast's
+  angles alone.
 
 ## Later
 
-- A browser viewer for whole blocks: meshes, splats and station panoramas; layers for instrument, time of day and
-  uncertainty; A to B measurement with its uncertainty.
-- Independent checks of the camera models: the Mastcam-Z calibration target as a scale monitor, Sun images for
-  heading, night-sky frames.
+- Appearance: separate the material of the terrain from the lighting, so that images taken at different times of
+  day agree, and a model can be shown under another sun.
+- A viewer for whole blocks: meshes and station panoramas together, with layers for instrument, time of day and
+  uncertainty.
+- Overlays for science: named targets, sample sites, multispectral maps on the 3D terrain.
+- Other missions with mast stereo cameras.
+
+## How to help
+
+Tell us what you tried and where it stopped: the [issue tracker](https://github.com/ctate7163/rpp/issues) is the
+place. Requests from people who want to use RPP for their own science decide the order of the list above.

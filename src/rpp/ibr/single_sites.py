@@ -5,7 +5,7 @@ Christian, 10 Nov 2026: "We'll use these three as the test sites. organize the o
 D:\\rover_blocks\\single_sites\\Sol0052_S003D2046 and so forth" - "the single sites should come from a config file".
 
     python -m rpp single-sites                        every station of the config
-    python -m rpp single-sites Sol0052_S003D2046 Sol0686_S032D1184    those
+    python -m rpp single-sites Sol0052 Sol0686    those
     python -m rpp single-sites --steps ods            only the panoramas (mesh and maps already there)
     python -m rpp single-sites --squares-only         only stack the eye images already there into the squares
     python -m rpp single-sites --list | --dry-run     what would run
@@ -28,7 +28,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 from .. import env as rpp_env
 
 PathLike = Union[str, Path]
@@ -99,8 +99,9 @@ def viewer_sols(st: Dict[str, Any], label: str = "") -> Optional[List[int]]:
     """For a Mastcam-Z station the one sol the viewer gives (as on its disc, :func:`rpp.ibr.nadir.mark_sols`): the
     first of its ``--sols`` in ``ods_args``, else the sol in its label; None for the others (the disc's sols)."""
     import re
-    if not is_zcam_station(st):
-        return None
+    if not is_zcam_station(st):                         # 0.99.51: one sol on every plate - the label's
+        m = re.match(r"^Sol(\d+)", str(label))
+        return [int(m.group(1))] if m else None
     args = [str(x) for x in (st.get("ods_args") or [])]
     for i, x in enumerate(args[:-1]):
         if x == "--sols" and args[i + 1].isdigit():
@@ -134,7 +135,6 @@ def zcam_companions(cfg: Dict[str, Any], root: PathLike, names_of=None) -> Dict[
     runs (:func:`plan` puts a companion right after its Navcam station).  ``names_of(block folder)`` -> the block's
     image names (default: its project.json)."""
     import re
-    from .station import station_key
     from ..waypoints.sites import load_site_table, work_folder
 
     def default_names(work):
@@ -146,13 +146,13 @@ def zcam_companions(cfg: Dict[str, Any], root: PathLike, names_of=None) -> Dict[
     have = {}                                                    # station key -> the config's own Mastcam-Z label
     for lab, st in cfg["stations"].items():
         if is_zcam_station(st):
-            have[re.sub(r"_Z\d+$", "", station_key(lab).upper())] = lab
+            have[station_code_of(st, lab)] = lab
     pairs: Dict[str, str] = {}
     cache: Dict[str, List[str]] = {}
     for lab, st in list(cfg["stations"].items()):
         if is_zcam_station(st):
             continue
-        key = station_key(lab).upper()
+        key = station_code_of(st, lab)
         if key in have:
             pairs[lab] = have[key]
             continue
@@ -199,9 +199,12 @@ def zcam_companions(cfg: Dict[str, Any], root: PathLike, names_of=None) -> Dict[
         frames = sorted(n for s_ in sols for n in frames_of[s_])
         left = sum(per_sol.get(s_, 0) for s_ in sols)
         tok = f"N{sd[0]:03d}{sd[1]:04d}"
-        zlab = f"Sol{sol:04d}_{key}_Z34"
+        zlab = f"Sol{sol:04d}_Z34"                               # 1.0: the sol alone (Sol0789_Z34)
+        if zlab in cfg["stations"] and cfg["stations"][zlab].get("derived_from") != lab:
+            zlab = f"Sol{sol:04d}_{key}_Z34"                     # two Z34 360s of one sol: the station's code kept
         cfg["stations"][zlab] = {
             "name": f"{mark_name(st) or lab} (Z34)", "work": zwork.name, "station": st["station"], "derived_from": lab,
+            "old_label": f"Sol{sol:04d}_{key}_Z34",
             "frames": dict(st.get("frames") or {}), "variants": ["masked", "rover"], "terrain": "block",
             # 0.99.46: the panorama's frames named - the 34 mm frames of that sol, both eyes.  Without --images rpp ods
             # takes the frames the station's dense workspace was made from (the Navcam ones), --sols left none, and
@@ -209,7 +212,9 @@ def zcam_companions(cfg: Dict[str, Any], root: PathLike, names_of=None) -> Dict[
             "ods_args": ["--cameras", "Z", "--sols", *[str(x) for x in sols], "--zcam-scale", "0.5", "--fill-cameras", "NF",
                          "--no-gains", "--images", *frames],
             "depthmaps_variants": ["none"],                      # 0.99.46: no per-frame maps (the Navcam station has them)
-            "context": [f"N?F_*_{tok}NCAM*.png", f"F?F_*_{tok}FHAZ*.png", *(st.get("context") or [])],
+            # 1.0 (Christian, 20 Nov 2026: "The sol 0789 z34 projection should also use the ZCAM08826 images for context"):
+            # the Navcam station's "zcam_context" too - context for the Mastcam-Z version only
+            "context": [f"N?F_*_{tok}NCAM*.png", f"F?F_*_{tok}FHAZ*.png", *(st.get("context") or []), *(st.get("zcam_context") or [])],
             "note": f"0.99.43, made by zcam_companions: the {left} left-eye 34 mm frames of sol{'s' if len(sols) > 1 else ''} "
                     f"{' and '.join(str(x) for x in sols)} at this station "
                     f"(the Mastcam-Z block {zwork.name}), after the Navcam station {lab}"}
@@ -231,10 +236,10 @@ REM    0.97.0: the Perseverance model in the rover mesh, the panorama blended in
 REM    station for the rover-shown and rover-masked versions (<station>\tone_levels.json), the per-image pictures as
 REM    jpg in photometry_jpg (rad, depth linear / log, normal, incidence, emission, phase, shadow), a center panorama
 REM    with its depth, the viewpoint on the azimuth axis at the Mastcam-Z height
-REM    examples:  run_single_site_ibr.bat Sol0052_S003D2046            one station
+REM    examples:  run_single_site_ibr.bat Sol0052            one station
 REM               run_single_site_ibr.bat --steps ods          the panoramas again (mesh and maps kept)
 REM               run_single_site_ibr.bat --dry-run            the commands, not run
-REM               run_single_site_ibr.bat Sol0052_S003D2046 --no-upload  the run without the upload at its end
+REM               run_single_site_ibr.bat Sol0052 --no-upload  the run without the upload at its end
 REM               run_single_site_ibr.bat --publish-only                 no rendering: publish and push what is there
 REM    0.97.24: when the run is done its panoramas are published and uploaded (--upload is given here; --no-upload
 REM    after it wins).  0.99.3: the pictures go to the Hugging Face dataset ctate7163/rpp-rpv, station by station,
@@ -303,10 +308,47 @@ SQUARES_BAT = SQUARES_BAT.replace("python -m rpp single-sites --upload %*", "pyt
 assert "--squares-only %*" in SQUARES_BAT and "make_square.bat [LABEL" in SQUARES_BAT
 
 
+# 1.0 (Christian, 20 Nov 2026: "let's shorten the rpv_process site names to just the Sol numbers. The site and drive
+# are not necessary because there cannot be two eod locations on one sol"): a station is Sol0052, its Mastcam-Z version
+# Sol0789_Z34 - the station itself (site and drive) is its entry's "station".  A label of 0.97.14-0.99
+# (Sol0052_S003D2046) still names it, and the viewer's entries and links under the old names are replaced by the new.
+_LONG_LABEL = __import__("re").compile(r"^(Sol\d{4})_S\d{3}D\d{4}(?=$|_)", __import__("re").IGNORECASE)
+
+
+def short_label(label: str) -> str:
+    """``Sol0052_S003D2046`` -> ``Sol0052``, ``Sol0011_S003D0000_Z34`` -> ``Sol0011_Z34``; any other name as it is."""
+    return _LONG_LABEL.sub(r"\1", str(label))
+
+
+def station_code_of(st: Optional[Dict[str, Any]], label: str = "") -> str:
+    """``S003D2046`` of a station entry - its "station" (3_2046, S003D2046), else the S...D... of ``label``."""
+    import re
+    from .station import parse_station
+    try:
+        s, d, _ = parse_station(str((st or {}).get("station"))) if (st or {}).get("station") else (None, None, None)
+    except ValueError:
+        s = d = None
+    if s is not None and d is not None:
+        return f"S{s:03d}D{d:04d}"
+    m = re.search(r"S(\d{3})D(\d{4})", str(label))
+    return f"S{m.group(1)}D{m.group(2)}" if m else str(label).upper()
+
+
 def load_config(path: Optional[PathLike] = None) -> Dict[str, Any]:
     cfg = json.loads(Path(path or CONFIG).read_text(encoding="utf-8"))
     if not isinstance(cfg.get("stations"), dict) or not cfg["stations"]:
         raise ValueError(f"{path or CONFIG}: no 'stations'")
+    shorts = [short_label(k) for k in cfg["stations"]]           # 1.0: a config of long labels read with the short ones
+    clash = {s for s in shorts if shorts.count(s) > 1}
+    renamed: Dict[str, Dict[str, Any]] = {}
+    for lab, st in cfg["stations"].items():
+        new = short_label(lab)
+        if new in clash:
+            new = lab                                            # two stations of one sol: both keep their long names
+        if new != lab:
+            st = dict(st, old_label=st.get("old_label") or lab)
+        renamed[new] = st
+    cfg["stations"] = renamed
     for lab, st in cfg["stations"].items():
         if "station" not in st or not ("site" in st or "work" in st):
             raise ValueError(f"{lab}: needs 'station' and 'site' or 'work'")
@@ -320,13 +362,19 @@ def block_folder(st: Dict[str, Any], root: PathLike) -> Path:
     """The block of a station: ``work``, else the Navcam WORK folder of its ``site`` in the site definitions."""
     if st.get("work"):                                   # 0.98.4: a folder name alone is a block under the root (0.98.2's
         w = Path(st["work"])                             # Mastcam-Z station was looked for in the current folder)
-        return w if w.is_absolute() or len(w.parts) > 1 else Path(root) / w
-    from ..waypoints.sites import load_site_table, work_folder
-    table = load_site_table()
-    site = table["sites"].get(st["site"])
-    if site is None:
-        raise KeyError(f"site {st['site']!r} is not in the site definitions")
-    return Path(work_folder(Path(root), st["site"], False, site["sols"]))
+        w = w if w.is_absolute() or len(w.parts) > 1 else Path(root) / w
+    else:
+        from ..waypoints.sites import load_site_table, work_folder
+        table = load_site_table()
+        site = table["sites"].get(st["site"])
+        if site is None:
+            raise KeyError(f"site {st['site']!r} is not in the site definitions")
+        w = Path(work_folder(Path(root), st["site"], False, site["sols"]))
+    if not (w / "colmap").is_dir() and Path(w).parent == Path(root):   # 0.99.50: not in this root - the block with
+        found = block_with_frames(st, root)                             # the station's frames
+        if found is not None:
+            return found
+    return w
 
 
 def frame_args(frames: Dict[str, Any]) -> List[str]:
@@ -366,11 +414,13 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
     out_root = Path(out_root) if out_root else root / cfg.get("out", "single_sites")
     from .station import station_key
     by_key: Dict[str, List[str]] = {}                           # 0.97.14: Sol0052_S003D2046 still names Sol0052_Sol0052_S003D2046
-    for lab in cfg["stations"]:
-        by_key.setdefault(station_key(lab).upper(), []).append(lab)
+    for lab, st_ in cfg["stations"].items():                    # 1.0: S003D2046 and the old Sol0052_S003D2046 name Sol0052
+        by_key.setdefault(station_code_of(st_, lab), []).append(lab)
+        if st_.get("old_label"):
+            by_key.setdefault(str(st_["old_label"]).upper(), []).append(lab)
     todo = []
     for lab in (list(labels) if labels else sol_order([k for k, v in cfg["stations"].items() if not v.get("experimental")])):   # 0.99.46: in sol order (the config's last first from 0.98.3)
-        todo += [lab] if lab in cfg["stations"] else by_key.get(str(lab).upper(), [lab])      # 0.98.2: an "experimental"
+        todo += [lab] if lab in cfg["stations"] else by_key.get(str(lab).upper(), by_key.get(station_key(lab).upper(), [lab]))      # 0.98.2: an "experimental"
         #                                                                                       station runs only when named
     if companions:                                              # 0.99.43: a Mastcam-Z version right after its Navcam station
         mine = {companions[t] for t in todo if t in companions}     # the versions whose Navcam station runs too
@@ -382,6 +432,9 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
             if lab in companions and companions[lab] in cfg["stations"]:
                 out_.append(companions[lab])
         todo = list(dict.fromkeys(out_))
+    # 0.99.51 (Christian, 20 Nov 2026, Sol0362_S011D0108: "many spikes and sky floaters"): a station marked "no_navcam" -
+    # its Navcam frames are no 360 (Sol 362: four pairs) - is not made itself; its Mastcam-Z version still is
+    todo = [lab for lab in todo if not (cfg["stations"].get(lab) or {}).get("no_navcam")]
     bc = block_cameras or cfg.get("block_cameras")              # 0.99.43: the block's cloud from these families (NFR)
     unknown = [lab for lab in todo if lab not in cfg["stations"]]
     if unknown:
@@ -445,8 +498,8 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                     argv += ["--tone-levels", str(base / TONE_FILE)]
                     from .ods import ods_prefix          # 0.97.14: the files carry the station's code of the list
                     argv += ["--prefix", ods_prefix(lab, rover=v == "rover")]
-                    from .nadir import block_name        # 0.97.7: the name for the mark at the nadir; 0.97.17: the
-                    nm = mark_name(st)                   # block's name without its size word
+                    nm = mark_name(st)                   # 0.97.7: the name for the mark at the nadir; 0.97.17: the
+                    #                                      block's name without its size word
                     if nm:
                         argv += ["--site-name", str(nm)]
                 if step == "mesh" and block:                 # the block's cloud, not an older one of the station alone
@@ -462,13 +515,15 @@ def plan(cfg: Dict[str, Any], root: PathLike, out_root: Optional[PathLike] = Non
                 if step == "ods" and station_mesh:       # 0.99.26: each variant's part of the station mesh
                     argv += ["--station-mesh-only" if station_mesh == "only" else "--station-mesh"]
                 cmds.append({"variant": v, "step": step, "argv": argv})
-        runs.append({"label": lab, "work": str(work), "out": str(base), "note": st.get("note", ""), "variants": vs,
+        runs.append({"label": lab, "code": station_code_of(st, lab), "old_label": st.get("old_label"),
+                     "work": str(work), "out": str(base), "note": st.get("note", ""), "variants": vs,
                      "commands": cmds})
     return runs
 
 
 STEP_OUTPUT = {"mesh": "mesh.ply", "depthmaps": "maps_report.md", "ods": "ods.json"}
 STATUS_FILE = "single_sites_status.json"
+INSTANCE: Dict[str, Optional[str]] = {"name": None}   # 0.99.50: --instance - its own status file (two runs at once)
 
 
 NOT_IN_CODE_KEY = ("single_sites.py", "web.py", "hf.py")     # the runner and the publishing (panos.json, Hugging Face)
@@ -514,8 +569,8 @@ def step_done(out: PathLike, step: str, key: str) -> bool:
 
 def station_done(run: Dict[str, Any]) -> bool:
     """0.99.47: True when every variant of this planned station has its panorama from a good run in its output folder
-    (``step_ods.json`` with exit 0 and ``ods.json``) - whatever code or command made it (:func:`step_done` also wants
-    the same key, so a new version runs every station again)."""
+    (``step_ods.json`` with exit 0 and ``ods.json``) - 0.99.51: made by this code (:func:`code_key`; 0.99.47-0.99.50:
+    by any code, then by 0.99 or newer)."""
     base = Path(run["out"])
     if not run.get("variants") or not any(c["step"] == "ods" for c in run.get("commands", [])):
         return False
@@ -527,14 +582,132 @@ def station_done(run: Dict[str, Any]) -> bool:
             return False
         if rec.get("exit") != 0 or not (vout / STEP_OUTPUT["ods"]).is_file():
             return False
+        if rec.get("code") != _CODE_NOW():                 # 0.99.51 (Christian, 20 Nov 2026: "every site gets remade
+            return False                                   # from the fusion up if it wasn't generated on the same code")
     return True
+
+
+def _CODE_NOW() -> str:
+    if not _CODE_CACHE:
+        _CODE_CACHE.append(code_key())
+    return _CODE_CACHE[0]
+
+
+_CODE_CACHE: List[str] = []
+
+
+V0P99_DATE = "2026-11-16"          # 0.99.0 (the rename to RPP); a record without its version is dated instead
+
+
+def _rpp_version() -> str:
+    from .. import __version__
+    return __version__
+
+
+def _made_by_0p99(rec: Dict[str, Any]) -> bool:
+    """0.99.50 (Christian, 20 Nov 2026: "skipping any that has ran on v0p99 or newer"): the step record is from RPP
+    0.99 or newer - its "rpp" (since 0.99.50), else its "finished" date on or after 0.99.0's."""
+    v = rec.get("rpp")
+    if v:
+        try:
+            return tuple(int(x) for x in str(v).split(".")[:2]) >= (0, 99)
+        except ValueError:
+            return False
+    return str(rec.get("finished") or "") >= V0P99_DATE
+
+
+def has_16bit(run: Dict[str, Any]) -> bool:
+    """0.99.50: every variant of the station has its 16-bit eye panoramas - what --recolor starts from."""
+    base = Path(run["out"])
+    vs = run.get("variants") or []
+    return bool(vs) and all(any((base / ("with_rover" if v == "rover" else "")).glob("*ods_right_16.png")) for v in vs)
+
+
+BUSY_S = 900                       # 0.99.50: a station whose log changed this recently is being made by another run
+
+
+def busy_elsewhere(run: Dict[str, Any], mine: Sequence[str] = ()) -> bool:
+    """0.99.50 (Christian, 20 Nov 2026: "run rockytop and others in parallel with the present rpv_products"): another
+    run is making this station - its ``single_site_log.txt`` was written in the last :data:`BUSY_S` seconds and this
+    run did not start it."""
+    if run["label"] in mine:
+        return False
+    f = Path(run["out"]) / "single_site_log.txt"
+    try:
+        return time.time() - f.stat().st_mtime < BUSY_S
+    except OSError:
+        return False
+
+
+def run_order(runs: List[Dict[str, Any]], pairs: Optional[Dict[str, str]] = None, first: Sequence[str] = (),
+              reverse: bool = False) -> List[Dict[str, Any]]:
+    """0.99.50 (Christian, 20 Nov 2026: "always runs rockytop first and then goes to the end of the mission and runs
+    in reverse chronological order"): the stations whose block folder holds one of ``first`` (in sol order), then the
+    others by sol - the latest first with ``reverse``; a Mastcam-Z version stays right after its Navcam station."""
+    import re
+    anchor = {z: n for n, z in (pairs or {}).items()}
+
+    def sol(lab):
+        m = re.match(r"^Sol(\d+)", str(lab))
+        return int(m.group(1)) if m else 10 ** 6
+
+    def key(r):
+        a_ = anchor.get(r["label"], r["label"])
+        own = next((x for x in runs if x["label"] == a_), r)
+        grp = 0 if any(f.lower() in Path(own["work"]).name.lower() for f in first) else 1
+        s_ = sol(a_)
+        return (grp, s_ if grp == 0 or not reverse else -s_, a_, r["label"] != a_)
+    return sorted(runs, key=key)
+
+
+_NAMES_CACHE: Dict[str, Tuple[float, List[str]]] = {}
+
+
+def _block_names(work: Path) -> List[str]:
+    f = Path(work) / "colmap" / "project.json"
+    try:
+        m = f.stat().st_mtime
+    except OSError:
+        return []
+    c = _NAMES_CACHE.get(str(f))
+    if c and c[0] == m:
+        return c[1]
+    try:
+        names = [r["name"] for r in json.loads(f.read_text(encoding="utf-8")).get("images", [])]
+    except (OSError, ValueError, KeyError, TypeError):
+        names = []
+    _NAMES_CACHE[str(f)] = (m, names)
+    return names
+
+
+def block_with_frames(st: Dict[str, Any], root: PathLike) -> Optional[Path]:
+    """0.99.50: the block under ``root`` with the most frames of this station (``N<site><drive>`` of its ``station``
+    "site_drive", Navcam frames - Mastcam-Z for a Mastcam-Z station) - for a root without the station's own block: the
+    freeze-3 root has only the Mastcam-Z blocks (..._rockytop_zcam, with every Navcam frame), and other folder names
+    (..._sol_0768_belva_crater_large_zcam for _sol_0770_).  None when no block has two."""
+    import re
+    m = re.match(r"^\s*(\d+)_(\d+)\s*$", str(st.get("station") or ""))
+    if not m:
+        return None
+    tok = f"N{int(m.group(1)):03d}{int(m.group(2)):04d}" + ("ZCAM" if is_zcam_station(st) else "NCAM")
+    best, best_n = None, 1
+    try:
+        blocks = sorted(p for p in Path(root).iterdir() if (p / "colmap" / "project.json").is_file())
+    except OSError:
+        return None
+    for b in blocks:
+        n = sum(1 for x in _block_names(b) if tok in x)
+        if n > best_n or (n == best_n and best is not None and block_aligned(b) and not block_aligned(best)):
+            best, best_n = b, n
+    return best
 
 
 def _status(out_root: Path, **kw) -> None:
     """``single_sites_status.json`` in the output root: what is running now (station, variant, step, since when) and
     what is done - so the run can be read without asking (written whole each time)."""
     try:
-        (out_root / STATUS_FILE).write_text(json.dumps(dict(kw, updated=time.strftime("%Y-%m-%dT%H:%M:%S")), indent=1),
+        name = STATUS_FILE if not INSTANCE["name"] else STATUS_FILE.replace(".json", f"_{INSTANCE['name']}.json")
+        (out_root / name).write_text(json.dumps(dict(kw, instance=INSTANCE["name"], updated=time.strftime("%Y-%m-%dT%H:%M:%S")), indent=1),
                                             encoding="utf-8")
     except OSError:
         pass
@@ -587,6 +760,70 @@ def _summary_line(run: Dict[str, Any], variant: str, codes: Dict[str, int], mins
     return "| " + " | ".join(cells) + " |"
 
 
+class FileLock:
+    """0.99.53 (Christian, 20 Nov 2026: "relax the conflict control so that I can run more than one rpv products at once
+    as long as they are not working on the same sites at the same time"): an OS lock on one byte of ``path`` - held by
+    one process at a time, let go when it ends however it ends (no stale lock to delete)."""
+
+    def __init__(self, path: PathLike):
+        self.path, self.fh = Path(path), None
+
+    def acquire(self, blocking: bool = True, poll_s: float = 5.0, what: str = "") -> bool:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        fh = open(self.path, "a+b")
+        if fh.seek(0, 2) == 0:
+            fh.write(b"\0"); fh.flush()
+        said = False
+        while True:
+            try:
+                fh.seek(0)
+                if sys.platform == "win32":
+                    import msvcrt
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.fh = fh
+                return True
+            except OSError:
+                if not blocking:
+                    fh.close()
+                    return False
+                if not said and what:
+                    print(f"single-sites: waiting for {what} (another run holds {self.path})", flush=True)
+                    said = True
+                time.sleep(poll_s)
+
+    def release(self) -> None:
+        if self.fh is None:
+            return
+        try:
+            self.fh.seek(0)
+            if sys.platform == "win32":
+                import msvcrt
+                msvcrt.locking(self.fh.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(self.fh.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        self.fh.close()
+        self.fh = None
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, *exc):
+        self.release()
+
+
+STATION_LOCK = "station.lock"          # 0.99.53: in a station's output folder while a run makes it
+BLOCK_LOCK = "rpp_dense_block.lock"    # ... in a block's colmap folder while a run makes its cloud
+PUBLISH_LOCK = "rpp_publish.lock"      # ... in the viewer checkout's .git while a run publishes and uploads
+BUSY_SKIPPED: List[str] = []           # the stations of the last run_all another run held
+
+
 def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool = False, retone: bool = False,
             force: bool = False, after_station=None) -> int:
     """Runs the plan.  0.97.2: a step whose command, code, inputs and upstream steps are those of its last successful
@@ -604,9 +841,19 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
              "| station | variant | exit codes (minutes) | fused points | ground plane | panorama (left eye) | square |",
              "|---|---|---|---|---|---|---|"]
     bad = 0
+    BUSY_SKIPPED.clear()
+    held: Optional[FileLock] = None
     for run in runs:
         base = Path(run["out"])
         base.mkdir(parents=True, exist_ok=True)
+        if held is not None:
+            held.release()
+        held = FileLock(base / STATION_LOCK)               # 0.99.53: one run per station at a time
+        if not held.acquire(blocking=False):
+            held = None
+            BUSY_SKIPPED.append(run["label"])
+            print(f"single-sites: {run['label']} skipped - another run is making it (it holds {base / STATION_LOCK})", flush=True)
+            continue
         print(f"\n######## {run['label']}: {run['note']}\n######## block {run['work']} -> {base}", flush=True)
         codes: Dict[str, Dict[str, int]] = {v: {} for v in run["variants"]}
         mins: Dict[str, Dict[str, Optional[float]]] = {}
@@ -642,9 +889,14 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
                             since=time.strftime("%Y-%m-%dT%H:%M:%S"), done=done, stations=[r["label"] for r in runs])
                     t0 = time.time()
                     if step == "dense":                    # its own cache (rpp dense: stereo and fusion records)
-                        rc = _run(c["argv"], fh)
+                        with_lock = FileLock(work_ / "colmap" / BLOCK_LOCK)      # 0.99.53: one cloud maker per block;
+                        with_lock.acquire(what=f"the cloud of {work_.name}")      # the next finds it made
+                        try:
+                            rc = _run(c["argv"], fh)
+                        finally:
+                            with_lock.release()
                     else:
-                        clouds = sorted((work_ / "colmap").glob(f"dense_{station_key(run['label'])}*/fused.ply")) if step == "mesh" else []
+                        clouds = sorted((work_ / "colmap").glob(f"dense_{run.get('code') or station_key(run['label'])}*/fused.ply")) if step == "mesh" else []
                         if step == "mesh" and "--points" in c["argv"]:      # 0.98.14: the block's cloud
                             clouds = [Path(c["argv"][c["argv"].index("--points") + 1])]
                         tf = c["argv"][c["argv"].index("--terrain-from") + 1] if "--terrain-from" in c["argv"] else None
@@ -668,7 +920,8 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
                         if rc == 0:
                             vout.mkdir(parents=True, exist_ok=True)
                             step_record(vout, step).write_text(json.dumps(
-                                {"key": key, "exit": 0, "argv": c["argv"], "code": code, "minutes": round((time.time() - t0) / 60, 2),
+                                {"key": key, "exit": 0, "argv": c["argv"], "code": code, "rpp": _rpp_version(),
+                                 "minutes": round((time.time() - t0) / 60, 2),
                                  "finished": time.strftime("%Y-%m-%dT%H:%M:%S")}, indent=1), encoding="utf-8")
                     mins.setdefault(v, {})[step] = (time.time() - t0) / 60
                     codes[v][step] = rc
@@ -680,7 +933,7 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
                         print(f"######## {run['label']} {v}: {c['step']} failed (exit {rc}) - the rest of this variant skipped")
         work = Path(run["work"])
         for name, dst in (("mppp_dense.json", "dense_workspace.json"), ("mppp_dense_run.json", "dense_run.json")):
-            for f in sorted((work / "colmap").glob(f"dense_{station_key(run['label'])}*/{name}")):
+            for f in sorted((work / "colmap").glob(f"dense_{run.get('code') or station_key(run['label'])}*/{name}")):
                 shutil.copy2(f, base / dst)
         for v in run["variants"]:
             bad += any(codes[v].values())
@@ -693,8 +946,10 @@ def run_all(runs: List[Dict[str, Any]], out_root: PathLike, squares_only: bool =
             except Exception as e:                       # noqa: BLE001 - the next station still runs
                 done.append(f"{run['label']} upload: failed ({e})")
                 print(f"######## {run['label']}: publishing failed ({e})", flush=True)
+    if held is not None:
+        held.release()
     _status(out_root, started=t_run, station=None, step=None, finished=time.strftime("%Y-%m-%dT%H:%M:%S"), done=done,
-            stations=[r["label"] for r in runs], failed=int(bad))
+            stations=[r["label"] for r in runs], failed=int(bad), busy_skipped=list(BUSY_SKIPPED))
     (out_root / "single_sites_summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n" + "\n".join(lines[4:]) + f"\n\nsummary: {out_root / 'single_sites_summary.md'}")
     return 1 if bad else 0
@@ -713,10 +968,10 @@ def install(dest: PathLike) -> Path:
 
 
 def add_parser(sub) -> None:
-    p = sub.add_parser("single-sites", help="0.96: the single-station test sites of rpp/data/single_sites.json - dense, "
+    p = sub.add_parser("single-sites", help="the single-station test sites of rpp/data/single_sites.json - dense, "
                        "mesh, depthmaps, ods, rover masked and shown (rpp.ibr.single_sites)")
     p.add_argument("labels", nargs="*", help="stations of the config (default: all but the experimental ones)")
-    p.add_argument("--all", action="store_true", help="0.99.3: every station of the config, the experimental ones too "
+    p.add_argument("--all", action="store_true", help="every station of the config, the experimental ones too "
                    "(the Mastcam-Z 34 mm station), the last one first")
     p.add_argument("--config", default=None, help="the config file (default rpp/data/single_sites.json)")
     p.add_argument("--root", default=None, help="the blocks' root (default RPP_SCAPES or D:\\rover_blocks)")
@@ -724,33 +979,43 @@ def add_parser(sub) -> None:
     p.add_argument("--steps", nargs="+", default=list(STEPS), choices=STEPS)
     p.add_argument("--variants", nargs="+", default=None, choices=VARIANTS)
     p.add_argument("--width", type=int, default=None, metavar="PX",
-                   help="0.97.0: the panorama's width for this run (default: the config's, else rpp ods' own - 0.99.40: 16384 for "
+                   help="the panorama's width for this run (default: the config's, else rpp ods' own - 0.99.40: 16384 for "
                         "full-resolution Navcam and Mastcam-Z stations, 8192 for binned Navcam; 8192 for 8K) - give "
                         "--out as well to keep the panoramas already made")
     p.add_argument("--squares-only", action="store_true", help="only stack the eye images already there into "
                    "360_3DTD.jpg / .png")
     p.add_argument("--retone", action="store_true", help="only make the 8-bit panoramas and squares again from the "
                    "16-bit ones already there (no rendering)")
-    p.add_argument("--skip-done", action="store_true", help="0.99.47: leave out every station whose panoramas a good run "
+    p.add_argument("--unpublish", nargs="+", default=None, metavar="LABEL", help="take these stations off "
+                   "the viewer page (panos.json; with --upload pushed) - a later run of a station puts it back")
+    p.add_argument("--recolor", action="store_true", help="no meshing, projection or rendering - the color "
+                   "processing of every made station again from its 16-bit panoramas and textures (8-bit eyes, enhanced "
+                   "and color products, mesh textures, color skins, the .glb files), then published and uploaded")
+    p.add_argument("--reverse", action="store_true", help="the latest sol first (after --first)")
+    p.add_argument("--first", nargs="+", default=[], metavar="NAME", help="the stations whose block folder "
+                   "holds one of these (e.g. rockytop) before all others")
+    p.add_argument("--instance", default=None, help="the name of this run (its own status file "
+                   "single_sites_status_<name>.json; another run's station is left alone while its log is written)")
+    p.add_argument("--skip-done", action="store_true", help="leave out every station whose panoramas a good run "
                    "already made in the output root, with any code version (recolor_rpv.bat gives it; --force wins)")
-    p.add_argument("--force", action="store_true", help="0.97.2: run every step again (default: a mesh, depthmaps or ods "
+    p.add_argument("--force", action="store_true", help="run every step again (default: a mesh, depthmaps or ods "
                    "step whose command, code, cloud and upstream steps are unchanged since its last good run is skipped)")
     p.add_argument("--publish", metavar="DIR", default=None,
-                   help="0.97.3: after the run, the stations' stereo JPEGs into DIR/panos and DIR/panos.json for the web "
-                        "viewer (docs/ods of the repository; the page is copied into DIR when it is another folder)")
+                   help="after the run, the stations' stereo JPEGs into DIR/panos and DIR/panos.json for the web "
+                        "viewer (the page, rpp.viewer, is copied into DIR)")
     p.add_argument("--publish-only", action="store_true", help="with --publish or --upload: no steps, publish what --out holds")
     p.add_argument("--no-upload", action="store_true",
-                   help="0.97.24: no upload, also when --upload is given (run_single_site_ibr.bat gives it)")
+                   help="no upload, also when --upload is given (run_single_site_ibr.bat gives it)")
     p.add_argument("--upload", action="store_true",
-                   help="0.97.21: after the run, publish (into docs/ods of this checkout unless --publish names a folder), "
+                   help="after the run, publish (into the viewer's checkout, see rpp.ibr.web.viewer_dir, unless --publish names a folder), "
                         "commit the panoramas there and push the branch to origin - the code's commits go with it")
     p.add_argument("--host", choices=("hf", "github"), default="hf",
-                   help="0.99.3: where --upload puts the pictures - hf (default; Christian, 16 Nov 2026: \"v0p99 should upload "
+                   help="where --upload puts the pictures - hf (default; Christian, 16 Nov 2026: \"v0p99 should upload "
                         "rpv products to hugging face\"): the dataset RPP_HF_DATASET (ctate7163/rpp-rpv), one commit per "
                         "station, panos.json on GitHub pointing at it (rpp.ibr.hf); github: the pictures committed into the "
                         "viewer's checkout as before 0.99.3")
     p.add_argument("--no-hf-record", dest="hf_record", action="store_false", default=True,
-                   help="0.99.3: with --host hf, the viewer's pictures only (default: also each station's record - the 16-bit "
+                   help="with --host hf, the viewer's pictures only (default: also each station's record - the 16-bit "
                         "stacked panoramas, the pivot's 16-bit depth, ods.json, station.json; about 0.35 GB a station)")
     p.add_argument("--publish-width", type=int, default=8192, metavar="PX", help="wider images are reduced to this (default 8192)")
     p.add_argument("--publish-views", nargs="+", default=None, metavar="VIEW",
@@ -758,33 +1023,33 @@ def add_parser(sub) -> None:
                         "map', enhanced, ... (default: rpp.ibr.web.DEFAULT_VIEWS - 0.99.37: all of these but enhanced; the "
                         "page's names 'standard color' and 'enhanced color' and the old normal and 'range log' are read too)")
     p.add_argument("--no-rover-surface", dest="rover_surface", action="store_false",
-                   help="0.98.8: without the rover's 3D surface (and the panorama from the pivot it is made from)")
+                   help="without the rover's 3D surface (and the panorama from the pivot it is made from)")
     p.add_argument("--rover-surface", action="store_true", default=True,
                    help="0.98.2, experimental: also render the with-rover panorama from the pivot and make the rover a "
                         "textured surface from it (<prefix>_rover_surface.glb; the viewer lays it on the terrain-only view)")
     p.add_argument("--no-station-mesh", dest="station_mesh", action="store_false", default=True,
-                   help="0.99.26: without the station mesh (the textured terrain within 10 m and the rover: the viewer's "
+                   help="without the station mesh (the textured terrain within 10 m and the rover: the viewer's "
                         "fourth mode, 3D terrain and rover; rpp.ibr.station_mesh)")
     p.add_argument("--station-mesh-only", action="store_true",
-                   help="0.99.26: only the station meshes of stations whose panoramas exist (rpp ods --station-mesh-only "
+                   help="only the station meshes of stations whose panoramas exist (rpp ods --station-mesh-only "
                         "for each variant, then the .glb; with --publish / --upload the fourth mode is published)")
     p.add_argument("--block-cameras", default=None, metavar="FAMILIES",
-                   help="0.99.43: the block terrain from the frames of these camera families (NFR: every engineering "
+                   help="the block terrain from the frames of these camera families (NFR: every engineering "
                         "camera of the block, every size, fused into one cloud - rpp dense --block-cameras; default: the "
                         "config's 'block_cameras', else Navcam alone)")
     p.add_argument("--terrain", default=None, choices=("block", "own"),
-                   help="0.99.43: the terrain of every station of this run, whatever the config says - block: the whole "
+                   help="the terrain of every station of this run, whatever the config says - block: the whole "
                         "block's cloud (also for the stations with a named terrain set); own: the station's own frames")
     p.add_argument("--no-zcam", dest="zcam_companions", action="store_false", default=True,
-                   help="0.99.43: without the Mastcam-Z 34 mm versions of the stations that have a Z34 360 (default, in a "
+                   help="without the Mastcam-Z 34 mm versions of the stations that have a Z34 360 (default, in a "
                         "run of the whole list - no station named, or --all: each is made right after its Navcam station)")
     p.add_argument("--wait-for-blocks", type=float, nargs="?", const=36.0, default=None, metavar="HOURS",
-                   help="0.99.44: after the stations whose block is aligned, wait for the others' blocks and run them as "
+                   help="after the stations whose block is aligned, wait for the others' blocks and run them as "
                         "they come in (looked at every --poll-min minutes); stops when no station is left, or when no "
                         "block has come in for HOURS (default 36)")
     p.add_argument("--poll-min", type=float, default=15.0, help="--wait-for-blocks: minutes between looks (default 15)")
     p.add_argument("--any-block", action="store_true",
-                   help="0.99.28: run stations whose block has not finished its alignment too (default: skipped)")
+                   help="run stations whose block has not finished its alignment too (default: skipped)")
     p.add_argument("--list", action="store_true", help="the stations of the config")
     p.add_argument("--dry-run", action="store_true", help="the commands, not run")
     p.add_argument("--install", metavar="DIR", default=None, help=f"write {BAT_NAME} (and make_square.bat) into DIR and stop")
@@ -802,8 +1067,21 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
     later. When there are no more stations to run, then stop"): with ``--wait-for-blocks`` the run is repeated for the
     stations whose block was not aligned yet (and the Mastcam-Z versions whose block was not), every ``--poll-min``
     minutes, until none is left - or no block has come in for ``--wait-for-blocks`` hours."""
+    if getattr(a, "unpublish", None):                    # 0.99.51: off the viewer page, nothing else
+        from .web import upload, viewer_dir
+        d = a.publish or str(viewer_dir())
+        r = unpublish(d, a.unpublish)
+        print(f"single-sites: off the viewer: {', '.join(r['removed']) or 'none of them was listed'} ({r['left']} stations left)")
+        if getattr(a, "upload", False) and r["removed"]:
+            up = upload(d, list(a.unpublish))
+            print(("uploaded: " if up["ok"] else "NOT uploaded: ") + up["message"])
+            return 0 if up["ok"] else 1
+        return 0
     wait_h = getattr(a, "wait_for_blocks", None)
-    if wait_h is None or a.dry_run or getattr(a, "any_block", False):
+    INSTANCE["name"] = getattr(a, "instance", None)
+    if getattr(a, "recolor", False):                     # 0.99.50: the made stations once, nothing waited for
+        a.retone = True
+    if wait_h is None or a.dry_run or getattr(a, "any_block", False) or getattr(a, "recolor", False):
         return _single_sites_pass(a)
     import time
     done: set = set()
@@ -819,11 +1097,44 @@ def cmd_single_sites(a: argparse.Namespace) -> int:
         if not late:
             print(f"single-sites: no station left to run ({len(done)} done)", flush=True)
             return rc
+        if not ran and getattr(a, "root", None) and not freeze_alive(a.root):        # 0.99.50: no freeze on the root - no block will come in
+            print(f"single-sites: no freeze runs on {a.root} - stopped with {len(late)} left: {', '.join(late)}", flush=True)
+            return rc
         if time.time() - last > float(wait_h) * 3600.0:
             print(f"single-sites: no block came in for {float(wait_h):g} h - stopped with {len(late)} left: {', '.join(late)}", flush=True)
             return rc
         print(f"single-sites: {len(done)} done, waiting for the blocks of {len(late)}: {', '.join(late)}", flush=True)
         time.sleep(max(1.0, float(getattr(a, "poll_min", 15.0))) * 60.0)
+
+
+def unpublish(web_dir: PathLike, labels: Sequence[str]) -> Dict[str, Any]:
+    """0.99.51 (Christian, 20 Nov 2026: "how do I remove a site from showing up on the RPV viewer? specifically,
+    Sol0362_S011D0108 should be taken down until it is regenerated"): the stations ``labels`` out of ``panos.json``
+    (their pictures stay where they are hosted).  Returns {"removed", "left"}."""
+    f = Path(web_dir) / "panos.json"
+    doc = json.loads(f.read_text(encoding="utf-8"))
+    want = {short_label(str(x)).upper() for x in labels}         # 1.0: a station by its new name or its old one
+    hit = lambda p: short_label(str(p.get("id", ""))).upper() in want      # noqa: E731
+    keep = [p for p in doc.get("panos", []) if not hit(p)]
+    removed = [p.get("id") for p in doc.get("panos", []) if hit(p)]
+    doc["panos"] = keep
+    f.write_text(json.dumps(doc, indent=1), encoding="utf-8")
+    return {"removed": removed, "left": len(keep)}
+
+
+def freeze_alive(root: PathLike) -> bool:
+    """0.99.50: a freeze runs on ``root`` (its ``mppp_pipeline/freeze_status.json`` "running" with a heartbeat in the
+    last 30 minutes) - the blocks still to come; True when that cannot be read (no early stop on a doubt)."""
+    import datetime
+    f = Path(root) / "mppp_pipeline" / "freeze_status.json"
+    if not f.is_file():
+        return False
+    try:
+        st = json.loads(f.read_text(encoding="utf-8"))
+        age = (datetime.datetime.now() - datetime.datetime.fromisoformat(st.get("heartbeat"))).total_seconds()
+    except (OSError, ValueError, TypeError):
+        return True
+    return st.get("state") == "running" and age < 1800
 
 
 def _single_sites_pass(a: argparse.Namespace) -> int:
@@ -845,7 +1156,7 @@ def _single_sites_pass(a: argparse.Namespace) -> int:
     pairs = None
     # only in a run of the whole list (no station named, or --all): a run of named stations is those stations
     if getattr(a, "zcam_companions", True) and (given is None or getattr(a, "all", False)) \
-            and not (a.squares_only or a.retone or a.publish_only):
+            and not (a.squares_only or (a.retone and not getattr(a, "recolor", False)) or a.publish_only):
         try:                                                     # 0.99.43: the Z34 versions, where a block has a Z34 360
             pairs = zcam_companions(cfg, root)
             new = [z for z in pairs.values() if cfg["stations"][z].get("derived_from")]
@@ -857,6 +1168,12 @@ def _single_sites_pass(a: argparse.Namespace) -> int:
                 rover_surface=getattr(a, "rover_surface", False),
                 station_mesh="only" if getattr(a, "station_mesh_only", False) else getattr(a, "station_mesh", False),
                 companions=pairs, block_cameras=getattr(a, "block_cameras", None), terrain=getattr(a, "terrain", None))
+    if getattr(a, "recolor", False):                            # 0.99.50: the stations made in the output root
+        gone = [r for r in runs if not has_16bit(r)]
+        runs = [r for r in runs if r not in gone]
+        print(f"single-sites --recolor: {len(runs)} station(s) with their 16-bit panoramas"
+              + (f", {len(gone)} without (not made yet, or before 0.99.38)" if gone else ""))
+        a.any_block = True
     if not getattr(a, "any_block", False):                      # 0.99.28 (Christian, 18 Nov 2026: "The next ods should use
         late = [r for r in runs if not block_aligned(r["work"])]   # the post freeze blocks. Skip an ods site if the block
         for r in late:                                          # has not aligned yet")
@@ -872,12 +1189,27 @@ def _single_sites_pass(a: argparse.Namespace) -> int:
                 print(f"single-sites: {r['label']} skipped - already made in {r['out']} (--force makes it again)")
         runs = [r for r in runs if r not in done_]
         a._done_before = getattr(a, "_done_before", set()) | {r["label"] for r in done_}
+    mine = getattr(a, "_mine", set())
+    busy = [r for r in runs if busy_elsewhere(r, mine)]          # 0.99.50: another run's station - looked at again later
+    for r in busy:
+        print(f"single-sites: {r['label']} skipped - another run is making it (its log changed in the last "
+              f"{BUSY_S // 60} minutes)")
+    runs = [r for r in runs if r not in busy]
+    if busy and hasattr(a, "_late"):
+        a._late = list(a._late) + [r["label"] for r in busy]
+    if getattr(a, "first", None) or getattr(a, "reverse", False):
+        runs = run_order(runs, pairs, first=getattr(a, "first", []) or [], reverse=getattr(a, "reverse", False))
+    a._mine = set(mine) | {r["label"] for r in runs}
     skip = getattr(a, "_skip", None)
     if skip is not None:                                         # 0.99.44: a later pass of --wait-for-blocks
         runs = [r for r in runs if r["label"] not in skip]
         a._ran = [r["label"] for r in runs]
         if not runs:
             return 0
+    if a.dry_run and getattr(a, "recolor", False):
+        for r in runs:
+            print(f"{r['label']}: recolor {r['out']} ({', '.join(r['variants'])}) and upload")
+        return 0
     if a.dry_run:
         for r in runs:
             print(f"{r['label']}: {r['work']} -> {r['out']}")
@@ -915,24 +1247,33 @@ def _single_sites_pass(a: argparse.Namespace) -> int:
                         print(f"station mesh of {r['label']}: failed ({e})")
         if not a.publish:
             return "not published"
-        from . import web
         _console_log()
         titles = {k: {"title": v.get("title") or viewer_name(v, k),   # 0.98.19: the page puts "Sol 0xxx" before it
                       "site_name": viewer_name(v, k),     # 0.99.36: before the mark's name (made with the panorama)
                       "sols": viewer_sols(v, k),          # 0.99.36: a Mastcam-Z station's first sol only
                       "note": v.get("web_note"), "yaw_deg": v.get("yaw_deg")} for k, v in st_cfg.items()}
         use_hf = bool(getattr(a, "upload", False)) and getattr(a, "host", "hf") == "hf"
-        before = None
-        if use_hf:                                       # 0.99.3: the pictures to Hugging Face, panos.json to GitHub
+        before = None                                    # 0.99.3: the pictures to Hugging Face, panos.json to GitHub;
+        git_dir = Path(a.publish) / ".git"                     # 0.99.53: one run publishes and uploads at a time
+        plock = FileLock((git_dir if git_dir.is_dir() else Path(a.publish)) / PUBLISH_LOCK)
+        plock.acquire(what="the viewer page")
+        try:
+            return _publish_and_upload(labels, quiet, titles, use_hf, before)
+        finally:
+            plock.release()
+
+    def _publish_and_upload(labels, quiet, titles, use_hf, before):
+        from . import web
+        if use_hf:
             from . import hf
-            try:
+            try:                                             # read under the lock: another run may have published
                 before = json.loads((Path(a.publish) / "panos.json").read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 before = {}
         doc = web.publish(out_root, a.publish, stations=list(labels), views=[web.OLD_VIEW_NAMES.get(v, v) for v in (a.publish_views or web.DEFAULT_VIEWS)], width=a.publish_width, titles=titles,
                           render_map=True, files_dir=hf.stage_dir(out_root) if use_hf else None)
         if not web.install_viewer(a.publish):
-            print("the viewer page (docs/ods/index.html, vendor/) is not in this installation: copy it from the repository")
+            print("the viewer page (rpp/viewer/index.html, vendor/) is not in this installation")
         msg = f"published: {len(doc['panos'])} stations in {Path(a.publish) / 'panos.json'}"
         ok = True
         if getattr(a, "upload", False):
@@ -953,6 +1294,10 @@ def _single_sites_pass(a: argparse.Namespace) -> int:
     each = (lambda run: finish([run["label"]])) if (a.publish and not a.publish_only and not a.squares_only) else None
     rc = 0 if (a.publish and a.publish_only) else run_all(runs, out_root, squares_only=a.squares_only, retone=a.retone,
                                                           force=getattr(a, "force", False), after_station=each)
+    if BUSY_SKIPPED and not (a.publish and a.publish_only):      # 0.99.53: another run's: looked at again later
+        a._ran = [x for x in getattr(a, "_ran", []) if x not in BUSY_SKIPPED]
+        a._late = list(getattr(a, "_late", [])) + [x for x in BUSY_SKIPPED if x not in getattr(a, "_late", [])]
+        runs = [r for r in runs if r["label"] not in BUSY_SKIPPED]
     if each is None or getattr(finish, "failed", False):         # all at once, or again what an upload left behind
         finish([r["label"] for r in runs])
     rc = rc or (1 if getattr(finish, "failed", False) and getattr(a, "upload", False) else 0)

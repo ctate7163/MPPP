@@ -26,6 +26,30 @@ JPEG_XMP = b"http://ns.adobe.com/xap/1.0/\x00"
 PNG_SIG = b"\x89PNG\r\n\x1a\n"
 PNG_XMP_KEY = b"XML:com.adobe.xmp"
 STACK_GLOBS = ("*_360_3DTD*.jpg", "*_360_3DTD*.png")
+# 0.99.53 (Christian, 20 Nov 2026: "Each RPV data products should have some metadata indicating what version of RPP
+# generated it and that Christian Tate is the author"): in every picture's XMP (dc:creator, xmp:CreatorTool, rpp:Author,
+# rpp:Software), in the .glb files' asset (generator, extras) and in the records (ods.json, panos.json)
+PRODUCT_AUTHOR = "Christian Tate"
+
+
+def software() -> str:
+    from .. import __version__
+    return f"RPP {__version__}"
+
+
+def author_fields() -> Dict[str, str]:
+    return {"author": PRODUCT_AUTHOR, "software": software()}
+
+
+_AUTHOR_NS = ('    xmlns:dc="http://purl.org/dc/elements/1.1/"\n'
+              '    xmlns:xmp="http://ns.adobe.com/xap/1.0/"\n')
+
+
+def _author_body() -> str:
+    from xml.sax.saxutils import escape
+    return (f"   <dc:creator><rdf:Seq><rdf:li>{escape(PRODUCT_AUTHOR)}</rdf:li></rdf:Seq></dc:creator>\n"
+            f"   <xmp:CreatorTool>{escape(software())}</xmp:CreatorTool>\n"
+            f"   <rpp:Author>{escape(PRODUCT_AUTHOR)}</rpp:Author>\n")
 _BLOCK = 1 << 24
 
 
@@ -44,13 +68,15 @@ def stereo_xmp(width: int, height: int, software: str, heading_center_deg: float
          "rpp:EyeHeightPixels": height // 2, "rpp:AzimuthOfColumn0Deg": f"{(heading_center_deg - 180.0) % 360.0:.2f}"}
     for k, v in (extra or {}).items():
         f[f"rpp:{k}"] = v
-    body = "\n".join(f"   <{k}>{escape(str(v))}</{k}>" for k, v in f.items())
+    f.setdefault("rpp:Software", software)
+    body = _author_body() + "\n".join(f"   <{k}>{escape(str(v))}</{k}>" for k, v in f.items())
     return ('<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>\n'
             '<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="RPP">\n'
             ' <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">\n'
             '  <rdf:Description rdf:about=""\n'
             '    xmlns:GPano="http://ns.google.com/photos/1.0/panorama/"\n'
             '    xmlns:GSpherical="http://ns.google.com/videos/1.0/spherical/"\n'
+            + _AUTHOR_NS +
             '    xmlns:rpp="https://github.com/ctate7163/RPP/ns/1.0/">\n'
             f'{body}\n'
             '  </rdf:Description>\n </rdf:RDF>\n</x:xmpmeta>\n<?xpacket end="w"?>').encode("utf-8")
@@ -189,14 +215,34 @@ def tag_folder(folder: PathLike, heading_center_deg: float = 180.0, extra: Optio
     return done
 
 
+def tag_products(folder: PathLike, extra: Optional[Dict[str, Any]] = None) -> List[str]:
+    """0.99.53: every JPEG and PNG of ``folder`` (not its subfolders) without an XMP packet gets one with the author
+    and the software (and ``extra``); the names done.  A file that has a packet (the stereo squares, the per-image
+    pictures) is left as it is."""
+    done = []
+    for f in sorted(Path(folder).iterdir()):
+        if not f.is_file() or f.suffix.lower() not in (".jpg", ".jpeg", ".png"):
+            continue
+        try:
+            if read_xmp(f) is None:
+                tag_fields(f, dict(extra or {}))
+                done.append(f.name)
+        except (OSError, ValueError, struct.error):
+            continue
+    return done
+
+
 def fields_xmp(fields: Dict[str, Any]) -> bytes:
     """A packet of ``rpp:`` fields only (0.97.7: the value scale of a per-image picture, :mod:`rpp.ibr.scales`)."""
     from xml.sax.saxutils import escape
-    body = "\n".join(f"   <rpp:{k}>{escape(str(v))}</rpp:{k}>" for k, v in fields.items())
+    fields = dict(fields)
+    fields.setdefault("Software", software())
+    body = _author_body() + "\n".join(f"   <rpp:{k}>{escape(str(v))}</rpp:{k}>" for k, v in fields.items())
     return ('<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>\n'
             '<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="RPP">\n'
             ' <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">\n'
             '  <rdf:Description rdf:about=""\n'
+            + _AUTHOR_NS +
             '    xmlns:rpp="https://github.com/ctate7163/RPP/ns/1.0/">\n'
             f'{body}\n'
             '  </rdf:Description>\n </rdf:RDF>\n</x:xmpmeta>\n<?xpacket end="w"?>').encode("utf-8")

@@ -45,10 +45,10 @@ set "KMP_DUPLICATE_LIB_OK=TRUE"
 set "MKL_THREADING_LAYER=SEQUENTIAL"
 set "RPP_NOPAUSE=1"
 cd /d "%REPO%" || ( echo no %REPO% & exit /b 1 )
-REM 0.99.0: this file updates main and the freeze checkout; the rpp worktree D:\code\RPP has sync_rpp.bat
+REM This file updates main and the freeze checkout.
 set "BRANCH_HERE="
 for /f %%b in ('git rev-parse --abbrev-ref HEAD') do set "BRANCH_HERE=%%b"
-if /i not "!BRANCH_HERE!"=="main" ( echo %REPO% is on branch !BRANCH_HERE!, not main - sync_code.bat is for main: use sync_rpp.bat here & exit /b 1 )
+if /i not "!BRANCH_HERE!"=="main" ( echo %REPO% is on branch !BRANCH_HERE!, not main - sync_code.bat is for main: git checkout main first & exit /b 1 )
 call "%REPO%\scripts\windows\rpp_env.bat" || exit /b 1
 if exist .git\rebase-apply ( echo removing a stray .git\rebase-apply & rmdir /s /q .git\rebase-apply )
 for /f %%h in ('git rev-parse --short HEAD') do set "HEAD0=%%h"

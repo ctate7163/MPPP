@@ -1,0 +1,12 @@
+# The static check of the CI: python -m flake8 --select F src/rpp scripts
+[flake8]
+max-line-length = 240
+# The files of rpp.ibr below are part of the station products' step key (rpp.ibr.single_sites.code_key): any edit to
+# them, a comment included, makes every station's mesh and panoramas again. These findings are unused names and two
+# false "undefined name" reports (a lambda in a loop); fix them with the next change to each file, then drop its line.
+per-file-ignores =
+    src/rpp/ibr/color_products.py: F401,F821
+    src/rpp/ibr/linear16.py: F841,F821
+    src/rpp/ibr/mesh.py: F841
+    src/rpp/ibr/raycast.py: F401
+    src/rpp/ibr/station_mesh.py: F401

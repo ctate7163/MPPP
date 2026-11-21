@@ -43,7 +43,7 @@ leaves it out.  The panoramas and models come out the same way; the terrain beyo
 
 | | |
 |---|---|
-| RPP | 0.99.34 or later, installed with `pip install -e ".[all]"` from the repository (the viewer page comes from its `docs/ods`) |
+| RPP | 1.0 or later, installed from the repository with `pip install -e ".[all]"` (the color-study cell uses `rpp_studies`, which is not in the PyPI package) |
 | GPU | pycolmap built with CUDA for the dense step (patch-match stereo); the other steps run on the CPU |
 | disk | about 2 GB (the PDS products, the processed frames, the dense cloud and the panoramas) |
 | time | about an hour on a desktop with a GPU - most of it the dense step and the panoramas |

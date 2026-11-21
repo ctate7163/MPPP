@@ -3,7 +3,7 @@ The stereo 360 products of the station runs as a folder a static web page can sh
 
 ``publish(out_root, web_dir)`` copies each station's top-down stereo JPEGs (``<name>_360_3DTD.jpg``: the left eye on
 top of the right, :mod:`rpp.ibr.ods`) into ``web_dir/panos/`` - reduced to ``width`` when wider - and writes
-``web_dir/panos.json``, the list the viewer page reads (``docs/ods/index.html`` of the repository: three.js, WebXR).
+``web_dir/panos.json``, the list the viewer page reads (:mod:`rpp.viewer`: ``index.html``, three.js, WebXR).
 ``web_dir`` holding ``index.html``, ``vendor/``, ``panos.json`` and ``panos/`` is all a host needs (GitHub Pages, any
 static server).  ``test_pano`` draws a labeled pair for checking the viewer's orientation and eye order.
 """
@@ -34,7 +34,7 @@ OLD_VIEW_NAMES = {"normal": "normal map", "range log": "distance map", "range li
                   "standard color": "standard", "enhanced color": "enhanced local"}     # 0.99.37: the page's names
 # 0.99.37 (Christian, 19 Nov 2026: "Replace the enhanced local with just enhanced"; the views "standard color, raw color,
 # enhanced color, enhanced tone, dcs color, normal map, distance map"): the page shows "standard" as "standard color"
-# and "enhanced local" as "enhanced color" (VIEW_LABEL in docs/ods/index.html); the keys stay, so links and the
+# and "enhanced local" as "enhanced color" (VIEW_LABEL in rpp/viewer/index.html); the keys stay, so links and the
 # entries published before keep working
 GEOMETRY_PARTS = ("_range_log", "_range_linear", "_normal")
 VARIANTS = (("masked", "", "terrain only"), ("rover", "with_rover", "terrain with rover (projected)"))   # key, sub-folder, label.  0.98.5
@@ -47,7 +47,8 @@ TERRAIN_3D = ("terrain3d", "3D terrain and rover")     # 0.98.8 (Christian: "ter
 DEFAULT_VIEWS = ("standard", "raw color", "enhanced local", "enhanced tone", "dcs color", "normal map", "distance map")   # 0.99.37; 0.98.30 (Christian, 16 Nov 2026: "Include the
 #   enhlocal image versions in the upload and let it be viewable as one of the skins that button B shows"); 0.98.12 (Christian, 15 Nov 2026: "Uploaded the range map too in log scale"); ("standard", "normal") from 0.98.5 (Christian: "Uploaded the normal maps too"); ("standard",) since 0.97.18 (Christian, 13 Nov 2026: "don't upload the enhanced version to github");
 #                                      ("standard", "enhanced") before; rpp single-sites --publish-views brings it back
-GEOMETRY_WIDTH = 4096              # 0.98.12: the range and normal views are published at most this wide (the color ones at width)
+GEOMETRY_WIDTH = 16384             # 0.98.12: the range and normal views are published at most this wide (the color ones at
+#                                    width); 0.99.51: 4096 until now - they are made at half the color width
 DEFAULT_WIDTH = 8192               # the square's side: 8192 x 8192 holds two 8192 x 4096 eyes (Quest 3: fine).  0.98.30:
 #                                    the panoramas are rendered at 16K (rpp ods); publishing reduces them to this (area filter)
 
@@ -195,7 +196,7 @@ def station_mesh(folder: Path, web: Path, pano_dir: Optional[Path] = None) -> Op
 
 
 WELCOME_ID = "welcome"
-WELCOME_STATION = "Sol0052_S003D2046"      # Van Zyl Overlook
+WELCOME_STATION = "Sol0052"                # Van Zyl Overlook (1.0: the sol alone; Sol0052_S003D2046 before)
 WELCOME_WIDTH = 4096
 WELCOME_MUTE = (0.60, 0.85, 0.08)          # the welcome picture (0.98.14; Christian, 15 Nov 2026: "the welcome screen should
 #                                            have color, just be a little more muted than the true van zyl ods"): the colors'
@@ -516,6 +517,20 @@ def traverse_dtm(wp: Dict[str, Any], traverse: Dict[str, Any], web: Path, root: 
         return None
 
 
+def station_code_in(folder: Path) -> str:
+    """1.0: the S003D2046 of a station's output folder named by its sol alone (Sol0052): from its station.json."""
+    for f in (folder / "station.json", folder / "with_rover" / "station.json"):
+        try:
+            d = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for k in ("label", "key", "station"):
+            m = re.search(r"S\d{3}D\d{4}", str(d.get(k) or ""))
+            if m:
+                return m.group(0)
+    return ""
+
+
 def station_on_map(label: str, wp: Optional[Dict[str, Any]]) -> Optional[List[float]]:
     """[x, y] of a station ("...S003D2046...") in the traverse map's meters, or None."""
     m = re.search(r"S(\d{3})D(\d{4})", label)
@@ -666,7 +681,7 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
         if stations and d.name not in stations:
             continue
         third = fourth = fifth = sixth = None
-        entry: Dict[str, Any] = {"id": d.name, "title": d.name, "variants": [], "mppp": __version__, "rpp": __version__,
+        entry: Dict[str, Any] = {"id": d.name, "title": d.name, "variants": [], "mppp": __version__, "rpp": __version__, "author": "Christian Tate",
                                  "published": time.strftime("%Y-%m-%d")}
         entry.update({k: v for k, v in ((titles or {}).get(d.name) or {}).items() if v is not None})
         for key, sub, label in VARIANTS:
@@ -732,7 +747,7 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
             entry["variants"].append(fifth)
         if sixth is not None:
             entry["variants"].append(sixth)
-        xy = traverse and station_on_map(d.name, wp)
+        xy = traverse and station_on_map(d.name if re.search(r"S\d{3}D\d{4}", d.name) else station_code_in(d), wp)
         if xy:
             entry["map"] = xy
         for key, sub, label in VARIANTS:                         # the X button's words (info)
@@ -743,11 +758,17 @@ def publish(out_root: PathLike, web_dir: PathLike, stations: Optional[Sequence[s
         if entry["variants"]:
             old[d.name] = entry
             log.info("publish: %s (%s)", d.name, ", ".join(f"{v['key']}: {len(v['views'])}" for v in entry["variants"]))
+    # 1.0: a station listed under its long name of 0.97.14-0.99 (Sol0052_S003D2046) and now published by its sol
+    # (Sol0052) is listed once, by the new name
+    for k in [k for k in old if re.match(r"^Sol\d{4}_S\d{3}D\d{4}", k)]:
+        if re.sub(r"^(Sol\d{4})_S\d{3}D\d{4}", r"\1", k) in old:
+            old.pop(k)
+            log.info("publish: %s is listed by its new name - the old entry left out", k)
     if old.pop(OLD_TEST_ID, None) is not None:                   # 0.98.4: "Remove the fake ods"
         for f in (web / "panos").glob(OLD_TEST_ID + "*"):
             f.unlink()
     old.pop(WELCOME_ID, None)
-    first = welcome_pano(web, old.get(WELCOME_STATION), pano_dir if files_dir else None)
+    first = welcome_pano(web, old.get(WELCOME_STATION) or old.get("Sol0052_S003D2046"), pano_dir if files_dir else None)
     doc = {"title": title, "panos": ([first] if first else []) + [old[k] for k in sorted(old)]}
     if traverse:
         doc["traverse"] = traverse
@@ -760,26 +781,26 @@ VIEWER_URL = "https://ctate7163.github.io/rpv/"        # 0.98.29: the viewer's o
 
 
 def viewer_dir() -> Path:
-    """Where ``single-sites --upload`` publishes when no ``--publish`` folder is given (0.98.29; Christian, 16 Nov 2026:
-    "change https://ctate7163.github.io/rpp/ods/ to https://ctate7163.github.io/RPV/"): ``RPP_VIEWER_DIR``; else a git
-    checkout named ``RPV`` beside this one (``D:\\code\\RPV`` beside ``D:\\code\\MPPP``), whose pushes publish
-    VIEWER_URL; else this checkout's ``docs/ods`` (as before 0.98.29 - on GitHub that page now sends visitors to
-    VIEWER_URL, so panoramas published there are not seen)."""
+    """Where ``single-sites --upload`` publishes when no ``--publish`` folder is given: ``RPP_VIEWER_DIR``; else, for
+    a source checkout, a git checkout named ``rpv`` (or ``RPV``) beside it, whose pushes publish VIEWER_URL; else the
+    folder ``rpv`` in the current directory."""
     env = rpp_env.get("RPP_VIEWER_DIR")
     if env:
         return Path(env)
     home = Path(__file__).resolve().parents[3]
-    for name in ("rpv", "RPV"):                      # 0.99.13: the checkout may be renamed with the repository
-        sib = home.parent / name
-        if (sib / ".git").exists():
-            return sib
-    return home / "docs" / "ods"
+    if (home / "pyproject.toml").is_file():           # a source checkout: the viewer's repository beside it
+        for name in ("rpv", "RPV"):
+            sib = home.parent / name
+            if (sib / ".git").exists():
+                return sib
+    return Path.cwd() / "rpv"
 
 
 def install_viewer(web_dir: PathLike, source: Optional[PathLike] = None) -> bool:
-    """The page (``index.html`` and ``vendor/``) from the checkout's ``docs/ods`` into ``web_dir`` when that is another
-    folder.  False when the checkout has no ``docs/ods`` (an installed package: take the page from the repository)."""
-    src = Path(source) if source else Path(__file__).resolve().parents[3] / "docs" / "ods"
+    """The page (``index.html`` and ``vendor/``) from the package (:mod:`rpp.viewer`) into ``web_dir`` when that is
+    another folder.  False when the page is not found."""
+    from ..viewer import page_dir
+    src = Path(source) if source else page_dir()
     web = Path(web_dir)
     if not (src / "index.html").is_file():
         return False

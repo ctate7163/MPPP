@@ -136,8 +136,8 @@ def add_parsers(sub) -> None:
     p.add_argument("--promote-new-only", action="store_true",
                    help="zcam / hazcam: promote only models of which none is in use (0.94.1: a tiny joint never "
                         "replaces a model of more blocks)")
-    p = sub.add_parser("zcam-states", help="0.94.4: the Mastcam-Z backlash state of every image from the blocks' focal "
-                       "lengths (the states run: run_zcam_states.bat) - proposed additions to and removals from the "
+    p = sub.add_parser("zcam-states", help="the Mastcam-Z backlash state of every image from the blocks' focal "
+                       "lengths (the states run: run_pipeline's zcam_states stage) - proposed additions to and removals from the "
                        "found list")
     p.add_argument("--root", default=rpp_env.get("RPP_SCAPES"), help="the scapes root (default RPP_SCAPES)")
     p.add_argument("--variant", default="", help="the blocks' project colmap_<variant> (the states run: states)")

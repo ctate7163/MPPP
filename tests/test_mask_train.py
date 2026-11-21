@@ -489,7 +489,7 @@ def test_default_checkpoint_name_and_preflight(tmp_path, monkeypatch):
     from rpp.process import check_mask_checkpoint, process_images
     from rpp_studies.mask_training.train import best_checkpoint_name
     cfg = rpp.default_config()
-    assert cfg["masking"]["checkpoint"] == "rpp_mask_v3"                         # v0p22.4: the released default
+    assert cfg["masking"]["checkpoint"] == "rpp_mask_v5"                         # 1.0: the released default (v3 from v0p22.4)
     assert best_checkpoint_name({"backbone": "convnext_tiny", "stride4": True}) == "convnext_tiny_s4_seg_best.pt"
     assert best_checkpoint_name({"backbone": "convnext_base"}) == "convnext_base_seg_best.pt"
     cfg["masking"]["checkpoint"] = str(tmp_path / "nope.pt")

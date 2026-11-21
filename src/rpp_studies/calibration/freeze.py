@@ -106,10 +106,10 @@ STALE_S = 900
 LOGON_TASK = "RPP freeze"
 OLD_LOGON_TASK = "MPPP freeze"      # 0.99.3: the RunOnce value of a v0p98 freeze (freeze_097 set it): removed when a v0p99
 #                                   run sets its own, so a reboot starts one freeze, not two
-REQUIRED_VERSION = "0.99"           # 0.99.3 (Christian, 16 Nov 2026: "Is there anything preventing freeze3 from running on v0p99?"):
+REQUIRED_VERSION = "1.0"            # 0.99.3 (Christian, 16 Nov 2026: "Is there anything preventing freeze3 from running on v0p99?"):
 #                                   the run on v0p99 - its own checkout D:\code\RPP_freeze on branch rpp (scripts\windows\
 #                                   freeze.bat of D:\code\RPP); v0p98's freeze runs from D:\code\MPPP_freeze ("0.98" there)
-DEFAULT_MASK = "rpp_mask_v3"         # the registry default: what a block without mask_checkpoint was processed with
+DEFAULT_MASK = "rpp_mask_v5"         # the registry default: what a block without mask_checkpoint was processed with
 STATUS_FILE, LOG_FILE, REPORT_FILE = "freeze_status.json", "freeze_log.txt", "freeze_report.md"
 
 
@@ -810,7 +810,8 @@ def newest_training_set(mask_root: str) -> Optional[str]:
     return max(sets)[1] if sets else None
 
 
-BASELINE_SETS = {"rpp_mask_v3": "masks_training_set_v7", "rpp_mask_v4": "masks_training_set_v8"}
+BASELINE_SETS = {"rpp_mask_v3": "masks_training_set_v7", "rpp_mask_v4": "masks_training_set_v8",
+                 "rpp_mask_v5": "masks_training_set_v8"}
 
 
 def baseline_training_set(mask_root: str, baseline: str) -> Optional[str]:
@@ -1026,6 +1027,40 @@ def tree_branch(tree: Path) -> str:
         return "main"
 
 
+def freezes_on_code(a) -> list:
+    """0.99.49: the runs of this driver alive on any root - ``--root``, ``RPP_FREEZE_ROOT`` and every folder next to
+    ``--root`` with a ``mppp_pipeline/freeze_status.json`` (D:\rover_blocks_f3, D:\rover_blocks_msl, ...) - whose
+    code is the checkout ``--code`` (a status without its code counts as this checkout's)."""
+    import copy
+    code = os.path.normcase(os.path.abspath(str(a.code)))
+    roots = {Path(a.root)}
+    if rpp_env.get("RPP_FREEZE_ROOT"):
+        roots.add(Path(rpp_env.get("RPP_FREEZE_ROOT")))
+    for base in {Path(a.root).parent, *[Path(x).parent for x in list(roots)]}:
+        try:
+            roots |= {f.parent.parent for f in base.glob(f"*/mppp_pipeline/{STATUS_FILE}")}
+        except OSError:
+            pass
+    out, seen = [], set()
+    for root in sorted(roots, key=str):
+        key = os.path.normcase(os.path.abspath(str(root)))
+        if key in seen:
+            continue
+        seen.add(key)
+        b = copy.copy(a)
+        b.root = str(root)
+        try:
+            o = Run(b, read_only=True)
+            if not o.alive_before():
+                continue
+        except Exception:                                                             # noqa: BLE001
+            continue
+        st = str((o.status if o.resumed else o.before).get("code") or "")
+        if not st or code in os.path.normcase(st):
+            out.append(o)
+    return out
+
+
 def update_code(a) -> int:
     """``git pull --ff-only`` of the run's checkout from ``--from-tree``'s branch (0.99.3: the branch the tree has
     checked out - ``rpp`` for D:\\code\\RPP, ``main`` for D:\\code\\MPPP; it was always ``main``).  Nothing is started.
@@ -1035,6 +1070,15 @@ def update_code(a) -> int:
     pid = r.alive_before()
     if pid and not a.force_update:
         print(f"not updated: {describe(r)}\n(--force-update to update anyway; a running step keeps the modules it loaded)")
+        return 2
+    # 0.99.49 (20 Nov 2026): a freeze alive on ANOTHER root with this checkout - sync_code.bat (no RPP_FREEZE_ROOT, so
+    # D:\rover_blocks) fast-forwarded D:\code\RPP_freeze to 0.99.48 at 16:57 on 19 Nov under freeze 3 on
+    # D:\rover_blocks_f3; the blocks it started afterwards ran 0.99.48 (Christian, 20 Nov: "make that change")
+    other = freezes_on_code(a)
+    if other and not a.force_update:
+        for o in other:
+            print(f"not updated: {describe(o)} - it runs the code of {a.code}")
+        print("(--force-update to update anyway; a running step keeps the modules it loaded)")
         return 2
     code = Path(a.code)
     if not (code / ".git").exists():

@@ -1,5 +1,5 @@
 site_name: RPP
-site_description: "Rover Photogrammetry Pipeline: Mars 2020 PDS images to COLMAP and Metashape"
+site_description: "Rover Photogrammetry Pipeline: Mars rover PDS images to true-scale, multi-station 3D"
 site_author: Christian Tate
 site_url: https://ctate7163.github.io/rpp/
 repo_url: https://github.com/ctate7163/rpp
@@ -12,6 +12,7 @@ theme:
   name: material
   features:
     - navigation.sections
+    - navigation.tabs
     - navigation.top
     - content.code.copy
     - search.highlight
@@ -27,23 +28,30 @@ theme:
 
 nav:
   - Home: index.md
-  - Installation: installation.md
-  - Quick start: quickstart.md
-  - Pipeline: pipeline.md
-  - Camera models and calibration: calibration.md
-  - Downstream exports: exports.md
-  - Station products and viewer: station-products.md
-  - Rover model: rover-model.md
-  - Rover masks: masks.md
-  - Command line: cli.md
-  - Windows batch files: WINDOWS.md
-  - API reference: api.md
-  - Methods: methods.md
-  - Contributing: contributing.md
-  - Roadmap: roadmap.md
-  - Citing: citing.md
+  - Get started:
+      - Installation: installation.md
+      - Quick start: quickstart.md
+      - What is validated: status.md
+  - Pipeline:
+      - The steps: pipeline.md
+      - Camera models and calibration: calibration.md
+      - Rover masks: masks.md
+      - Downstream exports: exports.md
+  - Stations and viewer:
+      - RPV, the viewer: viewer.md
+      - Station products: station-products.md
+      - Rover model: rover-model.md
+  - Reference:
+      - Command line: cli.md
+      - API reference: api.md
+      - Methods: methods.md
+      - Windows batch files: WINDOWS.md
+  - Project:
+      - Roadmap: roadmap.md
+      - Contributing: contributing.md
+      - Citing: citing.md
 
-# Working notes (docs/history/, incl. history/notes/) and the Hugging Face card; not part of the site.
+# The changelogs before 1.0 (docs/history/) and the Hugging Face card; not part of the site.
 exclude_docs: |
   hf_model_card.md
   history/

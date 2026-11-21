@@ -29,7 +29,7 @@ from pathlib import Path
 from rpp_studies.paths import outputs_dir
 from rpp import env as rpp_env
 
-DEFAULT_BASELINE = "rpp_mask_v3"                  # the model the blocks on disk were processed with (freeze-1 chose it)
+DEFAULT_BASELINE = "rpp_mask_v5"                  # the registry default: the model the freeze-3 blocks were processed with
 VERDICT_FILE = "mask_verdict.json"                 # the comparison's outcome, read by the 0.96 freeze (--mask-model auto)
 
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")     # duplicate Intel OpenMP on Windows/conda; before torch

@@ -668,8 +668,9 @@ def retone(out_dir: PathLike, prefix: str, top: str = "left", jpeg_quality: int 
     except Exception as e:                                                  # noqa: BLE001
         log.warning("retone: no color skins of the full 3D texture (%s)", e)
     try:                                                                    # 0.97.4: the new files carry the XMP again
-        from .xmp import tag_folder
+        from .xmp import tag_folder, tag_products
         tag_folder(out)
+        tag_products(out)                                                   # 0.99.53: the author and the RPP version
     except Exception:                                                       # noqa: BLE001
         pass
     return {"levels_16bit_units": [float(v) for v in levels], "square": str(out / f"{pre}{STACK_NAME}.jpg"), "top": top,

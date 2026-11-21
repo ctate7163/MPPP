@@ -13,9 +13,9 @@ checks its SHA-256 against `src/rpp/data/models.json` and keeps it in the user c
 
 | name | trained on | held-out IoU | status |
 |---|---|---|---|
-| `rpp_mask_v5` | v8 mask set with Curiosity Navcam and front Hazcam frames (4,965 training frames); a fine-tune of v3 | 0.978 | prepared 19 Nov 2026 (0.99.43: the run `v5p2_2`); the model for Curiosity frames; freeze 3 runs on it |
+| `rpp_mask_v5` | v8 mask set with Curiosity Navcam and front Hazcam frames (4,965 training frames); a fine-tune of v3 | 0.978 | **the default since 1.0**; the only model trained on Curiosity frames; the third freeze run uses it |
 | `rpp_mask_v4` | v8 mask set: 4,095 masks, sols 9–2022 (Navcam, Mastcam-Z, Hazcams, WATSON) | 0.978 | prepared 31 Oct 2026 |
-| `rpp_mask_v3` | v7 mask set: 3,931 masks + brightness-varied copies | 0.979 | the registry default |
+| `rpp_mask_v3` | v7 mask set: 3,931 masks + brightness-varied copies | 0.979 | the default until 0.99 |
 | `rpp_mask_v2`, `rpp_mask_v1` | v7 mask set | 0.977, 0.971 | kept for reproducibility |
 
 The held-out IoUs come from different splits of different sets, so they are not a comparison. The fair one is

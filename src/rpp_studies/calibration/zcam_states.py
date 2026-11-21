@@ -3,7 +3,7 @@ The Mastcam-Z focus-backlash states of every image, from the blocks' own focal l
 which frames belong on the low-state (found) list, which do not, and which cannot be told yet.
 
 Each block's ``zcam_focus_states.json`` holds, per Mastcam-Z image, its fitted focal length over its label focal
-length (:func:`rpp.sfm.backlash.image_focal_fits`).  In a states run (``run_zcam_states.bat``: variant ``states``,
+length (:func:`rpp.sfm.backlash.image_focal_fits`).  In a states run (the ``zcam_states`` stage of ``run_pipeline``: variant ``states``,
 ``zcam_bin_by = "image"``, no focus lines) that is each image's own camera.  Per block, eye and zoom:
 
 - the high (backlash) state is a line in focus count, fitted robustly to the images not on the lists (the dominant

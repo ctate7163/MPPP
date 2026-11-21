@@ -7,9 +7,12 @@ Straight down a panorama from the mast shows no terrain: the mast itself (masked
 that was filled in.  The pixels within ``NADIR_MARK_DEG`` of the nadir become a light blue disc with two rows of black
 text near its rim, ahead of the rover (:func:`make_mark`).  0.97.13: the disc lies on the surface below the mast
 (:func:`on_ground`) - each eye sees it with that surface's disparity (until 0.97.12 it was the same picture in both
-eyes: at infinity).  It goes into every color panorama (8-bit and 16-bit, eyes, center, stacked,
-enhanced), not into the depth products; ``ods.json`` records it ("nadir_mark"), ``rpp ods --no-nadir-mark`` leaves
-it out.
+eyes: at infinity).  ``ods.json`` records it ("nadir_mark"), ``rpp ods --no-nadir-mark`` leaves it out.
+
+1.0 (Christian, 20 Nov 2026: "Do not include the blue circle and text in the 360 images. That should only enter as the
+nadir_mark disk"): the mark is the picture ``<prefix>_nadir_mark.png`` alone (:func:`write_texture`, the mark seen
+from above), which the viewer lays on the ground as a disc; no panorama carries it (:data:`MARK_IN_PANORAMA`, 0.99.53).  From
+0.97.7 to 0.99.52 it was drawn into every color panorama (8-bit and 16-bit, eyes, stacked, enhanced).
 
 Image credit (Christian, 13 Nov, the last word of three): NASA/JPL-Caltech/MSSS for Navcam (and Hazcam) products,
 NASA/JPL-Caltech/MSSS/ASU when Mastcam-Z frames are in.
@@ -96,19 +99,25 @@ def block_name(site_key: Optional[str]) -> Optional[str]:
     return " ".join(parts)
 
 
+MARK_IN_PANORAMA = False      # 0.99.53 (Christian, 20 Nov 2026: "Do not include the blue circle and text in the 360
+#                               images. That should only enter as the nadir_mark disk"): the eyes' panoramas carry no
+#                               mark; the viewer draws <prefix>_nadir_mark.png on the ground (True: as until 0.99.52)
+
+
 def mark_sols(names: Sequence[str]) -> List[int]:
     """The sols the mark gives: every sol of the frames, but with Mastcam-Z frames among them only the first sol of
     those (0.99.36; Christian, 19 Nov 2026: 'the blue disk on the z34 Three Forks North should not have the ", 692"
     on it. For this and the future, just give it the first sol of the zcam images')."""
     z = sols_of([n for n in names if str(n)[:1].upper() == "Z"])
-    return z[:1] if z else sols_of(names)
+    return z[:1] if z else sols_of(names)[:1]          # 0.99.51 (Christian, 20 Nov 2026: "the sol numbers on the blue
+    #                                                    plates should never be two. Only take the first sol")
 
 
 def mark_lines(names: Sequence[str], site: Optional[str] = None, sols: Optional[Sequence[int]] = None) -> List[str]:
     """The four lines: the rover, sol and site, the image credit, the author (0.97.16; Christian, 13 Nov 2026: "put
     'made by C. Tate' after the 'image credit: NASA/JPL...'" - the author was before the credit).  The sols:
     ``sols``, else :func:`mark_sols` of the frames."""
-    s = sorted({int(x) for x in sols}) if sols else mark_sols(names)
+    s = sorted({int(x) for x in sols})[:1] if sols else mark_sols(names)
     sol = "" if not s else (f"Sol {s[0]}" if len(s) == 1 else f"Sols {s[0]}-{s[-1]}" if s[-1] - s[0] == len(s) - 1
                             else "Sols " + ", ".join(str(x) for x in s))
     where = " - ".join(x for x in (sol, site) if x)

@@ -190,7 +190,9 @@ def test_released_registry_entry():
     from rpp.mask.hub import load_registry
     reg = load_registry()
     e = reg["models"][reg["default"]]
-    assert e["file"].endswith(".safetensors") and len(e.get("sha256", "")) == 64
+    # 1.0: the SHA-256 of the default is checked for a final version (test_a_final_release_has_its_default_mask_on_
+    # hugging_face); a release candidate may name a model whose export has not been committed yet
+    assert e["file"].endswith(".safetensors") and len(e.get("sha256", "")) in (0, 64)
     assert e["urls"][0].startswith("https://huggingface.co/")        # 0.31.2: the default comes from Hugging Face
 
 
@@ -240,7 +242,7 @@ def test_mask_model_v2_is_registered():
     import rpp
     from rpp.mask.hub import load_registry
     reg = load_registry()
-    assert reg["default"] == "rpp_mask_v3" == rpp.default_config()["masking"]["checkpoint"]   # v0p22.4
+    assert reg["default"] == "rpp_mask_v5" == rpp.default_config()["masking"]["checkpoint"]   # 1.0 (v3 from v0p22.4)
     v2 = reg["models"]["rpp_mask_v2"]
     assert v2["source_checkpoint"] == "convnext_tiny_s4_seg_20260925.pt" and v2["val_iou"] > 0.977
     assert v2["sha256"] == "227e483369e11d6e36ce3517cf9f6d6ac60a9a50c1e301f9e7ae53d0cef569b9"
@@ -251,12 +253,19 @@ def test_mask_model_v2_is_registered():
     assert "rpp_mask_v1" in reg["models"]                                         # the previous model stays
 
 
-def test_default_mask_model_is_v3():
+def test_default_mask_model_is_v5():
+    """1.0 (Christian, 20 Nov 2026: "make rpp_mask_v5 default. The freeze is using it now")."""
     from rpp.mask.hub import load_registry, default_model_name, local_candidates
     import rpp
     reg = load_registry()
-    assert default_model_name() == "rpp_mask_v3" and rpp.load_config({})["masking"]["checkpoint"] == "rpp_mask_v3"
-    e = reg["models"]["rpp_mask_v3"]
+    assert default_model_name() == "rpp_mask_v5" and rpp.load_config({})["masking"]["checkpoint"] == "rpp_mask_v5"
+    v5 = reg["models"]["rpp_mask_v5"]
+    assert v5["source_checkpoint"] == "convnext_tiny_s4_seg_20261118_v5p2_2.pt" and v5["file"].endswith("_v5.safetensors")
+    assert v5["hf_repo"] == "ctate7163/rpp-mask" and v5["same_as_source"] is True
+    from rpp_studies.calibration import freeze as fz
+    from rpp_studies.mask_training import train_mask as tm
+    assert fz.DEFAULT_MASK == tm.DEFAULT_BASELINE == "rpp_mask_v5"
+    e = reg["models"]["rpp_mask_v3"]                             # the default until 0.99 stays in the registry
     assert e["source_checkpoint"] == "convnext_tiny_s4_seg_20260925b.pt" and e["file"].endswith("_v3.safetensors")
     assert len(e["sha256"]) == 64 and e["bytes"] > 10 ** 8 and e["val_iou"] > 0.979
     assert isinstance(local_candidates("rpp_mask_v3"), list)     # the .pt in checkpoints/ stands in until the release is published
@@ -284,11 +293,24 @@ def _registry(tmp_path, monkeypatch, sha, urls):
     return hub
 
 
-def test_default_v3_is_on_hugging_face():
-    from rpp.mask.hub import load_registry, hf_repo
+def test_a_final_release_has_its_default_mask_on_hugging_face():
+    """1.0: a release candidate may name a default model that is not uploaded yet; a final version may not - the
+    registry must hold its SHA-256 and size (written by the export) and must not say ``released: false``."""
+    import rpp
+    from rpp.mask.hub import load_registry
     reg = load_registry()
     e = reg["models"][reg["default"]]
-    assert reg["default"] == "rpp_mask_v3" and hf_repo() == "ctate7163/rpp-mask"
+    final = not any(s in rpp.__version__ for s in ("rc", "a", "b", "dev"))
+    ready = len(str(e.get("sha256") or "")) == 64 and int(e.get("bytes") or 0) > 10 ** 8 and e.get("released", True) is not False
+    assert ready or not final, (f"{reg['default']} is the default of RPP {rpp.__version__} but is not released: export it, "
+                                "upload it (docs/RELEASING.md) and commit the registry")
+
+
+def test_v3_is_on_hugging_face():
+    from rpp.mask.hub import load_registry, hf_repo
+    reg = load_registry()
+    e = reg["models"]["rpp_mask_v3"]
+    assert hf_repo() == "ctate7163/rpp-mask" and hf_repo("rpp_mask_v3") == "ctate7163/rpp-mask"
     # 0.99.4: the pre-0.99 repository stays as the second address until ctate7163/mppp-mask is renamed
     assert e["urls"] == ["https://huggingface.co/ctate7163/rpp-mask/resolve/main/" + e["file"],
                          "https://huggingface.co/ctate7163/mppp-mask/resolve/main/" + e["old_files"][0]]
@@ -384,6 +406,6 @@ def test_verify_reports_each_url(tmp_path, monkeypatch):
 
 def test_registry_default_model_and_release():
     from rpp.mask.hub import default_model_name, hf_repo, load_registry
-    assert default_model_name() == "rpp_mask_v3" and hf_repo() == "ctate7163/rpp-mask"
+    assert default_model_name() == "rpp_mask_v5" and hf_repo() == "ctate7163/rpp-mask"
     e = load_registry()["models"]["rpp_mask_v3"]
     assert e["source_checkpoint"] == "convnext_tiny_s4_seg_20260925b.pt" and e["urls"][0].startswith("https://huggingface.co/ctate7163/")

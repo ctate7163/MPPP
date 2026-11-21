@@ -488,7 +488,7 @@ def main(argv=None) -> int:
                     help="the training set(s) whose frames are left out (their masks\\ folders are read)")
     ap.add_argument("--out", required=True, help="the validation set's folder (not inside a training set)")
     ap.add_argument("--pds", default=None, help="the Mars 2020 archive the images are made from (default RPP_PDS)")
-    ap.add_argument("--models", nargs="+", default=["rpp_mask_v3"],
+    ap.add_argument("--models", nargs="+", default=["rpp_mask_v5"],
                     help="registry names or checkpoints whose mean probability is the guess")
     ap.add_argument("--n", type=int, default=100)
     ap.add_argument("--select-only", action="store_true", help="write selection.csv and stop (no image, no GPU)")

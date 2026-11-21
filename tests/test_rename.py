@@ -1,8 +1,9 @@
 """0.99.0, the rename MPPP -> RPP (Christian, 16 Nov 2026: "replace every mppp with rpp throughout the code and
 documentation. make sure it doesn't break the code anywhere").
 
-Everything new says RPP; what a PC, a block or a script already has keeps working: the old imports and pickles, the
-old environment variables, the old mask names, the WORK-folder file names and the run keys.
+Everything new says RPP; what a PC or a block already has keeps working: the old environment variables, the old mask
+names, the WORK-folder file names and the run keys.  1.0 (Christian, 20 Nov 2026: "Drop the mppp, mppp_studies
+alias"): the alias packages, the mppp command, MPPPImage and mppp_env.bat are gone.
 """
 import json
 import os
@@ -18,9 +19,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 # --- where the old spelling may stay ---------------------------------------------------------------------------
-WHOLE_FILES = ("docs/history/", "paper/", "CHANGELOG.md", "src/rpp/data/cmods/", "src/mppp/", "src/mppp_studies/",
+WHOLE_FILES = ("docs/history/", "paper/", "CHANGELOG.md", "src/rpp/data/cmods/",
                "src/rpp/ondisk.py", "src/rpp/env.py", "src/rpp/mask_names.py", "src/rpp/data/models.json",
-               "scripts/windows/mppp_env.bat", "tests/test_rename.py")
+               "tests/test_rename.py")
 KEPT = [
     # names in WORK folders, roots and records (rpp.ondisk)
     r"_?mppp_(?:manifest|config|settings|status|dense|sfm_log|stereo|stopped|batch|pipeline|regen)\w*",
@@ -32,13 +33,12 @@ KEPT = [
     # the compatibility layer, and text about the rename
     r"MPPP_(?:\*|X\b|<NAME>|HOME|SCAPES|PDS|CMODS|THREADS)", r"set MPPP_", r"\"MPPP_\"", r"\(rpp mppp\)",
     r"mppp_(?:python|scapes|pds|cmods|\*)\.txt", r"mppp_mask_(?:v\d|convnext_tiny_s4_v[\d*]\S*)", r"ctate7163/mppp-mask",
-    r"MPPPImage", r"mppp\.image\.MPPPImage", r"import mppp", r"python -m mppp", r"mppp\*", r"mppp:cli_main",
-    r"mppp, mppp_studies", r"the mppp command", r"\bmppp = ", r"formerly mppp", r"``mppp:``",
-    r"mppp_env\.bat", r"install of mppp",
+    r"formerly mppp", r"``mppp:``", r"install of mppp", r"mppp_env\.bat", r"\(mppp_env,",
     r"mppp_v\*\.bundle", r"\"MPPP freeze\"",            # 0.99.3: the v0p98 line's bundles and its freeze restart entry
     r"MPPP 0\.98", r"rename_mppp_to_rpp", r"From MPPP to RPP",   # 0.99.5: the old line, and the PC's rename batch
     r"MPPP -> RPP", r"\(RPP\|MPPP\)", r"/MPPP/ods", r"old name, MPPP", r"[Ff]ormerly MPPP", r"called MPPP",
     r"was MPPP stereo viewer", r"MPPP \(Mars Photogrammetry Preprocessing Pipeline\)",
+    r"MPPP are read as they are", r"the rename from MPPP",          # 1.0: the README, the docs' home page, WINDOWS.md
     r"MPPP, Mars Photogrammetry Preprocessing Pipeline", r"made by MPPP", r"pypi\.org/project/mppp/",
     # Christian's own words
     r"other MPPP users", r"the MPPP directory", r"I will stop MPPP", r"the standard mppp pipeline",
@@ -88,42 +88,24 @@ def test_the_old_name_is_left_only_where_it_is_kept():
 
 def test_no_file_name_says_mppp_outside_the_kept_ones():
     names = [f for f in _tracked() if re.search(r"(?i)mppp", f)]
-    allowed = ("docs/history/", "src/mppp/", "src/mppp_studies/", "scripts/windows/mppp_env.bat")
-    assert names and all(f.startswith(allowed) for f in names), [f for f in names if not f.startswith(allowed)]
+    allowed = ("docs/history/",)
+    assert all(f.startswith(allowed) for f in names), [f for f in names if not f.startswith(allowed)]
 
 
-# --- imports, pickles, commands -----------------------------------------------------------------------------------
-def test_import_mppp_gives_the_rpp_modules():
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        import mppp
-        import mppp.sfm.project as old
-        import mppp_studies.calibration.freeze as old_freeze
+# --- 1.0: the alias packages are gone -----------------------------------------------------------------------------
+def test_the_mppp_aliases_are_gone():
+    """1.0 (Christian, 20 Nov 2026: "Drop the mppp, mppp_studies alias")."""
+    import importlib.util
+    # on a PC that had 0.99, git leaves src/mppp behind with only __pycache__ in it: gone means no source file
+    for name in ("mppp", "mppp_studies"):
+        d = ROOT / "src" / name
+        assert not d.exists() or not list(d.rglob("*.py")), name
+        spec = importlib.util.find_spec(name)
+        assert spec is None or not str(spec.origin or "").startswith(str(ROOT)), name
+    assert not (ROOT / "scripts" / "windows" / "mppp_env.bat").exists()
     import rpp
-    import rpp.sfm.project as new
-    import rpp_studies.calibration.freeze as new_freeze
-    assert old is new and old_freeze is new_freeze and mppp.__version__ == rpp.__version__
-    from mppp.image import MPPPImage
-    from rpp import RPPImage
-    assert MPPPImage is RPPImage
-    from mppp import pipeline                                       # a submodule through the package's attributes
-    assert pipeline is sys.modules["rpp.pipeline"]
-
-
-def test_a_pickle_that_names_mppp_classes_loads():
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        from rpp.sfm.project import SfmProject
-        old = pickle.dumps(SfmProject, protocol=0).replace(b"rpp.sfm.project", b"mppp.sfm.project")
-        assert b"mppp.sfm.project" in old and pickle.loads(old) is SfmProject
-
-
-def test_python_m_mppp_runs_rpp_with_a_note():
-    env = dict(os.environ, PYTHONPATH=str(ROOT / "src") + os.pathsep + os.environ.get("PYTHONPATH", ""))
-    r = subprocess.run([sys.executable, "-m", "mppp", "--version"], capture_output=True, text=True, timeout=120,
-                       env=env)
-    import rpp
-    assert r.returncode == 0 and r.stdout.strip() == f"rpp {rpp.__version__}" and "called rpp" in r.stderr
+    assert not hasattr(rpp, "MPPPImage") and not hasattr(rpp.image, "MPPPImage")
+    assert "mppp" not in (ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
 
 # --- environment variables ----------------------------------------------------------------------------------------
@@ -157,9 +139,7 @@ def test_rpp_env_bat_reads_the_old_names():
     assert 'if /i "%~1"=="MPPP_HOME" exit /b 0' in t and 'if /i "%~1"=="--legacy-only" exit /b 0' in t
     for what in ("python", "scapes", "pds", "cmods"):
         assert f'for %%N in (rpp mppp) do if not defined RPP_{what.upper()} if exist "%~dp0%%N_{what}.txt"' in t
-    stub = (ROOT / "scripts" / "windows" / "mppp_env.bat").read_text(encoding="utf-8")
-    assert 'call "%~dp0rpp_env.bat" %*' in stub
-    for bat in ("freeze.bat", "sync_code.bat", "run_zcam_states.bat"):
+    for bat in ("freeze.bat", "sync_code.bat"):
         assert "rpp_env.bat\" --legacy-only" in (ROOT / "scripts" / "windows" / bat).read_text(encoding="utf-8"), bat
 
 
@@ -190,7 +170,7 @@ def test_the_kept_names_are_the_ones_the_code_writes():
 def test_old_mask_names_are_the_same_models():
     from rpp.mask_names import canonical, key_name
     reg = json.loads((ROOT / "src" / "rpp" / "data" / "models.json").read_text(encoding="utf-8"))
-    assert reg["default"] == "rpp_mask_v3" and sorted(reg["models"]) == [f"rpp_mask_v{i}" for i in (1, 2, 3, 4, 5)]
+    assert reg["default"] == "rpp_mask_v5" and sorted(reg["models"]) == [f"rpp_mask_v{i}" for i in (1, 2, 3, 4, 5)]
     for i in (1, 2, 3, 4):
         e = reg["models"][f"rpp_mask_v{i}"]
         assert e["aliases"] == [f"mppp_mask_v{i}"] and e["old_files"] == [f"mppp_mask_convnext_tiny_s4_v{i}.safetensors"]
@@ -204,6 +184,12 @@ def test_old_mask_names_are_the_same_models():
     assert not v5.get("aliases") and not v5.get("old_files") and key_name("rpp_mask_v5") == "rpp_mask_v5"
     assert v5["urls"] == [f"https://huggingface.co/ctate7163/rpp-mask/resolve/main/{v5['file']}"]
     assert canonical("checkpoints/mine.pt") == "checkpoints/mine.pt" and canonical(None) is None
+    # 1.0: the checkpoint freeze 3 named is the model rpp_mask_v5 was exported from - the same masks, so the same
+    # processing configuration; no other source checkpoint stands for its model (v1's is a file name that moved on)
+    assert v5["same_as_source"] is True and v5["source_checkpoint"] == "convnext_tiny_s4_seg_20261118_v5p2_2.pt"
+    for path in (r"D:\code\RPP\checkpoints\convnext_tiny_s4_seg_20261118_v5p2_2.pt", "ck/convnext_tiny_s4_seg_20261118_v5p2_2.pt"):
+        assert canonical(path) == "rpp_mask_v5"
+    assert canonical("checkpoints/convnext_tiny_s4_seg_best.pt") == "checkpoints/convnext_tiny_s4_seg_best.pt"
 
 
 def test_a_v0p98_configuration_is_not_changed_by_the_mask_name():
@@ -211,11 +197,16 @@ def test_a_v0p98_configuration_is_not_changed_by_the_mask_name():
     from rpp.process import _canon, _config_diff
     new = default_config()
     old = json.loads(json.dumps(new))
+    assert new["masking"]["checkpoint"] == "rpp_mask_v5"          # 1.0: the default (Christian, 20 Nov 2026)
+    new["masking"]["checkpoint"] = "rpp_mask_v3"
     old["masking"]["checkpoint"] = "mppp_mask_v3"
-    assert new["masking"]["checkpoint"] == "rpp_mask_v3"
     assert _config_diff(_canon(new), _canon(old)) == []
     old["masking"]["checkpoint"] = "mppp_mask_v4"
     assert _config_diff(_canon(new), _canon(old)) == ["masking.checkpoint"]
+    # 1.0: a freeze-3 block (processed with the checkpoint file) under the default: the same configuration
+    new, old = default_config(), default_config()
+    old["masking"]["checkpoint"] = r"D:\code\RPP\checkpoints\convnext_tiny_s4_seg_20261118_v5p2_2.pt"
+    assert _config_diff(_canon(new), _canon(old)) == []
 
 
 def test_a_v0p98_work_folder_is_reused(tmp_path):
@@ -226,6 +217,7 @@ def test_a_v0p98_work_folder_is_reused(tmp_path):
     out = tmp_path / "processed"
     (out / "images").mkdir(parents=True)
     cfg = default_config()
+    cfg["masking"]["checkpoint"] = "rpp_mask_v3"                  # the default until 0.99; 1.0's is rpp_mask_v5
     old_cfg = json.loads(json.dumps(cfg))
     old_cfg["masking"]["checkpoint"] = "mppp_mask_v3"
     (out / "images" / "a.png").write_bytes(b"x")
@@ -248,9 +240,20 @@ def test_run_keys_did_not_change_with_the_rename():
         pytest.skip("RPP_CMODS points at other camera models: the keys differ by design")
     # 0.99.22: the colors changed (the Navcam brightness comes from the configuration, navcam_brightness None), so
     # every block processes and aligns again - by design.  With the old setting the keys are 0.98.29's still.
-    old = P.Settings(scapes_root=Path("/nowhere"), pds_dir=Path("/nowhere"), navcam_brightness=0.9)
+    # 1.0: the default mask is rpp_mask_v5 (Christian, 20 Nov 2026), and a key now says which model made the masks -
+    # by design a block made with the old default (rpp_mask_v3, unnamed in its key) is not this default's block.
+    # Naming rpp_mask_v3 gives the keys of 0.99 and earlier, so those blocks are reused on request.
+    old = P.Settings(scapes_root=Path("/nowhere"), pds_dir=Path("/nowhere"), navcam_brightness=0.9, mask_checkpoint="rpp_mask_v3")
     assert (P.run_key(old), P.process_key(old)) == ("078faba160de6bc4", "873a5aef563fc306")
-    assert (P.run_key(s), P.process_key(s)) == ("bca04ab04c5df34d", "c583d0b67eada6ad")
+    for v3 in ("rpp_mask_v3", "mppp_mask_v3"):
+        s3 = P.Settings(scapes_root=Path("/nowhere"), pds_dir=Path("/nowhere"), mask_checkpoint=v3)
+        assert (P.run_key(s3), P.process_key(s3)) == ("bca04ab04c5df34d", "c583d0b67eada6ad"), v3
+    s5 = P.Settings(scapes_root=Path("/nowhere"), pds_dir=Path("/nowhere"), mask_checkpoint="rpp_mask_v5")
+    assert (P.run_key(s), P.process_key(s)) == (P.run_key(s5), P.process_key(s5)) == ("1e066feb07a1815e", "bdd120c4b45307b4")
+    # a freeze-3 block names the checkpoint file: its key is the file's, as before
+    f3 = P.Settings(scapes_root=Path("/nowhere"), pds_dir=Path("/nowhere"),
+                    mask_checkpoint=r"D:\code\RPP\checkpoints\convnext_tiny_s4_seg_20261118_v5p2_2.pt")
+    assert (P.run_key(f3), P.process_key(f3)) == ("1a4cc573e047c019", "c4495a6e68778408")
     for ck, want in (("mppp_mask_v4", ("24426225031637e2", "c91cfb74c3e594c5")),
                      ("rpp_mask_v4", ("24426225031637e2", "c91cfb74c3e594c5"))):
         s = P.Settings(scapes_root=Path("/nowhere"), pds_dir=Path("/nowhere"), mask_checkpoint=ck)
@@ -266,6 +269,9 @@ def test_xmp_reader_reads_old_products(tmp_path):
     old = xmp.fields_xmp({"Scale": "1.5", "Unit": "m"}).decode().replace("rpp:", "mppp:").replace(
         "https://github.com/ctate7163/RPP/ns/1.0/", "https://github.com/ctate7163/MPPP/ns/1.0/")
     xmp.inject_png(p, old.encode())
-    assert xmp.read_fields(p) == {"Scale": "1.5", "Unit": "m"}
+    got = xmp.read_fields(p)
+    assert {k: got[k] for k in ("Scale", "Unit")} == {"Scale": "1.5", "Unit": "m"} and got["Author"] == "Christian Tate"
     xmp.tag_fields(p, {"Scale": "2"})
-    assert xmp.read_fields(p) == {"Scale": "2"} and b"xmlns:rpp=" in xmp.read_xmp(p)
+    got = xmp.read_fields(p)
+    assert got["Scale"] == "2" and "Unit" not in got and b"xmlns:rpp=" in xmp.read_xmp(p)
+    assert got["Software"].startswith("RPP ") and b"<dc:creator>" in xmp.read_xmp(p)       # 0.99.53

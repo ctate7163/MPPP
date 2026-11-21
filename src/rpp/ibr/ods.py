@@ -1374,10 +1374,11 @@ def render_eye(scene: Scene, sources: Sequence[SourceImage], pivot: Sequence[flo
     sky = fill_sky(rgb, source, label) if sky_fill else np.zeros(label.shape, bool)
     evened = even_sky(rgb, label) if sky_fill else {}
     healed = heal_sky(rgb, evened.get("weight"), label) if sky_fill else {}       # 0.98.4: the last check on the sky
+    pole = blend_pole(rgb) if sky_fill else {}           # 0.99.52: no discolored point at the zenith
     if checked:                                              # and any surface still without a source
         _brown((source == -1) & ((label == LABEL_MESH) | (label == LABEL_PLANE)))
     return {"brown_filled": brown, "rover": rover_px, "rgb": rgb, "source": source, "label": label, "range": rng, "hidden_fallback": hidden, "filled": filled,
-            "sky_filled": sky, "sky_evened": evened, "sky_healed": healed, "ground_filled": gfill, "surface_check_rejected": rej, "provenance": prov,
+            "sky_filled": sky, "sky_evened": evened, "sky_healed": healed, "sky_pole": pole, "ground_filled": gfill, "surface_check_rejected": rej, "provenance": prov,
             "sky_weight": evened.pop("weight", None), "effective_frames": _effective_frames(neff_vals)}
 
 
@@ -1420,6 +1421,45 @@ def fill_ground(rgb: np.ndarray, source: np.ndarray, donors: np.ndarray) -> np.n
     rgb[holes] = np.clip(fill[holes], 0, top).astype(rgb.dtype)
     source[holes] = -4
     return holes
+
+
+POLE_BLEND_FROM_DEG = 70.0       # 0.99.52 (Christian, 20 Nov 2026: "the top pole in the ods and full 3d models are visible
+#                                   as a convergent discolored point. Make sure that the sky at the pole is blended"):
+#                                   above this elevation the sky is cross-faded into its azimuthal average ...
+POLE_SIGMA_DEG = 6.0             # ... a Gaussian of this many degrees on the sky (its width in azimuth grows as
+#                                   1 / cos(elevation)), the whole row's mean where that is wider than the row; the
+#                                   cross-fade a smoothstep from 0 at POLE_BLEND_FROM_DEG to 1 at the zenith, where
+#                                   every column has one color
+POLE_TOP_DEG = 88.0              # the rows above this all take the mean of the rows above it
+
+
+def blend_pole(rgb: np.ndarray, from_deg: float = POLE_BLEND_FROM_DEG, sigma_deg: float = POLE_SIGMA_DEG) -> Dict[str, Any]:
+    """The sky about the zenith of an equirectangular eye (in place): no frame edge or fill column converges there to
+    a point.  Returns {"rows", "from_deg"}."""
+    from scipy.ndimage import gaussian_filter1d
+    H, W = rgb.shape[:2]
+    el = 90.0 - (np.arange(H) + 0.5) / H * 180.0
+    rows = np.flatnonzero(el > float(from_deg))
+    if not len(rows):
+        return {"rows": 0, "from_deg": float(from_deg)}
+    top = 255.0 if rgb.dtype == np.uint8 else LINEAR_TOP
+    blk = rgb[rows].astype(np.float32)
+    top_rows = el[rows] > POLE_TOP_DEG
+    pole = blk[top_rows].reshape(-1, blk.shape[-1]).mean(axis=0) if top_rows.any() else blk[0].mean(axis=0)
+    for i, r in enumerate(rows):
+        e = float(el[r])
+        t = np.clip((e - from_deg) / (90.0 - from_deg), 0.0, 1.0)
+        t = t * t * (3.0 - 2.0 * t)
+        sig = sigma_deg / 360.0 * W / max(np.cos(np.radians(e)), 1e-6)
+        if e > POLE_TOP_DEG:
+            avg, t = np.broadcast_to(pole, blk[i].shape), 1.0
+        elif sig >= W / 2.0:
+            avg = np.broadcast_to(blk[i].mean(axis=0), blk[i].shape)
+        else:
+            avg = gaussian_filter1d(blk[i], sig, axis=0, mode="wrap")
+        blk[i] = (1.0 - t) * blk[i] + t * avg
+    rgb[rows] = np.clip(blk, 0, top).astype(rgb.dtype)
+    return {"rows": int(len(rows)), "from_deg": float(from_deg)}
 
 
 def fill_sky(rgb: np.ndarray, source: np.ndarray, label: np.ndarray) -> np.ndarray:
@@ -1834,7 +1874,16 @@ def stack_file(out_dir: PathLike, prefix: str = "", ext: str = ".png", suffix: s
 
 GEOMETRY_VIEWS = ("range_log", "range_linear", "normal")
 NORMAL_FILL_DIM = 0.45            # 0.99.32: the hole fill's normal colors times this in the normal panorama
-GEOMETRY_WIDTH = 4096             # 0.98.12 (Christian, 15 Nov 2026: "Make those extra channels 4k and the same with the range
+GEOMETRY_FRACTION = 2            # 0.99.51 (Christian, 20 Nov 2026: "The normal and range maps should be rendered at
+#                                   half the terrain resolution. So if the terrain is 16k, then the normal and range
+#                                   should be 8k"): the range and normal panoramas' width = the color one's / this
+
+
+def geometry_width(width: int) -> int:
+    return max(1, int(width) // GEOMETRY_FRACTION)
+
+
+GEOMETRY_WIDTH = 4096             # 0.98.12 - until 0.99.51 the width at most; now geometry_width(); 0.98.12 (Christian, 15 Nov 2026: "Make those extra channels 4k and the same with the range
 #                                   map ... It doesn't need to be as high res as the ods"): the range and normal panoramas'
 #                                   width (the color ones' until 0.98.11)
 
@@ -2249,9 +2298,10 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                                  "rover_forward_azimuth_deg": round(float(fwd), 3) if fwd_known else None,
                                  "text_from_forward_deg": _nadir.TEXT_AZIMUTH_FROM_FORWARD_DEG,
                                  "note": "a light blue disc with this text in black, ahead of the rover's front, not data; it lies on the "
-                                         "horizontal plane depth_below_pivot_m below the pivot (each eye sees it with that plane's "
-                                         "disparity; from the pivot it covers the rows from first_row down); in every color "
-                                         "panorama, not in the depth products"}
+                                         "horizontal plane depth_below_pivot_m below the pivot (from the pivot it covers the rows from "
+                                         "first_row down). " + ("It is drawn into every color panorama, not into the depth products."
+                                                                if _nadir.MARK_IN_PANORAMA else "It is the picture 'texture' alone, "
+                                                                "which the viewer lays on that plane; no panorama carries it (in_panorama).")}
     if gains:
         g = estimate_gains(scene, sources, station.pivot, width=min(GAIN_PASS_WIDTH, width), rows_per_chunk=rows_per_chunk, **axes)
         rec_out["gains"] = g
@@ -2292,7 +2342,9 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
     rec_out["render_processes"] = n_workers if (pool is not None and pool.failed is None) else 1
     try:
         for eye in (() if station_mesh == "only" else eyes):
-            if mark0 is not None and eye in ("left", "right"):       # 0.97.13: the mark as this eye sees it on the ground
+            if mark0 is not None and not _nadir.MARK_IN_PANORAMA:     # 0.99.53: the mark is the viewer's disc only
+                mark = None
+            elif mark0 is not None and eye in ("left", "right"):     # 0.97.13: the mark as this eye sees it on the ground
                 m0 = max(0, mark0["row0"] - int(np.ceil(_nadir.GROUND_MARGIN_DEG / 180.0 * height)))
                 al = np.zeros((height - m0, width), np.float32)
                 ins = np.zeros((height - m0, width), bool)
@@ -2415,19 +2467,37 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
                 else:
                     v = tone_soft(lin8) if tone == "soft" else np.clip(lin8, 0, 255)
                 return np.clip(np.rint(v), 0, 255).astype(np.uint8)
+            scape_done = False
+            if use_masks and _sm.SCAPE:                  # 0.99.51 (Christian, 20 Nov 2026: "The ..._station_mesh_terrain
+                try:                                     # should use the same texture as the ..._station_scape_terrain just
+                    part = _sm.terrain_part(scene, sources, station, pool, size=_sm.TEXTURE_PX,    # with a smaller mesh"):
+                                            target=_sm.TARGET_TRIANGLES, linear=linear,            # the full 3D part
+                                            rows_per_chunk=rows_per_chunk, full=True)              # first; the local 3D
+                    rec_out["station_scape"] = _sm.write_part(out, pf, "scape", part, station, to8, to16)   # terrain is its
+                    local = dict(part, shell=None, record=dict(part["record"], texture_of="station_scape_terrain",  # mesh
+                                                               shell=None))                                       # without
+                    rec_out["station_mesh"] = _sm.write_part(out, pf, "terrain", local, station, to8, to16)      # the shell
+                    del part, local
+                    scape_done = True
+                except Exception as e:                   # noqa: BLE001
+                    log.warning("ods: the full 3D terrain was not made (%s: %s)", type(e).__name__, e)
+                    rec_out["station_scape"] = {"failed": f"{type(e).__name__}: {e}"}
             try:
-                if use_masks:
+                if scape_done:
+                    pass
+                elif use_masks:
                     part, kind = _sm.terrain_part(scene, sources, station, pool, size=_sm.TEXTURE_PX, target=_sm.TARGET_TRIANGLES, linear=linear,
                                                      rows_per_chunk=rows_per_chunk), "terrain"
                 else:
                     part, kind = _sm.rover_part(scene, sources, station, pool, size=_sm.ROVER_TEXTURE_PX, linear=linear,
                                                    rows_per_chunk=rows_per_chunk), "rover"
-                rec_out["station_mesh"] = _sm.write_part(out, pf, kind, part, station, to8, to16)
-                del part
+                if not scape_done:
+                    rec_out["station_mesh"] = _sm.write_part(out, pf, kind, part, station, to8, to16)
+                    del part
             except Exception as e:                       # noqa: BLE001 - the panoramas are not lost for it
                 log.warning("ods: the station mesh's part was not made (%s: %s)", type(e).__name__, e)
                 rec_out["station_mesh"] = {"failed": f"{type(e).__name__}: {e}"}
-            if use_masks and _sm.SCAPE:                  # 0.99.32: the fifth mode's terrain, out to the horizon and the sky
+            if use_masks and _sm.SCAPE and not scape_done and "station_scape" not in rec_out:   # 0.99.32: the fifth mode
                 try:                                     # 0.99.34: its own record - a failure here is not the station mesh's
                     part = _sm.terrain_part(scene, sources, station, pool, size=_sm.TEXTURE_PX, target=_sm.TARGET_TRIANGLES,
                                             linear=linear, rows_per_chunk=rows_per_chunk, full=True)
@@ -2471,6 +2541,9 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
         if linear:
             rec_out["stacked_16bit"] = stack_eyes(out, top=stack_top, prefix=prefix, suffix="_16")
             rec_out.setdefault("linear16", {})["exposure16"] = float(exposure16)
+            fr0 = [v for v in (lin_rep.get("frames") or {}).values() if v]     # 0.99.51: the raw color view divides
+            if fr0:                                                             # by it (it was not there yet)
+                rec_out["linear16"].update(white_balance=fr0[0].get("white_balance"), brightness=fr0[0].get("brightness"))
             (out / "ods.json").write_text(json.dumps(rec_out, indent=1, default=str), encoding="utf-8")   # write_enhanced reads the exposure
             from .linear16 import write_enhanced
             rec_out["enhanced"] = write_enhanced(out, prefix, top=stack_top, levels_file=tone_levels_file)
@@ -2510,7 +2583,8 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             log.warning("ods: the nadir mark's texture was not written (%s)", e)
         mark0.update({k_: mark_seen[k_] for k_ in ("bg8", "bg16") if k_ in mark_seen})
         rec_out["nadir_mark"]["in_centre_panorama"] = False
-        rec_out["nadir_mark"]["background_bgr_8bit"] = [float(x) for x in mark_seen.get("bg8", [])]
+        rec_out["nadir_mark"]["in_panorama"] = bool(_nadir.MARK_IN_PANORAMA)   # 0.99.53
+        rec_out["nadir_mark"]["background_bgr_8bit"] = [float(x) for x in mark_seen.get("bg8", np.asarray(_nadir.BACKGROUND_RGB)[::-1])]
         if "bg16" in mark_seen:
             rec_out["nadir_mark"]["background_bgr_16bit"] = [float(x) for x in mark_seen["bg16"]]
     if depth_rec:
@@ -2542,21 +2616,24 @@ def render_station(project, rec, station, scene: Scene, out_dir: PathLike, width
             "frames_clipped_in_8bit_share_max": max([f["clipped_in_8bit_share"] for f in fr], default=None)}
     if geometry and set(eyes) >= {"left", "right"}:                         # 0.97.20: the model through the same rays
         tg = time.time()
-        rec_out["geometry"] = {"files": geometry_panorama(scene, station, out, prefix or "", min(width, GEOMETRY_WIDTH), ipd_m, azimuth0_deg, pole_merge_deg,
+        rec_out["geometry"] = {"files": geometry_panorama(scene, station, out, prefix or "", geometry_width(width), ipd_m, azimuth0_deg, pole_merge_deg,
                                                           rows_per_chunk, top=stack_top),
                                "range": "from each eye's ray origin; colors as the per-image depth pictures (photometry_jpg/scales.json: "
                                         "depth_log, depth_linear)",
                                "normal": "station frame: [R, G, B] = 127.5 * (1 + [east, north, up]) on the mesh and the rover model; "
                                          "the ground plane black (0.98.12), sky white",
-                               "width": min(width, GEOMETRY_WIDTH),
+                               "width": geometry_width(width),
                                "note": "the model alone (mesh, plane, rover model, far field): no source frame is used"}
         rec_out["geometry"]["seconds"] = round(time.time() - tg, 1)
         log.info("ods: range and normal panoramas in %.0f s", rec_out["geometry"]["seconds"])
     rec_out["seconds"] = round(time.time() - t0, 1)
     try:                                                                    # 0.97.4: XMP in the stacked products
         from .xmp import tag_folder
+        from .xmp import author_fields, tag_products
+        rec_out.update(author_fields())                                     # 0.99.53: the author and the RPP version
         rec_out["xmp"] = tag_folder(out, heading_center_deg=float(rec_out.get("azimuth_of_column_0_deg") or 0.0) + 180.0,
                                     extra={"Station": str(getattr(station, "label", "") or prefix)})
+        rec_out["xmp_author"] = len(tag_products(out, {"Station": str(getattr(station, "label", "") or prefix)}))
     except Exception as e:                                                  # noqa: BLE001 - the products are complete without it
         log.warning("ods: XMP not written (%s: %s)", type(e).__name__, e)
     (out / "ods.json").write_text(json.dumps(rec_out, indent=1, default=float), encoding="utf-8")

@@ -31,14 +31,15 @@
   ]
  },
  "stations": {
-  "Sol0086_S004D0048": {"site": "chal_rocks_large", "work": "mars2020_sol_0072_chal_rocks_large_zcam", "station": "4_48", "terrain": "block", "frames": {"images": ["NLF_0086_0674586486_566RAD_N0040048NCAM00304_0A0195J01.png", "NLF_0086_0674586665_402RAD_N0040048NCAM03086_0A0295J01.png", "NLF_0086_0674586714_928RAD_N0040048NCAM03086_0A0195J02.png", "NLF_0086_0674586868_427RAD_N0040048NCAM03086_0A0295J01.png", "NLF_0086_0674586911_512RAD_N0040048NCAM02086_0A0295J01.png", "NLF_0086_0674586964_049RAD_N0040048NCAM02086_0A0295J01.png", "NRF_0086_0674586486_566RAD_N0040048NCAM00304_0A0195J01.png", "NRF_0086_0674586665_402RAD_N0040048NCAM03086_0A0295J01.png", "NRF_0086_0674586714_928RAD_N0040048NCAM03086_0M0195J03.png", "NRF_0086_0674586868_427RAD_N0040048NCAM03086_0A0295J01.png", "NRF_0086_0674586911_512RAD_N0040048NCAM02086_0A0295J01.png", "NRF_0086_0674586964_049RAD_N0040048NCAM02086_0A0295J01.png"]}, "note": "0.99.46 (Christian, 19 Nov 2026: \"every z34 site should have a navcam site\"): the Navcam end-of-drive frames of sol 86 (12) at the place of the Mastcam-Z 34 mm 360 of sol 90, in the block mars2020_sol_0072_chal_rocks_large_zcam"},
-  "Sol0362_S011D0108": {"site": "chal_rocks_large", "work": "mars2020_sol_0072_chal_rocks_large_zcam", "station": "11_108", "terrain": "block", "frames": {"images": ["NLF_0362_0699083767_899RAD_N0110108NCAM00708_0A00LLJ01.png", "NLF_0362_0699084316_163RAD_N0110108NCAM03362_0A0195J01.png", "NLF_0362_0699084464_976RAD_N0110108NCAM03362_0A0195J01.png", "NLF_0362_0699084710_597RAD_N0110108NCAM03362_0A0195J01.png", "NRF_0362_0699083767_899RAD_N0110108NCAM00708_0A00LLJ01.png", "NRF_0362_0699084316_163RAD_N0110108NCAM03362_0A0195J01.png", "NRF_0362_0699084464_976RAD_N0110108NCAM03362_0A0195J01.png", "NRF_0362_0699084710_597RAD_N0110108NCAM03362_0A0195J01.png"]}, "note": "0.99.46 (Christian, 19 Nov 2026: \"every z34 site should have a navcam site\"): the Navcam end-of-drive frames of sol 362 (8) at the place of the Mastcam-Z 34 mm 360 of sol 369, in the block mars2020_sol_0072_chal_rocks_large_zcam"},
-  "Sol0422_S024D0000": {"site": "enchanted_lake", "work": "mars2020_sol_0421_enchanted_lake_zcam", "station": "24_0", "terrain": "block", "frames": {"images": ["NLF_0422_0704408776_305RAD_N0240000NCAM00708_0A1085J02.png", "NLF_0422_0704409264_800RAD_N0240000NCAM03422_0A0195J02.png", "NLF_0422_0704409430_022RAD_N0240000NCAM03422_0A2195J01.png", "NLF_0422_0704409567_633RAD_N0240000NCAM03422_0A0195J02.png", "NLF_0422_0704409732_553RAD_N0240000NCAM02422_0A0195J02.png", "NLF_0422_0704409989_618RAD_N0240000NCAM02422_0A0195J02.png", "NRF_0422_0704408776_305RAD_N0240000NCAM00708_0A1085J02.png", "NRF_0422_0704409264_800RAD_N0240000NCAM03422_0A0195J02.png", "NRF_0422_0704409430_022RAD_N0240000NCAM03422_0A1195J03.png", "NRF_0422_0704409567_633RAD_N0240000NCAM03422_0A0195J02.png", "NRF_0422_0704409732_553RAD_N0240000NCAM02422_0A0195J02.png", "NRF_0422_0704409989_618RAD_N0240000NCAM02422_0A0195J02.png"]}, "note": "0.99.46 (Christian, 19 Nov 2026: \"every z34 site should have a navcam site\"): the Navcam end-of-drive frames of sol 422 (12) at the place of the Mastcam-Z 34 mm 360 of sol 425, in the block mars2020_sol_0421_enchanted_lake_zcam"},
-  "Sol0797_S039D1170": {"site": "belva_crater_large", "work": "mars2020_sol_0770_belva_crater_large_zcam", "station": "39_1170", "terrain": "block", "frames": {"images": ["NLF_0797_0737699308_972RAD_N0391170NCAM00709_0A1095J02.png", "NLF_0797_0737699858_316RAD_N0391170NCAM03795_0A0195J01.png", "NLF_0797_0737700008_316RAD_N0391170NCAM03795_0A0195J01.png", "NLF_0797_0737700345_363RAD_N0391170NCAM02797_0A2195J01.png", "NLF_0797_0737700489_395RAD_N0391170NCAM02797_0A0195J01.png", "NLF_0797_0737704270_112RAD_N0391170NCAM00217_0A0295J01.png", "NLF_0797_0737704364_612RAD_N0391170NCAM00218_0A0295J01.png", "NRF_0797_0737699308_972RAD_N0391170NCAM00709_0A1095J02.png", "NRF_0797_0737699858_316RAD_N0391170NCAM03795_0A0195J01.png", "NRF_0797_0737700008_316RAD_N0391170NCAM03795_0A0195J01.png", "NRF_0797_0737700200_316RAD_N0391170NCAM03795_0A0195J01.png", "NRF_0797_0737700345_363RAD_N0391170NCAM02797_0A1195J01.png", "NRF_0797_0737700489_395RAD_N0391170NCAM02797_0A0195J01.png", "NRF_0797_0737704270_112RAD_N0391170NCAM00217_0A0295J01.png", "NRF_0797_0737704364_612RAD_N0391170NCAM00218_0A0295J01.png"]}, "note": "0.99.46 (Christian, 19 Nov 2026: \"every z34 site should have a navcam site\"): the Navcam end-of-drive frames of sol 797 (15) at the place of the Mastcam-Z 34 mm 360 of sol 805, in the block mars2020_sol_0770_belva_crater_large_zcam"},
-  "Sol0960_S047D0000": {"site": "airey_hill", "work": "mars2020_sol_0960_airey_hill_zcam", "station": "47_0", "terrain": "block", "frames": {"images": ["NLF_0960_0752167503_316RAD_N0470000NCAM12960_0A0195J03.png", "NLF_0960_0752167590_418RAD_N0470000NCAM12960_0A0195J03.png", "NLF_0960_0752167885_425RAD_N0470000NCAM03960_0A0195J03.png", "NLF_0960_0752168037_425RAD_N0470000NCAM03960_0A0195J02.png", "NLF_0960_0752168203_425RAD_N0470000NCAM03960_0A0195J03.png", "NLF_0960_0752177645_441RAD_N0470000NCAM00709_0A0095J04.png", "NLF_0960_0752177884_051RAD_N0470000NCAM02960_0A0195J03.png", "NLF_0960_0752178031_066RAD_N0470000NCAM02960_0A1195J02.png", "NRF_0960_0752167503_316RAD_N0470000NCAM12960_0A0195J03.png", "NRF_0960_0752167590_418RAD_N0470000NCAM12960_0A0195J03.png", "NRF_0960_0752167885_425RAD_N0470000NCAM03960_0A0195J02.png", "NRF_0960_0752168037_425RAD_N0470000NCAM03960_0A0195J03.png", "NRF_0960_0752168203_425RAD_N0470000NCAM03960_0A0195J02.png", "NRF_0960_0752177645_441RAD_N0470000NCAM00709_0A1095J05.png", "NRF_0960_0752177884_051RAD_N0470000NCAM02960_0A0195J03.png", "NRF_0960_0752178031_066RAD_N0470000NCAM02960_0A1195J02.png"]}, "note": "0.99.46 (Christian, 19 Nov 2026: \"every z34 site should have a navcam site\"): the Navcam end-of-drive frames of sol 960 (16) at the place of the Mastcam-Z 34 mm 360 of sol 965, in the block mars2020_sol_0960_airey_hill_zcam"},
-  "Sol1154_S052D2644": {"site": "overlook_mountain", "work": "mars2020_sol_1150_overlook_mountain_zcam", "station": "52_2644", "terrain": "block", "frames": {"images": ["NLF_1154_0769389238_675RAD_N0522644NCAM03154_0A0095J02.png", "NLF_1154_0769389547_755RAD_N0522644NCAM03154_0A1095J01.png", "NLF_1154_0769389909_756RAD_N0522644NCAM03154_0A0095J01.png", "NLF_1154_0769390773_738RAD_N0522644NCAM02154_0A0195J01.png", "NLF_1154_0769390919_659RAD_N0522644NCAM02154_0A0195J01.png", "NRF_1154_0769389238_675RAD_N0522644NCAM03154_0A0095J01.png", "NRF_1154_0769389547_755RAD_N0522644NCAM03154_0A1095J02.png", "NRF_1154_0769389909_756RAD_N0522644NCAM03154_0A0095J01.png", "NRF_1154_0769390773_738RAD_N0522644NCAM02154_0A0195J01.png", "NRF_1154_0769390919_659RAD_N0522644NCAM02154_0A0195J01.png"]}, "note": "0.99.46 (Christian, 19 Nov 2026: \"every z34 site should have a navcam site\"; \"Add overlook mountain and its z48 360 to the list\"): the Navcam end-of-drive frames of sol 1154 (10) at the place of the Mastcam-Z 48 mm 360 of sol 1155, in the block mars2020_sol_1150_overlook_mountain_zcam"},
-  "Sol1155_S052D2644_Z48": {"name": "Overlook Mountain (Z48)", "site": "overlook_mountain", "work": "mars2020_sol_1150_overlook_mountain_zcam", "station": "52_2644", "frames": {"images": ["NLF_1154_0769389238_675RAD_N0522644NCAM03154_0A0095J02.png", "NLF_1154_0769389547_755RAD_N0522644NCAM03154_0A1095J01.png", "NLF_1154_0769389909_756RAD_N0522644NCAM03154_0A0095J01.png", "NLF_1154_0769390773_738RAD_N0522644NCAM02154_0A0195J01.png", "NLF_1154_0769390919_659RAD_N0522644NCAM02154_0A0195J01.png", "NRF_1154_0769389238_675RAD_N0522644NCAM03154_0A0095J01.png", "NRF_1154_0769389547_755RAD_N0522644NCAM03154_0A1095J02.png", "NRF_1154_0769389909_756RAD_N0522644NCAM03154_0A0095J01.png", "NRF_1154_0769390773_738RAD_N0522644NCAM02154_0A0195J01.png", "NRF_1154_0769390919_659RAD_N0522644NCAM02154_0A0195J01.png"]}, "variants": ["masked", "rover"], "terrain": "block", "ods_args": ["--cameras", "Z", "--sols", "1155", "--zcam-scale", "0.5", "--fill-cameras", "NF", "--no-gains", "--images", "Z?0_1155_*_N0522644ZCAM*_048*"], "depthmaps_variants": ["none"], "context": ["N?F_*_N0522644NCAM*.png", "F?F_*_N0522644FHAZ*.png"], "note": "0.99.46 (Christian, 19 Nov 2026: \"Add overlook mountain and its z48 360 to the list\"): the Mastcam-Z 48 mm 360 of sol 1155 (244 pairs) at half size, after Sol1154_S052D2644"},
-  "Sol0052_S003D2046": {
+  "Sol0086": {"old_label": "Sol0086_S004D0048", "site": "chal_rocks_large", "work": "mars2020_sol_0072_chal_rocks_large_zcam", "station": "4_48", "terrain": "block", "frames": {"images": ["NLF_0086_0674586486_566RAD_N0040048NCAM00304_0A0195J01.png", "NLF_0086_0674586665_402RAD_N0040048NCAM03086_0A0295J01.png", "NLF_0086_0674586714_928RAD_N0040048NCAM03086_0A0195J02.png", "NLF_0086_0674586868_427RAD_N0040048NCAM03086_0A0295J01.png", "NLF_0086_0674586911_512RAD_N0040048NCAM02086_0A0295J01.png", "NLF_0086_0674586964_049RAD_N0040048NCAM02086_0A0295J01.png", "NRF_0086_0674586486_566RAD_N0040048NCAM00304_0A0195J01.png", "NRF_0086_0674586665_402RAD_N0040048NCAM03086_0A0295J01.png", "NRF_0086_0674586714_928RAD_N0040048NCAM03086_0M0195J03.png", "NRF_0086_0674586868_427RAD_N0040048NCAM03086_0A0295J01.png", "NRF_0086_0674586911_512RAD_N0040048NCAM02086_0A0295J01.png", "NRF_0086_0674586964_049RAD_N0040048NCAM02086_0A0295J01.png"]}, "context": ["NLF_0086_0674582955_630RAD_N0040012NCAM00301_0A0295J01.png", "NRF_0086_0674582955_630RAD_N0040012NCAM00301_0A0295J01.png", "NLF_0084_0674405048_866RAD_N0040000NCAM03084_0A0195J01.png", "NRF_0084_0674405048_866RAD_N0040000NCAM03084_0A0195J01.png"],
+   "note": "0.99.46 (Christian, 19 Nov 2026: \"every z34 site should have a navcam site\"): the Navcam end-of-drive frames of sol 86 (12) at the place of the Mastcam-Z 34 mm 360 of sol 90, in the block mars2020_sol_0072_chal_rocks_large_zcam"},
+  "Sol0362": {"old_label": "Sol0362_S011D0108", "no_navcam": true, "no_navcam_note": "0.99.51 (Christian, 20 Nov 2026: \"chal rocks Sol0362_S011D0108 model has many spikes and sky floaters\"): the Navcam frames at S011D0108 are no 360 - four pairs on sol 362 (NCAM00708, NCAM03362 x 3), two on 363, two on 367, one on 371, from sols 362-379 there; the 360 is Mastcam-Z's (68 34 mm pairs on sol 369): only Sol0369_S011D0108_Z34 is made","site": "chal_rocks_large", "work": "mars2020_sol_0072_chal_rocks_large_zcam", "station": "11_108", "terrain": "block", "frames": {"images": ["NLF_0362_0699083767_899RAD_N0110108NCAM00708_0A00LLJ01.png", "NLF_0362_0699084316_163RAD_N0110108NCAM03362_0A0195J01.png", "NLF_0362_0699084464_976RAD_N0110108NCAM03362_0A0195J01.png", "NLF_0362_0699084710_597RAD_N0110108NCAM03362_0A0195J01.png", "NRF_0362_0699083767_899RAD_N0110108NCAM00708_0A00LLJ01.png", "NRF_0362_0699084316_163RAD_N0110108NCAM03362_0A0195J01.png", "NRF_0362_0699084464_976RAD_N0110108NCAM03362_0A0195J01.png", "NRF_0362_0699084710_597RAD_N0110108NCAM03362_0A0195J01.png"]}, "note": "0.99.46 (Christian, 19 Nov 2026: \"every z34 site should have a navcam site\"): the Navcam end-of-drive frames of sol 362 (8) at the place of the Mastcam-Z 34 mm 360 of sol 369, in the block mars2020_sol_0072_chal_rocks_large_zcam"},
+  "Sol0422": {"old_label": "Sol0422_S024D0000", "site": "enchanted_lake", "work": "mars2020_sol_0421_enchanted_lake_zcam", "station": "24_0", "terrain": "block", "frames": {"images": ["NLF_0422_0704408776_305RAD_N0240000NCAM00708_0A1085J02.png", "NLF_0422_0704409264_800RAD_N0240000NCAM03422_0A0195J02.png", "NLF_0422_0704409430_022RAD_N0240000NCAM03422_0A2195J01.png", "NLF_0422_0704409567_633RAD_N0240000NCAM03422_0A0195J02.png", "NLF_0422_0704409732_553RAD_N0240000NCAM02422_0A0195J02.png", "NLF_0422_0704409989_618RAD_N0240000NCAM02422_0A0195J02.png", "NRF_0422_0704408776_305RAD_N0240000NCAM00708_0A1085J02.png", "NRF_0422_0704409264_800RAD_N0240000NCAM03422_0A0195J02.png", "NRF_0422_0704409430_022RAD_N0240000NCAM03422_0A1195J03.png", "NRF_0422_0704409567_633RAD_N0240000NCAM03422_0A0195J02.png", "NRF_0422_0704409732_553RAD_N0240000NCAM02422_0A0195J02.png", "NRF_0422_0704409989_618RAD_N0240000NCAM02422_0A0195J02.png"]}, "note": "0.99.46 (Christian, 19 Nov 2026: \"every z34 site should have a navcam site\"): the Navcam end-of-drive frames of sol 422 (12) at the place of the Mastcam-Z 34 mm 360 of sol 425, in the block mars2020_sol_0421_enchanted_lake_zcam"},
+  "Sol0797": {"old_label": "Sol0797_S039D1170", "site": "belva_crater_large", "work": "mars2020_sol_0770_belva_crater_large_zcam", "station": "39_1170", "terrain": "block", "frames": {"images": ["NLF_0797_0737699308_972RAD_N0391170NCAM00709_0A1095J02.png", "NLF_0797_0737699858_316RAD_N0391170NCAM03795_0A0195J01.png", "NLF_0797_0737700008_316RAD_N0391170NCAM03795_0A0195J01.png", "NLF_0797_0737700345_363RAD_N0391170NCAM02797_0A2195J01.png", "NLF_0797_0737700489_395RAD_N0391170NCAM02797_0A0195J01.png", "NLF_0797_0737704270_112RAD_N0391170NCAM00217_0A0295J01.png", "NLF_0797_0737704364_612RAD_N0391170NCAM00218_0A0295J01.png", "NRF_0797_0737699308_972RAD_N0391170NCAM00709_0A1095J02.png", "NRF_0797_0737699858_316RAD_N0391170NCAM03795_0A0195J01.png", "NRF_0797_0737700008_316RAD_N0391170NCAM03795_0A0195J01.png", "NRF_0797_0737700200_316RAD_N0391170NCAM03795_0A0195J01.png", "NRF_0797_0737700345_363RAD_N0391170NCAM02797_0A1195J01.png", "NRF_0797_0737700489_395RAD_N0391170NCAM02797_0A0195J01.png", "NRF_0797_0737704270_112RAD_N0391170NCAM00217_0A0295J01.png", "NRF_0797_0737704364_612RAD_N0391170NCAM00218_0A0295J01.png"]}, "note": "0.99.46 (Christian, 19 Nov 2026: \"every z34 site should have a navcam site\"): the Navcam end-of-drive frames of sol 797 (15) at the place of the Mastcam-Z 34 mm 360 of sol 805, in the block mars2020_sol_0770_belva_crater_large_zcam"},
+  "Sol0960": {"old_label": "Sol0960_S047D0000", "site": "airey_hill", "work": "mars2020_sol_0960_airey_hill_zcam", "station": "47_0", "terrain": "block", "frames": {"images": ["NLF_0960_0752167503_316RAD_N0470000NCAM12960_0A0195J03.png", "NLF_0960_0752167590_418RAD_N0470000NCAM12960_0A0195J03.png", "NLF_0960_0752167885_425RAD_N0470000NCAM03960_0A0195J03.png", "NLF_0960_0752168037_425RAD_N0470000NCAM03960_0A0195J02.png", "NLF_0960_0752168203_425RAD_N0470000NCAM03960_0A0195J03.png", "NLF_0960_0752177645_441RAD_N0470000NCAM00709_0A0095J04.png", "NLF_0960_0752177884_051RAD_N0470000NCAM02960_0A0195J03.png", "NLF_0960_0752178031_066RAD_N0470000NCAM02960_0A1195J02.png", "NRF_0960_0752167503_316RAD_N0470000NCAM12960_0A0195J03.png", "NRF_0960_0752167590_418RAD_N0470000NCAM12960_0A0195J03.png", "NRF_0960_0752167885_425RAD_N0470000NCAM03960_0A0195J02.png", "NRF_0960_0752168037_425RAD_N0470000NCAM03960_0A0195J03.png", "NRF_0960_0752168203_425RAD_N0470000NCAM03960_0A0195J02.png", "NRF_0960_0752177645_441RAD_N0470000NCAM00709_0A1095J05.png", "NRF_0960_0752177884_051RAD_N0470000NCAM02960_0A0195J03.png", "NRF_0960_0752178031_066RAD_N0470000NCAM02960_0A1195J02.png"]}, "note": "0.99.46 (Christian, 19 Nov 2026: \"every z34 site should have a navcam site\"): the Navcam end-of-drive frames of sol 960 (16) at the place of the Mastcam-Z 34 mm 360 of sol 965, in the block mars2020_sol_0960_airey_hill_zcam"},
+  "Sol1154": {"old_label": "Sol1154_S052D2644", "site": "overlook_mountain", "work": "mars2020_sol_1150_overlook_mountain_zcam", "station": "52_2644", "terrain": "block", "frames": {"images": ["NLF_1154_0769389238_675RAD_N0522644NCAM03154_0A0095J02.png", "NLF_1154_0769389547_755RAD_N0522644NCAM03154_0A1095J01.png", "NLF_1154_0769389909_756RAD_N0522644NCAM03154_0A0095J01.png", "NLF_1154_0769390773_738RAD_N0522644NCAM02154_0A0195J01.png", "NLF_1154_0769390919_659RAD_N0522644NCAM02154_0A0195J01.png", "NRF_1154_0769389238_675RAD_N0522644NCAM03154_0A0095J01.png", "NRF_1154_0769389547_755RAD_N0522644NCAM03154_0A1095J02.png", "NRF_1154_0769389909_756RAD_N0522644NCAM03154_0A0095J01.png", "NRF_1154_0769390773_738RAD_N0522644NCAM02154_0A0195J01.png", "NRF_1154_0769390919_659RAD_N0522644NCAM02154_0A0195J01.png"]}, "note": "0.99.46 (Christian, 19 Nov 2026: \"every z34 site should have a navcam site\"; \"Add overlook mountain and its z48 360 to the list\"): the Navcam end-of-drive frames of sol 1154 (10) at the place of the Mastcam-Z 48 mm 360 of sol 1155, in the block mars2020_sol_1150_overlook_mountain_zcam"},
+  "Sol1155_Z48": {"old_label": "Sol1155_S052D2644_Z48", "name": "Overlook Mountain (Z48)", "site": "overlook_mountain", "work": "mars2020_sol_1150_overlook_mountain_zcam", "station": "52_2644", "frames": {"images": ["NLF_1154_0769389238_675RAD_N0522644NCAM03154_0A0095J02.png", "NLF_1154_0769389547_755RAD_N0522644NCAM03154_0A1095J01.png", "NLF_1154_0769389909_756RAD_N0522644NCAM03154_0A0095J01.png", "NLF_1154_0769390773_738RAD_N0522644NCAM02154_0A0195J01.png", "NLF_1154_0769390919_659RAD_N0522644NCAM02154_0A0195J01.png", "NRF_1154_0769389238_675RAD_N0522644NCAM03154_0A0095J01.png", "NRF_1154_0769389547_755RAD_N0522644NCAM03154_0A1095J02.png", "NRF_1154_0769389909_756RAD_N0522644NCAM03154_0A0095J01.png", "NRF_1154_0769390773_738RAD_N0522644NCAM02154_0A0195J01.png", "NRF_1154_0769390919_659RAD_N0522644NCAM02154_0A0195J01.png"]}, "variants": ["masked", "rover"], "terrain": "block", "ods_args": ["--cameras", "Z", "--sols", "1155", "--zcam-scale", "0.5", "--fill-cameras", "NF", "--no-gains", "--images", "Z?0_1155_*_N0522644ZCAM*_048*"], "depthmaps_variants": ["none"], "context": ["N?F_*_N0522644NCAM*.png", "F?F_*_N0522644FHAZ*.png"], "note": "0.99.46 (Christian, 19 Nov 2026: \"Add overlook mountain and its z48 360 to the list\"): the Mastcam-Z 48 mm 360 of sol 1155 (244 pairs) at half size, after Sol1154_S052D2644"},
+  "Sol0052": {"old_label": "Sol0052_S003D2046",
    "site": "van_zyl_overlook_huge",
    "station": "3_2046",
    "note": "Van Zyl Overlook, sol 52: the six Navcam pairs NCAM00303, NCAM03052 x3, NCAM02052 x2 (Christian, 10 Nov) Context (13 Nov): the pair NCAM00301 of sol 52 at S003D2016, before the drive (quarter resolution). 0.98.19 (Christian, 16 Nov 2026: \"For the first ods site, add sol 33 eod as context\"): + the sol 33 end-of-drive 360 at S003D1374 (NCAM03033 x3, NCAM02033 x2; 63 m west).",
@@ -73,7 +74,7 @@
     "NRF_0033_0669877239_418RAD_N0031374NCAM02033_0A0295J01.png"
    ]
   },
-  "Sol0461_S026D0630": {
+  "Sol0461": {"old_label": "Sol0461_S026D0630",
    "site": "rockytop",
    "station": "26_630",
    "note": "Rockytop, sol 461: the 16 half-resolution Navcam frames (NCAM03461, 02461, 13461); the pair NCAM13461 0707875039 left out of the panorama (Christian, 10 Nov; 12 Nov: the NRF frame named too) Context (13 Nov): the pairs NCAM00301 of sol 461 at S026D0522, NCAM13460 of sol 460 at S026D0470, NCAM13464 x2 of sol 464 at S026D0756, NCAM00301 of sol 464 at S026D0694. 0.98.14 (Christian, 15 Nov 2026: 'for rockytop use a model made from the full ncam block alignment'): \"terrain\": \"block\" - the terrain from all 215 Navcam frames of the block (colmap/dense_block_N, one cloud for both Rockytop stations); the panorama from the station's own frames as before. 0.98.19 (Christian, 16 Nov 2026: \"These and the other rockytop ods should be rendered from one large 3d model that includes all the medium res eod images and the lowres mid drive imaging frames. Add context frames to fill in rover occluded areas from the mid drive imaging frames and nearby eod frames that have similar lighting\"): \"terrain\": \"block:rockytop\" - the cloud of the terrain set rockytop (119 frames: the half-resolution end-of-drive 360s of sols 460, 461, 464, 474, 477, 501, 502 and the quarter-resolution mid-drive pairs NCAM00301 of sols 461, 464, 501); context: every end-of-drive and mid-drive set within 20 m taken within 45 minutes of this station's local time (when fewer than two, the two within 20 m closest in time), with the frames named before.",
@@ -157,7 +158,7 @@
    ],
    "terrain": "block:rockytop"
   },
-  "Sol0686_S032D1184": {
+  "Sol0686": {"old_label": "Sol0686_S032D1184",
    "name": "Three Forks North",
    "site": "threeforks_large",
    "station": "32_1184",
@@ -169,7 +170,7 @@
     "NLF_0688_0728029302_791RAD_N0321184NCAM13688_0A0195J01"
    ]
   },
-  "Sol0690_S032D1184_Z34": {
+  "Sol0690_Z34": {"old_label": "Sol0690_S032D1184_Z34",
    "name": "Three Forks North (Z34)",
    "experimental": true,
    "work": "mars2020_sol_0413_threeforks_north_zcam",
@@ -282,7 +283,7 @@
     "NRF_0693_0728460570_487RAD_N0321208NCAM08111_0A1095J01.png"
    ]
   },
-  "Sol0474_S026D0850": {
+  "Sol0474": {"old_label": "Sol0474_S026D0850",
    "site": "rockytop",
    "station": "26_850",
    "note": "Rockytop (Skinner Ridge), sol 474: the station of NRF_0474_0709027186_885RAD_N0260850NCAM13474, its half-resolution Navcam frames (Christian, 12 Nov: \"Add a forth site\") Context (14 Nov): the pairs NCAM13464 x2 and NCAM03464 of sol 464 at S026D0756. 0.98.14 (Christian, 15 Nov 2026: 'for rockytop use a model made from the full ncam block alignment'): \"terrain\": \"block\" - the terrain from all 215 Navcam frames of the block (colmap/dense_block_N, one cloud for both Rockytop stations); the panorama from the station's own frames as before. 0.98.19 (Christian, 16 Nov 2026: \"These and the other rockytop ods should be rendered from one large 3d model that includes all the medium res eod images and the lowres mid drive imaging frames. Add context frames to fill in rover occluded areas from the mid drive imaging frames and nearby eod frames that have similar lighting\"): \"terrain\": \"block:rockytop\" - the cloud of the terrain set rockytop (119 frames: the half-resolution end-of-drive 360s of sols 460, 461, 464, 474, 477, 501, 502 and the quarter-resolution mid-drive pairs NCAM00301 of sols 461, 464, 501); context: every end-of-drive and mid-drive set within 20 m taken within 45 minutes of this station's local time (when fewer than two, the two within 20 m closest in time), with the frames named before.",
@@ -361,7 +362,7 @@
    ],
    "terrain": "block:rockytop"
   },
-  "Sol1635_S079D0732": {
+  "Sol1635": {"old_label": "Sol1635_S079D0732",
    "site": "taylorfjellet_large",
    "station": "79_732",
    "note": "Taylorfjellet, sol 1635: the ten Navcam pairs NCAM03635 x3 (full resolution), NCAM02635 x2, NCAM15635 x5, 35 minutes (Christian, 13 Nov 2026). The arm-workspace station of sols 1635-1640; the rover model has the arm stowed. 0.99.13 (Christian, 17 Nov 2026: \"for the taylorfjellet ods, add some context images taken at similar times of day. Add the mid drive pair from sol 1606 plus the north-west looking eod stereos from 1606, 1608, 1615 stations\"): context - the mid-drive pair NCAM00301 of sol 1606 (S078D4826, 13:01 LMST) and the end-of-drive pairs that look north-west, toward this station 9-11 m away: NCAM02606 (S079D0000, az 325, 13:45), NCAM03608 (S079D0102, az 359, 13:45), NCAM02608 (az 287, 14:06), NCAM03615 (S079D0198, az 321, 12:26), NCAM14615 (sol 1616, az 321, 11:10); this station's own frames are 12:07-12:42.  NCAM14608 (az 307) left out: sol 1609 at 09:31, the morning light.", "context": ["NLF_1606_0809514256_159RAD_N0784826NCAM00301_0A0295J01.png", "NLF_1606_0809516909_191RAD_N0790000NCAM02606_0A0195J01.png", "NLF_1608_0809694470_755RAD_N0790102NCAM03608_0A0195J02.png", "NLF_1608_0809695780_270RAD_N0790102NCAM02608_0A0195J03.png", "NLF_1615_0810311038_175RAD_N0790198NCAM03615_0A0195J01.png", "NLF_1616_0810395099_300RAD_N0790198NCAM14615_0A0195J01.png", "NRF_1606_0809514256_159RAD_N0784826NCAM00301_0A0295J01.png", "NRF_1606_0809516909_191RAD_N0790000NCAM02606_0A0195J01.png", "NRF_1608_0809694470_755RAD_N0790102NCAM03608_0A0195J02.png", "NRF_1608_0809695780_270RAD_N0790102NCAM02608_0A1195J03.png", "NRF_1615_0810311038_175RAD_N0790198NCAM03615_0A0195J01.png", "NRF_1616_0810395099_300RAD_N0790198NCAM14615_0A0195J01.png"],
@@ -390,7 +391,7 @@
     ]
    }
   },
-  "Sol1411_S068D0142": {
+  "Sol1411": {"old_label": "Sol1411_S068D0142",
    "site": "witch_hazel_large",
    "station": "68_142",
    "note": "South Arm, sol 1411: the nine Navcam pairs of station S068D0142 between NLF_1411_0792198225 and NLF_1411_0792200805 (Christian, 13 Nov 2026) - NCAM00709 (full resolution), NCAM03411 x3, NCAM02411 x2, NCAM13411 x3 (half resolution), 28 minutes; names as in the block mars2020_sol_1355_witch_hazel_large. The first pair of that range, NCAM00301 at 0792198225, is at station S068D0040 (before the drive, quarter resolution) and is not in the list: a single-station panorama takes the frames of one station. The front Hazcam pair FHAZ02008 (0792199409) fills under the arm.",
@@ -417,7 +418,7 @@
     ]
    }
   },
-  "Sol1792_S087D0000": {
+  "Sol1792": {"old_label": "Sol1792_S087D0000",
    "site": "origny_large",
    "station": "87_0",
    "note": "Origny, sol 1792: the nine Navcam pairs of station S087D0000 from NLF_1792_0826024369 to NLF_1792_0826025483 (Christian, 13 Nov 2026) - NCAM03792 x3, NCAM02792 x2, NCAM15792 x4, half resolution, 19 minutes; block mars2020_sol_1765_origny_large. Context: the pair NCAM03790 of sol 1790 at S086D0700, a near location - in the dense step for the terrain, in the panorama a masked fill-only source in both variants.",
@@ -448,7 +449,7 @@
     "NRF_1790_0825850514_020RAD_N0860700NCAM03790_0A0195J01.png"
    ]
   },
-  "Sol1454_S071D0056": {
+  "Sol1454": {"old_label": "Sol1454_S071D0056",
    "site": "bell_island_large",
    "station": "71_56",
    "note": "Bell Island, sol 1454: the eight Navcam pairs of station S071D0056 from NLF_1454_0796019913 to NLF_1454_0796020891 (Christian, 13 Nov 2026) - NCAM03454 x3, NCAM02454 x2, NCAM13454 x3, half resolution, 16 minutes; block mars2020_sol_1431_bell_island_large. Context (masked, fill only, both variants): the pairs NCAM00301 of sol 1454 at S071D0006 (quarter resolution), NCAM03461 of sol 1461 at S071D0120, NCAM03463 of sol 1463 at S071D0160, and NCAM00347 of sol 1458 at this station. Christian named one frame of each; both eyes are listed.",
@@ -483,7 +484,7 @@
     "NRF_1463_0796819232_724RAD_N0710160NCAM03463_0A0195J01.png"
    ]
   },
-  "Sol0009_S003D0000": {
+  "Sol0009": {"old_label": "Sol0009_S003D0000",
    "site": "butler_landing",
    "work": "mars2020_sol_0001_butler_landing_zcam",
    "station": "3_0",
@@ -503,19 +504,11 @@
      "NRF_0009_0667756428_901RAD_N0030000NCAM05000_0A0295J02.png"
     ]
    },
-   "context": [
-    "NLF_0010_0667835038_916RAD_N0030000NCAM00130_0A0295J01.png",
-    "NLF_0014_0668192052_178RAD_N0030110NCAM03014_0A0195J01.png",
-    "NRF_0014_0668192052_178RAD_N0030110NCAM03014_0A0195J01.png",
-    "NLF_0014_0668192003_410RAD_N0030110NCAM03014_0A0285J01.png",
-    "NRF_0014_0668192003_410RAD_N0030110NCAM03014_0A0285J01.png",
-    "NLF_0014_0668191860_522RAD_N0030110NCAM00304_0A0195J01.png",
-    "NRF_0014_0668191860_522RAD_N0030110NCAM00304_0A0195J01.png"
-   ],
+   "context": ["NLF_0014_0668192003_410RAD_N0030110NCAM03014_0A0285J01.png", "NRF_0014_0668192003_410RAD_N0030110NCAM03014_0A0285J01.png", "NLF_0014_0668192052_178RAD_N0030110NCAM03014_0A0195J01.png", "NRF_0014_0668192052_178RAD_N0030110NCAM03014_0A0195J01.png"],
    "note": "Octavia E. Butler Landing, sol 9 (\"sol 1\" in the request): the 6 left and 6 right Navcam frames of station S003D0000 between the two frames Christian named (14 Nov 2026) - NCAM00102, NCAM05000; names as in the block mars2020_sol_0001_butler_landing_zcam. Context: 7 frames he named, both eyes where the block has them (not in the block: NRF_0667835038)."
   },
-  "Sol0011_S003D0000_Z34": {"name": "Butler Landing Site (Z34)", "work": "mars2020_sol_0001_butler_landing_zcam", "station": "3_0", "frames": {"images": ["NLF_0009_0667755063_497RAD_N0030000NCAM00102_0A00LLJ01.png", "NLF_0009_0667755636_926RAD_N0030000NCAM05000_0M00LLJ03.png", "NLF_0009_0667755959_167RAD_N0030000NCAM05000_0M00LLJ06.png", "NLF_0009_0667756282_606RAD_N0030000NCAM05000_0A0295J02.png", "NLF_0009_0667756352_693RAD_N0030000NCAM05000_0A0295J02.png", "NLF_0009_0667756428_901RAD_N0030000NCAM05000_0A0295J02.png", "NRF_0009_0667755063_497RAD_N0030000NCAM00102_0A00LLJ02.png", "NRF_0009_0667755636_926RAD_N0030000NCAM05000_0M00LLJ06.png", "NRF_0009_0667755959_167RAD_N0030000NCAM05000_0M00LLJ05.png", "NRF_0009_0667756282_606RAD_N0030000NCAM05000_0A0295J02.png", "NRF_0009_0667756352_693RAD_N0030000NCAM05000_0A0295J02.png", "NRF_0009_0667756428_901RAD_N0030000NCAM05000_0A0295J02.png"]}, "variants": ["masked", "rover"], "terrain": "block", "ods_args": ["--cameras", "Z", "--sols", "11", "--zcam-scale", "0.5", "--fill-cameras", "NF", "--no-gains", "--images", "Z?0_0011_*_N0030000ZCAM*_034*"], "depthmaps_variants": ["none"], "context": ["N?F_*_N0030000NCAM*.png", "F?F_*_N0030000FHAZ*.png", "NLF_0010_0667835038_916RAD_N0030000NCAM00130_0A0295J01.png", "NLF_0014_0668192052_178RAD_N0030110NCAM03014_0A0195J01.png", "NRF_0014_0668192052_178RAD_N0030110NCAM03014_0A0195J01.png", "NLF_0014_0668192003_410RAD_N0030110NCAM03014_0A0285J01.png", "NRF_0014_0668192003_410RAD_N0030110NCAM03014_0A0285J01.png", "NLF_0014_0668191860_522RAD_N0030110NCAM00304_0A0195J01.png", "NRF_0014_0668191860_522RAD_N0030110NCAM00304_0A0195J01.png"], "note": "0.99.46 (Christian, 19 Nov 2026: \"add Sol0011_S003D0000 and a _Z34 for every z34 360\"): Butler Landing, the Mastcam-Z 34 mm 360 of sol 11 at S003D0000 (54 pairs) at half size; fill: the station's Navcam frames of sols 9, 10 and 12, its front Hazcam frames and the Navcam station's context frames; run right after Sol0009_S003D0000."},
-  "Sol0180_S007D0000": {
+  "Sol0011_Z34": {"old_label": "Sol0011_S003D0000_Z34", "name": "Butler Landing Site (Z34)", "work": "mars2020_sol_0001_butler_landing_zcam", "station": "3_0", "frames": {"images": ["NLF_0009_0667755063_497RAD_N0030000NCAM00102_0A00LLJ01.png", "NLF_0009_0667755636_926RAD_N0030000NCAM05000_0M00LLJ03.png", "NLF_0009_0667755959_167RAD_N0030000NCAM05000_0M00LLJ06.png", "NLF_0009_0667756282_606RAD_N0030000NCAM05000_0A0295J02.png", "NLF_0009_0667756352_693RAD_N0030000NCAM05000_0A0295J02.png", "NLF_0009_0667756428_901RAD_N0030000NCAM05000_0A0295J02.png", "NRF_0009_0667755063_497RAD_N0030000NCAM00102_0A00LLJ02.png", "NRF_0009_0667755636_926RAD_N0030000NCAM05000_0M00LLJ06.png", "NRF_0009_0667755959_167RAD_N0030000NCAM05000_0M00LLJ05.png", "NRF_0009_0667756282_606RAD_N0030000NCAM05000_0A0295J02.png", "NRF_0009_0667756352_693RAD_N0030000NCAM05000_0A0295J02.png", "NRF_0009_0667756428_901RAD_N0030000NCAM05000_0A0295J02.png"]}, "variants": ["masked", "rover"], "terrain": "block", "ods_args": ["--cameras", "Z", "--sols", "11", "--zcam-scale", "0.5", "--fill-cameras", "NF", "--no-gains", "--images", "Z?0_0011_*_N0030000ZCAM*_034*"], "depthmaps_variants": ["none"], "context": ["N?F_*_N0030000NCAM*.png", "F?F_*_N0030000FHAZ*.png", "NLF_0010_0667835038_916RAD_N0030000NCAM00130_0A0295J01.png", "NLF_0014_0668192052_178RAD_N0030110NCAM03014_0A0195J01.png", "NRF_0014_0668192052_178RAD_N0030110NCAM03014_0A0195J01.png", "NLF_0014_0668192003_410RAD_N0030110NCAM03014_0A0285J01.png", "NRF_0014_0668192003_410RAD_N0030110NCAM03014_0A0285J01.png", "NLF_0014_0668191860_522RAD_N0030110NCAM00304_0A0195J01.png", "NRF_0014_0668191860_522RAD_N0030110NCAM00304_0A0195J01.png"], "note": "0.99.46 (Christian, 19 Nov 2026: \"add Sol0011_S003D0000 and a _Z34 for every z34 360\"): Butler Landing, the Mastcam-Z 34 mm 360 of sol 11 at S003D0000 (54 pairs) at half size; fill: the station's Navcam frames of sols 9, 10 and 12, its front Hazcam frames and the Navcam station's context frames; run right after Sol0009_S003D0000."},
+  "Sol0180": {"old_label": "Sol0180_S007D0000",
    "site": "rochette",
    "work": "mars2020_sol_0178_rochette_zcam",
    "station": "7_0",
@@ -548,7 +541,7 @@
    ],
    "note": "Rochette, sol 180: the 4 left and 5 right Navcam frames of station S007D0000 between the two frames Christian named (14 Nov 2026) - NCAM02180, NCAM03180; names as in the block mars2020_sol_0178_rochette_zcam. Context: 4 frames he named, both eyes where the block has them. 0.98.19 (Christian, 16 Nov 2026: \"Rochette should include sol 178 eod Site 6, Drive 2666 as context\"): the whole end-of-drive 360 of sol 178 at S006D2666 (NCAM03178 x3, NCAM02178 x2, both eyes) - the pair named before and the other four. 0.99.11 (Christian, 17 Nov 2026: \"rerun rochette and rockytop from the ods using whole block terrain models\"): \"terrain\": \"block\" - the terrain from every Navcam frame of the block (42: the end-of-drive 360s of sols 178 and 180, the mid-drive pairs, the later frames at S007D0000 and the sol 341 frames; colmap/dense_block_N), the panorama from the station's own frames as before.", "terrain": "block"
   },
-  "Sol0204_S007D1836": {
+  "Sol0204": {"old_label": "Sol0204_S007D1836",
    "site": "seitah_huge",
    "station": "7_1836",
    "frames": {
@@ -573,7 +566,7 @@
    ],
    "note": "Seitah, sol 204: the 6 left and 6 right Navcam frames of station S007D1836 between the two frames Christian named (14 Nov 2026) - NCAM00718, NCAM02204, NCAM03204; names as in the block mars2020_sol_0201_seitah_huge. Context: 2 frames he named, both eyes where the block has them. 0.98.9: in the Seitah huge block - Seitah North large has never been aligned."
   },
-  "Sol0248_S008D0000": {
+  "Sol0248": {"old_label": "Sol0248_S008D0000",
    "site": "seitah_huge",
    "station": "8_0",
    "frames": {
@@ -604,7 +597,7 @@
    ],
    "note": "Seitah, sol 248: the 6 left and 6 right Navcam frames of station S008D0000 between the two frames Christian named (14 Nov 2026) - NCAM00303, NCAM02248, NCAM03248; names as in the block mars2020_sol_0201_seitah_huge. Context: 8 frames he named, both eyes where the block has them. 0.98.9: in the Seitah huge block - Seitah North large has never been aligned."
   },
-  "Sol0361_S011D0000": {
+  "Sol0361": {"old_label": "Sol0361_S011D0000",
    "site": "chal_rocks_large",
    "work": "mars2020_sol_0015_van_zyl_overlook_huge",
    "station": "11_0",
@@ -629,7 +622,7 @@
    ],
    "note": "Chal Rocks, sol 361 (frames in the Van Zyl Overlook block): the 5 left and 4 right Navcam frames of station S011D0000 between the two frames Christian named (14 Nov 2026) - NCAM02361, NCAM03361; names as in the block mars2020_sol_0015_van_zyl_overlook_huge. Context: 4 frames he named, both eyes where the block has them."
   },
-  "Sol0565_S029D0000": {
+  "Sol0565": {"old_label": "Sol0565_S029D0000",
    "site": "enchanted_lake_large",
    "station": "29_0",
    "frames": {
@@ -664,7 +657,7 @@
    ],
    "note": "Enchanted Lake, sol 565: the 7 left and 7 right Navcam frames of station S029D0000 between the two frames Christian named (14 Nov 2026) - NCAM02565, NCAM03565, NCAM12565; names as in the block mars2020_sol_0421_enchanted_lake_large. Context: 10 frames he named, both eyes where the block has them."
   },
-  "Sol1955_S091D0124": {
+  "Sol1955": {"old_label": "Sol1955_S091D0124",
    "site": "hippo_pools",
    "station": "91_124",
    "frames": {
@@ -720,7 +713,7 @@
    "note": "Hippo Pools, sol 1955: the 9 left and 9 right Navcam frames of station S091D0124 between the two frames Christian named (14 Nov 2026) - NCAM02955, NCAM03955, NCAM14955; names as in the block mars2020_sol_1948_hippo_pools. Context: 6 frames he named, both eyes where the block has them. 0.98.19 (Christian, 16 Nov 2026: \"Hippo pools should also have a full block 3d model. include the sol 2009 and 2022 eod locations in there with context frames to cover rover occluded areas\"): \"terrain\": \"block:hippo_pools\" - the cloud of the terrain set hippo_pools (92 frames); context: every end-of-drive and mid-drive set within 20 m taken within 45 minutes of this station's local time (when fewer than two, the two within 20 m closest in time).",
    "terrain": "block:hippo_pools"
   },
-  "Sol1965_S091D0806": {
+  "Sol1965": {"old_label": "Sol1965_S091D0806",
    "site": "marble_mountain",
    "station": "91_806",
    "frames": {
@@ -755,7 +748,7 @@
    ],
    "note": "Marble Mountain, sol 1965 (\"sol 1995\" in the request; the frames are of sol 1965): the 8 left and 8 right Navcam frames of station S091D0806 between the two frames Christian named (14 Nov 2026) - NCAM02965, NCAM03965, NCAM13965; names as in the block mars2020_sol_1962_marble_mountain. Context: 8 frames he named, both eyes where the block has them."
   },
-  "Sol1189_S054D1152": {
+  "Sol1189": {"old_label": "Sol1189_S054D1152",
    "site": "bright_angle_large",
    "station": "54_1152",
    "frames": {
@@ -792,7 +785,7 @@
    ],
    "note": "Bright Angel, sol 1189: the 10 left and 10 right Navcam frames of station S054D1152 between the two frames Christian named (14 Nov 2026) - NCAM02189, NCAM03189, NCAM15189; names as in the block mars2020_sol_1175_bright_angle_large. Context: 6 frames he named, both eyes."
   },
-  "Sol0477_S026D1004": {
+  "Sol0477": {"old_label": "Sol0477_S026D1004",
    "site": "rockytop",
    "station": "26_1004",
    "name": "Skinner Ridge",
@@ -853,7 +846,7 @@
    ],
    "terrain": "block:rockytop"
   },
-  "Sol0502_S026D1222": {
+  "Sol0502": {"old_label": "Sol0502_S026D1222",
    "site": "rockytop",
    "station": "26_1222",
    "name": "Wildcat Ridge",
@@ -890,7 +883,7 @@
    ],
    "terrain": "block:rockytop"
   },
-  "Sol2009_S092D0000": {
+  "Sol2009": {"old_label": "Sol2009_S092D0000",
    "site": "hippo_pools",
    "station": "92_0",
    "note": "Hippo Pools, sol 2009: the 5 half-resolution Navcam pairs of the end-of-drive 360 at S092D0000 (NCAM03009 x3, NCAM02009 x2, 15:30); its 3 pairs NCAM13009 of sol 2010 (10:31) are context, not panorama (another time of day). 0.98.19 (Christian, 16 Nov 2026: \"Hippo pools should also have a full block 3d model. include the sol 2009 and 2022 eod locations in there with context frames to cover rover occluded areas\"): \"terrain\": \"block:hippo_pools\" - the cloud of the terrain set hippo_pools (92 frames); context: every end-of-drive and mid-drive set within 20 m taken within 45 minutes of this station's local time (when fewer than two, the two within 20 m closest in time). Sol 2009 has one set within 45 minutes (S091D1542, mid-drive, 17 min): the two closest in time, S091D1542 and S091D1496 (sol 2006, 5 m, 66 min).",
@@ -938,7 +931,7 @@
    ],
    "terrain": "block:hippo_pools"
   },
-  "Sol2022_S093D0000": {
+  "Sol2022": {"old_label": "Sol2022_S093D0000",
    "site": "hippo_pools",
    "station": "93_0",
    "note": "Hippo Pools, sol 2022: the 8 half-resolution Navcam pairs of the end-of-drive 360 at S093D0000 (NCAM03022 x3, NCAM02022 x2, NCAM13022 x3, 13:43). 0.98.19 (Christian, 16 Nov 2026: \"Hippo pools should also have a full block 3d model. include the sol 2009 and 2022 eod locations in there with context frames to cover rover occluded areas\"): \"terrain\": \"block:hippo_pools\" - the cloud of the terrain set hippo_pools (92 frames); context: every end-of-drive and mid-drive set within 20 m taken within 45 minutes of this station's local time (when fewer than two, the two within 20 m closest in time).",
@@ -986,7 +979,7 @@
    ],
    "terrain": "block:hippo_pools"
   },
-  "Sol1947_S091D0000": {
+  "Sol1947": {"old_label": "Sol1947_S091D0000",
    "site": "hippo_pools",
    "station": "91_0",
    "note": "Hippo Pools, sol 1947: the 9 half-resolution Navcam pairs of the end-of-drive 360 at S091D0000 (NCAM03947 x3, NCAM02947 x2, NCAM14947 x4, about 13:45-14:05). 0.98.19 (Christian, 16 Nov 2026: \"add sol 1947 eod ods\"): \"terrain\": \"block:hippo_pools\" - the cloud of the terrain set hippo_pools (92 frames, these 18 among them); context by the rule of the other Hippo Pools stations (within 20 m, within 45 minutes of local time): the 360 of sol 1955 at S091D0124 (13:25-13:45, 8 m), the first three pairs of sol 2022 at S093D0000 (NCAM03022, 13:43-13:48; its NCAM13022 and NCAM02022 pairs are near 16:00) and the mid-drive pair of sol 2022 at S092D0130 (13:16). Sol 2006 (S091D1496, 14:35-15:00) is just outside the window.",
@@ -1042,7 +1035,7 @@
    ],
    "terrain": "block:hippo_pools"
   },
-  "Sol1177_S054D0000": {
+  "Sol1177": {"old_label": "Sol1177_S054D0000",
    "site": "bright_angle_large",
    "station": "54_0",
    "note": "Bright Angel, sol 1177 (Christian, 16 Nov 2026: \"add sol 1177 edo with the sol 1177 mid dirive as context\"): the 6 Navcam pairs of the end-of-drive 360 at S054D0000 taken on sol 1177 (NCAM00709, NCAM03177 x3, NCAM02177 x2); names as in the block mars2020_sol_1175_bright_angle_large. Context: the sol 1177 mid-drive pair NCAM00301 at S053D0198 (6 m back, quarter resolution) and the 360's last tier NCAM14177, taken the next morning (sol 1178), so context and not panorama.",
@@ -1075,7 +1068,7 @@
     "NRF_1178_0771519884_550RAD_N0540000NCAM14177_0A0195J01.png"
    ]
   },
-  "Sol1183_S054D0866": {
+  "Sol1183": {"old_label": "Sol1183_S054D0866",
    "site": "bright_angle_large",
    "station": "54_866",
    "note": "Bright Angel, sol 1183 (Christian, 16 Nov 2026: \"Add sol 1183 edo with 1182 and 1185 as context\"): the 5 Navcam pairs of the end-of-drive 360 at S054D0866 (NCAM03183 x3, NCAM02183 x2; the left-only NCAM00501 left out). Context: the sol 1182 end-of-drive 360 at S054D0702 (10 m), sol 1185's mid-drive pair at S054D0924 and its end-of-drive 360 at S054D1010 (7 m), and this 360's last tier NCAM14183 of the next morning (sol 1184).",
@@ -1128,7 +1121,7 @@
     "NRF_1184_0772043631_425RAD_N0540866NCAM14183_0A0195J01.png"
    ]
   },
-  "Sol1308_S061D1678": {
+  "Sol1308": {"old_label": "Sol1308_S061D1678",
    "site": "pico_turquino_large",
    "station": "61_1678",
    "note": "Pico Turquino, sol 1308 (Christian, 16 Nov 2026: \"add 1308 eod and 1307-1308 mid drive imaging for context with the sol 1307 eod\"): the 8 Navcam pairs of the end-of-drive 360 at S061D1678 (NCAM00709, NCAM03306 x3, NCAM12306 x2, NCAM02306 x2); names as in the block mars2020_sol_1303_pico_turquino_large. Context: the mid-drive pairs NCAM00301 of sol 1307 (S061D1516) and sol 1308 (S061D1630) and the sol 1307 end-of-drive 360 at S061D1578 (9 pairs, about 6 m).",
@@ -1177,7 +1170,7 @@
     "NRF_1307_0782970503_284RAD_N0611578NCAM13307_0A0195J01.png"
    ]
   },
-  "Sol0609_S030D1172": {
+  "Sol0609": {"old_label": "Sol0609_S030D1172",
    "site": "hidden_harbor",
    "station": "30_1172",
    "note": "Hidden Harbor, sol 609 (Christian, 16 Nov 2026: \"add sol 609 with context from 606\"): every Navcam frame of station S030D1172 (the block's frames there; the names are not listed because the block mars2020_sol_0606_hidden_harbor had not been made when this was written). Context: every Navcam frame of sol 606 at S030D1096 (6 m), by pattern.",
@@ -1186,7 +1179,7 @@
     "N?F_0606_*RAD_N0301096NCAM*"
    ]
   },
-  "Sol0072_S003D2346": {
+  "Sol0072": {"old_label": "Sol0072_S003D2346",
    "site": "chal_rocks_large",
    "work": "mars2020_sol_0072_chal_rocks_large_zcam",
    "station": "3_2346",
@@ -1213,7 +1206,7 @@
     "NRF_0073_0673426662_691RAD_N0032394NCAM00301_0A0295J01.png"
    ]
   },
-  "Sol0073_S003D2430": {
+  "Sol0073": {"old_label": "Sol0073_S003D2430",
    "site": "chal_rocks_large",
    "work": "mars2020_sol_0072_chal_rocks_large_zcam",
    "station": "3_2430",
@@ -1252,7 +1245,7 @@
     "NRF_0362_0699081556_602RAD_N0110064NCAM00301_0A0295J01.png"
    ]
   },
-  "Sol0449_S026D0000": {
+  "Sol0449": {"old_label": "Sol0449_S026D0000",
    "site": "rose_river_falls",
    "work": "mars2020_sol_0449_rose_river_falls_zcam",
    "station": "26_0",
@@ -1275,7 +1268,7 @@
     ]
    }
   },
-  "Sol0670_S032D0672": {
+  "Sol0670": {"old_label": "Sol0670_S032D0672",
    "site": "threeforks_south",
    "work": "mars2020_sol_0432_threeforks_south_zcam",
    "station": "32_672",
@@ -1334,7 +1327,7 @@
     "NRF_0678_0727131344_065RAD_N0320798NCAM08111_0A0095J01.png"
    ]
   },
-  "Sol0670_S032D0672_Z34": {
+  "Sol0670_Z34": {"old_label": "Sol0670_S032D0672_Z34",
    "name": "Three Forks South (Z34)",
    "experimental": true,
    "work": "mars2020_sol_0432_threeforks_south_zcam",
@@ -1398,7 +1391,7 @@
     "NRF_0678_0727131344_065RAD_N0320798NCAM08111_0A0095J01.png"
    ]
   },
-  "Sol0784_S039D0926": {
+  "Sol0784": {"old_label": "Sol0784_S039D0926",
    "site": "belva_crater_large",
    "work": "mars2020_sol_0770_belva_crater_large_zcam",
    "station": "39_926",
@@ -1424,10 +1417,18 @@
    },
    "context": [
     "NLF_0784_0736544401_410RAD_N0390858NCAM00301_0A0295J01.png",
-    "NRF_0784_0736544401_410RAD_N0390858NCAM00301_0A0295J01.png"
-   ]
+    "NRF_0784_0736544401_410RAD_N0390858NCAM00301_0A0295J01.png",
+    "NLF_0797_0737699858_316RAD_N0391170NCAM03795_0A0195J01.png",
+    "NRF_0797_0737699858_316RAD_N0391170NCAM03795_0A0195J01.png",
+    "NLF_0797_0737700489_395RAD_N0391170NCAM02797_0A0195J01.png",
+    "NRF_0797_0737700489_395RAD_N0391170NCAM02797_0A0195J01.png"
+   ],
+   "zcam_context": [
+    "Z?0_*ZCAM08826_034*.png"
+   ],
+   "context_note": "20 Nov 2026 (Christian: \"The Sol 0784 ods and full-3d should use NLF_0784_..._NCAM00301, NLF_0797_..._NCAM03795 and NLF_0797_..._NCAM02797 for context. The sol 0789 z34 projection should also use the ZCAM08826 images for context\"): both eyes of each; zcam_context: the 110 frames of ZCAM08826 (sol 805, S039D1170, 34 mm), in the Z34 version (Sol0789_S039D0926_Z34) only"
   },
-  "Sol0816_S039D1418": {
+  "Sol0816": {"old_label": "Sol0816_S039D1418",
    "site": "belva_crater_large",
    "work": "mars2020_sol_0770_belva_crater_large_zcam",
    "station": "39_1418",
@@ -1454,7 +1455,7 @@
     ]
    }
   },
-  "Sol1601_S078D4716": {
+  "Sol1601": {"old_label": "Sol1601_S078D4716",
    "site": "taylorfjellet",
    "work": "mars2020_sol_1601_taylorfjellet_zcam",
    "station": "78_4716",
@@ -1485,7 +1486,7 @@
     "NRF_1606_0809514256_159RAD_N0784826NCAM00301_0A0295J01.png"
    ]
   },
-  "Sol1615_S079D0198": {
+  "Sol1615": {"old_label": "Sol1615_S079D0198",
    "site": "taylorfjellet",
    "work": "mars2020_sol_1601_taylorfjellet_zcam",
    "station": "79_198",
@@ -1520,7 +1521,7 @@
     "NRF_1627_0811379862_050RAD_N0790460NCAM00301_0A0295J02.png"
    ]
   },
-  "Sol1883_S088D1722": {
+  "Sol1883": {"old_label": "Sol1883_S088D1722",
    "site": "olifants",
    "work": "mars2020_sol_1880_olifants_zcam",
    "station": "88_1722",
@@ -1557,7 +1558,7 @@
     "NRF_1883_0834107920_050RAD_N0881694NCAM00301_0A0295J02.png"
    ]
   },
-  "Sol0116_S004D1250": {
+  "Sol0116": {"old_label": "Sol0116_S004D1250",
    "name": "Seitah Overlook (sol 121 zoom ladder site)",
    "work": "mars2020_sol_0113_seitah_overlook_zcam",
    "station": "4_1250",

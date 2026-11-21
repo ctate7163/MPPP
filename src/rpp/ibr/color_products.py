@@ -260,8 +260,24 @@ def _mark_row(out: Path, H: int) -> Optional[int]:
         nm = (json.loads((out / "ods.json").read_text(encoding="utf-8")).get("nadir_mark") or {})
     except (OSError, ValueError):
         return None
+    if nm.get("in_panorama") is False:                           # 0.99.53: no disc in the panoramas to copy
+        return None
     r = nm.get("first_row")
     return int(r) if r is not None and 0 < int(r) < H else None
+
+
+RAW_KEEP_LUMA = True                 # 0.99.51 (Christian, 20 Nov 2026: "raw will look darker red and may need a slight
+#                                      brightness boost"): the raw view x luma(1) / luma(1 / white balance) - a gray keeps
+#                                      its brightness, the colors their raw ratios (x 1.19 for [1, 1.224, 1.569])
+
+
+def raw_divisor(wb: Optional[np.ndarray]) -> Optional[np.ndarray]:
+    """The BGR divisor of the raw color view: the white balance, over the brightness factor of RAW_KEEP_LUMA."""
+    if wb is None:
+        return None
+    w = np.asarray(wb, np.float32)
+    k = float((LUMA_BGR[::-1] / w).sum() / LUMA_BGR.sum()) if RAW_KEEP_LUMA else 1.0     # RGB weights vs 1/wb
+    return (w * np.float32(k))[::-1].astype(np.float32)
 
 
 def white_balance(out: Path) -> Optional[np.ndarray]:
@@ -291,6 +307,7 @@ def write_color_products(out_dir: PathLike, prefix: str, top: str = "left", jpeg
     sky_w = cv2.imread(str(out / f"{pre}{SKY_WEIGHT_NAME}"), cv2.IMREAD_GRAYSCALE)
     rec: Dict[str, Any] = {"rule": RULE, "eyes": {},
                            "white_balance_divided_rgb": None if wb is None else wb.tolist(),
+                           "raw_brightness_x": None if wb is None else round(float(wb[0] / raw_divisor(wb)[2]), 4),
                            "center_depth": layers.get("file"), "rover_layer": layers.get("rover_file")}
     params = None
     squares: Dict[str, np.ndarray] = {}
@@ -329,7 +346,7 @@ def write_color_products(out_dir: PathLike, prefix: str, top: str = "left", jpeg
         disc = std8[mrow:].copy() if (std8 is not None and std8.shape[:2] == (H, W) and mrow is not None) else None
         del std8
         fy = H / h4
-        wb_bgr = None if wb is None else wb[::-1].astype(np.float32)
+        wb_bgr = raw_divisor(wb)
         n_white = 0
         for r0 in range(0, H, STRIP_ROWS):
             r1 = min(H, r0 + STRIP_ROWS)
@@ -393,7 +410,7 @@ def texture_products(a16: np.ndarray, k16: float, folder: PathLike, levels_file:
     H, W = a16.shape[:2]
     out: Dict[str, np.ndarray] = {}
     wb = white_balance(Path(folder))
-    wb_bgr = None if wb is None else wb[::-1].astype(np.float32)
+    wb_bgr = raw_divisor(wb)
     stored: Dict[str, Any] = {}
     if levels_file is not None and Path(levels_file).is_file():
         try:

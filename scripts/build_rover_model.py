@@ -141,7 +141,6 @@ def turn_components(v: np.ndarray, f: np.ndarray, turns=None) -> np.ndarray:
     """``v`` with the connected components named by BODY_TURNS (centroid within 2 cm of ``near_m``) turned by
     ``angle_deg`` about the vertical through ``pivot_xy_m`` (RMECH; positive: the -y end swings to -x), or - ``axis``
     "y" - about the line along y through (x, z) = ``pivot_xz_m``."""
-    import trimesh
     turns = BODY_TURNS if turns is None else turns
     lo, hi = v.min(0), v.max(0)
     todo = [t for t in turns if np.all(np.asarray(t["near_m"]) > lo - 0.05) and np.all(np.asarray(t["near_m"]) < hi + 0.05)]
@@ -421,7 +420,7 @@ def build(glb: Path, out: Path) -> dict:
         v, f = np.asarray(om.vertices), np.asarray(om.triangles)
         if kind == "body" and BODY_COMPONENT_SHIFTS:
             v = np.array(v, float)
-            rep_shift = shift_components(v, f, BODY_COMPONENT_SHIFTS)
+            shift_components(v, f, BODY_COMPONENT_SHIFTS)
         if kind == "body" and HAZCAM_VIEWS:
             kept = clear_camera_views(np.asarray(v, float), np.asarray(f))
             print(f"front Hazcam views cleared: {int((~kept).sum())} triangles of the body within {HAZCAM_CLEAR_M} m removed")

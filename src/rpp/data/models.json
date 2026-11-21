@@ -1,6 +1,6 @@
 {
-  "_doc": "The released mask models (rpp.mask.hub). 0.99.0, the rename MPPP -> RPP: the models are rpp_mask_v1..v4; their names before 0.99 (mppp_mask_v*) are 'aliases', so a block's configuration that names mppp_mask_v3 is the same configuration. 'file' is the cache and Hugging Face name; 'old_files' are the same bytes under the names before 0.99 (a cached old file is used as it is, nothing is downloaded again). The URLs are tried in order: ctate7163/rpp-mask (the renamed repository), then ctate7163/mppp-mask (forwarded by Hugging Face after the rename), then the GitHub release.",
-  "default": "rpp_mask_v3",
+  "_doc": "The released mask models (rpp.mask.hub). 'default' is the model a block is masked with when its configuration names none. 'file' is the cache and Hugging Face name; the URLs are tried in order. rpp_mask_v1..v4 were mppp_mask_v1..v4 before 0.99: 'aliases' keeps a block's configuration that names the old model the same configuration, and 'old_files' are the same bytes under the old names (a cached old file is used as it is). 'same_as_source': the model gives the same masks as its 'source_checkpoint', so a block processed with that checkpoint file is not processed again under the model's name.",
+  "default": "rpp_mask_v5",
   "models": {
     "rpp_mask_v1": {
       "file": "rpp_mask_convnext_tiny_s4_v1.safetensors",
@@ -100,7 +100,8 @@
         "https://huggingface.co/ctate7163/rpp-mask/resolve/main/rpp_mask_convnext_tiny_s4_v5.safetensors"
       ],
       "released": false,
-      "note": "0.99.34: SHA-256 and size written by the export (python -m rpp.mask.hub export ... --name rpp_mask_v5 --update-registry); upload with upload_mask_models.bat. Not the registry default (rpp_mask_v3); freeze 3 runs on this checkpoint."
+      "note": "1.0: the registry default. The SHA-256 and size are written by the export (python -m rpp.mask.hub export ... --name rpp_mask_v5 --update-registry); the file must be on Hugging Face before 1.0.0 is tagged (docs/RELEASING.md). Freeze 3 ran on this checkpoint.",
+      "same_as_source": true
     }
   }
 }

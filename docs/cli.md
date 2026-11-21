@@ -350,7 +350,7 @@ step whose command, code (`rpp/ibr` without the runner and the publishing module
 run is skipped (`--force` runs everything; `step_<name>.json` in the station's folder is the record), the second
 variant takes the first one's terrain mesh, and `single_sites_status.json` says what is running. `--publish DIR`
 (0.97.3) copies the stations' stereo JPEGs, reduced to `--publish-width`, into `DIR/panos` and lists them in
-`DIR/panos.json` for the web viewer (`docs/ods` of the repository; see
+`DIR/panos.json` for the web viewer (the page, `rpp.viewer`, is copied into `DIR`; see
 [Station products](station-products.md)); `--publish-only` does only that. `--install DIR` writes `run_single_site_ibr.bat` into DIR: it fast-forwards `D:\code\RPP`
 to the newest bundle in `D:\rover_blocks\_transfer` when that bundle is ahead (never back), then runs
 `rpp single-sites` with its arguments - it names no version, so it never needs replacing.
@@ -414,7 +414,7 @@ options:
 0.96.0 (Christian, 9 Nov 2026: "the pipeline that generates the per image depth maps and photometric cube from the
 cleaned up 3d mesh ... prototype the stereoscopic pipeline. The output should just be two images"): the products of
 one **station** (a site and drive of the rover) of a finished block, under `<project>/ods/<station>/`
-(`rpp.ibr`; the `[ibr]` extra: open3d).
+(`rpp.ibr`; the `[stations]` extra: open3d).
 
 ```text
 usage: rpp mesh      WORK --station S026D0392 [--points dense/fused.ply] [--colmap colmap.exe] [--dense-dir DIR]
@@ -427,7 +427,7 @@ usage: rpp ods       WORK --station ... [--width 8192] [--ipd 0.064] [--cameras 
                       [--sky-radius 300] [--no-far-field] [--no-geometry] [--pole-merge 0 90] [--pole-merge-down 0 90] [--eyes left right center]
                       [--fill-cameras F] [--site-name NAME] [--no-nadir-mark] [--nadir-mark-deg 20]
                       [--rows-per-chunk 128] [--exclude STEM ...] [--stack-top left] [--retone] [--stack-only]
-                      [--prefix Sol0052_S003D2046] [--bits 16] [--pds DIR] [--tone soft]
+                      [--prefix Sol0052] [--bits 16] [--pds DIR] [--tone soft]
 ```
 
 `--station` is `S026D0392`, `26_392` or `sol:461`.  **`mesh`**: the station's frames by camera family, the mast
