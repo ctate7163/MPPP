@@ -271,7 +271,9 @@ def test_viewer_terrain_modes_rover_button_and_hidden_drive():
     from rpp.ibr import single_sites as SS
     page = (pathlib.Path(SS.__file__).resolve().parents[1] / "viewer" / "index.html").read_text(encoding="utf-8")
     for s in ("['stereo', 'terrain stereo'], ['full', 'terrain 3D']",
-              "get('experimental') === '1'", 'id="driveBtn"', "$('driveBtn').onclick = driveToggle;",
+              "d.style.display = vs.some(q => q.key === 'drive3d')", 'id="driveBtn"',
+              "stickTurn += Math.sign(x)", "Math.min(1, stickL + tt)), Math.max(-1, Math.min(1, stickR - tt))",
+              "} else if (Math.abs(x) > STICK_DEAD) {", "$('driveBtn').onclick = driveToggle;",
               "if (isWhole(vr)) return null;", "if (!whole) {", "rk !== 'no-rover'", "roverOn = false, roverId = 0",
               "c.addEventListener('squeezestart', () => roverToggle());", "session.end(); return;",
               "grip: rover on / off   |   hold Y: leave VR", 'id="driveBeta"', "if (pressed(src, 3) &&",
