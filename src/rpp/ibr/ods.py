@@ -1453,6 +1453,16 @@ SKY_MODEL_MARGIN_DEG = 0.8       # sky pixels this close above the skyline are n
 SKY_MODEL_EL_DEGREE, SKY_MODEL_AZ_ORDER = 3, 3
 SKYLINE_SPECK_DEG = 4.0          # the band below the skyline where sky-bright far pixels take the terrain's colors
 SKYLINE_GAP_DEG = 0.3            # gaps in the terrain up to this tall are bridged (sky specks between the hills)
+# 1.0 (Christian, 20 Nov 2026: "The sky example still removes some distant mountains near the horizon. It does remove
+# the high dark feature. it should have a softer touch near the horizon"): just above the skyline the picture is kept
+# and only higher up is the fit taken - the original up to SKY_KEEP_DEG above the skyline, the fit from SKY_FIT_DEG
+# (a smoothstep between); a pixel further than SKY_KEEP_MAX_LOG from the fit (a dark frame edge, a bright seam) is the
+# fit everywhere.  Distant, hazy mountains differ from the sky by a few percent and stay.
+SKY_KEEP_DEG, SKY_FIT_DEG = 1.5, 6.0
+SKY_PRELIM_EL_DEG = 10.0         # the first fit (to tell the terrain) takes the bright far pixels this high and higher
+SKY_TERRAIN_DARK, SKY_TERRAIN_RED = 0.05, 0.05
+SKYLINE_SPECK_MAX_PX = 300       # a speck is at most this many pixels (on an 8k eye); a larger bright patch stays as it is
+SKY_KEEP_MAX_LOG = 0.12
 
 
 def _sky_basis(el: np.ndarray, az: np.ndarray) -> np.ndarray:
@@ -1486,8 +1496,49 @@ def skyline_sky(rgb: np.ndarray, label: np.ndarray, source: Optional[np.ndarray]
     if hi.sum() < 500 or lo.sum() < 500:
         return {}
     cut = 0.5 * (float(np.median(lum[hi][::7])) + float(np.median(lum[lo][::7])))
+    az = (np.arange(W) + 0.5) / W * 2.0 * np.pi
+    elr = np.radians(el_deg)
+    nb = 1 + 2 * SKY_MODEL_AZ_ORDER
+    A = np.ones((W, nb))
+    for m in range(1, SKY_MODEL_AZ_ORDER + 1):
+        A[:, 2 * m - 1], A[:, 2 * m] = np.cos(m * az), np.sin(m * az)
+
+    def fit_sky(mask):
+        step_ = max(1, int(np.sqrt(mask.sum() / 200000.0)))
+        fr_, fc_ = np.nonzero(mask[::step_, ::step_])
+        fr_, fc_ = fr_ * step_, fc_ * step_
+        if len(fr_) < 200:
+            return None, None
+        B_ = _sky_basis(elr[fr_], az[fc_])
+        Y_ = np.log1p(rgb[fr_, fc_].astype(np.float64))
+        ok_ = np.ones(len(fr_), bool)
+        for _ in range(2):                                       # one refit without the outliers (a bright frame edge)
+            co_, *_ = np.linalg.lstsq(B_[ok_], Y_[ok_], rcond=None)
+            res_ = np.abs(Y_ - B_ @ co_).mean(axis=1)
+            ok_ = res_ < 4.0 * (float(np.median(res_[ok_])) + 1e-6)
+        return co_, float(np.sqrt(np.mean(((Y_ - B_ @ co_)[ok_]) ** 2)))
+
+    def fit_row(co_, r_):                                        # the fit's log colors along row r_ (W, 3)
+        e_, ce_ = float(elr[r_]), float(np.cos(elr[r_]))
+        w_ = sum((e_ ** k_) * co_.reshape(SKY_MODEL_EL_DEGREE + 1, nb, -1)[k_] * np.r_[1.0, np.full(nb - 1, ce_)][:, None]
+                 for k_ in range(SKY_MODEL_EL_DEGREE + 1))
+        return A @ w_
+    # 1.0 (the Van Zyl east view: the hazy tops of the far hills, brighter than midway, were cut off): the terrain is
+    # told from the sky by the sky itself - a first fit to the bright far pixels SKY_PRELIM_EL_DEG and higher, and a
+    # far pixel darker than it by SKY_TERRAIN_DARK (log), or redder (log R/B) by SKY_TERRAIN_RED, is terrain
+    pre, _ = fit_sky(far & seen & (lum >= cut) & (el_deg >= SKY_PRELIM_EL_DEG)[:, None])
     band = ((el_deg < SKYLINE_MAX_EL_DEG) & (el_deg > -SKYLINE_BELOW_DEG))[:, None]
-    terrain = band & (surf | (far & (lum < cut)))
+    terrain = band & surf
+    lin = np.log1p(rgb.astype(np.float32))
+    for r in np.flatnonzero(band[:, 0]):
+        if pre is None:
+            terrain[r] |= far[r] & (lum[r] < cut)
+            continue
+        f_ = fit_row(pre, r)
+        dark = lin[r].mean(axis=1) - f_.mean(axis=1) < -SKY_TERRAIN_DARK
+        red = (lin[r, :, 0] - lin[r, :, 2]) - (f_[:, 0] - f_[:, 2]) > SKY_TERRAIN_RED
+        terrain[r] |= far[r] & (dark | red | (lum[r] < cut))
+    del lin
     r_h = int(np.searchsorted(-el_deg, 0.0))                     # the first row below the horizon
     # the terrain that stands on the ground: per column, up from SKYLINE_BELOW_DEG below the horizon while the pixels are
     # terrain (gaps of up to SKYLINE_GAP_DEG); a dark band afloat in the sky (a frame's top edge) is not reached
@@ -1508,42 +1559,36 @@ def skyline_sky(rgb: np.ndarray, label: np.ndarray, source: Optional[np.ndarray]
     sk = median_filter(first.astype(np.int64), size=k, mode="wrap")
     sky = rows[:, None] < sk[None, :]
     margin = max(1, int(round(SKY_MODEL_MARGIN_DEG / 180.0 * H)))
-    fit = sky & (rows[:, None] < (sk - margin)[None, :]) & seen
-    step = max(1, int(np.sqrt(fit.sum() / 200000.0)))
-    fr, fc = np.nonzero(fit[::step, ::step])
-    fr, fc = fr * step, fc * step
-    if len(fr) < 200:
+    coef, rms = fit_sky(sky & (rows[:, None] < (sk - margin)[None, :]) & seen)
+    if coef is None:
         return {}
-    az = (np.arange(W) + 0.5) / W * 2.0 * np.pi
-    elr = np.radians(el_deg)
-    B = _sky_basis(elr[fr], az[fc])
-    Y = np.log1p(rgb[fr, fc].astype(np.float64))
-    keep = np.ones(len(fr), bool)
-    for _ in range(2):                                           # one refit without the outliers (a bright frame edge)
-        coef, *_ = np.linalg.lstsq(B[keep], Y[keep], rcond=None)
-        res = np.abs(Y - B @ coef).mean(axis=1)
-        mad = float(np.median(res[keep])) + 1e-6
-        keep = res < 4.0 * mad
-    rms = float(np.sqrt(np.mean(((Y - B @ coef)[keep]) ** 2)))
     # the fit, row by row (a 16k eye's sky is tens of millions of pixels): within a row the elevation terms are one number
-    nb = 1 + 2 * SKY_MODEL_AZ_ORDER
-    A = np.ones((W, nb))
-    for m in range(1, SKY_MODEL_AZ_ORDER + 1):
-        A[:, 2 * m - 1], A[:, 2 * m] = np.cos(m * az), np.sin(m * az)
-    C = coef.reshape(SKY_MODEL_EL_DEGREE + 1, nb, -1)
     n_sky = 0
     for r in range(int(sk.max())):
         cols = np.flatnonzero(sk > r)
         if not len(cols):
             continue
-        e, ce = float(elr[r]), float(np.cos(elr[r]))
-        w = sum((e ** k) * C[k] * np.r_[1.0, np.full(nb - 1, ce)][:, None] for k in range(SKY_MODEL_EL_DEGREE + 1))
-        rgb[r, cols] = np.clip(np.expm1(A[cols] @ w), 0, top).astype(rgb.dtype)
+        fit_log = fit_row(coef, r)[cols]
+        above = el_deg[r] - el_deg[sk[cols]]                     # degrees above the skyline
+        x = np.clip((above - SKY_KEEP_DEG) / (SKY_FIT_DEG - SKY_KEEP_DEG), 0.0, 1.0)
+        keep = 1.0 - x * x * (3.0 - 2.0 * x)                     # 1 at the skyline, 0 from SKY_FIT_DEG up
+        if keep.any():
+            orig = np.log1p(rgb[r, cols].astype(np.float64))
+            dev = orig - fit_log
+            keep = keep[:, None] * (np.abs(dev).mean(axis=1, keepdims=True) <= SKY_KEEP_MAX_LOG)
+            fit_log = fit_log + keep * dev
+        rgb[r, cols] = np.clip(np.expm1(fit_log), 0, top).astype(rgb.dtype)
         n_sky += len(cols)
     # specks of sky below the skyline: the row's terrain on either side
     sb = max(1, int(round(SKYLINE_SPECK_DEG / 180.0 * H)))
     below = (rows[:, None] >= sk[None, :]) & (rows[:, None] < (sk + sb)[None, :])
     speck = below & far & (lum >= cut)
+    if speck.any():                                              # specks only: small patches, not a band of haze
+        import cv2
+        n_, lab_, st_, _ = cv2.connectedComponentsWithStats(speck.astype(np.uint8), connectivity=8)
+        small = np.zeros(n_, bool)
+        small[1:] = st_[1:, cv2.CC_STAT_AREA] <= max(4, int(SKYLINE_SPECK_MAX_PX * (W / 8192.0) ** 2))
+        speck = small[lab_]
     n_speck = 0
     for r in np.unique(np.nonzero(speck)[0]):
         bad = speck[r]

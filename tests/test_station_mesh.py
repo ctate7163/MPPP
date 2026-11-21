@@ -869,3 +869,19 @@ def test_full_3d_sky_ends_at_one_skyline():
     assert out[lone].all()                                                         # white now
     assert not (out & ~far).any()                                                  # the mesh is never sky
     assert hole.any() and lone.any()
+
+
+def test_a_block_in_another_root(tmp_path, monkeypatch):
+    """1.0 ("Sol0052 should run from RPP_RPV_ROOT=D:\\rover_blocks_f3 the same as Sol0784"): a block aligned only in
+    another root is found through RPP_BLOCK_ROOTS; a folder of the same name without a project (a lock file alone) is not it."""
+    from rpp.ibr import single_sites as SS
+    f3, old = tmp_path / "f3", tmp_path / "old"
+    (f3 / "mars2020_sol_0015_van_zyl_overlook_huge" / "colmap").mkdir(parents=True)   # a lock file's folder only
+    vz = old / "mars2020_sol_0015_van_zyl_overlook_huge" / "colmap"
+    vz.mkdir(parents=True)
+    (vz / "project.json").write_text('{"images": []}')
+    st = {"site": "van_zyl_overlook_huge", "station": "3_2046"}
+    monkeypatch.delenv("RPP_BLOCK_ROOTS", raising=False)
+    assert SS.block_folder(st, f3) == f3 / "mars2020_sol_0015_van_zyl_overlook_huge"
+    monkeypatch.setenv("RPP_BLOCK_ROOTS", str(old))
+    assert SS.block_folder(st, f3) == old / "mars2020_sol_0015_van_zyl_overlook_huge"

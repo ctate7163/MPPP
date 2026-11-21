@@ -3892,9 +3892,9 @@ def test_one_skyline_and_a_smooth_sky():
     rep = O.skyline_sky(rgb, label)
     assert rep and rep["sky_px"] > 0 and rep["specks_px"] >= 1
     assert np.array_equal(rgb[el[:, 0] <= 2.0], mesh_before)                       # the terrain untouched
-    s = rgb[:60, :, 0].astype(float)
+    s = rgb[:20, :, 0].astype(float)
     assert abs(float(rgb[60, 99, 0]) - float(rgb[60, 100, 0])) <= 1 and abs(float(rgb[90, 150, 0]) - float(rgb[89, 150, 0])) <= 1   # no footprint edge
-    assert abs(float(rgb[60, 150, 0]) - float(rgb[60, 600, 0])) < 10              # nor much of its brightness
+    assert abs(float(rgb[60, 150, 0]) - float(rgb[60, 600, 0])) < 15              # nor much of its brightness
     assert abs(float(rgb[150, 300, 0]) - float(rgb[150, 200, 0])) < 4             # the dark edge gone
     assert rgb[120, 600, 0] > 150                                                  # the floater is sky
     assert rgb[hr[len(hr) // 2], hc[len(hc) // 2], 0] < 120                        # the speck has the hills' color
